@@ -22,11 +22,13 @@ export default function ConfigTab({ profile }: ConfigTabProps): JSX.Element {
   const [raw, setRaw] = useState<RawIniFiles | null>(null)
   const [showRaw, setShowRaw] = useState(false)
   const [status, setStatus] = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => {
     window.api.config.read(profile.id).then(setSummary)
     setShowRaw(false)
     setRaw(null)
+    setError('')
   }, [profile.id])
 
   function flashStatus(message: string): void {
@@ -35,20 +37,35 @@ export default function ConfigTab({ profile }: ConfigTabProps): JSX.Element {
   }
 
   async function loadRaw(): Promise<void> {
-    const files = await window.api.config.readRaw(profile.id)
-    setRaw(files)
-    setShowRaw(true)
+    setError('')
+    try {
+      const files = await window.api.config.readRaw(profile.id)
+      setRaw(files)
+      setShowRaw(true)
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   async function saveSummary(): Promise<void> {
-    await window.api.config.writeSummary(profile.id, summary)
-    flashStatus('Saved GameUserSettings.ini')
+    setError('')
+    try {
+      await window.api.config.writeSummary(profile.id, summary)
+      flashStatus('Saved GameUserSettings.ini')
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   async function saveRaw(): Promise<void> {
     if (!raw) return
-    await window.api.config.writeRaw(profile.id, raw)
-    flashStatus('Saved raw ini files')
+    setError('')
+    try {
+      await window.api.config.writeRaw(profile.id, raw)
+      flashStatus('Saved raw ini files')
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   function updateField<K extends keyof ServerConfigSummary>(key: K, value: ServerConfigSummary[K]): void {
@@ -70,6 +87,7 @@ export default function ConfigTab({ profile }: ConfigTabProps): JSX.Element {
           Game.ini
           <textarea rows={16} value={raw.game} onChange={(e) => setRaw({ ...raw, game: e.target.value })} />
         </label>
+        {error && <p className="error-message">{error}</p>}
         <div className="form-actions">
           <button onClick={() => void saveRaw()}>Save raw files</button>
           <button onClick={() => setShowRaw(false)}>Back to form</button>
@@ -150,6 +168,7 @@ export default function ConfigTab({ profile }: ConfigTabProps): JSX.Element {
         <input type="checkbox" checked={summary.pve} onChange={(e) => updateField('pve', e.target.checked)} />
         PvE server
       </label>
+      {error && <p className="error-message">{error}</p>}
       <div className="form-actions">
         <button type="submit">Save</button>
         <button type="button" onClick={() => void loadRaw()}>

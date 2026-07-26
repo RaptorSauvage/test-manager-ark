@@ -35,9 +35,30 @@ export function readIniFile(filePath: string): IniData {
   return ini.parse(fs.readFileSync(filePath, 'utf-8'))
 }
 
+/**
+ * Wraps fs.writeFileSync with a friendlier message for the two permission
+ * errors Windows throws when a file is locked by another program, marked
+ * read-only, or the folder's ACLs deny write access - all of which surface
+ * as a cryptic EPERM/EACCES otherwise.
+ */
+function writeFileWithFriendlyError(filePath: string, content: string): void {
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, content)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'EPERM' || code === 'EACCES') {
+      throw new Error(
+        `Could not write to ${filePath} (${code}). It may be open in another program (a text editor, ` +
+          'the running server), marked read-only, or the folder may not allow write access for this app.'
+      )
+    }
+    throw err
+  }
+}
+
 function writeIniFile(filePath: string, data: IniData): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true })
-  fs.writeFileSync(filePath, ini.stringify(data))
+  writeFileWithFriendlyError(filePath, ini.stringify(data))
 }
 
 export function readConfigSummary(profile: ServerProfile): ServerConfigSummary {
@@ -87,11 +108,8 @@ export function readRawIniFiles(profile: ServerProfile): RawIniFiles {
 }
 
 export function writeRawIniFiles(profile: ServerProfile, files: RawIniFiles): void {
-  const gusPath = gameUserSettingsPath(profile)
-  const gPath = gameIniPath(profile)
-  fs.mkdirSync(path.dirname(gusPath), { recursive: true })
-  fs.writeFileSync(gusPath, files.gameUserSettings)
-  fs.writeFileSync(gPath, files.game)
+  writeFileWithFriendlyError(gameUserSettingsPath(profile), files.gameUserSettings)
+  writeFileWithFriendlyError(gameIniPath(profile), files.game)
 }
 
 /** Writes only the enabled mod IDs to ActiveMods; disabled ones are kept in the profile but not in the ini. */

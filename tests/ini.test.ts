@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -74,5 +74,19 @@ describe('config ini read/write round-trip', () => {
     const contents = fs.readFileSync(iniPath, 'utf-8')
     expect(contents).toContain('ActiveMods=12345,67890')
     expect(contents).not.toContain('99999')
+  })
+
+  it('turns a locked/read-only file EPERM into an actionable error instead of a raw stack trace', () => {
+    const profile = makeProfile(tmpDir)
+    const eperm = Object.assign(new Error('EPERM: operation not permitted, open'), { code: 'EPERM' })
+    const spy = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw eperm
+    })
+
+    try {
+      expect(() => saveMods(profile, [{ id: '111', enabled: true }])).toThrow(/open in another program/)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

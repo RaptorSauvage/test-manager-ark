@@ -10,6 +10,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   const [mods, setMods] = useState<ServerMod[]>(profile.mods)
   const [newModId, setNewModId] = useState('')
   const [status, setStatus] = useState('')
+  const [error, setError] = useState('')
   const [loadingNames, setLoadingNames] = useState(false)
   const missingNamesKey = mods
     .filter((m) => !m.name)
@@ -63,10 +64,15 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   }
 
   async function save(): Promise<void> {
-    const updated = await window.api.mods.save(profile.id, mods)
-    onProfileChange(updated)
-    setStatus('Mods saved. Restart the server to apply changes.')
-    setTimeout(() => setStatus(''), 3000)
+    setError('')
+    try {
+      const updated = await window.api.mods.save(profile.id, mods)
+      onProfileChange(updated)
+      setStatus('Mods saved. Restart the server to apply changes.')
+      setTimeout(() => setStatus(''), 3000)
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   return (
@@ -112,6 +118,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
         ))}
         {mods.length === 0 && <li className="empty-state">No mods configured.</li>}
       </ol>
+      {error && <p className="error-message">{error}</p>}
       <div className="form-actions">
         <button onClick={() => void save()}>Save mods</button>
         {loadingNames && <span className="status-message">Looking up mod names...</span>}
