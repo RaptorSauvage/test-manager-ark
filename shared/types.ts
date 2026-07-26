@@ -81,6 +81,9 @@ export const IPC = {
   profilesList: 'profiles:list',
   profilesSave: 'profiles:save',
   profilesDelete: 'profiles:delete',
+  profilesImport: 'profiles:import',
+
+  dialogSelectDirectory: 'dialog:select-directory',
 
   serverStart: 'server:start',
   serverStop: 'server:stop',
@@ -106,12 +109,21 @@ export const IPC = {
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
 
+export interface ImportResult {
+  profile: ServerProfile
+  profiles: ServerProfile[]
+}
+
 /** The contextBridge API surface exposed by the preload script as `window.api`. */
 export interface Api {
   profiles: {
     list: () => Promise<ServerProfile[]>
     save: (profile: ServerProfile) => Promise<ServerProfile[]>
     delete: (id: string) => Promise<ServerProfile[]>
+    importFromInstall: (installDir: string) => Promise<ImportResult>
+  }
+  dialog: {
+    selectDirectory: () => Promise<string | null>
   }
   server: {
     start: (profileId: string) => Promise<ServerStatus>

@@ -8,11 +8,15 @@ import type { ServerProfile, ServerConfigSummary, RawIniFiles } from '@shared/ty
  * on most Linux installs. If a LinuxServer folder exists instead (some
  * community builds), prefer it.
  */
-function configDir(profile: ServerProfile): string {
-  const winDir = path.join(profile.installDir, 'ShooterGame', 'Saved', 'Config', 'WindowsServer')
-  const linuxDir = path.join(profile.installDir, 'ShooterGame', 'Saved', 'Config', 'LinuxServer')
+export function resolveConfigDir(installDir: string): string {
+  const winDir = path.join(installDir, 'ShooterGame', 'Saved', 'Config', 'WindowsServer')
+  const linuxDir = path.join(installDir, 'ShooterGame', 'Saved', 'Config', 'LinuxServer')
   if (!fs.existsSync(winDir) && fs.existsSync(linuxDir)) return linuxDir
   return winDir
+}
+
+function configDir(profile: ServerProfile): string {
+  return resolveConfigDir(profile.installDir)
 }
 
 function gameUserSettingsPath(profile: ServerProfile): string {
@@ -24,9 +28,9 @@ function gameIniPath(profile: ServerProfile): string {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type IniData = Record<string, any>
+export type IniData = Record<string, any>
 
-function readIniFile(filePath: string): IniData {
+export function readIniFile(filePath: string): IniData {
   if (!fs.existsSync(filePath)) return {}
   return ini.parse(fs.readFileSync(filePath, 'utf-8'))
 }

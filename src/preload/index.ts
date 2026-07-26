@@ -13,7 +13,11 @@ const api: Api = {
   profiles: {
     list: () => ipcRenderer.invoke(IPC.profilesList),
     save: (profile: ServerProfile) => ipcRenderer.invoke(IPC.profilesSave, profile),
-    delete: (id: string) => ipcRenderer.invoke(IPC.profilesDelete, id)
+    delete: (id: string) => ipcRenderer.invoke(IPC.profilesDelete, id),
+    importFromInstall: (installDir: string) => ipcRenderer.invoke(IPC.profilesImport, installDir)
+  },
+  dialog: {
+    selectDirectory: () => ipcRenderer.invoke(IPC.dialogSelectDirectory)
   },
   server: {
     start: (profileId: string) => ipcRenderer.invoke(IPC.serverStart, profileId),

@@ -1,21 +1,42 @@
+import { useState } from 'react'
 import type { ServerProfile, ServerRunState } from '@shared/types'
 import { useServerStatuses } from '../lib/useServerStatuses'
 import { createDefaultProfile } from '../lib/profile'
+import type { TabKey } from './ServerDetail'
 
 interface DashboardProps {
   profiles: ServerProfile[]
   onProfilesChange: (profiles: ServerProfile[]) => void
-  onOpenProfile: (id: string) => void
+  onOpenProfile: (id: string, tab?: TabKey) => void
 }
 
 export default function Dashboard({ profiles, onProfilesChange, onOpenProfile }: DashboardProps): JSX.Element {
   const statuses = useServerStatuses(profiles.map((p) => p.id))
+  const [importError, setImportError] = useState('')
+  const [importing, setImporting] = useState(false)
 
   async function handleCreate(): Promise<void> {
     const profile = createDefaultProfile(`Server ${profiles.length + 1}`)
     const updated = await window.api.profiles.save(profile)
     onProfilesChange(updated)
-    onOpenProfile(profile.id)
+    onOpenProfile(profile.id, 'settings')
+  }
+
+  async function handleImport(): Promise<void> {
+    setImportError('')
+    const installDir = await window.api.dialog.selectDirectory()
+    if (!installDir) return
+
+    setImporting(true)
+    try {
+      const { profile, profiles: updated } = await window.api.profiles.importFromInstall(installDir)
+      onProfilesChange(updated)
+      onOpenProfile(profile.id, 'settings')
+    } catch (err) {
+      setImportError((err as Error).message)
+    } finally {
+      setImporting(false)
+    }
   }
 
   async function handleDelete(id: string): Promise<void> {
@@ -32,8 +53,15 @@ export default function Dashboard({ profiles, onProfilesChange, onOpenProfile }:
     <div className="dashboard">
       <header className="dashboard-header">
         <h1>ARK Server Manager</h1>
-        <button onClick={() => void handleCreate()}>+ Add server</button>
+        <div className="dashboard-header-actions">
+          <button onClick={() => void handleImport()} disabled={importing}>
+            {importing ? 'Scanning...' : 'Import existing server'}
+          </button>
+          <button onClick={() => void handleCreate()}>+ Add server</button>
+        </div>
       </header>
+
+      {importError && <p className="error-message">{importError}</p>}
 
       {profiles.length === 0 && (
         <p className="empty-state">No server profiles yet. Click &quot;Add server&quot; to configure one.</p>

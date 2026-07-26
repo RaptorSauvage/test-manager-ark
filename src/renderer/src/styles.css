@@ -104,6 +104,11 @@ label.checkbox {
   margin-bottom: 24px;
 }
 
+.dashboard-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .server-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

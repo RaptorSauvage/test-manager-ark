@@ -6,10 +6,11 @@ import ModsTab from './ModsTab'
 import BackupsTab from './BackupsTab'
 import SettingsTab from './SettingsTab'
 
-type TabKey = 'console' | 'config' | 'mods' | 'backups' | 'settings'
+export type TabKey = 'console' | 'config' | 'mods' | 'backups' | 'settings'
 
 interface ServerDetailProps {
   profile: ServerProfile
+  initialTab?: TabKey
   onBack: () => void
   onProfileChange: (profile: ServerProfile) => void
 }
@@ -22,8 +23,8 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'settings', label: 'Settings' }
 ]
 
-export default function ServerDetail({ profile, onBack, onProfileChange }: ServerDetailProps): JSX.Element {
-  const [tab, setTab] = useState<TabKey>('console')
+export default function ServerDetail({ profile, initialTab, onBack, onProfileChange }: ServerDetailProps): JSX.Element {
+  const [tab, setTab] = useState<TabKey>(initialTab ?? 'console')
 
   return (
     <div className="server-detail">

@@ -22,7 +22,7 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  registerIpcHandlers(mainWindow.webContents)
+  registerIpcHandlers(mainWindow)
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL
   if (rendererUrl) {
