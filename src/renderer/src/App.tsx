@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import type { ServerProfile } from '@shared/types'
 import Dashboard from './pages/Dashboard'
 import ServerDetail, { type TabKey } from './pages/ServerDetail'
+import AppSettingsView from './pages/AppSettingsView'
 
 export default function App(): JSX.Element {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [initialTab, setInitialTab] = useState<TabKey | undefined>(undefined)
+  const [showSettings, setShowSettings] = useState(false)
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
@@ -38,6 +40,10 @@ export default function App(): JSX.Element {
     setInitialTab(tab)
   }
 
+  if (showSettings) {
+    return <AppSettingsView onBack={() => setShowSettings(false)} />
+  }
+
   return selected ? (
     <ServerDetail
       profile={selected}
@@ -46,6 +52,11 @@ export default function App(): JSX.Element {
       onProfileChange={handleProfileChange}
     />
   ) : (
-    <Dashboard profiles={profiles} onProfilesChange={handleProfilesChange} onOpenProfile={handleOpenProfile} />
+    <Dashboard
+      profiles={profiles}
+      onProfilesChange={handleProfilesChange}
+      onOpenProfile={handleOpenProfile}
+      onOpenSettings={() => setShowSettings(true)}
+    />
   )
 }

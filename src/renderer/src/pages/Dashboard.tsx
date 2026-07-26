@@ -8,12 +8,19 @@ interface DashboardProps {
   profiles: ServerProfile[]
   onProfilesChange: (profiles: ServerProfile[]) => void
   onOpenProfile: (id: string, tab?: TabKey) => void
+  onOpenSettings: () => void
 }
 
-export default function Dashboard({ profiles, onProfilesChange, onOpenProfile }: DashboardProps): JSX.Element {
+export default function Dashboard({
+  profiles,
+  onProfilesChange,
+  onOpenProfile,
+  onOpenSettings
+}: DashboardProps): JSX.Element {
   const statuses = useServerStatuses(profiles.map((p) => p.id))
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
 
   async function handleCreate(): Promise<void> {
     const profile = createDefaultProfile(`Server ${profiles.length + 1}`)
@@ -45,13 +52,26 @@ export default function Dashboard({ profiles, onProfilesChange, onOpenProfile }:
     onProfilesChange(updated)
   }
 
+  async function runAction(profile: ServerProfile, action: () => Promise<unknown>): Promise<void> {
+    setActionErrors((prev) => ({ ...prev, [profile.id]: '' }))
+    try {
+      await action()
+    } catch (err) {
+      setActionErrors((prev) => ({ ...prev, [profile.id]: (err as Error).message }))
+    }
+  }
+
   async function handleAction(profile: ServerProfile, action: 'start' | 'stop' | 'restart'): Promise<void> {
-    await window.api.server[action](profile.id)
+    await runAction(profile, () => window.api.server[action](profile.id))
   }
 
   async function handleKill(profile: ServerProfile): Promise<void> {
     if (!confirm(`Force-kill "${profile.name}" without saving? Progress since the last save will be lost.`)) return
-    await window.api.server.kill(profile.id)
+    await runAction(profile, () => window.api.server.kill(profile.id))
+  }
+
+  async function handleUpdate(profile: ServerProfile): Promise<void> {
+    await runAction(profile, () => window.api.server.update(profile.id))
   }
 
   return (
@@ -59,6 +79,7 @@ export default function Dashboard({ profiles, onProfilesChange, onOpenProfile }:
       <header className="dashboard-header">
         <h1>ARK Server Manager</h1>
         <div className="dashboard-header-actions">
+          <button onClick={onOpenSettings}>Settings</button>
           <button onClick={() => void handleImport()} disabled={importing}>
             {importing ? 'Scanning...' : 'Import existing server'}
           </button>
@@ -111,9 +132,10 @@ export default function Dashboard({ profiles, onProfilesChange, onOpenProfile }:
                 )}
               </dl>
               {status?.lastError && <p className="error-message">{status.lastError}</p>}
+              {actionErrors[profile.id] && <p className="error-message">{actionErrors[profile.id]}</p>}
               <div className="server-card-actions">
                 <button
-                  disabled={state === 'running' || state === 'starting'}
+                  disabled={state === 'running' || state === 'starting' || state === 'updating'}
                   onClick={() => void handleAction(profile, 'start')}
                 >
                   Start
@@ -126,11 +148,18 @@ export default function Dashboard({ profiles, onProfilesChange, onOpenProfile }:
                 </button>
                 <button
                   className="danger"
-                  disabled={state === 'stopped'}
+                  disabled={state === 'stopped' || state === 'updating'}
                   onClick={() => void handleKill(profile)}
                   title="Force-kill immediately, without saving"
                 >
                   Kill
+                </button>
+                <button
+                  disabled={state !== 'stopped'}
+                  onClick={() => void handleUpdate(profile)}
+                  title="Install/update the server files via SteamCMD"
+                >
+                  {state === 'updating' ? 'Updating...' : 'Update'}
                 </button>
                 <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
                 <button className="danger" onClick={() => void handleDelete(profile.id)}>

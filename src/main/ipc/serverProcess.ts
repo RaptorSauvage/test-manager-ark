@@ -1,8 +1,17 @@
 import { ipcMain, type WebContents } from 'electron'
 import { IPC } from '@shared/types'
-import { getProfile } from '../store'
-import { startServer, stopServer, restartServer, killServer, getStatus, serverEvents } from '../lib/serverProcess'
+import { getProfile, getSettings } from '../store'
+import {
+  startServer,
+  stopServer,
+  restartServer,
+  killServer,
+  getStatus,
+  isUpdating,
+  serverEvents
+} from '../lib/serverProcess'
 import { startMonitoring, stopMonitoring } from '../lib/monitor'
+import { updateServer } from '../lib/steamcmd'
 
 function requireProfile(profileId: string) {
   const profile = getProfile(profileId)
@@ -20,6 +29,7 @@ export function registerServerProcessHandlers(webContents: WebContents): void {
 
   ipcMain.handle(IPC.serverStart, (_event, profileId: string) => {
     const profile = requireProfile(profileId)
+    if (isUpdating(profileId)) throw new Error('Cannot start the server while an update is in progress.')
     const status = startServer(profile)
     startMonitoring(profile)
     return status
@@ -42,6 +52,12 @@ export function registerServerProcessHandlers(webContents: WebContents): void {
     requireProfile(profileId)
     stopMonitoring(profileId)
     return killServer(profileId)
+  })
+
+  ipcMain.handle(IPC.serverUpdate, async (_event, profileId: string) => {
+    const profile = requireProfile(profileId)
+    const settings = getSettings()
+    await updateServer(profile, settings.steamCmdPath)
   })
 
   ipcMain.handle(IPC.serverStatus, (_event, profileId: string) => getStatus(profileId))

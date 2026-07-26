@@ -150,7 +150,8 @@ label.checkbox {
 }
 
 .badge-starting,
-.badge-stopping {
+.badge-stopping,
+.badge-updating {
   color: var(--warn);
   border-color: var(--warn);
 }
@@ -225,7 +226,6 @@ label.checkbox {
   color: var(--accent);
 }
 
-.config-form,
 .settings-tab {
   display: flex;
   flex-direction: column;
@@ -237,6 +237,15 @@ label.checkbox {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+}
+
+.path-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.path-input-row input {
+  flex: 1;
 }
 
 .form-actions {

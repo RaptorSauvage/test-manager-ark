@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, type Api, type ServerProfile, type ServerStatus, type ServerLogLine, type ServerMod } from '@shared/types'
+import {
+  IPC,
+  type Api,
+  type ServerProfile,
+  type ServerStatus,
+  type ServerLogLine,
+  type ServerMod,
+  type AppSettings
+} from '@shared/types'
 
 const api: Api = {
   profiles: {
@@ -9,13 +17,15 @@ const api: Api = {
     importFromInstall: (installDir: string) => ipcRenderer.invoke(IPC.profilesImport, installDir)
   },
   dialog: {
-    selectDirectory: () => ipcRenderer.invoke(IPC.dialogSelectDirectory)
+    selectDirectory: () => ipcRenderer.invoke(IPC.dialogSelectDirectory),
+    selectFile: () => ipcRenderer.invoke(IPC.dialogSelectFile)
   },
   server: {
     start: (profileId: string) => ipcRenderer.invoke(IPC.serverStart, profileId),
     stop: (profileId: string) => ipcRenderer.invoke(IPC.serverStop, profileId),
     restart: (profileId: string) => ipcRenderer.invoke(IPC.serverRestart, profileId),
     kill: (profileId: string) => ipcRenderer.invoke(IPC.serverKill, profileId),
+    update: (profileId: string) => ipcRenderer.invoke(IPC.serverUpdate, profileId),
     status: (profileId: string) => ipcRenderer.invoke(IPC.serverStatus, profileId),
     onStatusChanged: (callback: (status: ServerStatus) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, status: ServerStatus): void => callback(status)
@@ -39,6 +49,10 @@ const api: Api = {
     list: (profileId: string) => ipcRenderer.invoke(IPC.backupList, profileId),
     delete: (filePath: string) => ipcRenderer.invoke(IPC.backupDelete, filePath),
     restore: (profileId: string, filePath: string) => ipcRenderer.invoke(IPC.backupRestore, profileId, filePath)
+  },
+  settings: {
+    get: () => ipcRenderer.invoke(IPC.settingsGet),
+    save: (settings: AppSettings) => ipcRenderer.invoke(IPC.settingsSave, settings)
   }
 }
 

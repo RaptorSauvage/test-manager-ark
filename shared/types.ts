@@ -40,7 +40,12 @@ export interface ServerMod {
   dev: boolean
 }
 
-export type ServerRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error'
+export type ServerRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'updating' | 'error'
+
+export interface AppSettings {
+  /** Path to the steamcmd executable (steamcmd.exe on Windows, steamcmd.sh on Linux). */
+  steamCmdPath: string
+}
 
 export interface ServerStatus {
   profileId: string
@@ -80,11 +85,13 @@ export const IPC = {
   profilesImport: 'profiles:import',
 
   dialogSelectDirectory: 'dialog:select-directory',
+  dialogSelectFile: 'dialog:select-file',
 
   serverStart: 'server:start',
   serverStop: 'server:stop',
   serverRestart: 'server:restart',
   serverKill: 'server:kill',
+  serverUpdate: 'server:update',
   serverStatus: 'server:status',
   serverStatusChanged: 'server:status-changed',
   serverLogLine: 'server:log-line',
@@ -96,7 +103,10 @@ export const IPC = {
   backupCreate: 'backup:create',
   backupList: 'backup:list',
   backupRestore: 'backup:restore',
-  backupDelete: 'backup:delete'
+  backupDelete: 'backup:delete',
+
+  settingsGet: 'settings:get',
+  settingsSave: 'settings:save'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -116,12 +126,14 @@ export interface Api {
   }
   dialog: {
     selectDirectory: () => Promise<string | null>
+    selectFile: () => Promise<string | null>
   }
   server: {
     start: (profileId: string) => Promise<ServerStatus>
     stop: (profileId: string) => Promise<ServerStatus>
     restart: (profileId: string) => Promise<ServerStatus>
     kill: (profileId: string) => Promise<ServerStatus>
+    update: (profileId: string) => Promise<void>
     status: (profileId: string) => Promise<ServerStatus>
     onStatusChanged: (callback: (status: ServerStatus) => void) => () => void
     onLogLine: (callback: (line: ServerLogLine) => void) => () => void
@@ -137,5 +149,9 @@ export interface Api {
     list: (profileId: string) => Promise<BackupEntry[]>
     delete: (filePath: string) => Promise<void>
     restore: (profileId: string, filePath: string) => Promise<void>
+  }
+  settings: {
+    get: () => Promise<AppSettings>
+    save: (settings: AppSettings) => Promise<AppSettings>
   }
 }

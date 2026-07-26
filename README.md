@@ -18,13 +18,19 @@ dedicated servers running on the same machine.
 - **Backups** — one-click zip backup of a profile's `SavedArks` folder, automatic pruning
   of old backups, optional cron-based scheduling, and one-click restore.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
+- **Update / install via SteamCMD** — a per-server **Update** button runs
+  `steamcmd +force_install_dir <install dir> +login anonymous +app_update 2430930 validate +quit`,
+  streaming its output into the Console tab. Works for a first-time install into an empty
+  folder too. Requires SteamCMD's path to be set once in the app's **Settings** screen.
+  Disabled while the server is running or already updating.
 
 ## Prerequisites
 
 - Node.js 20+
-- An existing ARK: Survival Ascended dedicated server install per profile you want to
-  manage (this app does not install or update the server itself — see "Out of scope"
-  below).
+- [SteamCMD](https://developer.valvesoftware.com/wiki/SteamCMD) installed somewhere on
+  disk, if you want to use the in-app Update button (point Settings → SteamCMD path at
+  `steamcmd.exe`/`steamcmd.sh`). Otherwise you can keep managing installs yourself and
+  just point a profile's Install directory at an existing one.
 
 ## Getting started
 
@@ -38,7 +44,7 @@ Other scripts:
 ```bash
 npm run typecheck   # type-check main/preload/renderer
 npm run build        # production build into out/
-npm test             # unit tests for the pure logic (launch args, RCON parsing, backup rotation, profile migration)
+npm test             # unit tests for the pure logic (launch args, RCON parsing, backup rotation, profile migration, SteamCMD args)
 ```
 
 ## Setting up a server profile
@@ -65,6 +71,5 @@ tab:
 - The exact ARK launch command-line flags can change between game updates
   (`src/main/lib/serverProcess.ts`, `buildLaunchArgs`); use the profile's "Extra launch
   arguments" field if your install needs something different.
-- Out of scope for this version: installing/updating the server via SteamCMD, remote/SSH
-  or Docker-based control, and multi-user/remote web access (this is a single-user local
-  desktop app).
+- Out of scope for this version: remote/SSH or Docker-based control, and multi-user/remote
+  web access (this is a single-user local desktop app).

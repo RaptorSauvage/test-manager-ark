@@ -20,8 +20,21 @@ function emitStatus(status: ServerStatus): void {
   serverEvents.emit('status', status)
 }
 
-function emitLog(line: ServerLogLine): void {
+export function emitLog(line: ServerLogLine): void {
   serverEvents.emit('log', line)
+}
+
+const updatingProfiles = new Set<string>()
+
+/** Marks a profile as being updated via SteamCMD (or not), pushing the new status to listeners. */
+export function setUpdating(profileId: string, value: boolean): void {
+  if (value) updatingProfiles.add(profileId)
+  else updatingProfiles.delete(profileId)
+  emitStatus(getStatus(profileId))
+}
+
+export function isUpdating(profileId: string): boolean {
+  return updatingProfiles.has(profileId)
 }
 
 export function getExecutablePath(profile: ServerProfile): string {
@@ -60,6 +73,9 @@ export function buildLaunchArgs(profile: ServerProfile): string[] {
 }
 
 export function getStatus(profileId: string): ServerStatus {
+  if (updatingProfiles.has(profileId)) {
+    return { profileId, state: 'updating' }
+  }
   return running.get(profileId)?.status ?? { profileId, state: 'stopped' }
 }
 

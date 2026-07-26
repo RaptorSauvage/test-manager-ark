@@ -1,14 +1,16 @@
 import Store from 'electron-store'
-import type { ServerProfile } from '@shared/types'
+import type { ServerProfile, AppSettings } from '@shared/types'
 import { migrateProfile } from './lib/profileMigration'
 
 interface StoreSchema {
   profiles: ServerProfile[]
+  settings: AppSettings
 }
 
 const store = new Store<StoreSchema>({
   defaults: {
-    profiles: []
+    profiles: [],
+    settings: { steamCmdPath: '' }
   }
 })
 
@@ -33,4 +35,13 @@ export function deleteProfile(id: string): ServerProfile[] {
   const profiles = listProfiles().filter((p) => p.id !== id)
   store.set('profiles', profiles)
   return profiles
+}
+
+export function getSettings(): AppSettings {
+  return store.get('settings') ?? { steamCmdPath: '' }
+}
+
+export function saveSettings(settings: AppSettings): AppSettings {
+  store.set('settings', settings)
+  return settings
 }
