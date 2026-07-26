@@ -134,10 +134,7 @@ export default function Dashboard({
               {status?.lastError && <p className="error-message">{status.lastError}</p>}
               {actionErrors[profile.id] && <p className="error-message">{actionErrors[profile.id]}</p>}
               <div className="server-card-actions">
-                <button
-                  disabled={state === 'running' || state === 'starting' || state === 'updating'}
-                  onClick={() => void handleAction(profile, 'start')}
-                >
+                <button disabled={state !== 'stopped'} onClick={() => void handleAction(profile, 'start')}>
                   Start
                 </button>
                 <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'stop')}>

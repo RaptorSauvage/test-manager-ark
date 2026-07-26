@@ -50,7 +50,7 @@ export interface ServerMod {
   dev: boolean
 }
 
-export type ServerRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'updating' | 'error'
+export type ServerRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'restarting' | 'updating' | 'error'
 
 export interface AppSettings {
   /** Path to the steamcmd executable (steamcmd.exe on Windows, steamcmd.sh on Linux). */

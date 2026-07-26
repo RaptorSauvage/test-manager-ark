@@ -30,8 +30,15 @@ async function tick(profile: ServerProfile): Promise<void> {
   }
 
   const players = await listPlayers(profile).catch(() => status.players ?? [])
+
+  // Re-check: the state may have moved on (stopping/restarting/etc.) while we
+  // were awaiting pidusage/RCON above. Emitting the stale snapshot we captured
+  // at the top of this tick would clobber that newer state back to "running".
+  const current = getStatus(profile.id)
+  if (current.state !== 'running') return
+
   serverEvents.emit('status', {
-    ...status,
+    ...current,
     cpu: Math.round(stats.cpu * 10) / 10,
     memoryMB: Math.round(stats.memory / 1024 / 1024),
     players

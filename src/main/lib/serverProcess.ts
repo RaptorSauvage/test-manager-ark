@@ -230,11 +230,15 @@ async function waitForExitOrKill(entry: RunningServer, profileId: string, graceM
  * the save fails, there is no safe orderly path, so we skip straight to the
  * grace-period/kill fallback instead of exiting on an unconfirmed save.
  */
-export async function stopServer(profile: ServerProfile, graceMs = 15000): Promise<ServerStatus> {
+export async function stopServer(
+  profile: ServerProfile,
+  graceMs = 15000,
+  transientState: 'stopping' | 'restarting' = 'stopping'
+): Promise<ServerStatus> {
   const entry = running.get(profile.id)
   if (!entry) return { profileId: profile.id, state: 'stopped' }
 
-  emitStatus({ ...entry.status, state: 'stopping' })
+  emitStatus({ ...entry.status, state: transientState })
 
   const saveResult = await sendRconCommand(profile, 'SaveWorld')
   if (saveResult.ok) {
@@ -246,7 +250,7 @@ export async function stopServer(profile: ServerProfile, graceMs = 15000): Promi
 }
 
 export async function restartServer(profile: ServerProfile): Promise<ServerStatus> {
-  await stopServer(profile)
+  await stopServer(profile, 15000, 'restarting')
   return startServer(profile)
 }
 

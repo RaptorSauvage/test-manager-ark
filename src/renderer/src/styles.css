@@ -152,6 +152,7 @@ label.checkbox {
 
 .badge-starting,
 .badge-stopping,
+.badge-restarting,
 .badge-updating {
   color: var(--warn);
   border-color: var(--warn);
