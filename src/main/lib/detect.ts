@@ -1,12 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import type { ServerMod } from '@shared/types'
 import { resolveConfigDir, readIniFile } from './config'
 
 export interface DetectedProfileFields {
   suggestedName: string
   map: string
   rconPassword: string
-  activeMods: string[]
+  mods: ServerMod[]
   gamePort?: number
   queryPort?: number
   rconPort?: number
@@ -50,16 +51,17 @@ export function detectProfileFields(installDir: string): DetectedProfileFields {
   const serverSettings = gus.ServerSettings ?? {}
   const sessionSettings = gus.SessionSettings ?? {}
 
-  const activeMods = String(serverSettings.ActiveMods ?? '')
+  const mods: ServerMod[] = String(serverSettings.ActiveMods ?? '')
     .split(',')
     .map((id: string) => id.trim())
     .filter(Boolean)
+    .map((id: string) => ({ id, enabled: true }))
 
   return {
     suggestedName: sessionSettings.SessionName || path.basename(installDir),
     map: detectMap(installDir),
     rconPassword: serverSettings.ServerAdminPassword ?? '',
-    activeMods,
+    mods,
     gamePort: parsePort(serverSettings.Port),
     queryPort: parsePort(serverSettings.QueryPort),
     rconPort: parsePort(serverSettings.RCONPort)

@@ -14,7 +14,7 @@ export function createDefaultProfile(name: string): ServerProfile {
     backupDir: '',
     maxBackups: 10,
     backupSchedule: '',
-    activeMods: [],
+    mods: [],
     extraArgs: ''
   }
 }

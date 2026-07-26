@@ -55,14 +55,17 @@ describe('install detection', () => {
     const detected = detectProfileFields(tmpDir)
     expect(detected.map).toBe('TheIsland_WP')
     expect(detected.rconPassword).toBe('hunter2')
-    expect(detected.activeMods).toEqual(['111', '222'])
+    expect(detected.mods).toEqual([
+      { id: '111', enabled: true },
+      { id: '222', enabled: true }
+    ])
   })
 
   it('falls back to sensible empty values when nothing can be detected', () => {
     const detected = detectProfileFields(tmpDir)
     expect(detected.map).toBe('')
     expect(detected.rconPassword).toBe('')
-    expect(detected.activeMods).toEqual([])
+    expect(detected.mods).toEqual([])
     expect(detected.gamePort).toBeUndefined()
   })
 })

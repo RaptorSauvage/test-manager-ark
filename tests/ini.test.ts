@@ -18,7 +18,7 @@ function makeProfile(installDir: string): ServerProfile {
     savedArksSubPath: 'ShooterGame/Saved/SavedArks',
     backupDir: path.join(installDir, 'backups'),
     maxBackups: 10,
-    activeMods: [],
+    mods: [],
     extraArgs: ''
   }
 }
@@ -62,12 +62,17 @@ describe('config ini read/write round-trip', () => {
     expect(summary.pve).toBe(true)
   })
 
-  it('persists mod IDs as a comma-separated ActiveMods entry', () => {
+  it('persists only enabled mod IDs as a comma-separated ActiveMods entry', () => {
     const profile = makeProfile(tmpDir)
-    saveMods(profile, ['12345', '67890'])
+    saveMods(profile, [
+      { id: '12345', enabled: true },
+      { id: '99999', enabled: false },
+      { id: '67890', enabled: true }
+    ])
 
     const iniPath = path.join(tmpDir, 'ShooterGame', 'Saved', 'Config', 'WindowsServer', 'GameUserSettings.ini')
     const contents = fs.readFileSync(iniPath, 'utf-8')
     expect(contents).toContain('ActiveMods=12345,67890')
+    expect(contents).not.toContain('99999')
   })
 })

@@ -354,6 +354,27 @@ label.checkbox {
   padding: 8px 10px;
 }
 
+.mods-list li.mod-disabled {
+  opacity: 0.5;
+}
+
+.mod-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.mod-name {
+  font-size: 0.9rem;
+}
+
+.mod-id {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .mods-list-actions {
   display: flex;
   gap: 4px;

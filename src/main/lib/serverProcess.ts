@@ -47,8 +47,9 @@ export function buildLaunchArgs(profile: ServerProfile): string[] {
   if (profile.rconPassword) params.push(`ServerAdminPassword=${profile.rconPassword}`)
 
   const args = [`${profile.map}?${params.join('?')}`, '-server', '-log']
-  if (profile.activeMods.length > 0) {
-    args.push(`-mods=${profile.activeMods.join(',')}`)
+  const enabledModIds = profile.mods.filter((mod) => mod.enabled).map((mod) => mod.id)
+  if (enabledModIds.length > 0) {
+    args.push(`-mods=${enabledModIds.join(',')}`)
   }
   if (profile.extraArgs.trim()) {
     args.push(...profile.extraArgs.trim().split(/\s+/))

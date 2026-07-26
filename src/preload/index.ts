@@ -6,7 +6,8 @@ import {
   type ServerConfigSummary,
   type RawIniFiles,
   type ServerStatus,
-  type ServerLogLine
+  type ServerLogLine,
+  type ServerMod
 } from '@shared/types'
 
 const api: Api = {
@@ -43,8 +44,11 @@ const api: Api = {
     writeSummary: (profileId: string, summary: ServerConfigSummary) =>
       ipcRenderer.invoke(IPC.configWriteSummary, profileId, summary),
     readRaw: (profileId: string) => ipcRenderer.invoke(IPC.configReadRaw, profileId),
-    writeRaw: (profileId: string, files: RawIniFiles) => ipcRenderer.invoke(IPC.configWriteRaw, profileId, files),
-    saveMods: (profileId: string, mods: string[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods)
+    writeRaw: (profileId: string, files: RawIniFiles) => ipcRenderer.invoke(IPC.configWriteRaw, profileId, files)
+  },
+  mods: {
+    save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods),
+    lookupNames: (ids: string[]) => ipcRenderer.invoke(IPC.modsLookupNames, ids)
   },
   backup: {
     create: (profileId: string) => ipcRenderer.invoke(IPC.backupCreate, profileId),

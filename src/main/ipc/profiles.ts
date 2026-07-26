@@ -40,7 +40,7 @@ export function registerProfileHandlers(): void {
       backupDir: '',
       maxBackups: 10,
       backupSchedule: '',
-      activeMods: detected.activeMods,
+      mods: detected.mods,
       extraArgs: ''
     }
 

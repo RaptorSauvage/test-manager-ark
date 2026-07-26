@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { ServerProfile } from '@shared/types'
+import { useEffect, useState } from 'react'
+import type { ServerProfile, ServerMod } from '@shared/types'
 
 interface ModsTabProps {
   profile: ServerProfile
@@ -7,19 +7,49 @@ interface ModsTabProps {
 }
 
 export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX.Element {
-  const [mods, setMods] = useState<string[]>(profile.activeMods)
+  const [mods, setMods] = useState<ServerMod[]>(profile.mods)
   const [newModId, setNewModId] = useState('')
   const [status, setStatus] = useState('')
+  const [loadingNames, setLoadingNames] = useState(false)
+  const missingNamesKey = mods
+    .filter((m) => !m.name)
+    .map((m) => m.id)
+    .join(',')
+
+  useEffect(() => {
+    const missing = missingNamesKey ? missingNamesKey.split(',') : []
+    if (missing.length === 0) return
+
+    let cancelled = false
+    setLoadingNames(true)
+    window.api.mods
+      .lookupNames(missing)
+      .then((names) => {
+        if (cancelled) return
+        setMods((prev) => prev.map((m) => (names[m.id] ? { ...m, name: names[m.id] } : m)))
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingNames(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [missingNamesKey])
 
   function addMod(): void {
     const id = newModId.trim()
-    if (!id || mods.includes(id)) return
-    setMods((prev) => [...prev, id])
+    if (!id || mods.some((m) => m.id === id)) return
+    setMods((prev) => [...prev, { id, enabled: true }])
     setNewModId('')
   }
 
   function removeMod(id: string): void {
-    setMods((prev) => prev.filter((m) => m !== id))
+    setMods((prev) => prev.filter((m) => m.id !== id))
+  }
+
+  function toggleMod(id: string): void {
+    setMods((prev) => prev.map((m) => (m.id === id ? { ...m, enabled: !m.enabled } : m)))
   }
 
   function move(index: number, direction: -1 | 1): void {
@@ -33,7 +63,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   }
 
   async function save(): Promise<void> {
-    const updated = await window.api.config.saveMods(profile.id, mods)
+    const updated = await window.api.mods.save(profile.id, mods)
     onProfileChange(updated)
     setStatus('Mods saved. Restart the server to apply changes.')
     setTimeout(() => setStatus(''), 3000)
@@ -41,7 +71,10 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
 
   return (
     <div className="mods-tab">
-      <p>Steam Workshop mod IDs, applied in this load order at the next server start.</p>
+      <p>
+        Steam Workshop mods, applied in this order at the next server start. Only <strong>enabled</strong> mods are
+        passed to the server — disable one to keep it in the list without loading it.
+      </p>
       <div className="mods-add">
         <input
           value={newModId}
@@ -57,9 +90,13 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
         <button onClick={addMod}>Add</button>
       </div>
       <ol className="mods-list">
-        {mods.map((id, i) => (
-          <li key={id}>
-            <span>{id}</span>
+        {mods.map((mod, i) => (
+          <li key={mod.id} className={mod.enabled ? '' : 'mod-disabled'}>
+            <label className="mod-toggle">
+              <input type="checkbox" checked={mod.enabled} onChange={() => toggleMod(mod.id)} />
+              <span className="mod-name">{mod.name ?? mod.id}</span>
+              {mod.name && <span className="mod-id">#{mod.id}</span>}
+            </label>
             <div className="mods-list-actions">
               <button onClick={() => move(i, -1)} disabled={i === 0}>
                 ↑
@@ -67,7 +104,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
               <button onClick={() => move(i, 1)} disabled={i === mods.length - 1}>
                 ↓
               </button>
-              <button className="danger" onClick={() => removeMod(id)}>
+              <button className="danger" onClick={() => removeMod(mod.id)}>
                 Remove
               </button>
             </div>
@@ -77,6 +114,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
       </ol>
       <div className="form-actions">
         <button onClick={() => void save()}>Save mods</button>
+        {loadingNames && <span className="status-message">Looking up mod names...</span>}
         {status && <span className="status-message">{status}</span>}
       </div>
     </div>

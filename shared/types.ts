@@ -21,10 +21,17 @@ export interface ServerProfile {
   maxBackups: number
   /** Optional cron expression for automatic backups, e.g. every 6 hours */
   backupSchedule?: string
-  /** Steam Workshop mod IDs, in load order */
-  activeMods: string[]
+  /** Steam Workshop mods, in load order. Only enabled mods are passed to the server. */
+  mods: ServerMod[]
   /** Free-form extra launch arguments appended to the command line */
   extraArgs: string
+}
+
+export interface ServerMod {
+  id: string
+  /** Workshop title, resolved lazily via the Steam Web API; absent until looked up. */
+  name?: string
+  enabled: boolean
 }
 
 export type ServerRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error'
@@ -100,6 +107,7 @@ export const IPC = {
   configWriteRaw: 'config:write-raw',
 
   modsSave: 'mods:save',
+  modsLookupNames: 'mods:lookup-names',
 
   backupCreate: 'backup:create',
   backupList: 'backup:list',
@@ -141,7 +149,10 @@ export interface Api {
     writeSummary: (profileId: string, summary: ServerConfigSummary) => Promise<void>
     readRaw: (profileId: string) => Promise<RawIniFiles>
     writeRaw: (profileId: string, files: RawIniFiles) => Promise<void>
-    saveMods: (profileId: string, mods: string[]) => Promise<ServerProfile>
+  }
+  mods: {
+    save: (profileId: string, mods: ServerMod[]) => Promise<ServerProfile>
+    lookupNames: (ids: string[]) => Promise<Record<string, string>>
   }
   backup: {
     create: (profileId: string) => Promise<BackupEntry>

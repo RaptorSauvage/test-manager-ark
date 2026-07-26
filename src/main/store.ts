@@ -11,8 +11,15 @@ const store = new Store<StoreSchema>({
   }
 })
 
+/** Profiles saved before the mods field became `ServerMod[]` still have `activeMods: string[]`. */
+function migrateProfile(raw: ServerProfile & { activeMods?: string[] }): ServerProfile {
+  if (Array.isArray(raw.mods)) return raw
+  const { activeMods, ...rest } = raw
+  return { ...rest, mods: (activeMods ?? []).map((id) => ({ id, enabled: true })) }
+}
+
 export function listProfiles(): ServerProfile[] {
-  return store.get('profiles')
+  return store.get('profiles').map(migrateProfile)
 }
 
 export function getProfile(id: string): ServerProfile | undefined {
