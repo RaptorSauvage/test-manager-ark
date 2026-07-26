@@ -1,0 +1,22 @@
+import { ipcMain } from 'electron'
+import { IPC } from '@shared/types'
+import { getProfile } from '../store'
+import { createBackup, listBackups, deleteBackup, restoreBackup } from '../lib/backup'
+
+function requireProfile(profileId: string) {
+  const profile = getProfile(profileId)
+  if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+  return profile
+}
+
+export function registerBackupHandlers(): void {
+  ipcMain.handle(IPC.backupCreate, (_event, profileId: string) => createBackup(requireProfile(profileId)))
+
+  ipcMain.handle(IPC.backupList, (_event, profileId: string) => listBackups(requireProfile(profileId)))
+
+  ipcMain.handle(IPC.backupDelete, (_event, filePath: string) => deleteBackup(filePath))
+
+  ipcMain.handle(IPC.backupRestore, (_event, profileId: string, filePath: string) =>
+    restoreBackup(requireProfile(profileId), filePath)
+  )
+}
