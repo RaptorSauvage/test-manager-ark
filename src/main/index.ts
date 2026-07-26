@@ -6,6 +6,18 @@ import { applyBackupSchedule } from './lib/schedule'
 import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
 import { startMonitoring } from './lib/monitor'
 
+// Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
+// as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
+// socket errors on its own EventEmitter, which crashes the whole process by
+// default if unhandled. Log and keep running instead of taking down the app
+// (and, with it, tracking of any server it's managing) over a transient error.
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception in main process:', err)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection in main process:', reason)
+})
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1280,

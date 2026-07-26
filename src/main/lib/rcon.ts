@@ -16,12 +16,18 @@ export async function sendRconCommand(profile: ServerProfile, command: string): 
       password,
       timeout: 5000
     })
+    // rcon-client re-emits socket errors (e.g. ECONNRESET) on this instance's own
+    // EventEmitter. With no listener, Node's default behavior for an unhandled
+    // 'error' event is to throw and crash the whole process - a real risk here
+    // since RCON gets polled every few seconds and the server can drop the
+    // connection at any time (restart, shutdown, brief hiccup).
+    rcon.on('error', () => {})
     const response = await rcon.send(command)
     return { ok: true, response }
   } catch (err) {
     return { ok: false, error: (err as Error).message }
   } finally {
-    rcon?.end()
+    rcon?.end().catch(() => {})
   }
 }
 
