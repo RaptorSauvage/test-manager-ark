@@ -1,8 +1,10 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
-import { listProfiles } from './store'
+import { listProfiles, getRunningPids } from './store'
 import { applyBackupSchedule } from './lib/schedule'
+import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
+import { startMonitoring } from './lib/monitor'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -33,8 +35,15 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  for (const profile of listProfiles()) {
+  const profiles = listProfiles()
+
+  // Re-attach to servers still running from a previous session (they survive
+  // this app crashing/closing by design - see serverProcess.startServer).
+  adoptPersistedProcesses(profiles, getRunningPids())
+
+  for (const profile of profiles) {
     applyBackupSchedule(profile)
+    if (isRunning(profile.id)) startMonitoring(profile)
   }
 
   createWindow()

@@ -9,6 +9,11 @@ dedicated servers running on the same machine.
   independent ARK:SA server install/instance). Stop and restart send RCON `SaveWorld`,
   wait for its confirmation, then `DoExit`; Kill force-terminates the process immediately
   with no save, for when a server is stuck.
+- **Survives the Manager closing or crashing** — the server process is spawned detached
+  from the app, so it keeps running either way instead of being torn down with it (the
+  default on Windows otherwise). Relaunching the Manager re-detects any server that's
+  still running (by pid) and picks it back up under management rather than losing track
+  of it or letting you start a conflicting second instance.
 - **RCON console** — send admin commands and see responses. The server's own stdout/stderr
   is intentionally not captured here (ARK's dedicated server already shows it in its own
   console window on Windows), keeping this to just RCON.
@@ -48,7 +53,7 @@ Other scripts:
 ```bash
 npm run typecheck   # type-check main/preload/renderer
 npm run build        # production build into out/
-npm test             # unit tests for the pure logic (launch args, RCON parsing, backup rotation, profile migration, SteamCMD args/paths)
+npm test             # unit tests for the pure logic (launch args, RCON parsing, backup rotation, profile migration, SteamCMD args/paths, process adoption)
 ```
 
 ## Setting up a server profile
@@ -77,3 +82,6 @@ tab:
   arguments" field if your install needs something different.
 - Out of scope for this version: remote/SSH or Docker-based control, and multi-user/remote
   web access (this is a single-user local desktop app).
+- Because the server survives the Manager closing, deleting a profile does **not** stop
+  its server if one is running — it only removes the profile from the app. Stop or Kill it
+  first if you actually want it gone.

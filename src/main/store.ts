@@ -5,12 +5,15 @@ import { migrateProfile } from './lib/profileMigration'
 interface StoreSchema {
   profiles: ServerProfile[]
   settings: AppSettings
+  /** profileId -> OS pid, so a re-launched app can find a server that's still running. */
+  runningPids: Record<string, number>
 }
 
 const store = new Store<StoreSchema>({
   defaults: {
     profiles: [],
-    settings: { steamCmdPath: '' }
+    settings: { steamCmdPath: '' },
+    runningPids: {}
   }
 })
 
@@ -34,6 +37,7 @@ export function saveProfile(profile: ServerProfile): ServerProfile[] {
 export function deleteProfile(id: string): ServerProfile[] {
   const profiles = listProfiles().filter((p) => p.id !== id)
   store.set('profiles', profiles)
+  setRunningPid(id, null)
   return profiles
 }
 
@@ -44,4 +48,18 @@ export function getSettings(): AppSettings {
 export function saveSettings(settings: AppSettings): AppSettings {
   store.set('settings', settings)
   return settings
+}
+
+export function getRunningPids(): Record<string, number> {
+  return store.get('runningPids') ?? {}
+}
+
+export function setRunningPid(profileId: string, pid: number | null): void {
+  const pids = getRunningPids()
+  if (pid === null) {
+    delete pids[profileId]
+  } else {
+    pids[profileId] = pid
+  }
+  store.set('runningPids', pids)
 }
