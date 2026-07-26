@@ -25,3 +25,13 @@ export function readIniFile(filePath: string): IniData {
   if (!fs.existsSync(filePath)) return {}
   return ini.parse(fs.readFileSync(filePath, 'utf-8'))
 }
+
+/**
+ * Reads ServerAdminPassword straight from GameUserSettings.ini - this is also
+ * the RCON password, and the user manages this file themselves, so the app
+ * always reads it fresh instead of asking for/storing its own copy.
+ */
+export function readAdminPassword(installDir: string): string {
+  const gus = readIniFile(path.join(resolveConfigDir(installDir), 'GameUserSettings.ini'))
+  return gus.ServerSettings?.ServerAdminPassword ?? ''
+}

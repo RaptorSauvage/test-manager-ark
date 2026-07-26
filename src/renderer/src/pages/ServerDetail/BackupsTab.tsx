@@ -3,6 +3,7 @@ import type { BackupEntry, ServerProfile } from '@shared/types'
 
 interface BackupsTabProps {
   profile: ServerProfile
+  onProfileChange: (profile: ServerProfile) => void
 }
 
 function formatSize(bytes: number): string {
@@ -10,10 +11,30 @@ function formatSize(bytes: number): string {
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`
 }
 
-export default function BackupsTab({ profile }: BackupsTabProps): JSX.Element {
+export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps): JSX.Element {
   const [backups, setBackups] = useState<BackupEntry[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  const [form, setForm] = useState<ServerProfile>(profile)
+  const [settingsStatus, setSettingsStatus] = useState('')
+
+  function update<K extends keyof ServerProfile>(key: K, value: ServerProfile[K]): void {
+    setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  async function browseBackupDir(): Promise<void> {
+    const dir = await window.api.dialog.selectDirectory()
+    if (dir) update('backupDir', dir)
+  }
+
+  async function saveSettings(): Promise<void> {
+    const updated = await window.api.profiles.save(form)
+    const saved = updated.find((p) => p.id === form.id)
+    if (saved) onProfileChange(saved)
+    setSettingsStatus('Saved')
+    setTimeout(() => setSettingsStatus(''), 2000)
+  }
 
   const refresh = useCallback(async () => {
     const list = await window.api.backup.list(profile.id)
@@ -58,6 +79,53 @@ export default function BackupsTab({ profile }: BackupsTabProps): JSX.Element {
 
   return (
     <div className="backups-tab">
+      <form
+        className="settings-tab backup-settings"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void saveSettings()
+        }}
+      >
+        <label>
+          Backup directory
+          <div className="path-input-row">
+            <input value={form.backupDir} onChange={(e) => update('backupDir', e.target.value)} />
+            <button type="button" onClick={() => void browseBackupDir()}>
+              Browse...
+            </button>
+          </div>
+        </label>
+        <label>
+          Max backups to keep
+          <input
+            type="number"
+            value={form.maxBackups}
+            onChange={(e) => update('maxBackups', Number(e.target.value))}
+          />
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.backupScheduleEnabled}
+            onChange={(e) => update('backupScheduleEnabled', e.target.checked)}
+          />
+          Enable scheduled automatic backups
+        </label>
+        <label>
+          Backup schedule (cron expression)
+          <input
+            value={form.backupSchedule ?? ''}
+            onChange={(e) => update('backupSchedule', e.target.value)}
+            placeholder="every 6 hours: 0 */6 * * *"
+            disabled={!form.backupScheduleEnabled}
+          />
+        </label>
+        <div className="form-actions">
+          <button type="submit">Save backup settings</button>
+          {settingsStatus && <span className="status-message">{settingsStatus}</span>}
+        </div>
+      </form>
+
       <div className="form-actions">
         <button onClick={() => void handleCreate()} disabled={busy}>
           Create backup now

@@ -9,9 +9,8 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     installDir: '/tmp/ark',
     map: 'TheIsland_WP',
     gamePort: 7777,
-    queryPort: 27015,
     rconPort: 27020,
-    rconPassword: '',
+    serverPlatform: 'PC',
     savedArksSubPath: 'ShooterGame/Saved/SavedArks',
     backupDir: '',
     maxBackups: 10,
@@ -70,5 +69,17 @@ describe('migrateProfile', () => {
     expect(migrated.clusterId).toBe('')
     expect(migrated.clusterDirOverride).toBe('')
     expect(migrated.noTransferFromFiltering).toBe(false)
+  })
+
+  it('defaults serverPlatform to PC on profiles saved before it existed', () => {
+    const legacy = baseProfile({ serverPlatform: undefined })
+    expect(migrateProfile(legacy).serverPlatform).toBe('PC')
+  })
+
+  it('drops the removed rconPassword/queryPort fields from legacy profiles', () => {
+    const legacy = baseProfile({ rconPassword: 'old-secret', queryPort: 27015 })
+    const migrated = migrateProfile(legacy)
+    expect('rconPassword' in migrated).toBe(false)
+    expect('queryPort' in migrated).toBe(false)
   })
 })

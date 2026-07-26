@@ -14,11 +14,6 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  async function browseBackupDir(): Promise<void> {
-    const dir = await window.api.dialog.selectDirectory()
-    if (dir) update('backupDir', dir)
-  }
-
   async function browseClusterDir(): Promise<void> {
     const dir = await window.api.dialog.selectDirectory()
     if (dir) update('clusterDirOverride', dir)
@@ -62,59 +57,23 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           <input type="number" value={form.gamePort} onChange={(e) => update('gamePort', Number(e.target.value))} />
         </label>
         <label>
-          Query port
-          <input
-            type="number"
-            value={form.queryPort}
-            onChange={(e) => update('queryPort', Number(e.target.value))}
-          />
-        </label>
-        <label>
           RCON port
           <input type="number" value={form.rconPort} onChange={(e) => update('rconPort', Number(e.target.value))} />
         </label>
+        <label>
+          Server Platform
+          <select
+            value={form.serverPlatform}
+            onChange={(e) => update('serverPlatform', e.target.value as ServerProfile['serverPlatform'])}
+          >
+            <option value="PC">PC</option>
+            <option value="ALL">ALL</option>
+          </select>
+        </label>
       </div>
-      <label>
-        RCON / admin password
-        <input type="password" value={form.rconPassword} onChange={(e) => update('rconPassword', e.target.value)} />
-      </label>
       <label>
         SavedArks path (relative to install dir)
         <input value={form.savedArksSubPath} onChange={(e) => update('savedArksSubPath', e.target.value)} />
-      </label>
-      <label>
-        Backup directory
-        <div className="path-input-row">
-          <input value={form.backupDir} onChange={(e) => update('backupDir', e.target.value)} />
-          <button type="button" onClick={() => void browseBackupDir()}>
-            Browse...
-          </button>
-        </div>
-      </label>
-      <label>
-        Max backups to keep
-        <input
-          type="number"
-          value={form.maxBackups}
-          onChange={(e) => update('maxBackups', Number(e.target.value))}
-        />
-      </label>
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={form.backupScheduleEnabled}
-          onChange={(e) => update('backupScheduleEnabled', e.target.checked)}
-        />
-        Enable scheduled automatic backups
-      </label>
-      <label>
-        Backup schedule (cron expression)
-        <input
-          value={form.backupSchedule ?? ''}
-          onChange={(e) => update('backupSchedule', e.target.value)}
-          placeholder="every 6 hours: 0 */6 * * *"
-          disabled={!form.backupScheduleEnabled}
-        />
       </label>
       <section className="cluster-section">
         <h3>Cluster</h3>

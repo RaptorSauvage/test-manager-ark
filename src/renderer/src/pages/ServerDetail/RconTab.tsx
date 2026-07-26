@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { ServerProfile } from '@shared/types'
 
-interface ConsoleTabProps {
+interface RconTabProps {
   profile: ServerProfile
 }
 
@@ -10,7 +10,7 @@ interface RconHistoryEntry {
   response: string
 }
 
-export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
+export default function RconTab({ profile }: RconTabProps): JSX.Element {
   const [command, setCommand] = useState('')
   const [rconHistory, setRconHistory] = useState<RconHistoryEntry[]>([])
 

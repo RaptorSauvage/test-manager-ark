@@ -4,6 +4,7 @@ import path from 'node:path'
 import { platform } from 'node:process'
 import type { ServerProfile, ServerStatus } from '@shared/types'
 import { sendRconCommand } from './rcon'
+import { readAdminPassword } from './config'
 import { setRunningPid } from '../store'
 
 interface RunningServer {
@@ -72,17 +73,12 @@ export function getExecutablePath(profile: ServerProfile): string {
  * Exact flags can drift between game updates - `extraArgs` on the profile is the
  * escape hatch for anything not covered here.
  */
-export function buildLaunchArgs(profile: ServerProfile): string[] {
-  const params = [
-    'listen',
-    `Port=${profile.gamePort}`,
-    `QueryPort=${profile.queryPort}`,
-    'RCONEnabled=True',
-    `RCONPort=${profile.rconPort}`
-  ]
-  if (profile.rconPassword) params.push(`ServerAdminPassword=${profile.rconPassword}`)
+export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: string): string[] {
+  const adminPassword = adminPasswordOverride ?? readAdminPassword(profile.installDir)
+  const params = ['listen', `Port=${profile.gamePort}`, 'RCONEnabled=True', `RCONPort=${profile.rconPort}`]
+  if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
 
-  const args = [`${profile.map}?${params.join('?')}`, '-server', '-log']
+  const args = [`${profile.map}?${params.join('?')}`, '-server', '-log', `-ServerPlatform=${profile.serverPlatform}`]
   const enabledModIds = profile.mods
     .filter((mod) => mod.enabled)
     .map((mod) => (mod.dev ? `${mod.id}-dev` : mod.id))

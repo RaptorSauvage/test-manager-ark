@@ -10,9 +10,9 @@ export interface ServerProfile {
   /** Map identifier passed on the command line, e.g. "TheIsland_WP" */
   map: string
   gamePort: number
-  queryPort: number
   rconPort: number
-  rconPassword: string
+  /** Crossplay setting passed as -ServerPlatform=<value> */
+  serverPlatform: 'PC' | 'ALL'
   /** Path to the SavedArks folder, relative to installDir */
   savedArksSubPath: string
   /** Directory backups are written to */

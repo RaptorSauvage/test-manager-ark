@@ -41,7 +41,7 @@ describe('install detection', () => {
     expect(isValidArkInstall(tmpDir)).toBe(true)
   })
 
-  it('detects the map from the SavedArks folder and mods/admin password from the ini', () => {
+  it('detects the map from the SavedArks folder and mods from the ini', () => {
     const mapDir = path.join(tmpDir, 'ShooterGame', 'Saved', 'SavedArks', 'TheIsland_WP')
     fs.mkdirSync(mapDir, { recursive: true })
 
@@ -49,12 +49,11 @@ describe('install detection', () => {
     fs.mkdirSync(configDir, { recursive: true })
     fs.writeFileSync(
       path.join(configDir, 'GameUserSettings.ini'),
-      ['[ServerSettings]', 'ServerAdminPassword=hunter2', 'ActiveMods=111,222'].join('\n')
+      ['[ServerSettings]', 'ActiveMods=111,222'].join('\n')
     )
 
     const detected = detectProfileFields(tmpDir)
     expect(detected.map).toBe('TheIsland_WP')
-    expect(detected.rconPassword).toBe('hunter2')
     expect(detected.mods).toEqual([
       { id: '111', enabled: true, dev: false },
       { id: '222', enabled: true, dev: false }
@@ -64,7 +63,6 @@ describe('install detection', () => {
   it('falls back to sensible empty values when nothing can be detected', () => {
     const detected = detectProfileFields(tmpDir)
     expect(detected.map).toBe('')
-    expect(detected.rconPassword).toBe('')
     expect(detected.mods).toEqual([])
     expect(detected.gamePort).toBeUndefined()
   })

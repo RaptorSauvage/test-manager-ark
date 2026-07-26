@@ -7,6 +7,11 @@ interface LegacyProfileFields {
   clusterId?: string
   clusterDirOverride?: string
   noTransferFromFiltering?: boolean
+  serverPlatform?: 'PC' | 'ALL'
+  /** Removed - RCON/admin password is now always read live from GameUserSettings.ini */
+  rconPassword?: string
+  /** Removed - ARK:SA doesn't use a separate query port */
+  queryPort?: number
 }
 
 /**
@@ -19,7 +24,7 @@ interface LegacyProfileFields {
  *   are new and default to off/empty
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
-  const { activeMods, ...rest } = raw
+  const { activeMods, rconPassword: _rconPassword, queryPort: _queryPort, ...rest } = raw
   const sourceMods: Array<Partial<ServerMod> & { id: string }> = Array.isArray(rest.mods)
     ? rest.mods
     : (activeMods ?? []).map((id) => ({ id }))
@@ -40,6 +45,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     clusterEnabled: rest.clusterEnabled ?? false,
     clusterId: rest.clusterId ?? '',
     clusterDirOverride: rest.clusterDirOverride ?? '',
-    noTransferFromFiltering: rest.noTransferFromFiltering ?? false
+    noTransferFromFiltering: rest.noTransferFromFiltering ?? false,
+    serverPlatform: rest.serverPlatform ?? 'PC'
   }
 }

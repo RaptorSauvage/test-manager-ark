@@ -9,9 +9,8 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     installDir: '/tmp/ark',
     map: 'TheIsland_WP',
     gamePort: 7777,
-    queryPort: 27015,
     rconPort: 27020,
-    rconPassword: 'secret',
+    serverPlatform: 'PC',
     savedArksSubPath: 'ShooterGame/Saved/SavedArks',
     backupDir: '',
     maxBackups: 10,
@@ -27,11 +26,22 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
 }
 
 describe('buildLaunchArgs', () => {
-  it('builds the map/port/RCON question-mark string', () => {
-    const args = buildLaunchArgs(makeProfile())
-    expect(args[0]).toBe(
-      'TheIsland_WP?listen?Port=7777?QueryPort=27015?RCONEnabled=True?RCONPort=27020?ServerAdminPassword=secret'
-    )
+  it('builds the map/port/RCON question-mark string, with an injected admin password', () => {
+    const args = buildLaunchArgs(makeProfile(), 'secret')
+    expect(args[0]).toBe('TheIsland_WP?listen?Port=7777?RCONEnabled=True?RCONPort=27020?ServerAdminPassword=secret')
+  })
+
+  it('omits ServerAdminPassword when no admin password is set', () => {
+    const args = buildLaunchArgs(makeProfile(), '')
+    expect(args[0]).toBe('TheIsland_WP?listen?Port=7777?RCONEnabled=True?RCONPort=27020')
+  })
+
+  it('adds -ServerPlatform= right after -server -log, for both PC and ALL', () => {
+    const pcArgs = buildLaunchArgs(makeProfile({ serverPlatform: 'PC' }), '')
+    expect(pcArgs.slice(1, 4)).toEqual(['-server', '-log', '-ServerPlatform=PC'])
+
+    const allArgs = buildLaunchArgs(makeProfile({ serverPlatform: 'ALL' }), '')
+    expect(allArgs.slice(1, 4)).toEqual(['-server', '-log', '-ServerPlatform=ALL'])
   })
 
   it('only passes enabled mods, appending -dev for dev-mode mods', () => {

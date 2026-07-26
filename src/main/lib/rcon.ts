@@ -1,9 +1,11 @@
 import { Rcon } from 'rcon-client'
 import type { ServerProfile, RconResult } from '@shared/types'
+import { readAdminPassword } from './config'
 
 export async function sendRconCommand(profile: ServerProfile, command: string): Promise<RconResult> {
-  if (!profile.rconPassword) {
-    return { ok: false, error: 'No RCON password configured for this profile' }
+  const password = readAdminPassword(profile.installDir)
+  if (!password) {
+    return { ok: false, error: "No ServerAdminPassword set in this server's GameUserSettings.ini" }
   }
 
   let rcon: Rcon | undefined
@@ -11,7 +13,7 @@ export async function sendRconCommand(profile: ServerProfile, command: string): 
     rcon = await Rcon.connect({
       host: '127.0.0.1',
       port: profile.rconPort,
-      password: profile.rconPassword,
+      password,
       timeout: 5000
     })
     const response = await rcon.send(command)

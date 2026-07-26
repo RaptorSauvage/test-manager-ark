@@ -14,23 +14,27 @@ dedicated servers running on the same machine.
   default on Windows otherwise). Relaunching the Manager re-detects any server that's
   still running (by pid) and picks it back up under management rather than losing track
   of it or letting you start a conflicting second instance.
-- **RCON console** — send admin commands and see responses. The server's own stdout/stderr
-  is intentionally not captured here (ARK's dedicated server already shows it in its own
-  console window on Windows), keeping this to just RCON.
+- **RCON tab** — send admin commands and see responses. The server's own stdout/stderr is
+  intentionally not captured here (ARK's dedicated server already shows it in its own
+  console window on Windows), keeping this to just RCON. The RCON/admin password isn't a
+  field in this app at all - it's read live from the server's own `GameUserSettings.ini`
+  (`ServerAdminPassword`) every time it's needed, since ARK:SA doesn't have a separate
+  concept of an "RCON password".
 - **Mod manager** — enable/disable/reorder mod IDs and toggle a Dev flag per mod (appends
   `-dev` to load that mod's in-development build), applied via the server's `-mods=`
   launch flag - ARK:SA's only mod mechanism (no Steam Workshop, no GameUserSettings.ini
   involvement). The app never touches your `.ini` files — edit those yourself.
-- **Backups** — one-click zip backup of a profile's `SavedArks` folder (pick the folder
-  with a native browser), automatic pruning of old backups, one-click restore, and
-  optional scheduled backups gated behind an explicit enable/disable toggle (the cron
-  expression alone doesn't turn the schedule on).
+- **Backups tab** — backup directory (with a folder picker), max backups to keep, and
+  scheduled automatic backups (gated behind an explicit enable/disable toggle, not just an
+  empty/filled cron field) live here alongside the backup list/create/restore/delete
+  actions, instead of being split off into Settings.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), and No Transfer From Filtering (`-NoTransferFromFiltering`). All three
   only apply when the section's enable checkbox is on, and are placed before "Extra
   launch arguments" in the final command line.
+- **Server Platform** — PC or ALL (crossplay), passed as `-ServerPlatform=`.
 - **Update / install via SteamCMD** — a per-server **Update** button runs
   `steamcmd +force_install_dir <install dir> +login anonymous +app_update 2430930 validate +quit`.
   Works for a first-time install into an empty folder too. Disabled while the server is
@@ -68,12 +72,13 @@ tab:
 
 - **Install directory**: the folder containing `ShooterGame/Binaries/...` for that
   server instance.
-- **Map**, **ports** (game/query/RCON), and **RCON/admin password** — RCON must be
-  reachable on `127.0.0.1` for this app to control the server (start/stop rely on it to
-  save the world before shutting down).
+- **Map**, **game/RCON ports**, and **Server Platform** (PC/ALL). RCON authenticates using
+  `ServerAdminPassword` from that install's `GameUserSettings.ini` - set it there, not in
+  this app - and must be reachable on `127.0.0.1` (start/stop rely on it to save the world
+  before shutting down).
 - **SavedArks path**: relative to the install directory, defaults to
   `ShooterGame/Saved/SavedArks`.
-- **Backup directory** and **max backups to keep**.
+- Backup directory, retention, and scheduling live in the **Backups** tab, not here.
 
 ## Notes / limitations
 

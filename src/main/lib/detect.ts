@@ -6,10 +6,8 @@ import { resolveConfigDir, readIniFile } from './config'
 export interface DetectedProfileFields {
   suggestedName: string
   map: string
-  rconPassword: string
   mods: ServerMod[]
   gamePort?: number
-  queryPort?: number
   rconPort?: number
 }
 
@@ -61,10 +59,8 @@ export function detectProfileFields(installDir: string): DetectedProfileFields {
   return {
     suggestedName: sessionSettings.SessionName || path.basename(installDir),
     map: detectMap(installDir),
-    rconPassword: serverSettings.ServerAdminPassword ?? '',
     mods,
     gamePort: parsePort(serverSettings.Port),
-    queryPort: parsePort(serverSettings.QueryPort),
     rconPort: parsePort(serverSettings.RCONPort)
   }
 }
