@@ -21,7 +21,11 @@ export interface ServerProfile {
   maxBackups: number
   /** Optional cron expression for automatic backups, e.g. every 6 hours */
   backupSchedule?: string
-  /** Steam Workshop mods, in load order. Only enabled mods are passed to the server. */
+  /**
+   * Mods, in load order. Only enabled mods are passed via the server's
+   * `-mods=` launch flag (ARK:SA does not use Steam Workshop or
+   * GameUserSettings.ini for mods - the launch flag is the only mechanism).
+   */
   mods: ServerMod[]
   /** Free-form extra launch arguments appended to the command line */
   extraArgs: string
@@ -29,7 +33,7 @@ export interface ServerProfile {
 
 export interface ServerMod {
   id: string
-  /** Workshop title, resolved lazily via the Steam Web API; absent until looked up. */
+  /** User-supplied label, purely cosmetic - not looked up automatically. */
   name?: string
   enabled: boolean
 }
@@ -107,7 +111,6 @@ export const IPC = {
   configWriteRaw: 'config:write-raw',
 
   modsSave: 'mods:save',
-  modsLookupNames: 'mods:lookup-names',
 
   backupCreate: 'backup:create',
   backupList: 'backup:list',
@@ -152,7 +155,6 @@ export interface Api {
   }
   mods: {
     save: (profileId: string, mods: ServerMod[]) => Promise<ServerProfile>
-    lookupNames: (ids: string[]) => Promise<Record<string, string>>
   }
   backup: {
     create: (profileId: string) => Promise<BackupEntry>

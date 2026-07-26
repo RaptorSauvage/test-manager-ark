@@ -47,8 +47,7 @@ const api: Api = {
     writeRaw: (profileId: string, files: RawIniFiles) => ipcRenderer.invoke(IPC.configWriteRaw, profileId, files)
   },
   mods: {
-    save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods),
-    lookupNames: (ids: string[]) => ipcRenderer.invoke(IPC.modsLookupNames, ids)
+    save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods)
   },
   backup: {
     create: (profileId: string) => ipcRenderer.invoke(IPC.backupCreate, profileId),

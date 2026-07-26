@@ -11,7 +11,8 @@ dedicated servers running on the same machine.
   server's stdout/stderr.
 - **Config editor** — a form for the common `GameUserSettings.ini` settings (session name,
   passwords, max players, difficulty, XP/taming/harvest multipliers, PvE/PvP), with a raw
-  `.ini` editor fallback for anything else, and a mod manager for Steam Workshop mod IDs.
+  `.ini` editor fallback for anything else, and a mod manager (enable/disable/reorder mod
+  IDs, applied via the server's `-mods=` launch flag - ARK:SA's only mod mechanism).
 - **Backups** — one-click zip backup of a profile's `SavedArks` folder, automatic pruning
   of old backups, optional cron-based scheduling, and one-click restore.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.

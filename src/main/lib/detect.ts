@@ -41,9 +41,10 @@ function parsePort(value: unknown): number | undefined {
 
 /**
  * Scans an existing ARK:SA install folder and pulls out whatever it can from
- * GameUserSettings.ini. Ports are rarely persisted there (they're usually
- * command-line only), so callers should treat missing ports as "unknown" and
- * fall back to defaults rather than trusting them blindly.
+ * GameUserSettings.ini. Ports and mods aren't actually used from this file by
+ * the game (ports are launch-flag only, mods load via -mods=), so an
+ * ActiveMods entry here would only exist if another tool wrote it - treat
+ * anything detected as a starting guess, not a source of truth.
  */
 export function detectProfileFields(installDir: string): DetectedProfileFields {
   const configDir = resolveConfigDir(installDir)

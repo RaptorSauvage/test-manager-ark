@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { readConfigSummary, writeConfigSummary, saveMods } from '../src/main/lib/config'
+import { readConfigSummary, writeConfigSummary } from '../src/main/lib/config'
 import type { ServerProfile } from '../shared/types'
 
 function makeProfile(installDir: string): ServerProfile {
@@ -62,20 +62,6 @@ describe('config ini read/write round-trip', () => {
     expect(summary.pve).toBe(true)
   })
 
-  it('persists only enabled mod IDs as a comma-separated ActiveMods entry', () => {
-    const profile = makeProfile(tmpDir)
-    saveMods(profile, [
-      { id: '12345', enabled: true },
-      { id: '99999', enabled: false },
-      { id: '67890', enabled: true }
-    ])
-
-    const iniPath = path.join(tmpDir, 'ShooterGame', 'Saved', 'Config', 'WindowsServer', 'GameUserSettings.ini')
-    const contents = fs.readFileSync(iniPath, 'utf-8')
-    expect(contents).toContain('ActiveMods=12345,67890')
-    expect(contents).not.toContain('99999')
-  })
-
   it('turns a locked/read-only file EPERM into an actionable error instead of a raw stack trace', () => {
     const profile = makeProfile(tmpDir)
     const eperm = Object.assign(new Error('EPERM: operation not permitted, open'), { code: 'EPERM' })
@@ -84,7 +70,19 @@ describe('config ini read/write round-trip', () => {
     })
 
     try {
-      expect(() => saveMods(profile, [{ id: '111', enabled: true }])).toThrow(/open in another program/)
+      expect(() =>
+        writeConfigSummary(profile, {
+          sessionName: 'x',
+          serverPassword: '',
+          serverAdminPassword: '',
+          maxPlayers: 10,
+          difficultyOffset: 1,
+          xpMultiplier: 1,
+          tamingSpeedMultiplier: 1,
+          harvestAmountMultiplier: 1,
+          pve: false
+        })
+      ).toThrow(/open in another program/)
     } finally {
       spy.mockRestore()
     }

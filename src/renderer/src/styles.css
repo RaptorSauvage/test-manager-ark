@@ -346,8 +346,8 @@ label.checkbox {
 
 .mods-list li {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -358,21 +358,14 @@ label.checkbox {
   opacity: 0.5;
 }
 
-.mod-toggle {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  color: var(--text);
-}
-
-.mod-name {
-  font-size: 0.9rem;
+.mod-name-input {
+  flex: 1;
 }
 
 .mod-id {
   color: var(--muted);
   font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .mods-list-actions {

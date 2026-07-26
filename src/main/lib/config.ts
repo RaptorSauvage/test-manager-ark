@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import ini from 'ini'
-import type { ServerProfile, ServerConfigSummary, RawIniFiles, ServerMod } from '@shared/types'
+import type { ServerProfile, ServerConfigSummary, RawIniFiles } from '@shared/types'
 
 /**
  * ARK:SA writes its dedicated-server config under a WindowsServer folder even
@@ -110,16 +110,4 @@ export function readRawIniFiles(profile: ServerProfile): RawIniFiles {
 export function writeRawIniFiles(profile: ServerProfile, files: RawIniFiles): void {
   writeFileWithFriendlyError(gameUserSettingsPath(profile), files.gameUserSettings)
   writeFileWithFriendlyError(gameIniPath(profile), files.game)
-}
-
-/** Writes only the enabled mod IDs to ActiveMods; disabled ones are kept in the profile but not in the ini. */
-export function saveMods(profile: ServerProfile, mods: ServerMod[]): void {
-  const filePath = gameUserSettingsPath(profile)
-  const gus = readIniFile(filePath)
-  gus.ServerSettings = gus.ServerSettings ?? {}
-  gus.ServerSettings.ActiveMods = mods
-    .filter((mod) => mod.enabled)
-    .map((mod) => mod.id)
-    .join(',')
-  writeIniFile(filePath, gus)
 }
