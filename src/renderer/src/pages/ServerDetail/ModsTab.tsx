@@ -15,7 +15,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   function addMod(): void {
     const id = newModId.trim()
     if (!id || mods.some((m) => m.id === id)) return
-    setMods((prev) => [...prev, { id, enabled: true }])
+    setMods((prev) => [...prev, { id, enabled: true, dev: false }])
     setNewModId('')
   }
 
@@ -25,6 +25,10 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
 
   function toggleMod(id: string): void {
     setMods((prev) => prev.map((m) => (m.id === id ? { ...m, enabled: !m.enabled } : m)))
+  }
+
+  function toggleDev(id: string): void {
+    setMods((prev) => prev.map((m) => (m.id === id ? { ...m, dev: !m.dev } : m)))
   }
 
   function renameMod(id: string, name: string): void {
@@ -58,8 +62,9 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
       <p>
         Mod IDs, applied in this order via the server&apos;s <code>-mods=</code> launch flag - the only mechanism
         ARK: Survival Ascended uses for mods. Only <strong>enabled</strong> mods are passed at the next server start;
-        disabling one keeps it in the list without loading it. The name field is just your own label, not looked up
-        automatically.
+        disabling one keeps it in the list without loading it. Check <strong>Dev</strong> to load a mod&apos;s
+        in-development build (appends <code>-dev</code> to its ID). The name field is just your own label, not
+        looked up automatically.
       </p>
       <div className="mods-add">
         <input
@@ -78,14 +83,21 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
       <ol className="mods-list">
         {mods.map((mod, i) => (
           <li key={mod.id} className={mod.enabled ? '' : 'mod-disabled'}>
-            <input type="checkbox" checked={mod.enabled} onChange={() => toggleMod(mod.id)} />
+            <input type="checkbox" checked={mod.enabled} onChange={() => toggleMod(mod.id)} title="Enabled" />
             <input
               className="mod-name-input"
               value={mod.name ?? ''}
               onChange={(e) => renameMod(mod.id, e.target.value)}
               placeholder="Optional label"
             />
-            <span className="mod-id">#{mod.id}</span>
+            <span className="mod-id">
+              #{mod.id}
+              {mod.dev ? '-dev' : ''}
+            </span>
+            <label className="mod-dev-toggle">
+              <input type="checkbox" checked={mod.dev} onChange={() => toggleDev(mod.id)} />
+              Dev
+            </label>
             <div className="mods-list-actions">
               <button onClick={() => move(i, -1)} disabled={i === 0}>
                 ↑

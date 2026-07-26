@@ -368,6 +368,15 @@ label.checkbox {
   white-space: nowrap;
 }
 
+.mod-dev-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
 .mods-list-actions {
   display: flex;
   gap: 4px;

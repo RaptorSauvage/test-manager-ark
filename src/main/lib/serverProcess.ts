@@ -47,7 +47,9 @@ export function buildLaunchArgs(profile: ServerProfile): string[] {
   if (profile.rconPassword) params.push(`ServerAdminPassword=${profile.rconPassword}`)
 
   const args = [`${profile.map}?${params.join('?')}`, '-server', '-log']
-  const enabledModIds = profile.mods.filter((mod) => mod.enabled).map((mod) => mod.id)
+  const enabledModIds = profile.mods
+    .filter((mod) => mod.enabled)
+    .map((mod) => (mod.dev ? `${mod.id}-dev` : mod.id))
   if (enabledModIds.length > 0) {
     args.push(`-mods=${enabledModIds.join(',')}`)
   }
@@ -123,19 +125,8 @@ export function startServer(profile: ServerProfile): ServerStatus {
   return status
 }
 
-export async function stopServer(profile: ServerProfile, graceMs = 15000): Promise<ServerStatus> {
-  const entry = running.get(profile.id)
-  if (!entry) return { profileId: profile.id, state: 'stopped' }
-
-  emitStatus({ ...entry.status, state: 'stopping' })
-
-  try {
-    await sendRconCommand(profile, 'SaveWorld')
-    await sendRconCommand(profile, 'DoExit')
-  } catch {
-    // RCON unreachable - fall through to a hard kill below
-  }
-
+/** Waits for the process to exit on its own, or force-kills it after `graceMs`. */
+async function waitForExitOrKill(entry: RunningServer, profileId: string, graceMs: number): Promise<void> {
   const exited = await new Promise<boolean>((resolve) => {
     const timeout = setTimeout(() => resolve(false), graceMs)
     entry.process.once('exit', () => {
@@ -144,14 +135,60 @@ export async function stopServer(profile: ServerProfile, graceMs = 15000): Promi
     })
   })
 
-  if (!exited && running.has(profile.id)) {
+  if (!exited && running.has(profileId)) {
+    emitLog({ profileId, stream: 'system', line: 'Grace period elapsed, force-killing process.', timestamp: Date.now() })
     entry.process.kill()
   }
+}
 
+/**
+ * Graceful shutdown: SaveWorld, wait for its RCON confirmation, then DoExit.
+ * DoExit is only sent once SaveWorld is confirmed - if RCON is unreachable or
+ * the save fails, there is no safe orderly path, so we skip straight to the
+ * grace-period/kill fallback instead of exiting on an unconfirmed save.
+ */
+export async function stopServer(profile: ServerProfile, graceMs = 15000): Promise<ServerStatus> {
+  const entry = running.get(profile.id)
+  if (!entry) return { profileId: profile.id, state: 'stopped' }
+
+  emitStatus({ ...entry.status, state: 'stopping' })
+  emitLog({ profileId: profile.id, stream: 'system', line: 'Saving world (RCON SaveWorld)...', timestamp: Date.now() })
+
+  const saveResult = await sendRconCommand(profile, 'SaveWorld')
+  if (saveResult.ok) {
+    emitLog({
+      profileId: profile.id,
+      stream: 'system',
+      line: `SaveWorld confirmed: ${saveResult.response?.trim() || '(empty response)'}`,
+      timestamp: Date.now()
+    })
+    emitLog({ profileId: profile.id, stream: 'system', line: 'Sending DoExit...', timestamp: Date.now() })
+    await sendRconCommand(profile, 'DoExit')
+  } else {
+    emitLog({
+      profileId: profile.id,
+      stream: 'system',
+      line: `SaveWorld did not respond (${saveResult.error}); skipping DoExit and waiting out the grace period.`,
+      timestamp: Date.now()
+    })
+  }
+
+  await waitForExitOrKill(entry, profile.id, graceMs)
   return getStatus(profile.id)
 }
 
 export async function restartServer(profile: ServerProfile): Promise<ServerStatus> {
   await stopServer(profile)
   return startServer(profile)
+}
+
+/** Immediately force-kills the process with no SaveWorld/DoExit - current world state since the last save is lost. */
+export function killServer(profileId: string): ServerStatus {
+  const entry = running.get(profileId)
+  if (!entry) return { profileId, state: 'stopped' }
+
+  emitLog({ profileId, stream: 'system', line: 'Force-killing process (no save).', timestamp: Date.now() })
+  emitStatus({ ...entry.status, state: 'stopping' })
+  entry.process.kill()
+  return getStatus(profileId)
 }

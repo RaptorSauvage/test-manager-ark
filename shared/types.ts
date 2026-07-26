@@ -36,6 +36,8 @@ export interface ServerMod {
   /** User-supplied label, purely cosmetic - not looked up automatically. */
   name?: string
   enabled: boolean
+  /** When true, the id is passed as "<id>-dev" so ARK loads the mod's in-development build. */
+  dev: boolean
 }
 
 export type ServerRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error'
@@ -65,23 +67,6 @@ export interface BackupEntry {
   sizeBytes: number
 }
 
-export interface ServerConfigSummary {
-  sessionName: string
-  serverPassword: string
-  serverAdminPassword: string
-  maxPlayers: number
-  difficultyOffset: number
-  xpMultiplier: number
-  tamingSpeedMultiplier: number
-  harvestAmountMultiplier: number
-  pve: boolean
-}
-
-export interface RawIniFiles {
-  gameUserSettings: string
-  game: string
-}
-
 export interface RconResult {
   ok: boolean
   response?: string
@@ -99,16 +84,12 @@ export const IPC = {
   serverStart: 'server:start',
   serverStop: 'server:stop',
   serverRestart: 'server:restart',
+  serverKill: 'server:kill',
   serverStatus: 'server:status',
   serverStatusChanged: 'server:status-changed',
   serverLogLine: 'server:log-line',
 
   rconSend: 'rcon:send',
-
-  configRead: 'config:read',
-  configWriteSummary: 'config:write-summary',
-  configReadRaw: 'config:read-raw',
-  configWriteRaw: 'config:write-raw',
 
   modsSave: 'mods:save',
 
@@ -140,18 +121,13 @@ export interface Api {
     start: (profileId: string) => Promise<ServerStatus>
     stop: (profileId: string) => Promise<ServerStatus>
     restart: (profileId: string) => Promise<ServerStatus>
+    kill: (profileId: string) => Promise<ServerStatus>
     status: (profileId: string) => Promise<ServerStatus>
     onStatusChanged: (callback: (status: ServerStatus) => void) => () => void
     onLogLine: (callback: (line: ServerLogLine) => void) => () => void
   }
   rcon: {
     send: (profileId: string, command: string) => Promise<RconResult>
-  }
-  config: {
-    read: (profileId: string) => Promise<ServerConfigSummary>
-    writeSummary: (profileId: string, summary: ServerConfigSummary) => Promise<void>
-    readRaw: (profileId: string) => Promise<RawIniFiles>
-    writeRaw: (profileId: string, files: RawIniFiles) => Promise<void>
   }
   mods: {
     save: (profileId: string, mods: ServerMod[]) => Promise<ServerProfile>

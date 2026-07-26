@@ -49,6 +49,11 @@ export default function Dashboard({ profiles, onProfilesChange, onOpenProfile }:
     await window.api.server[action](profile.id)
   }
 
+  async function handleKill(profile: ServerProfile): Promise<void> {
+    if (!confirm(`Force-kill "${profile.name}" without saving? Progress since the last save will be lost.`)) return
+    await window.api.server.kill(profile.id)
+  }
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
@@ -118,6 +123,14 @@ export default function Dashboard({ profiles, onProfilesChange, onOpenProfile }:
                 </button>
                 <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'restart')}>
                   Restart
+                </button>
+                <button
+                  className="danger"
+                  disabled={state === 'stopped'}
+                  onClick={() => void handleKill(profile)}
+                  title="Force-kill immediately, without saving"
+                >
+                  Kill
                 </button>
                 <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
                 <button className="danger" onClick={() => void handleDelete(profile.id)}>

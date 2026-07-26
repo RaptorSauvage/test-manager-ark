@@ -56,8 +56,8 @@ describe('install detection', () => {
     expect(detected.map).toBe('TheIsland_WP')
     expect(detected.rconPassword).toBe('hunter2')
     expect(detected.mods).toEqual([
-      { id: '111', enabled: true },
-      { id: '222', enabled: true }
+      { id: '111', enabled: true, dev: false },
+      { id: '222', enabled: true, dev: false }
     ])
   })
 

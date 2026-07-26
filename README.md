@@ -5,14 +5,16 @@ dedicated servers running on the same machine.
 
 ## Features
 
-- **Start / stop / restart** one or more server profiles (each profile is an independent
-  ARK:SA server install/instance).
+- **Start / stop / restart / kill** one or more server profiles (each profile is an
+  independent ARK:SA server install/instance). Stop and restart send RCON `SaveWorld`,
+  wait for its confirmation, then `DoExit`; Kill force-terminates the process immediately
+  with no save, for when a server is stuck.
 - **RCON console** — send admin commands and see responses, plus a live tail of the
   server's stdout/stderr.
-- **Config editor** — a form for the common `GameUserSettings.ini` settings (session name,
-  passwords, max players, difficulty, XP/taming/harvest multipliers, PvE/PvP), with a raw
-  `.ini` editor fallback for anything else, and a mod manager (enable/disable/reorder mod
-  IDs, applied via the server's `-mods=` launch flag - ARK:SA's only mod mechanism).
+- **Mod manager** — enable/disable/reorder mod IDs and toggle a Dev flag per mod (appends
+  `-dev` to load that mod's in-development build), applied via the server's `-mods=`
+  launch flag - ARK:SA's only mod mechanism (no Steam Workshop, no GameUserSettings.ini
+  involvement). The app never touches your `.ini` files — edit those yourself.
 - **Backups** — one-click zip backup of a profile's `SavedArks` folder, automatic pruning
   of old backups, optional cron-based scheduling, and one-click restore.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
@@ -36,7 +38,7 @@ Other scripts:
 ```bash
 npm run typecheck   # type-check main/preload/renderer
 npm run build        # production build into out/
-npm test             # unit tests for the pure logic (ini parsing, RCON parsing, backup rotation)
+npm test             # unit tests for the pure logic (launch args, RCON parsing, backup rotation, profile migration)
 ```
 
 ## Setting up a server profile

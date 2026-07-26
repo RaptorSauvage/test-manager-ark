@@ -1,7 +1,7 @@
 import { ipcMain, type WebContents } from 'electron'
 import { IPC } from '@shared/types'
 import { getProfile } from '../store'
-import { startServer, stopServer, restartServer, getStatus, serverEvents } from '../lib/serverProcess'
+import { startServer, stopServer, restartServer, killServer, getStatus, serverEvents } from '../lib/serverProcess'
 import { startMonitoring, stopMonitoring } from '../lib/monitor'
 
 function requireProfile(profileId: string) {
@@ -36,6 +36,12 @@ export function registerServerProcessHandlers(webContents: WebContents): void {
     const status = await restartServer(profile)
     startMonitoring(profile)
     return status
+  })
+
+  ipcMain.handle(IPC.serverKill, (_event, profileId: string) => {
+    requireProfile(profileId)
+    stopMonitoring(profileId)
+    return killServer(profileId)
   })
 
   ipcMain.handle(IPC.serverStatus, (_event, profileId: string) => getStatus(profileId))

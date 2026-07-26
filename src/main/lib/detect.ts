@@ -56,7 +56,7 @@ export function detectProfileFields(installDir: string): DetectedProfileFields {
     .split(',')
     .map((id: string) => id.trim())
     .filter(Boolean)
-    .map((id: string) => ({ id, enabled: true }))
+    .map((id: string) => ({ id, enabled: true, dev: false }))
 
   return {
     suggestedName: sessionSettings.SessionName || path.basename(installDir),

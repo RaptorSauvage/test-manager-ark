@@ -1,14 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import {
-  IPC,
-  type Api,
-  type ServerProfile,
-  type ServerConfigSummary,
-  type RawIniFiles,
-  type ServerStatus,
-  type ServerLogLine,
-  type ServerMod
-} from '@shared/types'
+import { IPC, type Api, type ServerProfile, type ServerStatus, type ServerLogLine, type ServerMod } from '@shared/types'
 
 const api: Api = {
   profiles: {
@@ -24,6 +15,7 @@ const api: Api = {
     start: (profileId: string) => ipcRenderer.invoke(IPC.serverStart, profileId),
     stop: (profileId: string) => ipcRenderer.invoke(IPC.serverStop, profileId),
     restart: (profileId: string) => ipcRenderer.invoke(IPC.serverRestart, profileId),
+    kill: (profileId: string) => ipcRenderer.invoke(IPC.serverKill, profileId),
     status: (profileId: string) => ipcRenderer.invoke(IPC.serverStatus, profileId),
     onStatusChanged: (callback: (status: ServerStatus) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, status: ServerStatus): void => callback(status)
@@ -38,13 +30,6 @@ const api: Api = {
   },
   rcon: {
     send: (profileId: string, command: string) => ipcRenderer.invoke(IPC.rconSend, profileId, command)
-  },
-  config: {
-    read: (profileId: string) => ipcRenderer.invoke(IPC.configRead, profileId),
-    writeSummary: (profileId: string, summary: ServerConfigSummary) =>
-      ipcRenderer.invoke(IPC.configWriteSummary, profileId, summary),
-    readRaw: (profileId: string) => ipcRenderer.invoke(IPC.configReadRaw, profileId),
-    writeRaw: (profileId: string, files: RawIniFiles) => ipcRenderer.invoke(IPC.configWriteRaw, profileId, files)
   },
   mods: {
     save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods)

@@ -1,5 +1,6 @@
 import Store from 'electron-store'
 import type { ServerProfile } from '@shared/types'
+import { migrateProfile } from './lib/profileMigration'
 
 interface StoreSchema {
   profiles: ServerProfile[]
@@ -10,13 +11,6 @@ const store = new Store<StoreSchema>({
     profiles: []
   }
 })
-
-/** Profiles saved before the mods field became `ServerMod[]` still have `activeMods: string[]`. */
-function migrateProfile(raw: ServerProfile & { activeMods?: string[] }): ServerProfile {
-  if (Array.isArray(raw.mods)) return raw
-  const { activeMods, ...rest } = raw
-  return { ...rest, mods: (activeMods ?? []).map((id) => ({ id, enabled: true })) }
-}
 
 export function listProfiles(): ServerProfile[] {
   return store.get('profiles').map(migrateProfile)

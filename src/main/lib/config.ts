@@ -1,12 +1,15 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import ini from 'ini'
-import type { ServerProfile, ServerConfigSummary, RawIniFiles } from '@shared/types'
 
 /**
  * ARK:SA writes its dedicated-server config under a WindowsServer folder even
  * on most Linux installs. If a LinuxServer folder exists instead (some
  * community builds), prefer it.
+ *
+ * The app only reads this file, as a best-effort hint when importing an
+ * existing install (session name, RCON password) - it never writes to it.
+ * Users manage GameUserSettings.ini/Game.ini themselves.
  */
 export function resolveConfigDir(installDir: string): string {
   const winDir = path.join(installDir, 'ShooterGame', 'Saved', 'Config', 'WindowsServer')
@@ -15,99 +18,10 @@ export function resolveConfigDir(installDir: string): string {
   return winDir
 }
 
-function configDir(profile: ServerProfile): string {
-  return resolveConfigDir(profile.installDir)
-}
-
-function gameUserSettingsPath(profile: ServerProfile): string {
-  return path.join(configDir(profile), 'GameUserSettings.ini')
-}
-
-function gameIniPath(profile: ServerProfile): string {
-  return path.join(configDir(profile), 'Game.ini')
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type IniData = Record<string, any>
 
 export function readIniFile(filePath: string): IniData {
   if (!fs.existsSync(filePath)) return {}
   return ini.parse(fs.readFileSync(filePath, 'utf-8'))
-}
-
-/**
- * Wraps fs.writeFileSync with a friendlier message for the two permission
- * errors Windows throws when a file is locked by another program, marked
- * read-only, or the folder's ACLs deny write access - all of which surface
- * as a cryptic EPERM/EACCES otherwise.
- */
-function writeFileWithFriendlyError(filePath: string, content: string): void {
-  try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true })
-    fs.writeFileSync(filePath, content)
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (code === 'EPERM' || code === 'EACCES') {
-      throw new Error(
-        `Could not write to ${filePath} (${code}). It may be open in another program (a text editor, ` +
-          'the running server), marked read-only, or the folder may not allow write access for this app.'
-      )
-    }
-    throw err
-  }
-}
-
-function writeIniFile(filePath: string, data: IniData): void {
-  writeFileWithFriendlyError(filePath, ini.stringify(data))
-}
-
-export function readConfigSummary(profile: ServerProfile): ServerConfigSummary {
-  const gus = readIniFile(gameUserSettingsPath(profile))
-  const serverSettings = gus.ServerSettings ?? {}
-  const sessionSettings = gus.SessionSettings ?? {}
-
-  return {
-    sessionName: sessionSettings.SessionName ?? '',
-    serverPassword: serverSettings.ServerPassword ?? '',
-    serverAdminPassword: serverSettings.ServerAdminPassword ?? '',
-    maxPlayers: Number(sessionSettings.MaxPlayers ?? 70),
-    difficultyOffset: Number(serverSettings.DifficultyOffset ?? 1),
-    xpMultiplier: Number(serverSettings.XPMultiplier ?? 1),
-    tamingSpeedMultiplier: Number(serverSettings.TamingSpeedMultiplier ?? 1),
-    harvestAmountMultiplier: Number(serverSettings.HarvestAmountMultiplier ?? 1),
-    pve: String(serverSettings.ServerPVE ?? 'False').toLowerCase() === 'true'
-  }
-}
-
-export function writeConfigSummary(profile: ServerProfile, summary: ServerConfigSummary): void {
-  const filePath = gameUserSettingsPath(profile)
-  const gus = readIniFile(filePath)
-  gus.ServerSettings = gus.ServerSettings ?? {}
-  gus.SessionSettings = gus.SessionSettings ?? {}
-
-  gus.SessionSettings.SessionName = summary.sessionName
-  gus.SessionSettings.MaxPlayers = summary.maxPlayers
-  gus.ServerSettings.ServerPassword = summary.serverPassword
-  gus.ServerSettings.ServerAdminPassword = summary.serverAdminPassword
-  gus.ServerSettings.DifficultyOffset = summary.difficultyOffset
-  gus.ServerSettings.XPMultiplier = summary.xpMultiplier
-  gus.ServerSettings.TamingSpeedMultiplier = summary.tamingSpeedMultiplier
-  gus.ServerSettings.HarvestAmountMultiplier = summary.harvestAmountMultiplier
-  gus.ServerSettings.ServerPVE = summary.pve
-
-  writeIniFile(filePath, gus)
-}
-
-export function readRawIniFiles(profile: ServerProfile): RawIniFiles {
-  const gusPath = gameUserSettingsPath(profile)
-  const gPath = gameIniPath(profile)
-  return {
-    gameUserSettings: fs.existsSync(gusPath) ? fs.readFileSync(gusPath, 'utf-8') : '',
-    game: fs.existsSync(gPath) ? fs.readFileSync(gPath, 'utf-8') : ''
-  }
-}
-
-export function writeRawIniFiles(profile: ServerProfile, files: RawIniFiles): void {
-  writeFileWithFriendlyError(gameUserSettingsPath(profile), files.gameUserSettings)
-  writeFileWithFriendlyError(gameIniPath(profile), files.game)
 }

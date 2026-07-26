@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import type { ServerProfile } from '@shared/types'
 import ConsoleTab from './ConsoleTab'
-import ConfigTab from './ConfigTab'
 import ModsTab from './ModsTab'
 import BackupsTab from './BackupsTab'
 import SettingsTab from './SettingsTab'
 
-export type TabKey = 'console' | 'config' | 'mods' | 'backups' | 'settings'
+export type TabKey = 'console' | 'mods' | 'backups' | 'settings'
 
 interface ServerDetailProps {
   profile: ServerProfile
@@ -17,7 +16,6 @@ interface ServerDetailProps {
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'console', label: 'Console & RCON' },
-  { key: 'config', label: 'Config' },
   { key: 'mods', label: 'Mods' },
   { key: 'backups', label: 'Backups' },
   { key: 'settings', label: 'Settings' }
@@ -41,7 +39,6 @@ export default function ServerDetail({ profile, initialTab, onBack, onProfileCha
       </nav>
       <div className="tab-content">
         {tab === 'console' && <ConsoleTab profile={profile} />}
-        {tab === 'config' && <ConfigTab profile={profile} />}
         {tab === 'mods' && <ModsTab profile={profile} onProfileChange={onProfileChange} />}
         {tab === 'backups' && <BackupsTab profile={profile} />}
         {tab === 'settings' && <SettingsTab profile={profile} onProfileChange={onProfileChange} />}
