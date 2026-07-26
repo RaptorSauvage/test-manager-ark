@@ -29,6 +29,14 @@ export interface ServerProfile {
    * GameUserSettings.ini for mods - the launch flag is the only mechanism).
    */
   mods: ServerMod[]
+  /** Whether the cluster options below are actually applied at launch */
+  clusterEnabled: boolean
+  /** Passed as -clusterid=<id> when clusterEnabled */
+  clusterId: string
+  /** Passed as -ClusterDirOverride=<path> when clusterEnabled and non-empty */
+  clusterDirOverride: string
+  /** Passed as -NoTransferFromFiltering when clusterEnabled */
+  noTransferFromFiltering: boolean
   /** Free-form extra launch arguments appended to the command line */
   extraArgs: string
 }

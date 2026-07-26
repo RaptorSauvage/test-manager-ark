@@ -42,6 +42,10 @@ export function registerProfileHandlers(): void {
       backupSchedule: '',
       backupScheduleEnabled: false,
       mods: detected.mods,
+      clusterEnabled: false,
+      clusterId: '',
+      clusterDirOverride: '',
+      noTransferFromFiltering: false,
       extraArgs: ''
     }
 

@@ -16,6 +16,10 @@ export function createDefaultProfile(name: string): ServerProfile {
     backupSchedule: '',
     backupScheduleEnabled: false,
     mods: [],
+    clusterEnabled: false,
+    clusterId: '',
+    clusterDirOverride: '',
+    noTransferFromFiltering: false,
     extraArgs: ''
   }
 }

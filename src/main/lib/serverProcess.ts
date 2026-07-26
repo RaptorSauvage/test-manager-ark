@@ -89,6 +89,13 @@ export function buildLaunchArgs(profile: ServerProfile): string[] {
   if (enabledModIds.length > 0) {
     args.push(`-mods=${enabledModIds.join(',')}`)
   }
+
+  if (profile.clusterEnabled) {
+    if (profile.clusterId.trim()) args.push(`-clusterid=${profile.clusterId.trim()}`)
+    if (profile.clusterDirOverride.trim()) args.push(`-ClusterDirOverride=${profile.clusterDirOverride.trim()}`)
+    if (profile.noTransferFromFiltering) args.push('-NoTransferFromFiltering')
+  }
+
   if (profile.extraArgs.trim()) {
     args.push(...profile.extraArgs.trim().split(/\s+/))
   }

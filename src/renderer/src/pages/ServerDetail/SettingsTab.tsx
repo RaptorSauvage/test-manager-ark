@@ -19,6 +19,11 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
     if (dir) update('backupDir', dir)
   }
 
+  async function browseClusterDir(): Promise<void> {
+    const dir = await window.api.dialog.selectDirectory()
+    if (dir) update('clusterDirOverride', dir)
+  }
+
   async function save(): Promise<void> {
     const updated = await window.api.profiles.save(form)
     const saved = updated.find((p) => p.id === form.id)
@@ -111,6 +116,48 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           disabled={!form.backupScheduleEnabled}
         />
       </label>
+      <section className="cluster-section">
+        <h3>Cluster</h3>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.clusterEnabled}
+            onChange={(e) => update('clusterEnabled', e.target.checked)}
+          />
+          Enable cluster
+        </label>
+        <label>
+          Cluster ID
+          <input
+            value={form.clusterId}
+            onChange={(e) => update('clusterId', e.target.value)}
+            placeholder="my-cluster"
+            disabled={!form.clusterEnabled}
+          />
+        </label>
+        <label>
+          Dedicated Cluster Directory
+          <div className="path-input-row">
+            <input
+              value={form.clusterDirOverride}
+              onChange={(e) => update('clusterDirOverride', e.target.value)}
+              disabled={!form.clusterEnabled}
+            />
+            <button type="button" onClick={() => void browseClusterDir()} disabled={!form.clusterEnabled}>
+              Browse...
+            </button>
+          </div>
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.noTransferFromFiltering}
+            onChange={(e) => update('noTransferFromFiltering', e.target.checked)}
+            disabled={!form.clusterEnabled}
+          />
+          No Transfer From Filtering
+        </label>
+      </section>
       <label>
         Extra launch arguments
         <input value={form.extraArgs} onChange={(e) => update('extraArgs', e.target.value)} />

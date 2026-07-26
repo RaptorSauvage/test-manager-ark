@@ -16,6 +16,10 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     backupDir: '',
     maxBackups: 10,
     backupScheduleEnabled: false,
+    clusterEnabled: false,
+    clusterId: '',
+    clusterDirOverride: '',
+    noTransferFromFiltering: false,
     extraArgs: '',
     mods: [],
     ...overrides
@@ -52,5 +56,19 @@ describe('migrateProfile', () => {
   it('defaults backupScheduleEnabled to false when there is no existing schedule either', () => {
     const legacy = baseProfile({ backupScheduleEnabled: undefined, backupSchedule: undefined })
     expect(migrateProfile(legacy).backupScheduleEnabled).toBe(false)
+  })
+
+  it('backfills cluster fields on profiles saved before they existed', () => {
+    const legacy = baseProfile({
+      clusterEnabled: undefined,
+      clusterId: undefined,
+      clusterDirOverride: undefined,
+      noTransferFromFiltering: undefined
+    })
+    const migrated = migrateProfile(legacy)
+    expect(migrated.clusterEnabled).toBe(false)
+    expect(migrated.clusterId).toBe('')
+    expect(migrated.clusterDirOverride).toBe('')
+    expect(migrated.noTransferFromFiltering).toBe(false)
   })
 })

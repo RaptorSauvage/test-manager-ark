@@ -17,6 +17,10 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     maxBackups: 10,
     backupScheduleEnabled: false,
     mods: [],
+    clusterEnabled: false,
+    clusterId: '',
+    clusterDirOverride: '',
+    noTransferFromFiltering: false,
     extraArgs: '',
     ...overrides
   }
@@ -49,7 +53,47 @@ describe('buildLaunchArgs', () => {
   })
 
   it('appends extraArgs at the end', () => {
-    const args = buildLaunchArgs(makeProfile({ extraArgs: '-NoBattlEye -clusterid=test' }))
-    expect(args).toEqual(expect.arrayContaining(['-NoBattlEye', '-clusterid=test']))
+    const args = buildLaunchArgs(makeProfile({ extraArgs: '-NoBattlEye -SomeFlag=test' }))
+    expect(args).toEqual(expect.arrayContaining(['-NoBattlEye', '-SomeFlag=test']))
+  })
+
+  it('omits every cluster flag when clusterEnabled is false, even with fields filled in', () => {
+    const args = buildLaunchArgs(
+      makeProfile({
+        clusterEnabled: false,
+        clusterId: 'my-cluster',
+        clusterDirOverride: '/clusters/my-cluster',
+        noTransferFromFiltering: true
+      })
+    )
+    expect(args.some((a) => a.startsWith('-clusterid=') || a.startsWith('-ClusterDirOverride='))).toBe(false)
+    expect(args).not.toContain('-NoTransferFromFiltering')
+  })
+
+  it('adds cluster flags, before extraArgs, when clusterEnabled is true', () => {
+    const args = buildLaunchArgs(
+      makeProfile({
+        clusterEnabled: true,
+        clusterId: 'my-cluster',
+        clusterDirOverride: '/clusters/my-cluster',
+        noTransferFromFiltering: true,
+        extraArgs: '-NoBattlEye'
+      })
+    )
+    const clusterIdIndex = args.indexOf('-clusterid=my-cluster')
+    const clusterDirIndex = args.indexOf('-ClusterDirOverride=/clusters/my-cluster')
+    const noTransferIndex = args.indexOf('-NoTransferFromFiltering')
+    const extraArgIndex = args.indexOf('-NoBattlEye')
+
+    expect(clusterIdIndex).toBeGreaterThan(-1)
+    expect(clusterDirIndex).toBeGreaterThan(-1)
+    expect(noTransferIndex).toBeGreaterThan(-1)
+    expect(extraArgIndex).toBeGreaterThan(Math.max(clusterIdIndex, clusterDirIndex, noTransferIndex))
+  })
+
+  it('skips clusterid/ClusterDirOverride individually when their field is blank', () => {
+    const args = buildLaunchArgs(makeProfile({ clusterEnabled: true, clusterId: '', clusterDirOverride: '' }))
+    expect(args.some((a) => a.startsWith('-clusterid='))).toBe(false)
+    expect(args.some((a) => a.startsWith('-ClusterDirOverride='))).toBe(false)
   })
 })

@@ -17,6 +17,10 @@ function makeProfile(id: string): ServerProfile {
     maxBackups: 10,
     backupScheduleEnabled: false,
     mods: [],
+    clusterEnabled: false,
+    clusterId: '',
+    clusterDirOverride: '',
+    noTransferFromFiltering: false,
     extraArgs: ''
   }
 }

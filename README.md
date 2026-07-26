@@ -26,6 +26,11 @@ dedicated servers running on the same machine.
   optional scheduled backups gated behind an explicit enable/disable toggle (the cron
   expression alone doesn't turn the schedule on).
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
+- **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
+  Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
+  folder picker), and No Transfer From Filtering (`-NoTransferFromFiltering`). All three
+  only apply when the section's enable checkbox is on, and are placed before "Extra
+  launch arguments" in the final command line.
 - **Update / install via SteamCMD** — a per-server **Update** button runs
   `steamcmd +force_install_dir <install dir> +login anonymous +app_update 2430930 validate +quit`.
   Works for a first-time install into an empty folder too. Disabled while the server is
@@ -53,7 +58,7 @@ Other scripts:
 ```bash
 npm run typecheck   # type-check main/preload/renderer
 npm run build        # production build into out/
-npm test             # unit tests for the pure logic (launch args, RCON parsing, backup rotation, profile migration, SteamCMD args/paths, process adoption)
+npm test             # unit tests for the pure logic (launch args incl. cluster flags, RCON parsing, backup rotation, profile migration, SteamCMD args/paths, process adoption)
 ```
 
 ## Setting up a server profile
