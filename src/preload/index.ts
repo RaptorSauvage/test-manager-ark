@@ -1,13 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import {
-  IPC,
-  type Api,
-  type ServerProfile,
-  type ServerStatus,
-  type ServerLogLine,
-  type ServerMod,
-  type AppSettings
-} from '@shared/types'
+import { IPC, type Api, type ServerProfile, type ServerStatus, type ServerMod, type AppSettings } from '@shared/types'
 
 const api: Api = {
   profiles: {
@@ -31,11 +23,6 @@ const api: Api = {
       const listener = (_event: Electron.IpcRendererEvent, status: ServerStatus): void => callback(status)
       ipcRenderer.on(IPC.serverStatusChanged, listener)
       return () => ipcRenderer.removeListener(IPC.serverStatusChanged, listener)
-    },
-    onLogLine: (callback: (line: ServerLogLine) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, line: ServerLogLine): void => callback(line)
-      ipcRenderer.on(IPC.serverLogLine, listener)
-      return () => ipcRenderer.removeListener(IPC.serverLogLine, listener)
     }
   },
   rcon: {
@@ -53,6 +40,10 @@ const api: Api = {
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet),
     save: (settings: AppSettings) => ipcRenderer.invoke(IPC.settingsSave, settings)
+  },
+  steamcmd: {
+    install: () => ipcRenderer.invoke(IPC.steamcmdInstall),
+    managedStatus: () => ipcRenderer.invoke(IPC.steamcmdManagedStatus)
   }
 }
 

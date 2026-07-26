@@ -23,9 +23,6 @@ export function registerServerProcessHandlers(webContents: WebContents): void {
   serverEvents.on('status', (status) => {
     if (!webContents.isDestroyed()) webContents.send(IPC.serverStatusChanged, status)
   })
-  serverEvents.on('log', (line) => {
-    if (!webContents.isDestroyed()) webContents.send(IPC.serverLogLine, line)
-  })
 
   ipcMain.handle(IPC.serverStart, (_event, profileId: string) => {
     const profile = requireProfile(profileId)

@@ -1,12 +1,12 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import { platform } from 'node:process'
-import type { ServerProfile, ServerStatus, ServerLogLine } from '@shared/types'
+import type { ServerProfile, ServerStatus } from '@shared/types'
 import { sendRconCommand } from './rcon'
 
 interface RunningServer {
-  process: ChildProcessWithoutNullStreams
+  process: ChildProcess
   status: ServerStatus
 }
 
@@ -18,10 +18,6 @@ function emitStatus(status: ServerStatus): void {
   const entry = running.get(status.profileId)
   if (entry) entry.status = status
   serverEvents.emit('status', status)
-}
-
-export function emitLog(line: ServerLogLine): void {
-  serverEvents.emit('log', line)
 }
 
 const updatingProfiles = new Set<string>()
@@ -93,9 +89,12 @@ export function startServer(profile: ServerProfile): ServerStatus {
 
   emitStatus({ profileId: profile.id, state: 'starting', startedAt: Date.now() })
 
-  let child: ChildProcessWithoutNullStreams
+  let child: ChildProcess
   try {
-    child = spawn(exe, args, { cwd: profile.installDir })
+    // stdio: 'ignore' - nothing in the app reads stdout/stderr, and leaving them
+    // as unread pipes risks the OS pipe buffer filling up and stalling the server
+    // once it logs enough; ARK's dedicated server shows its own console anyway.
+    child = spawn(exe, args, { cwd: profile.installDir, stdio: 'ignore' })
   } catch (err) {
     const failed: ServerStatus = { profileId: profile.id, state: 'error', lastError: (err as Error).message }
     emitStatus(failed)
@@ -110,28 +109,10 @@ export function startServer(profile: ServerProfile): ServerStatus {
   }
   running.set(profile.id, { process: child, status })
   emitStatus(status)
-  emitLog({ profileId: profile.id, stream: 'system', line: `Started (pid ${child.pid})`, timestamp: Date.now() })
 
-  child.stdout.on('data', (data: Buffer) => {
-    for (const line of data.toString().split(/\r?\n/).filter(Boolean)) {
-      emitLog({ profileId: profile.id, stream: 'stdout', line, timestamp: Date.now() })
-    }
-  })
-  child.stderr.on('data', (data: Buffer) => {
-    for (const line of data.toString().split(/\r?\n/).filter(Boolean)) {
-      emitLog({ profileId: profile.id, stream: 'stderr', line, timestamp: Date.now() })
-    }
-  })
-
-  child.on('exit', (code) => {
+  child.on('exit', () => {
     running.delete(profile.id)
     emitStatus({ profileId: profile.id, state: 'stopped' })
-    emitLog({
-      profileId: profile.id,
-      stream: 'system',
-      line: `Process exited with code ${code}`,
-      timestamp: Date.now()
-    })
   })
 
   child.on('error', (err) => {
@@ -152,7 +133,6 @@ async function waitForExitOrKill(entry: RunningServer, profileId: string, graceM
   })
 
   if (!exited && running.has(profileId)) {
-    emitLog({ profileId, stream: 'system', line: 'Grace period elapsed, force-killing process.', timestamp: Date.now() })
     entry.process.kill()
   }
 }
@@ -168,25 +148,10 @@ export async function stopServer(profile: ServerProfile, graceMs = 15000): Promi
   if (!entry) return { profileId: profile.id, state: 'stopped' }
 
   emitStatus({ ...entry.status, state: 'stopping' })
-  emitLog({ profileId: profile.id, stream: 'system', line: 'Saving world (RCON SaveWorld)...', timestamp: Date.now() })
 
   const saveResult = await sendRconCommand(profile, 'SaveWorld')
   if (saveResult.ok) {
-    emitLog({
-      profileId: profile.id,
-      stream: 'system',
-      line: `SaveWorld confirmed: ${saveResult.response?.trim() || '(empty response)'}`,
-      timestamp: Date.now()
-    })
-    emitLog({ profileId: profile.id, stream: 'system', line: 'Sending DoExit...', timestamp: Date.now() })
     await sendRconCommand(profile, 'DoExit')
-  } else {
-    emitLog({
-      profileId: profile.id,
-      stream: 'system',
-      line: `SaveWorld did not respond (${saveResult.error}); skipping DoExit and waiting out the grace period.`,
-      timestamp: Date.now()
-    })
   }
 
   await waitForExitOrKill(entry, profile.id, graceMs)
@@ -203,7 +168,6 @@ export function killServer(profileId: string): ServerStatus {
   const entry = running.get(profileId)
   if (!entry) return { profileId, state: 'stopped' }
 
-  emitLog({ profileId, stream: 'system', line: 'Force-killing process (no save).', timestamp: Date.now() })
   emitStatus({ ...entry.status, state: 'stopping' })
   entry.process.kill()
   return getStatus(profileId)

@@ -15,6 +15,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     savedArksSubPath: 'ShooterGame/Saved/SavedArks',
     backupDir: '',
     maxBackups: 10,
+    backupScheduleEnabled: false,
     extraArgs: '',
     mods: [],
     ...overrides
@@ -41,5 +42,15 @@ describe('migrateProfile', () => {
     const profile = baseProfile({ mods: [{ id: '111', enabled: false }] })
     const migrated = migrateProfile(profile)
     expect(migrated.mods).toEqual([{ id: '111', enabled: false, dev: false }])
+  })
+
+  it('infers backupScheduleEnabled:true for legacy profiles that already had a cron string', () => {
+    const legacy = baseProfile({ backupScheduleEnabled: undefined, backupSchedule: '0 */6 * * *' })
+    expect(migrateProfile(legacy).backupScheduleEnabled).toBe(true)
+  })
+
+  it('defaults backupScheduleEnabled to false when there is no existing schedule either', () => {
+    const legacy = baseProfile({ backupScheduleEnabled: undefined, backupSchedule: undefined })
+    expect(migrateProfile(legacy).backupScheduleEnabled).toBe(false)
   })
 })

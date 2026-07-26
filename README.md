@@ -9,28 +9,32 @@ dedicated servers running on the same machine.
   independent ARK:SA server install/instance). Stop and restart send RCON `SaveWorld`,
   wait for its confirmation, then `DoExit`; Kill force-terminates the process immediately
   with no save, for when a server is stuck.
-- **RCON console** — send admin commands and see responses, plus a live tail of the
-  server's stdout/stderr.
+- **RCON console** — send admin commands and see responses. The server's own stdout/stderr
+  is intentionally not captured here (ARK's dedicated server already shows it in its own
+  console window on Windows), keeping this to just RCON.
 - **Mod manager** — enable/disable/reorder mod IDs and toggle a Dev flag per mod (appends
   `-dev` to load that mod's in-development build), applied via the server's `-mods=`
   launch flag - ARK:SA's only mod mechanism (no Steam Workshop, no GameUserSettings.ini
   involvement). The app never touches your `.ini` files — edit those yourself.
-- **Backups** — one-click zip backup of a profile's `SavedArks` folder, automatic pruning
-  of old backups, optional cron-based scheduling, and one-click restore.
+- **Backups** — one-click zip backup of a profile's `SavedArks` folder (pick the folder
+  with a native browser), automatic pruning of old backups, one-click restore, and
+  optional scheduled backups gated behind an explicit enable/disable toggle (the cron
+  expression alone doesn't turn the schedule on).
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
 - **Update / install via SteamCMD** — a per-server **Update** button runs
-  `steamcmd +force_install_dir <install dir> +login anonymous +app_update 2430930 validate +quit`,
-  streaming its output into the Console tab. Works for a first-time install into an empty
-  folder too. Requires SteamCMD's path to be set once in the app's **Settings** screen.
-  Disabled while the server is running or already updating.
+  `steamcmd +force_install_dir <install dir> +login anonymous +app_update 2430930 validate +quit`.
+  Works for a first-time install into an empty folder too. Disabled while the server is
+  running or already updating. The app's **Settings** screen can either download and
+  manage its own SteamCMD copy (one click, no setup) or point at an existing install you
+  already have.
 
 ## Prerequisites
 
 - Node.js 20+
-- [SteamCMD](https://developer.valvesoftware.com/wiki/SteamCMD) installed somewhere on
-  disk, if you want to use the in-app Update button (point Settings → SteamCMD path at
-  `steamcmd.exe`/`steamcmd.sh`). Otherwise you can keep managing installs yourself and
-  just point a profile's Install directory at an existing one.
+- SteamCMD, only if you want to use the in-app Update button: either let the app install
+  its own copy from Settings, or point Settings → SteamCMD path at an existing
+  `steamcmd.exe`/`steamcmd.sh`. Otherwise you can keep managing installs yourself and just
+  point a profile's Install directory at an existing one.
 
 ## Getting started
 
@@ -44,7 +48,7 @@ Other scripts:
 ```bash
 npm run typecheck   # type-check main/preload/renderer
 npm run build        # production build into out/
-npm test             # unit tests for the pure logic (launch args, RCON parsing, backup rotation, profile migration, SteamCMD args)
+npm test             # unit tests for the pure logic (launch args, RCON parsing, backup rotation, profile migration, SteamCMD args/paths)
 ```
 
 ## Setting up a server profile

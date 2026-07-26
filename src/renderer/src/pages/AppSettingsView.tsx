@@ -8,9 +8,13 @@ interface AppSettingsViewProps {
 export default function AppSettingsView({ onBack }: AppSettingsViewProps): JSX.Element {
   const [settings, setSettings] = useState<AppSettings>({ steamCmdPath: '' })
   const [status, setStatus] = useState('')
+  const [managedPath, setManagedPath] = useState<string | null>(null)
+  const [installing, setInstalling] = useState(false)
+  const [installError, setInstallError] = useState('')
 
   useEffect(() => {
     window.api.settings.get().then(setSettings)
+    window.api.steamcmd.managedStatus().then(setManagedPath)
   }, [])
 
   async function browse(): Promise<void> {
@@ -25,12 +29,39 @@ export default function AppSettingsView({ onBack }: AppSettingsViewProps): JSX.E
     setTimeout(() => setStatus(''), 2000)
   }
 
+  async function installManaged(): Promise<void> {
+    setInstalling(true)
+    setInstallError('')
+    try {
+      const exePath = await window.api.steamcmd.install()
+      setManagedPath(exePath)
+      setSettings((prev) => ({ ...prev, steamCmdPath: exePath }))
+    } catch (err) {
+      setInstallError((err as Error).message)
+    } finally {
+      setInstalling(false)
+    }
+  }
+
   return (
     <div className="server-detail">
       <header className="server-detail-header">
         <button onClick={onBack}>&larr; Back</button>
         <h1>Settings</h1>
       </header>
+
+      <section className="managed-steamcmd">
+        <h3>Managed SteamCMD</h3>
+        <p className="empty-state">
+          {managedPath ? `Installed at ${managedPath}` : 'Not installed yet.'} Downloads SteamCMD directly from
+          Valve into this app's own folder and points the path below at it - no manual setup needed.
+        </p>
+        {installError && <p className="error-message">{installError}</p>}
+        <button onClick={() => void installManaged()} disabled={installing}>
+          {installing ? 'Installing...' : managedPath ? 'Reinstall managed SteamCMD' : 'Install managed SteamCMD'}
+        </button>
+      </section>
+
       <form
         className="settings-tab"
         onSubmit={(e) => {

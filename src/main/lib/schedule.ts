@@ -11,7 +11,7 @@ export function applyBackupSchedule(profile: ServerProfile): void {
     scheduledTasks.delete(profile.id)
   }
 
-  if (!profile.backupSchedule || !cron.validate(profile.backupSchedule)) return
+  if (!profile.backupScheduleEnabled || !profile.backupSchedule || !cron.validate(profile.backupSchedule)) return
 
   const task = cron.schedule(profile.backupSchedule, () => {
     createBackup(profile).catch((err: Error) => {

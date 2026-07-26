@@ -14,6 +14,11 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  async function browseBackupDir(): Promise<void> {
+    const dir = await window.api.dialog.selectDirectory()
+    if (dir) update('backupDir', dir)
+  }
+
   async function save(): Promise<void> {
     const updated = await window.api.profiles.save(form)
     const saved = updated.find((p) => p.id === form.id)
@@ -74,26 +79,38 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
       </label>
       <label>
         Backup directory
-        <input value={form.backupDir} onChange={(e) => update('backupDir', e.target.value)} />
+        <div className="path-input-row">
+          <input value={form.backupDir} onChange={(e) => update('backupDir', e.target.value)} />
+          <button type="button" onClick={() => void browseBackupDir()}>
+            Browse...
+          </button>
+        </div>
       </label>
-      <div className="settings-grid">
-        <label>
-          Max backups to keep
-          <input
-            type="number"
-            value={form.maxBackups}
-            onChange={(e) => update('maxBackups', Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Backup schedule (cron, optional)
-          <input
-            value={form.backupSchedule ?? ''}
-            onChange={(e) => update('backupSchedule', e.target.value)}
-            placeholder="every 6 hours: 0 */6 * * *"
-          />
-        </label>
-      </div>
+      <label>
+        Max backups to keep
+        <input
+          type="number"
+          value={form.maxBackups}
+          onChange={(e) => update('maxBackups', Number(e.target.value))}
+        />
+      </label>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={form.backupScheduleEnabled}
+          onChange={(e) => update('backupScheduleEnabled', e.target.checked)}
+        />
+        Enable scheduled automatic backups
+      </label>
+      <label>
+        Backup schedule (cron expression)
+        <input
+          value={form.backupSchedule ?? ''}
+          onChange={(e) => update('backupSchedule', e.target.value)}
+          placeholder="every 6 hours: 0 */6 * * *"
+          disabled={!form.backupScheduleEnabled}
+        />
+      </label>
       <label>
         Extra launch arguments
         <input value={form.extraArgs} onChange={(e) => update('extraArgs', e.target.value)} />

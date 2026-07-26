@@ -6,6 +6,7 @@ import { registerModsHandlers } from './mods'
 import { registerBackupHandlers } from './backup'
 import { registerDialogHandlers } from './dialog'
 import { registerSettingsHandlers } from './settings'
+import { registerSteamcmdInstallHandlers } from './steamcmdInstall'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers()
@@ -15,4 +16,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerBackupHandlers()
   registerDialogHandlers(mainWindow)
   registerSettingsHandlers()
+  registerSteamcmdInstallHandlers()
 }

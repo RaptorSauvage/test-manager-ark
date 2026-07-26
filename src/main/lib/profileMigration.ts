@@ -4,8 +4,12 @@ import type { ServerProfile, ServerMod } from '@shared/types'
  * Normalizes profiles saved by older versions of the app:
  * - `activeMods: string[]` became `mods: ServerMod[]`
  * - `ServerMod` gained a required `dev` flag
+ * - `backupScheduleEnabled` is new; profiles that already had a cron string
+ *   keep working (treated as enabled), everyone else defaults to off
  */
-export function migrateProfile(raw: ServerProfile & { activeMods?: string[] }): ServerProfile {
+export function migrateProfile(
+  raw: ServerProfile & { activeMods?: string[]; backupScheduleEnabled?: boolean }
+): ServerProfile {
   const { activeMods, ...rest } = raw
   const sourceMods: Array<Partial<ServerMod> & { id: string }> = Array.isArray(rest.mods)
     ? rest.mods
@@ -18,5 +22,7 @@ export function migrateProfile(raw: ServerProfile & { activeMods?: string[] }): 
     dev: mod.dev ?? false
   }))
 
-  return { ...rest, mods }
+  const backupScheduleEnabled = rest.backupScheduleEnabled ?? Boolean(rest.backupSchedule)
+
+  return { ...rest, mods, backupScheduleEnabled }
 }

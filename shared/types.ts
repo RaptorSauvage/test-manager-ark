@@ -21,6 +21,8 @@ export interface ServerProfile {
   maxBackups: number
   /** Optional cron expression for automatic backups, e.g. every 6 hours */
   backupSchedule?: string
+  /** Whether the cron schedule above is actually active */
+  backupScheduleEnabled: boolean
   /**
    * Mods, in load order. Only enabled mods are passed via the server's
    * `-mods=` launch flag (ARK:SA does not use Steam Workshop or
@@ -58,13 +60,6 @@ export interface ServerStatus {
   lastError?: string
 }
 
-export interface ServerLogLine {
-  profileId: string
-  stream: 'stdout' | 'stderr' | 'system'
-  line: string
-  timestamp: number
-}
-
 export interface BackupEntry {
   fileName: string
   filePath: string
@@ -94,7 +89,6 @@ export const IPC = {
   serverUpdate: 'server:update',
   serverStatus: 'server:status',
   serverStatusChanged: 'server:status-changed',
-  serverLogLine: 'server:log-line',
 
   rconSend: 'rcon:send',
 
@@ -106,7 +100,10 @@ export const IPC = {
   backupDelete: 'backup:delete',
 
   settingsGet: 'settings:get',
-  settingsSave: 'settings:save'
+  settingsSave: 'settings:save',
+
+  steamcmdInstall: 'steamcmd:install',
+  steamcmdManagedStatus: 'steamcmd:managed-status'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -136,7 +133,6 @@ export interface Api {
     update: (profileId: string) => Promise<void>
     status: (profileId: string) => Promise<ServerStatus>
     onStatusChanged: (callback: (status: ServerStatus) => void) => () => void
-    onLogLine: (callback: (line: ServerLogLine) => void) => () => void
   }
   rcon: {
     send: (profileId: string, command: string) => Promise<RconResult>
@@ -153,5 +149,9 @@ export interface Api {
   settings: {
     get: () => Promise<AppSettings>
     save: (settings: AppSettings) => Promise<AppSettings>
+  }
+  steamcmd: {
+    install: () => Promise<string>
+    managedStatus: () => Promise<string | null>
   }
 }

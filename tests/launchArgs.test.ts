@@ -15,6 +15,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     savedArksSubPath: 'ShooterGame/Saved/SavedArks',
     backupDir: '',
     maxBackups: 10,
+    backupScheduleEnabled: false,
     mods: [],
     extraArgs: '',
     ...overrides
