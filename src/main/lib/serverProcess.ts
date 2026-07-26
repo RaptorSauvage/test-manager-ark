@@ -7,6 +7,35 @@ import { sendRconCommand } from './rcon'
 import { readAdminPassword } from './config'
 import { setRunningPid } from '../store'
 
+/** ARK writes this once the world has actually finished loading and is ready for players. */
+const STARTUP_COMPLETE_MARKER = 'Server has completed startup and is now advertising for join'
+/** Safety net in case that log line's wording ever changes and the marker stops matching. */
+const STARTUP_FALLBACK_MS = 5 * 60 * 1000
+
+/**
+ * Watches a process's stdout for `marker` and calls `onReady` the first time
+ * it appears, handling the marker being split across separate data chunks.
+ * Exported standalone (independent of spawning) so it's testable with a
+ * plain stream instead of a real child process.
+ */
+export function watchForStartupMarker(stdout: NodeJS.ReadableStream, marker: string, onReady: () => void): void {
+  let buffer = ''
+  let fired = false
+  stdout.on('data', (data: Buffer) => {
+    if (fired) return
+    buffer += data.toString()
+    if (buffer.includes(marker)) {
+      fired = true
+      onReady()
+      return
+    }
+    // Keep the buffer bounded - we only need enough tail to catch a marker split across chunks.
+    if (buffer.length > 8192) {
+      buffer = buffer.slice(-2048)
+    }
+  })
+}
+
 interface RunningServer {
   /** Null for a server adopted from a previous app run - we have its pid but no live handle. */
   process: ChildProcess | null
@@ -149,13 +178,14 @@ export function startServer(profile: ServerProfile): ServerStatus {
 
   let child: ChildProcess
   try {
-    // stdio: 'ignore' - nothing in the app reads stdout/stderr, and leaving them
-    // as unread pipes risks the OS pipe buffer filling up and stalling the server
-    // once it logs enough; ARK's dedicated server shows its own console anyway.
+    // stdout: 'pipe' so we can watch for the startup-complete marker below;
+    // stdin/stderr stay 'ignore' since nothing reads them (an unread pipe
+    // risks the OS buffer filling up and stalling the server once it logs
+    // enough - ARK's dedicated server shows its own console anyway).
     // detached + unref - the server must keep running even if this Manager
     // crashes or is closed; without detaching, Windows ties child processes to
     // the parent's job object and kills them the moment the parent dies.
-    child = spawn(exe, args, { cwd: profile.installDir, stdio: 'ignore', detached: true })
+    child = spawn(exe, args, { cwd: profile.installDir, stdio: ['ignore', 'pipe', 'ignore'], detached: true })
     child.unref()
   } catch (err) {
     const failed: ServerStatus = { profileId: profile.id, state: 'error', lastError: (err as Error).message }
@@ -170,9 +200,12 @@ export function startServer(profile: ServerProfile): ServerStatus {
     return failed
   }
 
+  // Still "starting" here - the OS process exists, but ARK itself hasn't
+  // finished loading the world yet. We only flip to "running" once we see
+  // the startup-complete marker (or the fallback timeout below fires).
   const status: ServerStatus = {
     profileId: profile.id,
-    state: 'running',
+    state: 'starting',
     pid,
     startedAt: Date.now()
   }
@@ -180,9 +213,27 @@ export function startServer(profile: ServerProfile): ServerStatus {
   setRunningPid(profile.id, pid)
   emitStatus(status)
 
-  child.on('exit', () => finalizeStopped(profile.id))
+  const fallback = setTimeout(markReady, STARTUP_FALLBACK_MS)
+
+  function markReady(): void {
+    clearTimeout(fallback)
+    const entry = running.get(profile.id)
+    if (entry && entry.status.state === 'starting') {
+      emitStatus({ ...entry.status, state: 'running' })
+    }
+  }
+
+  if (child.stdout) {
+    watchForStartupMarker(child.stdout, STARTUP_COMPLETE_MARKER, markReady)
+  }
+
+  child.on('exit', () => {
+    clearTimeout(fallback)
+    finalizeStopped(profile.id)
+  })
 
   child.on('error', (err) => {
+    clearTimeout(fallback)
     emitStatus({ profileId: profile.id, state: 'error', lastError: err.message })
   })
 
