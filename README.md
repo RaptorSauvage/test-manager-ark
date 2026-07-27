@@ -34,7 +34,9 @@ dedicated servers running on the same machine.
 - **Backups tab** — backup directory (with a folder picker), max backups to keep, and
   scheduled automatic backups (gated behind an explicit enable/disable toggle, not just an
   empty/filled cron field) live here alongside the backup list/create/restore/delete
-  actions, instead of being split off into Settings.
+  actions, instead of being split off into Settings. A scheduled backup only actually runs
+  while the server is online - if it's stopped when the cron fires, that run is skipped
+  rather than backing up (or erroring on) a server that isn't running.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
   the order is persisted and stays the same next time you open the app.
