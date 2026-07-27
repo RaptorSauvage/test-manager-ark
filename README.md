@@ -49,6 +49,17 @@ dedicated servers running on the same machine.
   `backup:created` event for the tab to pick up, so you don't have to click Refresh to see
   it) and right after saving a changed backup directory in this tab, so switching folders
   immediately shows that folder's contents instead of the previous one's.
+- **Per-player profile backups** (Backups tab, opt-in toggle - "Back up player profiles on
+  join/leave", off by default) — tails the server's own `ShooterGame.log` for join/leave
+  lines (e.g. `LeRaptorSauvage [UniqueNetId:0002dbe9... Platform:None] joined this ARK!`)
+  rather than polling RCON, and copies that player's `<UniqueNetId>.arkprofile` file (from
+  `SavedArks/<map>`, ARK:SA names it after the player's EOS-based UniqueNetId) into
+  `PlayerBackups/<player>_<id>/` under the backup directory, timestamped and tagged
+  `_joined`/`_left`. On a leave event, it waits up to 15s for the file's own modified time
+  to actually move past what it was before backing up - ARK writes the post-disconnect
+  save shortly after the event, not instantly - and proceeds with whatever's there if that
+  never happens rather than staying stuck. Keeps the last 20 snapshots per player,
+  pruning older ones automatically.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
   the order is persisted and stays the same next time you open the app.
@@ -196,6 +207,11 @@ tab:
 - The exact ARK launch command-line flags can change between game updates
   (`src/main/lib/serverProcess.ts`, `buildLaunchArgs`); use the profile's "Extra launch
   arguments" field if your install needs something different.
+- The player-profile-backup join/leave line format and the ".arkprofile filename equals
+  the UniqueNetId" mapping were confirmed against a real log sample, not guessed - but if
+  a future ARK:SA update changes either, the parser (`parsePlayerConnectionEvents` in
+  `src/main/lib/playerConnectionWatcher.ts`) simply stops matching lines and the feature
+  quietly does nothing rather than backing up the wrong file.
 - Out of scope for this version: remote/SSH or Docker-based control, and multi-user/remote
   web access (this is a single-user local desktop app).
 - Because the server survives the Manager closing, deleting a profile does **not** stop

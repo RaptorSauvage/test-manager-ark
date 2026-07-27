@@ -28,6 +28,13 @@ export interface ServerProfile {
   /** Whether the cron schedule above is actually active */
   backupScheduleEnabled: boolean
   /**
+   * When true, backs up a player's .arkprofile file (from SavedArks/<map>) into a
+   * dedicated per-player folder under the backup directory whenever the server's own
+   * log shows them joining or leaving - detected by tailing ShooterGame.log, not RCON
+   * polling.
+   */
+  playerProfileBackupEnabled: boolean
+  /**
    * Mods, in load order. Only enabled mods are passed via the server's
    * `-mods=` launch flag (ARK:SA does not use Steam Workshop or
    * GameUserSettings.ini for mods - the launch flag is the only mechanism).

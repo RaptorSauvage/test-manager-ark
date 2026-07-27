@@ -17,6 +17,7 @@ function profile(id: string): ServerProfile {
     backupDir: '',
     maxBackups: 10,
     backupScheduleEnabled: false,
+    playerProfileBackupEnabled: false,
     mods: [],
     clusterEnabled: false,
     clusterId: '',

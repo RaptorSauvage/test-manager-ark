@@ -5,6 +5,7 @@ import { listProfiles, getRunningPids } from './store'
 import { applyBackupSchedule } from './lib/schedule'
 import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
 import { startMonitoring } from './lib/monitor'
+import { registerPlayerBackupWatch, startPlayerBackupWatch } from './lib/playerBackupWatch'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -52,10 +53,14 @@ app.whenReady().then(() => {
   // Re-attach to servers still running from a previous session (they survive
   // this app crashing/closing by design - see serverProcess.startServer).
   adoptPersistedProcesses(profiles, getRunningPids())
+  registerPlayerBackupWatch()
 
   for (const profile of profiles) {
     applyBackupSchedule(profile)
-    if (isRunning(profile.id)) startMonitoring(profile)
+    if (isRunning(profile.id)) {
+      startMonitoring(profile)
+      startPlayerBackupWatch(profile)
+    }
   }
 
   createWindow()

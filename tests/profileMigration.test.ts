@@ -17,6 +17,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     backupDir: '',
     maxBackups: 10,
     backupScheduleEnabled: false,
+    playerProfileBackupEnabled: false,
     clusterEnabled: false,
     clusterId: '',
     clusterDirOverride: '',
@@ -122,5 +123,10 @@ describe('migrateProfile', () => {
     const migrated = migrateProfile(legacy)
     expect(migrated.moddedMapEnabled).toBe(false)
     expect(migrated.moddedMapId).toBe('')
+  })
+
+  it('defaults playerProfileBackupEnabled to false on profiles saved before it existed', () => {
+    const legacy = baseProfile({ playerProfileBackupEnabled: undefined })
+    expect(migrateProfile(legacy).playerProfileBackupEnabled).toBe(false)
   })
 })

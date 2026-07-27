@@ -25,7 +25,8 @@ interface LegacyProfileFields {
  * - `clusterEnabled`/`clusterId`/`clusterDirOverride`/`noTransferFromFiltering`
  *   are new and default to off/empty
  * - `maxPlayers`/`externalIp`/`cultureSettings`/`disableBattlEye`/`rconTribeLog`/
- *   `forceRespawnDinos`/`noSound` are new and default to off/empty/70 players
+ *   `forceRespawnDinos`/`noSound`/`playerProfileBackupEnabled` are new and default to
+ *   off/empty/70 players
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -65,6 +66,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     forceRespawnDinos: rest.forceRespawnDinos ?? false,
     noSound: rest.noSound ?? false,
     moddedMapEnabled: rest.moddedMapEnabled ?? false,
-    moddedMapId: rest.moddedMapId ?? ''
+    moddedMapId: rest.moddedMapId ?? '',
+    playerProfileBackupEnabled: rest.playerProfileBackupEnabled ?? false
   }
 }

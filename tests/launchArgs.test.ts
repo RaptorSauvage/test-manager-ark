@@ -17,6 +17,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     backupDir: '',
     maxBackups: 10,
     backupScheduleEnabled: false,
+    playerProfileBackupEnabled: false,
     mods: [],
     clusterEnabled: false,
     clusterId: '',

@@ -13,7 +13,7 @@ const STARTUP_COMPLETE_MARKER = 'Server has completed startup and is now adverti
 /** Safety net in case that log line's wording ever changes and the marker stops matching. */
 const STARTUP_FALLBACK_MS = 5 * 60 * 1000
 
-function getLogFilePath(installDir: string): string {
+export function getLogFilePath(installDir: string): string {
   return path.join(installDir, 'ShooterGame', 'Saved', 'Logs', 'ShooterGame.log')
 }
 
@@ -31,21 +31,15 @@ export function computeTailReadStart(previousSize: number, currentSize: number):
 }
 
 /**
- * Polls the server's own log file for `marker`, calling onReady the first
- * time it shows up in newly-written content. We watch the log file rather
- * than the process's stdout because ARK's dedicated server on Windows
- * allocates its own console rather than writing through the standard stdout
- * handle, so piping stdio never sees anything. Content already in the file
- * before watching started is never matched, so a leftover marker line from
- * a previous session can't cause a false "ready" immediately on start.
- * Returns a function that stops watching.
+ * Polls the server's own log file, calling onChunk with each newly-written slice of
+ * content. We watch the log file rather than the process's stdout because ARK's
+ * dedicated server on Windows allocates its own console rather than writing through the
+ * standard stdout handle, so piping stdio never sees anything. Content already in the
+ * file before watching started is never passed to onChunk, so leftover lines from a
+ * previous session can't cause a false match immediately on start. Returns a function
+ * that stops watching.
  */
-export function watchLogFileForMarker(
-  installDir: string,
-  marker: string,
-  onReady: () => void,
-  intervalMs = 2000
-): () => void {
+export function watchLogFile(installDir: string, onChunk: (chunk: string) => void, intervalMs = 2000): () => void {
   const logPath = getLogFilePath(installDir)
   let previousSize: number | null = null
   let stopped = false
@@ -70,7 +64,7 @@ export function watchLogFileForMarker(
       })
       stream.on('error', () => {})
       stream.on('end', () => {
-        if (!stopped && chunk.includes(marker)) onReady()
+        if (!stopped) onChunk(chunk)
       })
     })
   }, intervalMs)
@@ -79,6 +73,22 @@ export function watchLogFileForMarker(
     stopped = true
     clearInterval(interval)
   }
+}
+
+/** Watches for `marker` to appear, firing onReady (at most once) the first time it does. */
+export function watchLogFileForMarker(
+  installDir: string,
+  marker: string,
+  onReady: () => void,
+  intervalMs = 2000
+): () => void {
+  return watchLogFile(
+    installDir,
+    (chunk) => {
+      if (chunk.includes(marker)) onReady()
+    },
+    intervalMs
+  )
 }
 
 interface RunningServer {

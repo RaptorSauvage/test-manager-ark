@@ -60,6 +60,7 @@ export function registerProfileHandlers(): void {
       maxBackups: 10,
       backupSchedule: '',
       backupScheduleEnabled: false,
+      playerProfileBackupEnabled: false,
       mods: detected.mods,
       clusterEnabled: false,
       clusterId: '',
