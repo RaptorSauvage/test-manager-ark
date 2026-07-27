@@ -22,6 +22,10 @@ describe('describeSteamCmdExitCode', () => {
     expect(describeSteamCmdExitCode(7)).toMatch(/Steam.*online/i)
   })
 
+  it('explains exit code 8 as a disk space issue', () => {
+    expect(describeSteamCmdExitCode(8)).toMatch(/disk space/i)
+  })
+
   it('falls back to the raw code for undocumented exit codes', () => {
     expect(describeSteamCmdExitCode(42)).toBe('SteamCMD exited with code 42')
   })

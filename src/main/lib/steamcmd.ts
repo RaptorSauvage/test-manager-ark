@@ -38,6 +38,12 @@ export function describeSteamCmdExitCode(code: number): string {
       'freshly installed SteamCMD\'s very first run, since it has to update itself first. Try again.'
     )
   }
+  if (code === 8) {
+    return (
+      'SteamCMD ran out of disk space (exit code 8). ARK: Survival Ascended\'s dedicated server ' +
+      'is a large install (30+ GB) - free up space on the drive your install directory is on and try again.'
+    )
+  }
   return `SteamCMD exited with code ${code}`
 }
 
