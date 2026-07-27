@@ -29,6 +29,15 @@ export function createDefaultProfile(name: string): ServerProfile {
     rconTribeLog: false,
     forceRespawnDinos: false,
     noSound: false,
-    extraArgs: ''
+    extraArgs: '',
+    scheduledRestartEnabled: false,
+    scheduledRestartTime: '00:00',
+    scheduledRestartDays: [],
+    scheduledRestartUpdateAfter: false,
+    scheduledRestartStartAfter: false,
+    scheduledRestartDestroyWildDinosAfter: false,
+    scheduledDinoWipeEnabled: false,
+    scheduledDinoWipeTime: '00:00',
+    scheduledDinoWipeDays: []
   }
 }

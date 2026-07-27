@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
 import { listProfiles, getRunningPids } from './store'
 import { applyBackupSchedule } from './lib/schedule'
+import { applyScheduledRestart, applyScheduledDinoWipe } from './lib/scheduledActions'
 import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
 import { startMonitoring } from './lib/monitor'
 import { registerPlayerBackupWatch, startPlayerBackupWatch } from './lib/playerBackupWatch'
@@ -57,6 +58,8 @@ app.whenReady().then(() => {
 
   for (const profile of profiles) {
     applyBackupSchedule(profile)
+    applyScheduledRestart(profile)
+    applyScheduledDinoWipe(profile)
     if (isRunning(profile.id)) {
       startMonitoring(profile)
       startPlayerBackupWatch(profile)

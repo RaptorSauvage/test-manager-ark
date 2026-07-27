@@ -30,6 +30,15 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     forceRespawnDinos: false,
     noSound: false,
     extraArgs: '',
+    scheduledRestartEnabled: false,
+    scheduledRestartTime: '00:00',
+    scheduledRestartDays: [],
+    scheduledRestartUpdateAfter: false,
+    scheduledRestartStartAfter: false,
+    scheduledRestartDestroyWildDinosAfter: false,
+    scheduledDinoWipeEnabled: false,
+    scheduledDinoWipeTime: '00:00',
+    scheduledDinoWipeDays: [],
     mods: [],
     ...overrides
   } as ServerProfile

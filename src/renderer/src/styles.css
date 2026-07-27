@@ -477,6 +477,61 @@ label.checkbox {
   gap: 14px;
 }
 
+.server-management-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 720px;
+}
+
+.schedule-section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.schedule-section h3 {
+  margin: 0;
+  color: var(--accent);
+}
+
+.schedule-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.schedule-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.schedule-day {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.schedule-suboptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 20px;
+}
+
+.schedule-countdown {
+  margin: 0;
+  color: var(--ok);
+  font-weight: 600;
+}
+
 .mods-add {
   display: flex;
   gap: 8px;

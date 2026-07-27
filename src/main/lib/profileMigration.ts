@@ -27,6 +27,7 @@ interface LegacyProfileFields {
  * - `maxPlayers`/`externalIp`/`cultureSettings`/`disableBattlEye`/`rconTribeLog`/
  *   `forceRespawnDinos`/`noSound`/`playerProfileBackupEnabled`/
  *   `playerProfileBackupMaxPerPlayer` are new and default to off/empty/70 players/20
+ * - `scheduledRestart*`/`scheduledDinoWipe*` are new and default to off/00:00/no days
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -69,6 +70,15 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     moddedMapEnabled: rest.moddedMapEnabled ?? false,
     moddedMapId: rest.moddedMapId ?? '',
     playerProfileBackupEnabled: rest.playerProfileBackupEnabled ?? false,
-    playerProfileBackupMaxPerPlayer: rest.playerProfileBackupMaxPerPlayer ?? 20
+    playerProfileBackupMaxPerPlayer: rest.playerProfileBackupMaxPerPlayer ?? 20,
+    scheduledRestartEnabled: rest.scheduledRestartEnabled ?? false,
+    scheduledRestartTime: rest.scheduledRestartTime ?? '00:00',
+    scheduledRestartDays: rest.scheduledRestartDays ?? [],
+    scheduledRestartUpdateAfter: rest.scheduledRestartUpdateAfter ?? false,
+    scheduledRestartStartAfter: rest.scheduledRestartStartAfter ?? false,
+    scheduledRestartDestroyWildDinosAfter: rest.scheduledRestartDestroyWildDinosAfter ?? false,
+    scheduledDinoWipeEnabled: rest.scheduledDinoWipeEnabled ?? false,
+    scheduledDinoWipeTime: rest.scheduledDinoWipeTime ?? '00:00',
+    scheduledDinoWipeDays: rest.scheduledDinoWipeDays ?? []
   }
 }

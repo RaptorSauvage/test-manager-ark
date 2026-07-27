@@ -4,6 +4,12 @@ import { ipcMain } from 'electron'
 import { IPC, type ServerProfile } from '@shared/types'
 import { listProfiles, saveProfile, deleteProfile, setProfileOrder } from '../store'
 import { applyBackupSchedule, clearBackupSchedule } from '../lib/schedule'
+import {
+  applyScheduledRestart,
+  applyScheduledDinoWipe,
+  clearScheduledRestart,
+  clearScheduledDinoWipe
+} from '../lib/scheduledActions'
 import { isValidArkInstall, detectProfileFields, uniqueProfileName } from '../lib/detect'
 import { serializeProfile, parseImportedProfile } from '../lib/profileExport'
 import { syncPlayerBackupWatch } from '../lib/playerBackupWatch'
@@ -15,11 +21,15 @@ export function registerProfileHandlers(): void {
     const profiles = saveProfile(profile)
     applyBackupSchedule(profile)
     syncPlayerBackupWatch(profile)
+    applyScheduledRestart(profile)
+    applyScheduledDinoWipe(profile)
     return profiles
   })
 
   ipcMain.handle(IPC.profilesDelete, (_event, id: string) => {
     clearBackupSchedule(id)
+    clearScheduledRestart(id)
+    clearScheduledDinoWipe(id)
     return deleteProfile(id)
   })
 
@@ -36,6 +46,8 @@ export function registerProfileHandlers(): void {
     const profile = parseImportedProfile(fs.readFileSync(filePath, 'utf-8'), existing.map((p) => p.name))
     const profiles = saveProfile(profile)
     applyBackupSchedule(profile)
+    applyScheduledRestart(profile)
+    applyScheduledDinoWipe(profile)
     return { profile, profiles }
   })
 
@@ -75,7 +87,16 @@ export function registerProfileHandlers(): void {
       rconTribeLog: false,
       forceRespawnDinos: false,
       noSound: false,
-      extraArgs: ''
+      extraArgs: '',
+      scheduledRestartEnabled: false,
+      scheduledRestartTime: '00:00',
+      scheduledRestartDays: [],
+      scheduledRestartUpdateAfter: false,
+      scheduledRestartStartAfter: false,
+      scheduledRestartDestroyWildDinosAfter: false,
+      scheduledDinoWipeEnabled: false,
+      scheduledDinoWipeTime: '00:00',
+      scheduledDinoWipeDays: []
     }
 
     const profiles = saveProfile(profile)

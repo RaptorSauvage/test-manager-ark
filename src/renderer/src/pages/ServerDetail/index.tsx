@@ -4,8 +4,9 @@ import RconTab from './RconTab'
 import ModsTab from './ModsTab'
 import BackupsTab from './BackupsTab'
 import SettingsTab from './SettingsTab'
+import ServerManagementTab from './ServerManagementTab'
 
-export type TabKey = 'rcon' | 'mods' | 'backups' | 'settings'
+export type TabKey = 'rcon' | 'mods' | 'backups' | 'settings' | 'management'
 
 interface ServerDetailProps {
   profile: ServerProfile
@@ -18,6 +19,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'rcon', label: 'RCON' },
   { key: 'mods', label: 'Mods' },
   { key: 'backups', label: 'Backups' },
+  { key: 'management', label: 'Server Management' },
   { key: 'settings', label: 'Settings' }
 ]
 
@@ -41,6 +43,7 @@ export default function ServerDetail({ profile, initialTab, onBack, onProfileCha
         {tab === 'rcon' && <RconTab profile={profile} />}
         {tab === 'mods' && <ModsTab profile={profile} onProfileChange={onProfileChange} />}
         {tab === 'backups' && <BackupsTab profile={profile} onProfileChange={onProfileChange} />}
+        {tab === 'management' && <ServerManagementTab profile={profile} onProfileChange={onProfileChange} />}
         {tab === 'settings' && <SettingsTab profile={profile} onProfileChange={onProfileChange} />}
       </div>
     </div>

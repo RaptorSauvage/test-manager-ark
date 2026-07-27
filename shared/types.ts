@@ -64,6 +64,26 @@ export interface ServerProfile {
   noSound: boolean
   /** Free-form extra launch arguments appended to the command line */
   extraArgs: string
+  /**
+   * Scheduled restart: gracefully stops the server at `scheduledRestartTime` on the
+   * selected days, optionally updates it via SteamCMD and/or starts it back up, optionally
+   * sending RCON DestroyWildDinos once it's back up (only if it was also started back up).
+   */
+  scheduledRestartEnabled: boolean
+  /** 24h "HH:MM" */
+  scheduledRestartTime: string
+  /** Days it fires on, 0=Sunday..6=Saturday */
+  scheduledRestartDays: number[]
+  scheduledRestartUpdateAfter: boolean
+  scheduledRestartStartAfter: boolean
+  scheduledRestartDestroyWildDinosAfter: boolean
+  /** Scheduled dino wipe - independent of the restart above: sends RCON DestroyWildDinos
+   *  at `scheduledDinoWipeTime` on the selected days, while the server is running. */
+  scheduledDinoWipeEnabled: boolean
+  /** 24h "HH:MM" */
+  scheduledDinoWipeTime: string
+  /** Days it fires on, 0=Sunday..6=Saturday */
+  scheduledDinoWipeDays: number[]
 }
 
 export interface MapDefinition {
