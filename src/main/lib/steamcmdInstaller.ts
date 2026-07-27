@@ -16,7 +16,7 @@ const DOWNLOAD_URLS: Partial<Record<NodeJS.Platform, string>> = {
  * the executable once packaged - not the OS's hidden per-user AppData folder, so
  * it's somewhere the user can actually find and browse to.
  */
-function getManagerBaseDir(): string {
+export function getManagerBaseDir(): string {
   return app.isPackaged ? path.dirname(app.getPath('exe')) : app.getAppPath()
 }
 

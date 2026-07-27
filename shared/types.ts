@@ -110,7 +110,8 @@ export const IPC = {
   settingsSave: 'settings:save',
 
   steamcmdInstall: 'steamcmd:install',
-  steamcmdManagedStatus: 'steamcmd:managed-status'
+  steamcmdManagedStatus: 'steamcmd:managed-status',
+  steamcmdUpdateLog: 'steamcmd:update-log'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -161,5 +162,6 @@ export interface Api {
   steamcmd: {
     install: () => Promise<string>
     managedStatus: () => Promise<string | null>
+    getUpdateLog: (profileId: string) => Promise<string | null>
   }
 }

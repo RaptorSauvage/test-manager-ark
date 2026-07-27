@@ -23,6 +23,8 @@ export default function Dashboard({
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
   const [dragId, setDragId] = useState<string | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [logProfileId, setLogProfileId] = useState<string | null>(null)
+  const [logContent, setLogContent] = useState('')
 
   async function handleCreate(): Promise<void> {
     const profile = createDefaultProfile(`Server ${profiles.length + 1}`)
@@ -74,6 +76,16 @@ export default function Dashboard({
 
   async function handleUpdate(profile: ServerProfile): Promise<void> {
     await runAction(profile, () => window.api.server.update(profile.id))
+  }
+
+  async function handleViewLog(profile: ServerProfile): Promise<void> {
+    if (logProfileId === profile.id) {
+      setLogProfileId(null)
+      return
+    }
+    const log = await window.api.steamcmd.getUpdateLog(profile.id)
+    setLogContent(log ?? 'No update log yet - run Update at least once.')
+    setLogProfileId(profile.id)
   }
 
   function stateOf(profile: ServerProfile): ServerRunState {
@@ -261,11 +273,15 @@ export default function Dashboard({
                 >
                   {state === 'updating' ? 'Updating...' : 'Update'}
                 </button>
+                <button onClick={() => void handleViewLog(profile)} title="Show the last SteamCMD update's output">
+                  {logProfileId === profile.id ? 'Hide update log' : 'View update log'}
+                </button>
                 <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
                 <button className="danger" onClick={() => void handleDelete(profile.id)}>
                   Delete
                 </button>
               </div>
+              {logProfileId === profile.id && <pre className="log-output">{logContent}</pre>}
             </div>
           )
         })}

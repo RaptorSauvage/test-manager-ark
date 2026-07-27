@@ -43,7 +43,10 @@ dedicated servers running on the same machine.
   skips already-stopped servers). Update All updates every stopped server in parallel
   (each is a separate anonymous-login SteamCMD process, so this is safe). Stop+Update+
   Restart All stops whichever servers are currently running, updates every profile, then
-  starts back up only the ones that were running beforehand.
+  starts back up only the ones that were running beforehand. Each server's "View update
+  log" button shows the last SteamCMD run's actual output (logged to
+  `logs/steamcmd-update-<profileId>.log` next to the Manager), so an update failure is
+  diagnosable instead of just a raw exit code.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), and No Transfer From Filtering (`-NoTransferFromFiltering`). All three

@@ -1,6 +1,9 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { spawn } from 'node:child_process'
 import type { ServerProfile } from '@shared/types'
 import { setUpdating, isRunning, isUpdating } from './serverProcess'
+import { getManagerBaseDir } from './steamcmdInstaller'
 
 /** Steam App ID for the ARK: Survival Ascended dedicated server (free, public - anonymous login works). */
 const ARK_ASA_DEDICATED_SERVER_APP_ID = '2430930'
@@ -38,6 +41,17 @@ export function describeSteamCmdExitCode(code: number): string {
   return `SteamCMD exited with code ${code}`
 }
 
+/** Where the last SteamCMD update run's output is logged for this profile, so failures are diagnosable. */
+export function getUpdateLogPath(profileId: string): string {
+  return path.join(getManagerBaseDir(), 'logs', `steamcmd-update-${profileId}.log`)
+}
+
+/** Returns the last update run's log for this profile, or null if it has never been updated. */
+export function readUpdateLog(profileId: string): string | null {
+  const logPath = getUpdateLogPath(profileId)
+  return fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf-8') : null
+}
+
 export function updateServer(profile: ServerProfile, steamCmdPath: string): Promise<void> {
   if (isRunning(profile.id)) {
     return Promise.reject(new Error('Stop the server before updating it.'))
@@ -54,17 +68,27 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
 
     setUpdating(profile.id, true)
 
-    // stdio: 'ignore' - SteamCMD's own console output isn't surfaced by this app;
-    // leaving the pipes unread would risk the OS buffer filling and stalling it.
-    const child = spawn(steamCmdPath, args, { stdio: 'ignore' })
+    const logPath = getUpdateLogPath(profile.id)
+    fs.mkdirSync(path.dirname(logPath), { recursive: true })
+    const logStream = fs.createWriteStream(logPath)
+
+    // Pipe stdout/stderr into a log file instead of 'ignore' - SteamCMD's own console
+    // output wasn't surfaced anywhere, making failures (like exit code 7) undiagnosable
+    // beyond the raw code. Piping into an actively-draining stream avoids the OS pipe
+    // buffer filling up and stalling the process the way leaving it unread would.
+    const child = spawn(steamCmdPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    child.stdout?.pipe(logStream)
+    child.stderr?.pipe(logStream)
 
     child.on('error', (err) => {
       setUpdating(profile.id, false)
+      logStream.end()
       reject(err)
     })
 
     child.on('exit', (code) => {
       setUpdating(profile.id, false)
+      logStream.end()
       if (code === 0) {
         resolve()
       } else {

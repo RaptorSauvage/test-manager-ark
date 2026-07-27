@@ -249,6 +249,19 @@ label.checkbox {
   gap: 8px;
 }
 
+.log-output {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  max-height: 240px;
+  overflow: auto;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .server-detail {
   padding: 24px;
   max-width: 1100px;
