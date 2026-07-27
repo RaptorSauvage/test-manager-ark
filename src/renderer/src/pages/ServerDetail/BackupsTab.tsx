@@ -35,6 +35,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
     if (saved) onProfileChange(saved)
     setSettingsStatus('Saved')
     setTimeout(() => setSettingsStatus(''), 2000)
+    await refresh()
   }
 
   const refresh = useCallback(async () => {
@@ -46,6 +47,12 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    return window.api.backup.onCreated((profileId) => {
+      if (profileId === profile.id) void refresh()
+    })
+  }, [profile.id, refresh])
 
   async function handleCreate(): Promise<void> {
     setBusy(true)

@@ -42,7 +42,11 @@ dedicated servers running on the same machine.
   file explorer), Restore selected backup, Delete selected backup(s) - instead of a
   Restore/Delete button pair per row. Multiple backups can be checked at once to delete
   them together; Restore only enables when exactly one is checked, since restoring more
-  than one at a time isn't meaningful.
+  than one at a time isn't meaningful. The list also reloads itself automatically - both
+  when a scheduled/cron backup completes in the background (the main process pushes a
+  `backup:created` event for the tab to pick up, so you don't have to click Refresh to see
+  it) and right after saving a changed backup directory in this tab, so switching folders
+  immediately shows that folder's contents instead of the previous one's.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
   the order is persisted and stays the same next time you open the app.

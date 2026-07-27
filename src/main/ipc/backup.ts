@@ -1,7 +1,7 @@
-import { ipcMain } from 'electron'
+import { ipcMain, type WebContents } from 'electron'
 import { IPC } from '@shared/types'
 import { getProfile } from '../store'
-import { createBackup, listBackups, deleteBackup, restoreBackup, openBackupFolder } from '../lib/backup'
+import { createBackup, listBackups, deleteBackup, restoreBackup, openBackupFolder, backupEvents } from '../lib/backup'
 
 function requireProfile(profileId: string) {
   const profile = getProfile(profileId)
@@ -9,7 +9,11 @@ function requireProfile(profileId: string) {
   return profile
 }
 
-export function registerBackupHandlers(): void {
+export function registerBackupHandlers(webContents: WebContents): void {
+  backupEvents.on('created', (profileId: string) => {
+    if (!webContents.isDestroyed()) webContents.send(IPC.backupCreated, profileId)
+  })
+
   ipcMain.handle(IPC.backupCreate, (_event, profileId: string) => createBackup(requireProfile(profileId)))
 
   ipcMain.handle(IPC.backupList, (_event, profileId: string) => listBackups(requireProfile(profileId)))

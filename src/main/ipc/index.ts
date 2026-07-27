@@ -17,7 +17,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerServerProcessHandlers(mainWindow.webContents)
   registerRconHandlers()
   registerModsHandlers()
-  registerBackupHandlers()
+  registerBackupHandlers(mainWindow.webContents)
   registerDialogHandlers(mainWindow)
   registerSettingsHandlers()
   registerSteamcmdInstallHandlers()

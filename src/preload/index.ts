@@ -42,7 +42,12 @@ const api: Api = {
     list: (profileId: string) => ipcRenderer.invoke(IPC.backupList, profileId),
     delete: (filePath: string) => ipcRenderer.invoke(IPC.backupDelete, filePath),
     restore: (profileId: string, filePath: string) => ipcRenderer.invoke(IPC.backupRestore, profileId, filePath),
-    openFolder: (profileId: string) => ipcRenderer.invoke(IPC.backupOpenFolder, profileId)
+    openFolder: (profileId: string) => ipcRenderer.invoke(IPC.backupOpenFolder, profileId),
+    onCreated: (callback: (profileId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, profileId: string): void => callback(profileId)
+      ipcRenderer.on(IPC.backupCreated, listener)
+      return () => ipcRenderer.removeListener(IPC.backupCreated, listener)
+    }
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet),

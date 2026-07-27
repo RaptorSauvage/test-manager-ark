@@ -1,9 +1,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { EventEmitter } from 'node:events'
 import { shell } from 'electron'
 import archiver from 'archiver'
 import AdmZip from 'adm-zip'
 import type { ServerProfile, BackupEntry } from '@shared/types'
+
+/** Emits 'created' with a profileId whenever a backup finishes - manual or scheduled -
+ *  so the renderer can reload its backup list without polling. */
+export const backupEvents = new EventEmitter()
 
 function savedArksDir(profile: ServerProfile): string {
   return path.join(profile.installDir, 'ShooterGame', 'Saved', 'SavedArks', profile.map)
@@ -42,6 +47,7 @@ export function createBackup(profile: ServerProfile): Promise<BackupEntry> {
         sizeBytes: archive.pointer()
       }
       pruneOldBackups(profile)
+      backupEvents.emit('created', profile.id)
       resolve(entry)
     })
     archive.on('error', reject)
