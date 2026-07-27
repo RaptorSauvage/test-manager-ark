@@ -22,6 +22,22 @@ export function buildUpdateArgs(installDir: string): string[] {
   ]
 }
 
+/**
+ * Turns a SteamCMD exit code into a message. Valve has never documented these officially,
+ * so only codes confirmed by community reports get a specific explanation - everything
+ * else just states the raw code rather than guessing.
+ */
+export function describeSteamCmdExitCode(code: number): string {
+  if (code === 7) {
+    return (
+      'SteamCMD could not reach Steam\'s servers (exit code 7 - "Steam needs to be online to ' +
+      'update"). Check your internet connection and firewall/antivirus - this is common on a ' +
+      'freshly installed SteamCMD\'s very first run, since it has to update itself first. Try again.'
+    )
+  }
+  return `SteamCMD exited with code ${code}`
+}
+
 export function updateServer(profile: ServerProfile, steamCmdPath: string): Promise<void> {
   if (isRunning(profile.id)) {
     return Promise.reject(new Error('Stop the server before updating it.'))
@@ -52,7 +68,7 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
       if (code === 0) {
         resolve()
       } else {
-        reject(new Error(`SteamCMD exited with code ${code}`))
+        reject(new Error(describeSteamCmdExitCode(code ?? -1)))
       }
     })
   })
