@@ -1,14 +1,26 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import cron, { type ScheduledTask } from 'node-cron'
 import type { ServerProfile } from '@shared/types'
 import { buildDayOfWeekCron } from '@shared/scheduleTime'
 import { isRunning, startServer, stopServer } from './serverProcess'
 import { startMonitoring } from './monitor'
-import { updateServer } from './steamcmd'
+import { updateServer, getUpdateLogPath } from './steamcmd'
 import { sendRconCommand } from './rcon'
 import { getSettings } from '../store'
 
 const restartTasks = new Map<string, ScheduledTask>()
 const dinoWipeTasks = new Map<string, ScheduledTask>()
+
+/** Appends a timestamped note to the same per-profile log the manual Update button's
+ *  "View update log" reads, so a scheduled update's outcome - including a guard-clause
+ *  rejection that never even got to spawn SteamCMD (no SteamCMD path set, server didn't
+ *  actually stop, an update already running) - is visible without opening devtools. */
+function logScheduledUpdateOutcome(profileId: string, message: string): void {
+  const logPath = getUpdateLogPath(profileId)
+  fs.mkdirSync(path.dirname(logPath), { recursive: true })
+  fs.appendFileSync(logPath, `\n[${new Date().toISOString()}] ${message}\n`)
+}
 
 async function runScheduledRestart(profile: ServerProfile): Promise<void> {
   if (!isRunning(profile.id)) return
@@ -18,8 +30,11 @@ async function runScheduledRestart(profile: ServerProfile): Promise<void> {
   if (profile.scheduledRestartUpdateAfter) {
     try {
       await updateServer(profile, getSettings().steamCmdPath)
+      logScheduledUpdateOutcome(profile.id, 'Scheduled update (after shutdown) completed successfully.')
     } catch (err) {
-      console.error(`Scheduled update failed for ${profile.name}:`, (err as Error).message)
+      const message = (err as Error).message
+      console.error(`Scheduled update failed for ${profile.name}:`, message)
+      logScheduledUpdateOutcome(profile.id, `Scheduled update (after shutdown) failed: ${message}`)
     }
   }
 

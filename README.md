@@ -142,7 +142,10 @@ dedicated servers running on the same machine.
     stops the server (SaveWorld confirmed, then DoExit - the same path as the manual Stop
     button) at that time on the selected days, then optionally, in order: **Update server
     from steam after shutdown** (runs the same SteamCMD update as the Update button) and
-    **Start server after shutdown**.
+    **Start server after shutdown**. Since this runs unattended, its outcome (success, or
+    a failure - including one that never even got to spawn SteamCMD, e.g. no SteamCMD
+    path configured) is appended to that server's usual update log, viewable via "View
+    update log" on the Dashboard, the same place a manual Update's output shows up.
   - **Scheduled dino wipe** is independent of the restart above: its own time/day picker
     that just sends RCON `DestroyWildDinos` directly, while the server is running - no
     shutdown involved.
