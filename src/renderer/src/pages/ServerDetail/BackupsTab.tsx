@@ -30,12 +30,17 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   }
 
   async function saveSettings(): Promise<void> {
-    const updated = await window.api.profiles.save(form)
-    const saved = updated.find((p) => p.id === form.id)
-    if (saved) onProfileChange(saved)
-    setSettingsStatus('Saved')
-    setTimeout(() => setSettingsStatus(''), 2000)
-    await refresh()
+    setError('')
+    try {
+      const updated = await window.api.profiles.save(form)
+      const saved = updated.find((p) => p.id === form.id)
+      if (saved) onProfileChange(saved)
+      setSettingsStatus('Saved')
+      setTimeout(() => setSettingsStatus(''), 2000)
+      await refresh()
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
 
   const refresh = useCallback(async () => {
