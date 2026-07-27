@@ -40,6 +40,50 @@ describe('serializeProfile', () => {
     const profile = makeProfile({ name: 'My Server' })
     expect(JSON.parse(serializeProfile(profile))).toEqual(profile)
   })
+
+  it('round-trips a fully configured profile - Settings, Backups, and Mods tab options all together', () => {
+    const profile = makeProfile({
+      // Settings tab
+      name: 'Modded Cluster Server',
+      installDir: 'C:\\ARK\\Server',
+      map: 'Ragnarok_WP',
+      moddedMapEnabled: true,
+      moddedMapId: '1234567',
+      gamePort: 7778,
+      rconPort: 27021,
+      serverPlatform: 'ALL',
+      maxPlayers: 20,
+      clusterEnabled: true,
+      clusterId: 'my-cluster',
+      clusterDirOverride: 'C:\\ARK\\ClusterData',
+      noTransferFromFiltering: true,
+      externalIp: '203.0.113.10',
+      cultureSettings: 'fr',
+      disableBattlEye: true,
+      rconTribeLog: true,
+      forceRespawnDinos: true,
+      noSound: true,
+      extraArgs: '-SomeExtraFlag',
+      // Backups tab
+      backupDir: 'D:\\ArkBackups',
+      maxBackups: 15,
+      backupScheduleEnabled: true,
+      backupSchedule: '0 */6 * * *',
+      playerProfileBackupEnabled: true,
+      playerProfileBackupMaxPerPlayer: 5,
+      // Mods tab
+      mods: [
+        { id: '1232293', name: 'Bober Stacks', enabled: true, passive: false, dev: false },
+        { id: '930391', name: 'Random Configs', enabled: false, passive: false, dev: false },
+        { id: '1219028', name: 'Orbital Satellite Uplink', enabled: true, passive: true, dev: true }
+      ]
+    })
+
+    const imported = parseImportedProfile(serializeProfile(profile), [])
+    const { id: _id, name: _name, ...withoutIdAndName } = imported
+    const { id: _origId, name: _origName, ...expected } = profile
+    expect(withoutIdAndName).toEqual(expected)
+  })
 })
 
 describe('parseImportedProfile', () => {
