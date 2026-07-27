@@ -19,6 +19,7 @@ const api: Api = {
     restart: (profileId: string) => ipcRenderer.invoke(IPC.serverRestart, profileId),
     kill: (profileId: string) => ipcRenderer.invoke(IPC.serverKill, profileId),
     update: (profileId: string) => ipcRenderer.invoke(IPC.serverUpdate, profileId),
+    isInstalled: (profileId: string) => ipcRenderer.invoke(IPC.serverIsInstalled, profileId),
     status: (profileId: string) => ipcRenderer.invoke(IPC.serverStatus, profileId),
     onStatusChanged: (callback: (status: ServerStatus) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, status: ServerStatus): void => callback(status)

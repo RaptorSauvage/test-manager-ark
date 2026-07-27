@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ServerProfile, ServerRunState } from '@shared/types'
 import { useServerStatuses } from '../lib/useServerStatuses'
 import { createDefaultProfile } from '../lib/profile'
@@ -25,6 +25,25 @@ export default function Dashboard({
   const [bulkBusy, setBulkBusy] = useState(false)
   const [logProfileId, setLogProfileId] = useState<string | null>(null)
   const [logContent, setLogContent] = useState('')
+  const [installedById, setInstalledById] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all(
+      profiles.map(async (p) => [p.id, await window.api.server.isInstalled(p.id)] as const)
+    ).then((entries) => {
+      if (!cancelled) setInstalledById(Object.fromEntries(entries))
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles.map((p) => `${p.id}:${p.installDir}`).join(',')])
+
+  async function refreshInstalled(profileId: string): Promise<void> {
+    const installed = await window.api.server.isInstalled(profileId)
+    setInstalledById((prev) => ({ ...prev, [profileId]: installed }))
+  }
 
   async function handleCreate(): Promise<void> {
     const profile = createDefaultProfile(`Server ${profiles.length + 1}`)
@@ -76,6 +95,7 @@ export default function Dashboard({
 
   async function handleUpdate(profile: ServerProfile): Promise<void> {
     await runAction(profile, () => window.api.server.update(profile.id))
+    await refreshInstalled(profile.id)
   }
 
   async function handleViewLog(profile: ServerProfile): Promise<void> {
@@ -119,6 +139,7 @@ export default function Dashboard({
   async function updateAll(): Promise<void> {
     const targets = profiles.filter((p) => stateOf(p) === 'stopped')
     await Promise.all(targets.map((p) => runAction(p, () => window.api.server.update(p.id))))
+    await Promise.all(targets.map((p) => refreshInstalled(p.id)))
   }
 
   async function stopUpdateRestartAll(): Promise<void> {
@@ -127,6 +148,7 @@ export default function Dashboard({
 
     // Stop above waits for each server to actually exit, so every profile is stopped now.
     await Promise.all(profiles.map((p) => runAction(p, () => window.api.server.update(p.id))))
+    await Promise.all(profiles.map((p) => refreshInstalled(p.id)))
 
     await Promise.all(wasRunning.map((p) => runAction(p, () => window.api.server.start(p.id))))
   }
@@ -271,7 +293,13 @@ export default function Dashboard({
                   onClick={() => void handleUpdate(profile)}
                   title="Install/update the server files via SteamCMD"
                 >
-                  {state === 'updating' ? 'Updating...' : 'Update'}
+                  {installedById[profile.id] === false
+                    ? state === 'updating'
+                      ? 'Installing...'
+                      : 'Install'
+                    : state === 'updating'
+                      ? 'Updating...'
+                      : 'Update'}
                 </button>
                 <button onClick={() => void handleViewLog(profile)} title="Show the last SteamCMD update's output">
                   {logProfileId === profile.id ? 'Hide update log' : 'View update log'}

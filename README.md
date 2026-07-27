@@ -64,10 +64,12 @@ dedicated servers running on the same machine.
   only apply when the section's enable checkbox is on, and are placed before "Extra
   launch arguments" in the final command line.
 - **Server Platform** — PC or ALL (crossplay), passed as `-ServerPlatform=`.
-- **Update / install via SteamCMD** — a per-server **Update** button runs
+- **Update / install via SteamCMD** — a per-server button runs
   `steamcmd +force_install_dir <install dir> +login anonymous +app_update 2430930 validate +quit`.
-  Works for a first-time install into an empty folder too. Disabled while the server is
-  running or already updating. The app's **Settings** screen can either download and
+  Works for a first-time install into an empty folder too - the button reads **Install**
+  instead of **Update** until the server executable is actually found in the install
+  directory, then switches over automatically. Disabled while the server is running or
+  already updating. The app's **Settings** screen can either download and
   manage its own SteamCMD copy (one click, no setup) or point at an existing install you
   already have. The managed copy installs into a `steamcmd` folder next to the Manager
   itself (next to the executable when packaged, or the project root in dev) - not a hidden

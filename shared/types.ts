@@ -94,6 +94,7 @@ export const IPC = {
   serverRestart: 'server:restart',
   serverKill: 'server:kill',
   serverUpdate: 'server:update',
+  serverIsInstalled: 'server:is-installed',
   serverStatus: 'server:status',
   serverStatusChanged: 'server:status-changed',
 
@@ -141,6 +142,7 @@ export interface Api {
     restart: (profileId: string) => Promise<ServerStatus>
     kill: (profileId: string) => Promise<ServerStatus>
     update: (profileId: string) => Promise<void>
+    isInstalled: (profileId: string) => Promise<boolean>
     status: (profileId: string) => Promise<ServerStatus>
     onStatusChanged: (callback: (status: ServerStatus) => void) => () => void
   }

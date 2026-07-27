@@ -12,6 +12,7 @@ import {
 } from '../lib/serverProcess'
 import { startMonitoring, stopMonitoring } from '../lib/monitor'
 import { updateServer } from '../lib/steamcmd'
+import { isValidArkInstall } from '../lib/detect'
 
 function requireProfile(profileId: string) {
   const profile = getProfile(profileId)
@@ -55,6 +56,11 @@ export function registerServerProcessHandlers(webContents: WebContents): void {
     const profile = requireProfile(profileId)
     const settings = getSettings()
     await updateServer(profile, settings.steamCmdPath)
+  })
+
+  ipcMain.handle(IPC.serverIsInstalled, (_event, profileId: string) => {
+    const profile = requireProfile(profileId)
+    return isValidArkInstall(profile.installDir)
   })
 
   ipcMain.handle(IPC.serverStatus, (_event, profileId: string) => getStatus(profileId))
