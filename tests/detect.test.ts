@@ -55,8 +55,8 @@ describe('install detection', () => {
     const detected = detectProfileFields(tmpDir)
     expect(detected.map).toBe('TheIsland_WP')
     expect(detected.mods).toEqual([
-      { id: '111', enabled: true, dev: false },
-      { id: '222', enabled: true, dev: false }
+      { id: '111', enabled: true, passive: false, dev: false },
+      { id: '222', enabled: true, passive: false, dev: false }
     ])
   })
 

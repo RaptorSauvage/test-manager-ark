@@ -78,6 +78,8 @@ export interface ServerMod {
   /** User-supplied label, purely cosmetic - not looked up automatically. */
   name?: string
   enabled: boolean
+  /** When true, the id is passed via -passivemods= instead of -mods=. */
+  passive: boolean
   /** When true, the id is passed as "<id>-dev" so ARK loads the mod's in-development build. */
   dev: boolean
 }

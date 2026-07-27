@@ -37,7 +37,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
 
 describe('migrateProfile', () => {
   it('leaves an already-current profile untouched', () => {
-    const profile = baseProfile({ mods: [{ id: '111', enabled: true, dev: true, name: 'Foo' }] })
+    const profile = baseProfile({ mods: [{ id: '111', enabled: true, passive: false, dev: true, name: 'Foo' }] })
     expect(migrateProfile(profile)).toEqual(profile)
   })
 
@@ -45,16 +45,16 @@ describe('migrateProfile', () => {
     const legacy = baseProfile({ mods: undefined, activeMods: ['111', '222'] })
     const migrated = migrateProfile(legacy)
     expect(migrated.mods).toEqual([
-      { id: '111', enabled: true, dev: false },
-      { id: '222', enabled: true, dev: false }
+      { id: '111', enabled: true, passive: false, dev: false },
+      { id: '222', enabled: true, passive: false, dev: false }
     ])
     expect('activeMods' in migrated).toBe(false)
   })
 
-  it('backfills a missing dev flag on existing ServerMod entries', () => {
+  it('backfills missing passive/dev flags on existing ServerMod entries', () => {
     const profile = baseProfile({ mods: [{ id: '111', enabled: false }] })
     const migrated = migrateProfile(profile)
-    expect(migrated.mods).toEqual([{ id: '111', enabled: false, dev: false }])
+    expect(migrated.mods).toEqual([{ id: '111', enabled: false, passive: false, dev: false }])
   })
 
   it('infers backupScheduleEnabled:true for legacy profiles that already had a cron string', () => {

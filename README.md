@@ -27,10 +27,14 @@ dedicated servers running on the same machine.
   field in this app at all - it's read live from the server's own `GameUserSettings.ini`
   (`ServerAdminPassword`) every time it's needed, since ARK:SA doesn't have a separate
   concept of an "RCON password".
-- **Mod manager** — enable/disable/reorder mod IDs and toggle a Dev flag per mod (appends
-  `-dev` to load that mod's in-development build), applied via the server's `-mods=`
-  launch flag - ARK:SA's only mod mechanism (no Steam Workshop, no GameUserSettings.ini
-  involvement). The app never touches your `.ini` files — edit those yourself.
+- **Mod manager** — a table (Enable/Passive/Dev checkboxes, Mod Name, Mod ID, plus
+  reorder/remove) instead of a plain list. Enable/disable/reorder mod IDs and toggle a Dev
+  flag per mod (appends `-dev` to load that mod's in-development build); enabled mods are
+  applied via the server's `-mods=` launch flag by default, or `-passivemods=` instead if
+  Passive is checked for that mod (ARK:SA's only mod mechanisms - no Steam Workshop, no
+  GameUserSettings.ini involvement). Each header checkbox toggles that column for every
+  mod at once. Mod Name is a free-text label you type in yourself, not looked up
+  automatically. The app never touches your `.ini` files — edit those yourself.
 - **Backups tab** — backup directory (with a folder picker that saves immediately on
   picking a folder, no separate Save click needed for that field specifically - typing a
   path by hand still needs "Save backup settings"), max backups to keep, and scheduled

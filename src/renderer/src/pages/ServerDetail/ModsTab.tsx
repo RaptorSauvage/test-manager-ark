@@ -15,7 +15,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   function addMod(): void {
     const id = newModId.trim()
     if (!id || mods.some((m) => m.id === id)) return
-    setMods((prev) => [...prev, { id, enabled: true, dev: false }])
+    setMods((prev) => [...prev, { id, enabled: true, passive: false, dev: false }])
     setNewModId('')
   }
 
@@ -23,12 +23,13 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
     setMods((prev) => prev.filter((m) => m.id !== id))
   }
 
-  function toggleMod(id: string): void {
-    setMods((prev) => prev.map((m) => (m.id === id ? { ...m, enabled: !m.enabled } : m)))
+  function toggleField(id: string, field: 'enabled' | 'passive' | 'dev'): void {
+    setMods((prev) => prev.map((m) => (m.id === id ? { ...m, [field]: !m[field] } : m)))
   }
 
-  function toggleDev(id: string): void {
-    setMods((prev) => prev.map((m) => (m.id === id ? { ...m, dev: !m.dev } : m)))
+  function toggleAll(field: 'enabled' | 'passive' | 'dev'): void {
+    const allSet = mods.length > 0 && mods.every((m) => m[field])
+    setMods((prev) => prev.map((m) => ({ ...m, [field]: !allSet })))
   }
 
   function renameMod(id: string, name: string): void {
@@ -60,11 +61,11 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   return (
     <div className="mods-tab">
       <p>
-        Mod IDs, applied in this order via the server&apos;s <code>-mods=</code> launch flag - the only mechanism
-        ARK: Survival Ascended uses for mods. Only <strong>enabled</strong> mods are passed at the next server start;
-        disabling one keeps it in the list without loading it. Check <strong>Dev</strong> to load a mod&apos;s
-        in-development build (appends <code>-dev</code> to its ID). The name field is just your own label, not
-        looked up automatically.
+        Mod IDs, applied in this order. <strong>Enabled</strong> mods are passed via the server&apos;s{' '}
+        <code>-mods=</code> launch flag at the next start, unless <strong>Passive</strong> is checked, in
+        which case they go via <code>-passivemods=</code> instead. Check <strong>Dev</strong> to load a
+        mod&apos;s in-development build (appends <code>-dev</code> to its ID). Mod Name is just your own
+        label, typed in by hand - not looked up automatically.
       </p>
       <div className="mods-add">
         <input
@@ -80,39 +81,90 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
         />
         <button onClick={addMod}>Add</button>
       </div>
-      <ol className="mods-list">
-        {mods.map((mod, i) => (
-          <li key={mod.id} className={mod.enabled ? '' : 'mod-disabled'}>
-            <input type="checkbox" checked={mod.enabled} onChange={() => toggleMod(mod.id)} title="Enabled" />
-            <input
-              className="mod-name-input"
-              value={mod.name ?? ''}
-              onChange={(e) => renameMod(mod.id, e.target.value)}
-              placeholder="Optional label"
-            />
-            <span className="mod-id">
-              #{mod.id}
-              {mod.dev ? '-dev' : ''}
-            </span>
-            <label className="mod-dev-toggle">
-              <input type="checkbox" checked={mod.dev} onChange={() => toggleDev(mod.id)} />
-              Dev
-            </label>
-            <div className="mods-list-actions">
-              <button onClick={() => move(i, -1)} disabled={i === 0}>
-                ↑
-              </button>
-              <button onClick={() => move(i, 1)} disabled={i === mods.length - 1}>
-                ↓
-              </button>
-              <button className="danger" onClick={() => removeMod(mod.id)}>
-                Remove
-              </button>
-            </div>
-          </li>
-        ))}
-        {mods.length === 0 && <li className="empty-state">No mods configured.</li>}
-      </ol>
+      <table className="mods-table">
+        <thead>
+          <tr>
+            <th className="mods-select-col">
+              <input
+                type="checkbox"
+                checked={mods.length > 0 && mods.every((m) => m.enabled)}
+                onChange={() => toggleAll('enabled')}
+                disabled={mods.length === 0}
+                title="Enable all"
+              />
+              <span>Enable</span>
+            </th>
+            <th className="mods-select-col">
+              <input
+                type="checkbox"
+                checked={mods.length > 0 && mods.every((m) => m.passive)}
+                onChange={() => toggleAll('passive')}
+                disabled={mods.length === 0}
+                title="Mark all as passive"
+              />
+              <span>Passive</span>
+            </th>
+            <th className="mods-select-col">
+              <input
+                type="checkbox"
+                checked={mods.length > 0 && mods.every((m) => m.dev)}
+                onChange={() => toggleAll('dev')}
+                disabled={mods.length === 0}
+                title="Mark all as dev"
+              />
+              <span>Dev</span>
+            </th>
+            <th>Mod Name</th>
+            <th>Mod ID</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {mods.map((mod, i) => (
+            <tr key={mod.id} className={mod.enabled ? '' : 'mod-disabled'}>
+              <td className="mods-select-col">
+                <input type="checkbox" checked={mod.enabled} onChange={() => toggleField(mod.id, 'enabled')} />
+              </td>
+              <td className="mods-select-col">
+                <input type="checkbox" checked={mod.passive} onChange={() => toggleField(mod.id, 'passive')} />
+              </td>
+              <td className="mods-select-col">
+                <input type="checkbox" checked={mod.dev} onChange={() => toggleField(mod.id, 'dev')} />
+              </td>
+              <td>
+                <input
+                  className="mod-name-input"
+                  value={mod.name ?? ''}
+                  onChange={(e) => renameMod(mod.id, e.target.value)}
+                  placeholder="Optional label"
+                />
+              </td>
+              <td className="mod-id">
+                {mod.id}
+                {mod.dev ? '-dev' : ''}
+              </td>
+              <td className="mods-list-actions">
+                <button onClick={() => move(i, -1)} disabled={i === 0}>
+                  ↑
+                </button>
+                <button onClick={() => move(i, 1)} disabled={i === mods.length - 1}>
+                  ↓
+                </button>
+                <button className="danger" onClick={() => removeMod(mod.id)}>
+                  Remove
+                </button>
+              </td>
+            </tr>
+          ))}
+          {mods.length === 0 && (
+            <tr>
+              <td colSpan={6} className="empty-state">
+                No mods configured.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
       {error && <p className="error-message">{error}</p>}
       <div className="form-actions">
         <button onClick={() => void save()}>Save mods</button>

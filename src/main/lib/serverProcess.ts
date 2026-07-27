@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
 import { platform } from 'node:process'
-import type { ServerProfile, ServerStatus } from '@shared/types'
+import type { ServerMod, ServerProfile, ServerStatus } from '@shared/types'
 import { sendRconCommand } from './rcon'
 import { readAdminPassword } from './config'
 import { setRunningPid } from '../store'
@@ -169,11 +169,15 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
     `-ServerPlatform=${profile.serverPlatform}`,
     `-WinLiveMaxPlayers=${profile.maxPlayers}`
   ]
-  const enabledModIds = profile.mods
-    .filter((mod) => mod.enabled)
-    .map((mod) => (mod.dev ? `${mod.id}-dev` : mod.id))
-  if (enabledModIds.length > 0) {
-    args.push(`-mods=${enabledModIds.join(',')}`)
+  const enabledMods = profile.mods.filter((mod) => mod.enabled)
+  const formatModId = (mod: ServerMod): string => (mod.dev ? `${mod.id}-dev` : mod.id)
+  const activeModIds = enabledMods.filter((mod) => !mod.passive).map(formatModId)
+  const passiveModIds = enabledMods.filter((mod) => mod.passive).map(formatModId)
+  if (activeModIds.length > 0) {
+    args.push(`-mods=${activeModIds.join(',')}`)
+  }
+  if (passiveModIds.length > 0) {
+    args.push(`-passivemods=${passiveModIds.join(',')}`)
   }
 
   if (profile.clusterEnabled) {

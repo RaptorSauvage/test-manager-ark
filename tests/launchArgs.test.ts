@@ -58,9 +58,9 @@ describe('buildLaunchArgs', () => {
     const args = buildLaunchArgs(
       makeProfile({
         mods: [
-          { id: '111', enabled: true, dev: false },
-          { id: '222', enabled: false, dev: false },
-          { id: '333', enabled: true, dev: true }
+          { id: '111', enabled: true, passive: false, dev: false },
+          { id: '222', enabled: false, passive: false, dev: false },
+          { id: '333', enabled: true, passive: false, dev: true }
         ]
       })
     )
@@ -68,8 +68,36 @@ describe('buildLaunchArgs', () => {
   })
 
   it('omits -mods entirely when there are no enabled mods', () => {
-    const args = buildLaunchArgs(makeProfile({ mods: [{ id: '111', enabled: false, dev: false }] }))
+    const args = buildLaunchArgs(makeProfile({ mods: [{ id: '111', enabled: false, passive: false, dev: false }] }))
     expect(args.some((a) => a.startsWith('-mods='))).toBe(false)
+  })
+
+  it('passes passive mods via -passivemods= instead of -mods=', () => {
+    const args = buildLaunchArgs(
+      makeProfile({
+        mods: [
+          { id: '111', enabled: true, passive: false, dev: false },
+          { id: '222', enabled: true, passive: true, dev: false },
+          { id: '333', enabled: true, passive: true, dev: true }
+        ]
+      })
+    )
+    expect(args).toContain('-mods=111')
+    expect(args).toContain('-passivemods=222,333-dev')
+  })
+
+  it('omits -passivemods entirely when there are no enabled passive mods', () => {
+    const args = buildLaunchArgs(
+      makeProfile({ mods: [{ id: '111', enabled: true, passive: false, dev: false }] })
+    )
+    expect(args.some((a) => a.startsWith('-passivemods='))).toBe(false)
+  })
+
+  it('ignores a disabled passive mod for both -mods and -passivemods', () => {
+    const args = buildLaunchArgs(
+      makeProfile({ mods: [{ id: '111', enabled: false, passive: true, dev: false }] })
+    )
+    expect(args.some((a) => a.startsWith('-mods=') || a.startsWith('-passivemods='))).toBe(false)
   })
 
   it('appends extraArgs at the end', () => {

@@ -19,7 +19,7 @@ interface LegacyProfileFields {
 /**
  * Normalizes profiles saved by older versions of the app:
  * - `activeMods: string[]` became `mods: ServerMod[]`
- * - `ServerMod` gained a required `dev` flag
+ * - `ServerMod` gained required `dev` and `passive` flags
  * - `backupScheduleEnabled` is new; profiles that already had a cron string
  *   keep working (treated as enabled), everyone else defaults to off
  * - `clusterEnabled`/`clusterId`/`clusterDirOverride`/`noTransferFromFiltering`
@@ -44,6 +44,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     id: mod.id,
     name: mod.name,
     enabled: mod.enabled ?? true,
+    passive: mod.passive ?? false,
     dev: mod.dev ?? false
   }))
 
