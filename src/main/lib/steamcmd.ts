@@ -114,13 +114,17 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
     // detached: true - on Windows this gives the child its own console, which SteamCMD is
     // documented to need (community reports: it "has unreliable STDOUT" and should be
     // "called from an existing console window rather than launching the executable
-    // directly"). Without this, Electron's own child processes have no console at all,
-    // which may be why updates fail here even with a steamcmd.exe otherwise known to work
-    // fine invoked normally. windowsHide keeps that console from actually flashing on screen.
+    // directly"). windowsHide keeps that console from actually flashing on screen.
+    //
+    // cwd: steamcmd's own directory - without this the child inherits Electron's working
+    // directory, not SteamCMD's. A user-reported fix for the same symptom (works when run
+    // manually, fails from a launcher) was specifically to run steamcmd from within its own
+    // folder rather than from elsewhere, which this matches.
     const child = spawn(steamCmdPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      windowsHide: true
+      windowsHide: true,
+      cwd: path.dirname(steamCmdPath)
     })
     child.stdout?.pipe(logStream, { end: false })
     child.stderr?.pipe(logStream, { end: false })
