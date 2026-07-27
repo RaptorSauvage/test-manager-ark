@@ -44,9 +44,13 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   }
 
   const refresh = useCallback(async () => {
-    const list = await window.api.backup.list(profile.id)
-    setBackups(list)
-    setSelectedPaths((prev) => new Set([...prev].filter((p) => list.some((b) => b.filePath === p))))
+    try {
+      const list = await window.api.backup.list(profile.id)
+      setBackups(list)
+      setSelectedPaths((prev) => new Set([...prev].filter((p) => list.some((b) => b.filePath === p))))
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }, [profile.id])
 
   useEffect(() => {
