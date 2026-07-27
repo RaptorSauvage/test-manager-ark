@@ -17,6 +17,7 @@ export function createDefaultProfile(name: string): ServerProfile {
     backupSchedule: '',
     backupScheduleEnabled: false,
     playerProfileBackupEnabled: false,
+    playerProfileBackupMaxPerPlayer: 20,
     mods: [],
     clusterEnabled: false,
     clusterId: '',

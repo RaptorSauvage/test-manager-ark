@@ -5,8 +5,6 @@ import AdmZip from 'adm-zip'
 import type { BackupEntry, PlayerBackupFolder, ServerProfile } from '@shared/types'
 import type { PlayerConnectionEvent } from './playerConnectionWatcher'
 
-/** Kept per-player, not per-profile - each player gets their own folder. */
-const MAX_BACKUPS_PER_PLAYER = 20
 /** How long to give ARK's own .profilebak write a moment to land before giving up. */
 const PROFILEBAK_WAIT_INTERVAL_MS = 200
 const PROFILEBAK_WAIT_ATTEMPTS = 10
@@ -100,14 +98,15 @@ async function waitForFileToExist(filePath: string): Promise<boolean> {
   return fs.existsSync(filePath)
 }
 
-function pruneOldPlayerBackups(dir: string): void {
+function pruneOldPlayerBackups(dir: string, maxPerPlayer: number): void {
+  if (maxPerPlayer <= 0) return
   const entries = fs
     .readdirSync(dir)
     .map((fileName) => path.join(dir, fileName))
     .map((filePath) => ({ filePath, mtimeMs: fs.statSync(filePath).mtimeMs }))
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
 
-  for (const stale of entries.slice(MAX_BACKUPS_PER_PLAYER)) {
+  for (const stale of entries.slice(maxPerPlayer)) {
     fs.rmSync(stale.filePath, { force: true })
   }
 }
@@ -136,5 +135,5 @@ export async function backupPlayerProfile(profile: ServerProfile, event: PlayerC
   zip.addLocalFile(sourcePath, '', `${event.uniqueNetId}.arkprofile`)
   zip.writeZip(destZipPath)
 
-  pruneOldPlayerBackups(destDir)
+  pruneOldPlayerBackups(destDir, profile.playerProfileBackupMaxPerPlayer)
 }

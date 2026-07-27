@@ -6,6 +6,7 @@ import { listProfiles, saveProfile, deleteProfile, setProfileOrder } from '../st
 import { applyBackupSchedule, clearBackupSchedule } from '../lib/schedule'
 import { isValidArkInstall, detectProfileFields, uniqueProfileName } from '../lib/detect'
 import { serializeProfile, parseImportedProfile } from '../lib/profileExport'
+import { syncPlayerBackupWatch } from '../lib/playerBackupWatch'
 
 export function registerProfileHandlers(): void {
   ipcMain.handle(IPC.profilesList, () => listProfiles())
@@ -13,6 +14,7 @@ export function registerProfileHandlers(): void {
   ipcMain.handle(IPC.profilesSave, (_event, profile: ServerProfile) => {
     const profiles = saveProfile(profile)
     applyBackupSchedule(profile)
+    syncPlayerBackupWatch(profile)
     return profiles
   })
 
@@ -61,6 +63,7 @@ export function registerProfileHandlers(): void {
       backupSchedule: '',
       backupScheduleEnabled: false,
       playerProfileBackupEnabled: false,
+      playerProfileBackupMaxPerPlayer: 20,
       mods: detected.mods,
       clusterEnabled: false,
       clusterId: '',

@@ -18,6 +18,7 @@ function makeProfile(id: string): ServerProfile {
     maxBackups: 10,
     backupScheduleEnabled: false,
     playerProfileBackupEnabled: false,
+    playerProfileBackupMaxPerPlayer: 20,
     mods: [],
     clusterEnabled: false,
     clusterId: '',

@@ -18,6 +18,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     maxBackups: 10,
     backupScheduleEnabled: false,
     playerProfileBackupEnabled: false,
+    playerProfileBackupMaxPerPlayer: 20,
     clusterEnabled: false,
     clusterId: '',
     clusterDirOverride: '',
@@ -128,5 +129,10 @@ describe('migrateProfile', () => {
   it('defaults playerProfileBackupEnabled to false on profiles saved before it existed', () => {
     const legacy = baseProfile({ playerProfileBackupEnabled: undefined })
     expect(migrateProfile(legacy).playerProfileBackupEnabled).toBe(false)
+  })
+
+  it('defaults playerProfileBackupMaxPerPlayer to 20 on profiles saved before it existed', () => {
+    const legacy = baseProfile({ playerProfileBackupMaxPerPlayer: undefined })
+    expect(migrateProfile(legacy).playerProfileBackupMaxPerPlayer).toBe(20)
   })
 })

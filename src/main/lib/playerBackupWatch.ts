@@ -1,5 +1,5 @@
 import type { ServerProfile, ServerStatus } from '@shared/types'
-import { serverEvents } from './serverProcess'
+import { isRunning, serverEvents } from './serverProcess'
 import { getProfile } from '../store'
 import { watchPlayerConnectionEvents } from './playerConnectionWatcher'
 import { backupPlayerProfile } from './playerBackup'
@@ -29,6 +29,19 @@ export function startPlayerBackupWatch(profile: ServerProfile): void {
       })
     })
   )
+}
+
+/**
+ * Re-evaluates the watch for a profile right after its settings are saved, so toggling
+ * "Back up player profiles on join/leave" (or changing the retention count) takes effect
+ * immediately on an already-running server instead of only on its next restart.
+ * No-op if the server isn't currently running - the normal start/stop wiring below
+ * already covers that case.
+ */
+export function syncPlayerBackupWatch(profile: ServerProfile): void {
+  if (!isRunning(profile.id)) return
+  if (profile.playerProfileBackupEnabled) startPlayerBackupWatch(profile)
+  else stopPlayerBackupWatch(profile.id)
 }
 
 /** Starts/stops the per-server player-connection log watch alongside the server's own

@@ -29,6 +29,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     maxBackups: 10,
     backupScheduleEnabled: false,
     playerProfileBackupEnabled: false,
+    playerProfileBackupMaxPerPlayer: 20,
     mods: [],
     clusterEnabled: false,
     clusterId: '',
@@ -145,6 +146,21 @@ describe('backupPlayerProfile', () => {
     await backupPlayerProfile(profile, event)
 
     expect(fs.readdirSync(destDir).length).toBe(20)
+  })
+
+  it('respects a custom playerProfileBackupMaxPerPlayer value', async () => {
+    fs.writeFileSync(path.join(savedArksDir, `${uniqueNetId}.profilebak`), 'profile-data')
+    const profile = makeProfile({ installDir, backupDir, playerProfileBackupMaxPerPlayer: 3 })
+    const destDir = path.join(backupDir, 'PlayerBackups', `LeRaptorSauvage_${uniqueNetId}`)
+    fs.mkdirSync(destDir, { recursive: true })
+    for (let i = 0; i < 5; i++) {
+      fs.writeFileSync(path.join(destDir, `existing-${i}.zip`), 'old')
+    }
+
+    const event: PlayerConnectionEvent = { type: 'joined', playerName: 'LeRaptorSauvage', uniqueNetId }
+    await backupPlayerProfile(profile, event)
+
+    expect(fs.readdirSync(destDir).length).toBe(3)
   })
 })
 

@@ -34,6 +34,8 @@ export interface ServerProfile {
    * polling.
    */
   playerProfileBackupEnabled: boolean
+  /** How many of the snapshots above to keep per player before pruning the oldest */
+  playerProfileBackupMaxPerPlayer: number
   /**
    * Mods, in load order. Only enabled mods are passed via the server's
    * `-mods=` launch flag (ARK:SA does not use Steam Workshop or

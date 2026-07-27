@@ -49,8 +49,7 @@ dedicated servers running on the same machine.
   `backup:created` event for the tab to pick up, so you don't have to click Refresh to see
   it) and right after saving a changed backup directory in this tab, so switching folders
   immediately shows that folder's contents instead of the previous one's.
-- **Per-player profile backups** (Backups tab, opt-in toggle - "Back up player profiles on
-  join/leave", off by default) — tails the server's own `ShooterGame.log` for join/leave
+- **Per-player profile backups** — tails the server's own `ShooterGame.log` for join/leave
   lines (e.g. `LeRaptorSauvage [UniqueNetId:0002dbe9... Platform:None] joined this ARK!`)
   rather than polling RCON, and zips up that player's `<UniqueNetId>.profilebak` file from
   `SavedArks/<map>` (ARK:SA writes this itself, right around both connect and disconnect -
@@ -58,13 +57,17 @@ dedicated servers running on the same machine.
   never having to guess/wait for the live `.arkprofile` to be rewritten) into
   `PlayerBackups/<player>_<id>/` under the backup directory as a small `.zip`, timestamped
   and tagged `_joined`/`_left`, with the `.arkprofile` extension restored on the entry
-  inside so it drops back in cleanly if ever extracted. Keeps the last 20 snapshots per
-  player, pruning older ones automatically. Managed from its own **Player Profile
-  Backups** block in the Backups tab, shown side-by-side with the world backup list - a
-  player dropdown (with its own Refresh) picks whose folder to browse, then the same
-  checkbox-select table/toolbar as the world backups (Refresh backup file list, Open
-  backup folder, Restore selected backup, Delete selected backup(s)) operates on that
-  player's snapshots specifically.
+  inside so it drops back in cleanly if ever extracted. Configured from its own **Player
+  Profile Backups** block in the Backups tab, shown side-by-side with the World Backups
+  settings block - an enable/disable checkbox (off by default) and a "Backups to keep per
+  player" count (default 20, pruning older ones automatically). Toggling the checkbox
+  takes effect immediately on an already-running server, not just on its next restart -
+  saving the profile re-evaluates the watch right away instead of requiring a Stop/Start.
+  The resulting snapshots are managed from a matching **Player Profile Backups** list
+  block below (side-by-side with the world backup list) - a player dropdown (with its own
+  Refresh) picks whose folder to browse, then the same checkbox-select table/toolbar as
+  the world backups (Refresh backup file list, Open backup folder, Restore selected
+  backup, Delete selected backup(s)) operates on that player's snapshots specifically.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
   the order is persisted and stays the same next time you open the app.

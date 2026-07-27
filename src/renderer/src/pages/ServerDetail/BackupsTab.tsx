@@ -159,66 +159,94 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
 
   return (
     <div className="backups-tab">
-      <form
-        className="settings-tab backup-settings"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void saveSettings()
-        }}
-      >
-        <label>
-          Backup directory
-          <div className="path-input-row">
-            <input value={form.backupDir} onChange={(e) => update('backupDir', e.target.value)} />
-            <button type="button" onClick={() => void browseBackupDir()}>
-              Browse...
-            </button>
+      <div className="backup-settings-row">
+        <form
+          className="settings-tab backup-settings"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void saveSettings()
+          }}
+        >
+          <h3>World Backups</h3>
+          <label>
+            Backup directory
+            <div className="path-input-row">
+              <input value={form.backupDir} onChange={(e) => update('backupDir', e.target.value)} />
+              <button type="button" onClick={() => void browseBackupDir()}>
+                Browse...
+              </button>
+            </div>
+          </label>
+          <label>
+            Max backups to keep
+            <input
+              type="number"
+              value={form.maxBackups}
+              onChange={(e) => update('maxBackups', Number(e.target.value))}
+            />
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={form.backupScheduleEnabled}
+              onChange={(e) => update('backupScheduleEnabled', e.target.checked)}
+            />
+            Enable scheduled automatic backups
+          </label>
+          <label>
+            Backup schedule (cron expression)
+            <input
+              value={form.backupSchedule ?? ''}
+              onChange={(e) => update('backupSchedule', e.target.value)}
+              placeholder="every 6 hours: 0 */6 * * *"
+              disabled={!form.backupScheduleEnabled}
+            />
+          </label>
+          <div className="form-actions">
+            <button type="submit">Save backup settings</button>
+            {settingsStatus && <span className="status-message">{settingsStatus}</span>}
           </div>
-        </label>
-        <label>
-          Max backups to keep
-          <input
-            type="number"
-            value={form.maxBackups}
-            onChange={(e) => update('maxBackups', Number(e.target.value))}
-          />
-        </label>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={form.backupScheduleEnabled}
-            onChange={(e) => update('backupScheduleEnabled', e.target.checked)}
-          />
-          Enable scheduled automatic backups
-        </label>
-        <label>
-          Backup schedule (cron expression)
-          <input
-            value={form.backupSchedule ?? ''}
-            onChange={(e) => update('backupSchedule', e.target.value)}
-            placeholder="every 6 hours: 0 */6 * * *"
-            disabled={!form.backupScheduleEnabled}
-          />
-        </label>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={form.playerProfileBackupEnabled}
-            onChange={(e) => update('playerProfileBackupEnabled', e.target.checked)}
-          />
-          Back up player profiles on join/leave
-        </label>
-        <p className="empty-state">
-          Watches this server&apos;s own log for players joining/leaving and zips the{' '}
-          <code>.profilebak</code> file ARK itself writes for that player into{' '}
-          <code>PlayerBackups/&lt;player&gt;/</code> under the backup directory above (keeping the last 20
-          per player). Requires a backup directory to be set.
-        </p>
-        <div className="form-actions">
-          <button type="submit">Save backup settings</button>
-          {settingsStatus && <span className="status-message">{settingsStatus}</span>}
-        </div>
-      </form>
+        </form>
+
+        <form
+          className="settings-tab backup-settings"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void saveSettings()
+          }}
+        >
+          <h3>Player Profile Backups</h3>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={form.playerProfileBackupEnabled}
+              onChange={(e) => update('playerProfileBackupEnabled', e.target.checked)}
+            />
+            Back up player profiles on join/leave
+          </label>
+          <label>
+            Backups to keep per player
+            <input
+              type="number"
+              min={1}
+              value={form.playerProfileBackupMaxPerPlayer}
+              onChange={(e) => update('playerProfileBackupMaxPerPlayer', Number(e.target.value))}
+              disabled={!form.playerProfileBackupEnabled}
+            />
+          </label>
+          <p className="empty-state">
+            Watches this server&apos;s own log for players joining/leaving and zips the{' '}
+            <code>.profilebak</code> file ARK itself writes for that player into{' '}
+            <code>PlayerBackups/&lt;player&gt;/</code> under the backup directory (left). Requires a backup
+            directory to be set. Toggling this takes effect immediately, even while the server is running -
+            no restart needed.
+          </p>
+          <div className="form-actions">
+            <button type="submit">Save player profile backup settings</button>
+            {settingsStatus && <span className="status-message">{settingsStatus}</span>}
+          </div>
+        </form>
+      </div>
 
       <div className="form-actions">
         <button onClick={() => void handleCreate()} disabled={busy}>
