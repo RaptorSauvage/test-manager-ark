@@ -348,7 +348,8 @@ label.checkbox {
   gap: 8px;
 }
 
-.path-input-row input {
+.path-input-row input,
+.path-input-row select {
   flex: 1;
 }
 

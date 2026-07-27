@@ -11,10 +11,21 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   const [status, setStatus] = useState('')
   const [exportError, setExportError] = useState('')
   const [maps, setMaps] = useState<MapDefinition[]>([])
+  const [refreshingMaps, setRefreshingMaps] = useState(false)
 
   useEffect(() => {
-    window.api.maps.list().then(setMaps)
+    void refreshMaps()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  async function refreshMaps(): Promise<void> {
+    setRefreshingMaps(true)
+    try {
+      setMaps(await window.api.maps.list())
+    } finally {
+      setRefreshingMaps(false)
+    }
+  }
 
   function update<K extends keyof ServerProfile>(key: K, value: ServerProfile[K]): void {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -68,14 +79,24 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
       </label>
       <label>
         Map
-        <select value={form.map} onChange={(e) => update('map', e.target.value)}>
-          {form.map && !maps.some((m) => m.id === form.map) && <option value={form.map}>{form.map}</option>}
-          {maps.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.displayName}
-            </option>
-          ))}
-        </select>
+        <div className="path-input-row">
+          <select value={form.map} onChange={(e) => update('map', e.target.value)}>
+            {form.map && !maps.some((m) => m.id === form.map) && <option value={form.map}>{form.map}</option>}
+            {maps.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.displayName}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => void refreshMaps()}
+            disabled={refreshingMaps}
+            title="Reload maps.json"
+          >
+            {refreshingMaps ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
         <p className="empty-state">
           Edit <code>maps.json</code> next to the Manager to add more maps without an app update.
         </p>
