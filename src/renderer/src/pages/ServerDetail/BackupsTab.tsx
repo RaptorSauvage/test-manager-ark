@@ -49,7 +49,10 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
     setBusy(true)
     setError('')
     try {
-      await window.api.backup.create(profile.id)
+      const updated = await window.api.profiles.save(form)
+      const saved = updated.find((p) => p.id === form.id)
+      if (saved) onProfileChange(saved)
+      await window.api.backup.create(form.id)
       await refresh()
     } catch (err) {
       setError((err as Error).message)
