@@ -8,6 +8,8 @@ import { registerDialogHandlers } from './dialog'
 import { registerSettingsHandlers } from './settings'
 import { registerSteamcmdInstallHandlers } from './steamcmdInstall'
 import { registerMapsHandlers } from './maps'
+import { registerCustomMapsHandlers } from './customMaps'
+import { registerDataDirHandlers } from './dataDir'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers()
@@ -19,4 +21,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerSettingsHandlers()
   registerSteamcmdInstallHandlers()
   registerMapsHandlers()
+  registerCustomMapsHandlers()
+  registerDataDirHandlers()
 }

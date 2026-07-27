@@ -71,6 +71,10 @@ dedicated servers running on the same machine.
   allow rules (inbound + outbound) for whichever `steamcmd.exe` is configured above, useful
   if update failures turn out to be network-related. Prompts once for admin rights (UAC)
   just for that action - the app itself keeps running unelevated the rest of the time.
+- **Settings** (dashboard) — lets you override the "Data files location" (default:
+  Documents/ARK Server Manager), the folder `maps.json`, `customMaps.json`, and any future
+  editable config files live in. Changing it only affects where the app looks going
+  forward - it doesn't move existing files to the new folder for you.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), No Transfer From Filtering (`-NoTransferFromFiltering`), and External IP
@@ -136,17 +140,22 @@ tab:
 - **Map**, **game/RCON ports**, and **Server Platform** (PC/ALL). RCON authenticates using
   `ServerAdminPassword` from that install's `GameUserSettings.ini` - set it there, not in
   this app - and must be reachable on `127.0.0.1` (start/stop rely on it to save the world
-  before shutting down). The Map dropdown is populated from `maps.json` (in your
-  Documents folder, under "ARK Server Manager" - not next to the Manager executable,
-  since electron-builder's NSIS installer wipes that folder's contents on every update;
-  Documents is untouched by that and by swapping the portable exe) - a seed list of the
-  official maps is created there on first run, and a line can be added to that file for
-  any DLC or modded map not already listed, no app update needed. A profile's current map
-  is always shown even if it isn't (or isn't yet) in that file. A "Refresh" button next to
-  the dropdown reloads the file on demand.
-- **Mod Map** - a separate "Enable Modded Map" toggle below the Map dropdown for
-  Workshop-based custom maps: paste the mod's Workshop id and it's passed as
-  `-MapModID=<id>` alongside the regular Map value.
+  before shutting down). The Map dropdown is populated from `maps.json` (Documents/ARK
+  Server Manager by default - not next to the Manager executable, since electron-builder's
+  NSIS installer wipes that folder's contents on every update; Documents is untouched by
+  that and by swapping the portable exe) - a seed list of the official maps is created
+  there on first run, and a line can be added to that file for any DLC or modded map not
+  already listed, no app update needed. A profile's current map is always shown even if it
+  isn't (or isn't yet) in that file. A "Refresh" button next to the dropdown reloads the
+  file on demand.
+- **Custom Map** - a dropdown, right above Mod Map, backed by `customMaps.json` (same
+  folder and shape as `maps.json`, but starts empty - custom/modded maps are specific to
+  whatever Workshop mods you use). Picking an entry sets Mod Map below to that entry's id
+  and enables it; picking **None** disables Mod Map and falls back to using the Map
+  dropdown above as normal.
+- **Mod Map** - a separate "Enable Modded Map" toggle below Custom Map for Workshop-based
+  custom maps: paste the mod's Workshop id (or pick one via Custom Map above) and it's
+  passed as `-MapModID=<id>` alongside the regular Map value.
 - Backups always read/write `ShooterGame/Saved/SavedArks/<map>` under the install
   directory - only the profile's own map subfolder, not the whole `SavedArks` folder (it
   can hold other maps' saves too, e.g. on a shared cluster install). This location is

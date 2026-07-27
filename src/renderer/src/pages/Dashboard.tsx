@@ -9,13 +9,15 @@ interface DashboardProps {
   onProfilesChange: (profiles: ServerProfile[]) => void
   onOpenProfile: (id: string, tab?: TabKey) => void
   onOpenSteamCmd: () => void
+  onOpenDataSettings: () => void
 }
 
 export default function Dashboard({
   profiles,
   onProfilesChange,
   onOpenProfile,
-  onOpenSteamCmd
+  onOpenSteamCmd,
+  onOpenDataSettings
 }: DashboardProps): JSX.Element {
   const statuses = useServerStatuses(profiles.map((p) => p.id))
   const [importError, setImportError] = useState('')
@@ -192,6 +194,7 @@ export default function Dashboard({
         <h1>ARK Server Manager</h1>
         <div className="dashboard-header-actions">
           <button onClick={onOpenSteamCmd}>SteamCMD</button>
+          <button onClick={onOpenDataSettings}>Settings</button>
           <button onClick={() => void handleImport()} disabled={importing}>
             {importing ? 'Scanning...' : 'Import existing server'}
           </button>

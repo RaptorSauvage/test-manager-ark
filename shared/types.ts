@@ -78,6 +78,11 @@ export type ServerRunState = 'stopped' | 'starting' | 'running' | 'stopping' | '
 export interface AppSettings {
   /** Path to the steamcmd executable (steamcmd.exe on Windows, steamcmd.sh on Linux). */
   steamCmdPath: string
+  /**
+   * Base folder for editable JSON config files (maps.json, customMaps.json, and any future
+   * ones). Empty means "use the default" (Documents/ARK Server Manager).
+   */
+  dataDir: string
 }
 
 export interface ServerStatus {
@@ -144,7 +149,9 @@ export const IPC = {
   steamcmdUpdateLog: 'steamcmd:update-log',
   steamcmdAddFirewallRule: 'steamcmd:add-firewall-rule',
 
-  mapsList: 'maps:list'
+  mapsList: 'maps:list',
+  customMapsList: 'custom-maps:list',
+  dataDirGetDefault: 'data-dir:get-default'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -205,5 +212,11 @@ export interface Api {
   }
   maps: {
     list: () => Promise<MapDefinition[]>
+  }
+  customMaps: {
+    list: () => Promise<MapDefinition[]>
+  }
+  dataDir: {
+    getDefault: () => Promise<string>
   }
 }

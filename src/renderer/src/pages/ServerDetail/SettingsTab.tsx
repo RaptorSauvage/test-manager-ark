@@ -12,9 +12,12 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   const [exportError, setExportError] = useState('')
   const [maps, setMaps] = useState<MapDefinition[]>([])
   const [refreshingMaps, setRefreshingMaps] = useState(false)
+  const [customMaps, setCustomMaps] = useState<MapDefinition[]>([])
+  const [refreshingCustomMaps, setRefreshingCustomMaps] = useState(false)
 
   useEffect(() => {
     void refreshMaps()
+    void refreshCustomMaps()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -24,6 +27,23 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
       setMaps(await window.api.maps.list())
     } finally {
       setRefreshingMaps(false)
+    }
+  }
+
+  async function refreshCustomMaps(): Promise<void> {
+    setRefreshingCustomMaps(true)
+    try {
+      setCustomMaps(await window.api.customMaps.list())
+    } finally {
+      setRefreshingCustomMaps(false)
+    }
+  }
+
+  function selectCustomMap(value: string): void {
+    if (!value) {
+      setForm((prev) => ({ ...prev, moddedMapEnabled: false, moddedMapId: '' }))
+    } else {
+      setForm((prev) => ({ ...prev, moddedMapEnabled: true, moddedMapId: value }))
     }
   }
 
@@ -100,6 +120,39 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         <p className="empty-state">
           Edit <code>maps.json</code> (in your Documents folder, under "ARK Server Manager") to add more maps
           without an app update.
+        </p>
+      </label>
+      <label>
+        Custom Map
+        <div className="path-input-row">
+          <select
+            value={form.moddedMapEnabled ? form.moddedMapId : ''}
+            onChange={(e) => selectCustomMap(e.target.value)}
+          >
+            <option value="">None</option>
+            {form.moddedMapEnabled &&
+              form.moddedMapId &&
+              !customMaps.some((m) => m.id === form.moddedMapId) && (
+                <option value={form.moddedMapId}>{form.moddedMapId}</option>
+              )}
+            {customMaps.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.displayName}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => void refreshCustomMaps()}
+            disabled={refreshingCustomMaps}
+            title="Reload customMaps.json"
+          >
+            {refreshingCustomMaps ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+        <p className="empty-state">
+          Pick from <code>customMaps.json</code>; set to None to just use the Map above. Edit that file to add
+          your own modded maps - it starts empty.
         </p>
       </label>
       <label>

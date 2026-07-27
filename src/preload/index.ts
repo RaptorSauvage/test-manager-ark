@@ -55,6 +55,12 @@ const api: Api = {
   },
   maps: {
     list: () => ipcRenderer.invoke(IPC.mapsList)
+  },
+  customMaps: {
+    list: () => ipcRenderer.invoke(IPC.customMapsList)
+  },
+  dataDir: {
+    getDefault: () => ipcRenderer.invoke(IPC.dataDirGetDefault)
   }
 }
 
