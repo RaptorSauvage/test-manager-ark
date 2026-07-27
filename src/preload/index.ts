@@ -61,6 +61,9 @@ const api: Api = {
   },
   dataDir: {
     getDefault: () => ipcRenderer.invoke(IPC.dataDirGetDefault)
+  },
+  officialServerStatus: {
+    get: () => ipcRenderer.invoke(IPC.officialServerStatusGet)
   }
 }
 

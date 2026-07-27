@@ -115,6 +115,76 @@ label.checkbox {
   gap: 8px;
 }
 
+.dashboard-body {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.dashboard-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.dashboard-sidebar {
+  width: 320px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1100px) {
+  .dashboard-body {
+    flex-direction: column;
+  }
+
+  .dashboard-sidebar {
+    width: 100%;
+  }
+}
+
+.official-status-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.official-status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.official-status-header h3 {
+  margin: 0;
+}
+
+.official-status-section h4 {
+  margin: 12px 0 6px;
+  text-transform: capitalize;
+}
+
+.official-status-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.official-status-entries > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.official-status-entries dt {
+  color: var(--muted, #888);
+  overflow-wrap: anywhere;
+}
+
 .server-controls {
   background: var(--panel);
   border: 1px solid var(--border);

@@ -151,7 +151,9 @@ export const IPC = {
 
   mapsList: 'maps:list',
   customMapsList: 'custom-maps:list',
-  dataDirGetDefault: 'data-dir:get-default'
+  dataDirGetDefault: 'data-dir:get-default',
+
+  officialServerStatusGet: 'official-server-status:get'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -160,6 +162,9 @@ export interface ImportResult {
   profile: ServerProfile
   profiles: ServerProfile[]
 }
+
+/** Official ARK:SA server status feed, parsed generically as section -> key -> value. */
+export type OfficialServerStatusData = Record<string, Record<string, string>>
 
 /** The contextBridge API surface exposed by the preload script as `window.api`. */
 export interface Api {
@@ -218,5 +223,8 @@ export interface Api {
   }
   dataDir: {
     getDefault: () => Promise<string>
+  }
+  officialServerStatus: {
+    get: () => Promise<OfficialServerStatusData>
   }
 }

@@ -3,6 +3,7 @@ import type { MapDefinition, ServerProfile, ServerRunState } from '@shared/types
 import { useServerStatuses } from '../lib/useServerStatuses'
 import { createDefaultProfile } from '../lib/profile'
 import type { TabKey } from './ServerDetail'
+import OfficialServerStatusPanel from '../components/OfficialServerStatusPanel'
 
 interface DashboardProps {
   profiles: ServerProfile[]
@@ -216,135 +217,143 @@ export default function Dashboard({
 
       {importError && <p className="error-message">{importError}</p>}
 
-      {profiles.length > 0 && (
-        <section className="server-controls">
-          <h3>Server Controls</h3>
-          <div className="server-controls-actions">
-            <button className="btn-start-all" disabled={bulkBusy} onClick={() => void runBulk(startAll)}>
-              Start All
-            </button>
-            <button className="btn-restart-all" disabled={bulkBusy} onClick={() => void runBulk(restartAll)}>
-              Restart All
-            </button>
-            <button className="btn-stop-all" disabled={bulkBusy} onClick={() => void runBulk(stopAll)}>
-              Stop All
-            </button>
-            <button className="btn-update-all" disabled={bulkBusy} onClick={() => void runBulk(updateAll)}>
-              Update All
-            </button>
-            <button
-              className="btn-super-all"
-              disabled={bulkBusy}
-              onClick={() => void runBulk(stopUpdateRestartAll)}
-              title="Stops every running server, updates all of them via SteamCMD, then starts the ones that were running back up"
-            >
-              Stop+Update+Restart All
-            </button>
+      <div className="dashboard-body">
+        <div className="dashboard-content">
+          {profiles.length > 0 && (
+            <section className="server-controls">
+              <h3>Server Controls</h3>
+              <div className="server-controls-actions">
+                <button className="btn-start-all" disabled={bulkBusy} onClick={() => void runBulk(startAll)}>
+                  Start All
+                </button>
+                <button className="btn-restart-all" disabled={bulkBusy} onClick={() => void runBulk(restartAll)}>
+                  Restart All
+                </button>
+                <button className="btn-stop-all" disabled={bulkBusy} onClick={() => void runBulk(stopAll)}>
+                  Stop All
+                </button>
+                <button className="btn-update-all" disabled={bulkBusy} onClick={() => void runBulk(updateAll)}>
+                  Update All
+                </button>
+                <button
+                  className="btn-super-all"
+                  disabled={bulkBusy}
+                  onClick={() => void runBulk(stopUpdateRestartAll)}
+                  title="Stops every running server, updates all of them via SteamCMD, then starts the ones that were running back up"
+                >
+                  Stop+Update+Restart All
+                </button>
+              </div>
+            </section>
+          )}
+
+          {profiles.length === 0 && (
+            <p className="empty-state">No server profiles yet. Click &quot;Add server&quot; to configure one.</p>
+          )}
+
+          <div className="server-grid">
+            {profiles.map((profile) => {
+              const status = statuses[profile.id]
+              const state: ServerRunState = status?.state ?? 'stopped'
+              return (
+                <div
+                  className={`server-card${dragId === profile.id ? ' dragging' : ''}`}
+                  key={profile.id}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => void handleDrop(profile.id)}
+                >
+                  <div className="server-card-header">
+                    <span
+                      className="drag-handle"
+                      draggable
+                      onDragStart={() => setDragId(profile.id)}
+                      onDragEnd={() => setDragId(null)}
+                      title="Drag to reorder"
+                    >
+                      ⠿
+                    </span>
+                    <h2>{profile.name}</h2>
+                    <span className={`badge badge-${state}`}>{state}</span>
+                  </div>
+                  <dl className="server-card-info">
+                    <div>
+                      <dt>Map</dt>
+                      <dd>{profile.map ? mapDisplayName(profile.map) : '(not set)'}</dd>
+                    </div>
+                    <div>
+                      <dt>Port</dt>
+                      <dd>{profile.gamePort}</dd>
+                    </div>
+                    {status?.players && (
+                      <div>
+                        <dt>Players</dt>
+                        <dd>{status.players.length}</dd>
+                      </div>
+                    )}
+                    {status?.cpu !== undefined && (
+                      <div>
+                        <dt>CPU</dt>
+                        <dd>{status.cpu}%</dd>
+                      </div>
+                    )}
+                    {status?.memoryMB !== undefined && (
+                      <div>
+                        <dt>RAM</dt>
+                        <dd>{status.memoryMB} MB</dd>
+                      </div>
+                    )}
+                  </dl>
+                  {status?.lastError && <p className="error-message">{status.lastError}</p>}
+                  {actionErrors[profile.id] && <p className="error-message">{actionErrors[profile.id]}</p>}
+                  <div className="server-card-actions">
+                    <button disabled={state !== 'stopped'} onClick={() => void handleAction(profile, 'start')}>
+                      Start
+                    </button>
+                    <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'stop')}>
+                      Stop
+                    </button>
+                    <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'restart')}>
+                      Restart
+                    </button>
+                    <button
+                      className="danger"
+                      disabled={state === 'stopped' || state === 'updating'}
+                      onClick={() => void handleKill(profile)}
+                      title="Force-kill immediately, without saving"
+                    >
+                      Kill
+                    </button>
+                    <button
+                      disabled={state !== 'stopped'}
+                      onClick={() => void handleUpdate(profile)}
+                      title="Install/update the server files via SteamCMD"
+                    >
+                      {installedById[profile.id] === false
+                        ? state === 'updating'
+                          ? 'Installing...'
+                          : 'Install'
+                        : state === 'updating'
+                          ? 'Updating...'
+                          : 'Update'}
+                    </button>
+                    <button onClick={() => void handleViewLog(profile)} title="Show the last SteamCMD update's output">
+                      {logProfileId === profile.id ? 'Hide update log' : 'View update log'}
+                    </button>
+                    <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
+                    <button className="danger" onClick={() => void handleDelete(profile.id)}>
+                      Delete
+                    </button>
+                  </div>
+                  {logProfileId === profile.id && <pre className="log-output">{logContent}</pre>}
+                </div>
+              )
+            })}
           </div>
-        </section>
-      )}
+        </div>
 
-      {profiles.length === 0 && (
-        <p className="empty-state">No server profiles yet. Click &quot;Add server&quot; to configure one.</p>
-      )}
-
-      <div className="server-grid">
-        {profiles.map((profile) => {
-          const status = statuses[profile.id]
-          const state: ServerRunState = status?.state ?? 'stopped'
-          return (
-            <div
-              className={`server-card${dragId === profile.id ? ' dragging' : ''}`}
-              key={profile.id}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => void handleDrop(profile.id)}
-            >
-              <div className="server-card-header">
-                <span
-                  className="drag-handle"
-                  draggable
-                  onDragStart={() => setDragId(profile.id)}
-                  onDragEnd={() => setDragId(null)}
-                  title="Drag to reorder"
-                >
-                  ⠿
-                </span>
-                <h2>{profile.name}</h2>
-                <span className={`badge badge-${state}`}>{state}</span>
-              </div>
-              <dl className="server-card-info">
-                <div>
-                  <dt>Map</dt>
-                  <dd>{profile.map ? mapDisplayName(profile.map) : '(not set)'}</dd>
-                </div>
-                <div>
-                  <dt>Port</dt>
-                  <dd>{profile.gamePort}</dd>
-                </div>
-                {status?.players && (
-                  <div>
-                    <dt>Players</dt>
-                    <dd>{status.players.length}</dd>
-                  </div>
-                )}
-                {status?.cpu !== undefined && (
-                  <div>
-                    <dt>CPU</dt>
-                    <dd>{status.cpu}%</dd>
-                  </div>
-                )}
-                {status?.memoryMB !== undefined && (
-                  <div>
-                    <dt>RAM</dt>
-                    <dd>{status.memoryMB} MB</dd>
-                  </div>
-                )}
-              </dl>
-              {status?.lastError && <p className="error-message">{status.lastError}</p>}
-              {actionErrors[profile.id] && <p className="error-message">{actionErrors[profile.id]}</p>}
-              <div className="server-card-actions">
-                <button disabled={state !== 'stopped'} onClick={() => void handleAction(profile, 'start')}>
-                  Start
-                </button>
-                <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'stop')}>
-                  Stop
-                </button>
-                <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'restart')}>
-                  Restart
-                </button>
-                <button
-                  className="danger"
-                  disabled={state === 'stopped' || state === 'updating'}
-                  onClick={() => void handleKill(profile)}
-                  title="Force-kill immediately, without saving"
-                >
-                  Kill
-                </button>
-                <button
-                  disabled={state !== 'stopped'}
-                  onClick={() => void handleUpdate(profile)}
-                  title="Install/update the server files via SteamCMD"
-                >
-                  {installedById[profile.id] === false
-                    ? state === 'updating'
-                      ? 'Installing...'
-                      : 'Install'
-                    : state === 'updating'
-                      ? 'Updating...'
-                      : 'Update'}
-                </button>
-                <button onClick={() => void handleViewLog(profile)} title="Show the last SteamCMD update's output">
-                  {logProfileId === profile.id ? 'Hide update log' : 'View update log'}
-                </button>
-                <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
-                <button className="danger" onClick={() => void handleDelete(profile.id)}>
-                  Delete
-                </button>
-              </div>
-              {logProfileId === profile.id && <pre className="log-output">{logContent}</pre>}
-            </div>
-          )
-        })}
+        <aside className="dashboard-sidebar">
+          <OfficialServerStatusPanel />
+        </aside>
       </div>
     </div>
   )
