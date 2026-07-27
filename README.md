@@ -59,7 +59,7 @@ dedicated servers running on the same machine.
   tracked) can then exit with a stale/misleading non-zero code even though the whole chain
   went on to complete successfully afterwards; if the manifest shows no update pending,
   that's treated as success regardless.
-- **Add firewall rule for SteamCMD** (app Settings, Windows only) — adds Windows Firewall
+- **Add firewall rule for SteamCMD** (SteamCMD menu, Windows only) — adds Windows Firewall
   allow rules (inbound + outbound) for whichever `steamcmd.exe` is configured above, useful
   if update failures turn out to be network-related. Prompts once for admin rights (UAC)
   just for that action - the app itself keeps running unelevated the rest of the time.
@@ -74,7 +74,7 @@ dedicated servers running on the same machine.
   Works for a first-time install into an empty folder too - the button reads **Install**
   instead of **Update** until the server executable is actually found in the install
   directory, then switches over automatically. Disabled while the server is running or
-  already updating. The app's **Settings** screen can either download and
+  already updating. The dashboard's own **SteamCMD** menu can either download and
   manage its own SteamCMD copy (one click, no setup) or point at an existing install you
   already have. The managed copy installs into a `steamcmd` folder next to the Manager
   itself (next to the executable when packaged, or the project root in dev) - not a hidden
@@ -84,8 +84,8 @@ dedicated servers running on the same machine.
 
 - Node.js 20+
 - SteamCMD, only if you want to use the in-app Update button: either let the app install
-  its own copy from Settings, or point Settings → SteamCMD path at an existing
-  `steamcmd.exe`/`steamcmd.sh`. Otherwise you can keep managing installs yourself and just
+  its own copy from the dashboard's **SteamCMD** menu, or point SteamCMD path there at an
+  existing `steamcmd.exe`/`steamcmd.sh`. Otherwise you can keep managing installs yourself and just
   point a profile's Install directory at an existing one.
 
 ## Getting started

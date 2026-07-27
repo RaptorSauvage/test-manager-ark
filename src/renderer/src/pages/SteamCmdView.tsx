@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { AppSettings } from '@shared/types'
 
-interface AppSettingsViewProps {
+interface SteamCmdViewProps {
   onBack: () => void
 }
 
-export default function AppSettingsView({ onBack }: AppSettingsViewProps): JSX.Element {
+export default function SteamCmdView({ onBack }: SteamCmdViewProps): JSX.Element {
   const [settings, setSettings] = useState<AppSettings>({ steamCmdPath: '' })
   const [status, setStatus] = useState('')
   const [managedPath, setManagedPath] = useState<string | null>(null)
@@ -65,7 +65,7 @@ export default function AppSettingsView({ onBack }: AppSettingsViewProps): JSX.E
     <div className="server-detail">
       <header className="server-detail-header">
         <button onClick={onBack}>&larr; Back</button>
-        <h1>Settings</h1>
+        <h1>SteamCMD</h1>
       </header>
 
       <section className="managed-steamcmd">
