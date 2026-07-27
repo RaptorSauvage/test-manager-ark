@@ -9,10 +9,13 @@ dedicated servers running on the same machine.
   independent ARK:SA server install/instance). Stop and restart send RCON `SaveWorld`,
   wait for its confirmation, then `DoExit`; Kill force-terminates the process immediately
   with no save, for when a server is stuck. The status badge tracks the OS process
-  (`starting`), the server actually finishing loading - watched for via its own
-  `Server has completed startup and is now advertising for join` log line
-  (`running`) - and a distinct `restarting` phase for the shutdown half of a restart, so
-  it never claims "running" before the world has actually loaded or while it's mid-restart.
+  (`starting`), the server actually finishing loading - detected by polling its own log
+  file (`ShooterGame/Saved/Logs/ShooterGame.log`) for the
+  `Server has completed startup and is now advertising for join` line, since ARK's
+  dedicated server allocates its own console on Windows instead of writing through the
+  standard stdout handle a piped process would normally use - (`running`), and a distinct
+  `restarting` phase for the shutdown half of a restart, so it never claims "running"
+  before the world has actually loaded or while it's mid-restart.
 - **Survives the Manager closing or crashing** — the server process is spawned detached
   from the app, so it keeps running either way instead of being torn down with it (the
   default on Windows otherwise). Relaunching the Manager re-detects any server that's
@@ -66,7 +69,7 @@ Other scripts:
 ```bash
 npm run typecheck   # type-check main/preload/renderer
 npm run build        # production build into out/
-npm test             # unit tests for the pure logic (launch args incl. cluster flags, RCON parsing, backup rotation, profile migration, SteamCMD args/paths, process adoption, startup-marker detection)
+npm test             # unit tests for the pure logic (launch args incl. cluster flags, RCON parsing, backup rotation, profile migration, SteamCMD args/paths, process adoption, startup log-file watching)
 ```
 
 ## Setting up a server profile

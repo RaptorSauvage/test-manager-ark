@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import fs from 'node:fs'
 import path from 'node:path'
 import { platform } from 'node:process'
 import type { ServerProfile, ServerStatus } from '@shared/types'
@@ -12,28 +13,72 @@ const STARTUP_COMPLETE_MARKER = 'Server has completed startup and is now adverti
 /** Safety net in case that log line's wording ever changes and the marker stops matching. */
 const STARTUP_FALLBACK_MS = 5 * 60 * 1000
 
+function getLogFilePath(installDir: string): string {
+  return path.join(installDir, 'ShooterGame', 'Saved', 'Logs', 'ShooterGame.log')
+}
+
 /**
- * Watches a process's stdout for `marker` and calls `onReady` the first time
- * it appears, handling the marker being split across separate data chunks.
- * Exported standalone (independent of spawning) so it's testable with a
- * plain stream instead of a real child process.
+ * Given the file size we last saw and the current one, returns the byte
+ * offset new content should be read from, or null if there's nothing new.
+ * A size decrease means the log was rotated/truncated (Unreal starts a
+ * fresh log per server session) - in that case we start over from 0 rather
+ * than treating the whole new file as "old".
  */
-export function watchForStartupMarker(stdout: NodeJS.ReadableStream, marker: string, onReady: () => void): void {
-  let buffer = ''
-  let fired = false
-  stdout.on('data', (data: Buffer) => {
-    if (fired) return
-    buffer += data.toString()
-    if (buffer.includes(marker)) {
-      fired = true
-      onReady()
-      return
-    }
-    // Keep the buffer bounded - we only need enough tail to catch a marker split across chunks.
-    if (buffer.length > 8192) {
-      buffer = buffer.slice(-2048)
-    }
-  })
+export function computeTailReadStart(previousSize: number, currentSize: number): number | null {
+  if (currentSize === previousSize) return null
+  if (currentSize < previousSize) return 0
+  return previousSize
+}
+
+/**
+ * Polls the server's own log file for `marker`, calling onReady the first
+ * time it shows up in newly-written content. We watch the log file rather
+ * than the process's stdout because ARK's dedicated server on Windows
+ * allocates its own console rather than writing through the standard stdout
+ * handle, so piping stdio never sees anything. Content already in the file
+ * before watching started is never matched, so a leftover marker line from
+ * a previous session can't cause a false "ready" immediately on start.
+ * Returns a function that stops watching.
+ */
+export function watchLogFileForMarker(
+  installDir: string,
+  marker: string,
+  onReady: () => void,
+  intervalMs = 2000
+): () => void {
+  const logPath = getLogFilePath(installDir)
+  let previousSize: number | null = null
+  let stopped = false
+
+  const interval = setInterval(() => {
+    fs.stat(logPath, (statErr, stats) => {
+      if (stopped || statErr) return
+
+      if (previousSize === null) {
+        previousSize = stats.size
+        return
+      }
+
+      const readStart = computeTailReadStart(previousSize, stats.size)
+      if (readStart === null) return
+      previousSize = stats.size
+
+      const stream = fs.createReadStream(logPath, { start: readStart, encoding: 'utf-8' })
+      let chunk = ''
+      stream.on('data', (data) => {
+        chunk += data
+      })
+      stream.on('error', () => {})
+      stream.on('end', () => {
+        if (!stopped && chunk.includes(marker)) onReady()
+      })
+    })
+  }, intervalMs)
+
+  return () => {
+    stopped = true
+    clearInterval(interval)
+  }
 }
 
 interface RunningServer {
@@ -178,14 +223,14 @@ export function startServer(profile: ServerProfile): ServerStatus {
 
   let child: ChildProcess
   try {
-    // stdout: 'pipe' so we can watch for the startup-complete marker below;
-    // stdin/stderr stay 'ignore' since nothing reads them (an unread pipe
-    // risks the OS buffer filling up and stalling the server once it logs
-    // enough - ARK's dedicated server shows its own console anyway).
+    // stdio: 'ignore' - ARK's dedicated server allocates its own console on
+    // Windows rather than writing through the standard stdout handle, so
+    // piping it never sees anything; the startup-complete marker is instead
+    // read from the server's own log file (see watchLogFileForMarker).
     // detached + unref - the server must keep running even if this Manager
     // crashes or is closed; without detaching, Windows ties child processes to
     // the parent's job object and kills them the moment the parent dies.
-    child = spawn(exe, args, { cwd: profile.installDir, stdio: ['ignore', 'pipe', 'ignore'], detached: true })
+    child = spawn(exe, args, { cwd: profile.installDir, stdio: 'ignore', detached: true })
     child.unref()
   } catch (err) {
     const failed: ServerStatus = { profileId: profile.id, state: 'error', lastError: (err as Error).message }
@@ -213,27 +258,27 @@ export function startServer(profile: ServerProfile): ServerStatus {
   setRunningPid(profile.id, pid)
   emitStatus(status)
 
-  const fallback = setTimeout(markReady, STARTUP_FALLBACK_MS)
+  const fallback = setTimeout(() => markReady(), STARTUP_FALLBACK_MS)
+  const stopWatchingLog = watchLogFileForMarker(profile.installDir, STARTUP_COMPLETE_MARKER, () => markReady())
 
   function markReady(): void {
     clearTimeout(fallback)
+    stopWatchingLog()
     const entry = running.get(profile.id)
     if (entry && entry.status.state === 'starting') {
       emitStatus({ ...entry.status, state: 'running' })
     }
   }
 
-  if (child.stdout) {
-    watchForStartupMarker(child.stdout, STARTUP_COMPLETE_MARKER, markReady)
-  }
-
   child.on('exit', () => {
     clearTimeout(fallback)
+    stopWatchingLog()
     finalizeStopped(profile.id)
   })
 
   child.on('error', (err) => {
     clearTimeout(fallback)
+    stopWatchingLog()
     emitStatus({ profileId: profile.id, state: 'error', lastError: err.message })
   })
 
