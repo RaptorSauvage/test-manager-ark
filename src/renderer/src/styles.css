@@ -604,3 +604,8 @@ label.checkbox {
   background: var(--accent);
   color: #fff;
 }
+
+.backups-select-col {
+  width: 1%;
+  white-space: nowrap;
+}

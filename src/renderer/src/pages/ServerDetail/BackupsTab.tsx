@@ -15,7 +15,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   const [backups, setBackups] = useState<BackupEntry[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
 
   const [form, setForm] = useState<ServerProfile>(profile)
   const [settingsStatus, setSettingsStatus] = useState('')
@@ -40,7 +40,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   const refresh = useCallback(async () => {
     const list = await window.api.backup.list(profile.id)
     setBackups(list)
-    setSelectedPath((prev) => (prev && list.some((b) => b.filePath === prev) ? prev : null))
+    setSelectedPaths((prev) => new Set([...prev].filter((p) => list.some((b) => b.filePath === p))))
   }, [profile.id])
 
   useEffect(() => {
@@ -76,9 +76,14 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
     }
   }
 
-  async function handleDelete(backup: BackupEntry): Promise<void> {
-    if (!confirm(`Delete ${backup.fileName}?`)) return
-    await window.api.backup.delete(backup.filePath)
+  async function handleDeleteSelected(): Promise<void> {
+    const targets = backups.filter((b) => selectedPaths.has(b.filePath))
+    if (targets.length === 0) return
+    const label = targets.length === 1 ? targets[0].fileName : `${targets.length} backups`
+    if (!confirm(`Delete ${label}?`)) return
+    for (const backup of targets) {
+      await window.api.backup.delete(backup.filePath)
+    }
     await refresh()
   }
 
@@ -91,7 +96,21 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
     }
   }
 
-  const selected = backups.find((b) => b.filePath === selectedPath) ?? null
+  function toggleSelected(filePath: string): void {
+    setSelectedPaths((prev) => {
+      const next = new Set(prev)
+      if (next.has(filePath)) next.delete(filePath)
+      else next.add(filePath)
+      return next
+    })
+  }
+
+  function toggleSelectAll(): void {
+    setSelectedPaths((prev) => (prev.size === backups.length ? new Set() : new Set(backups.map((b) => b.filePath))))
+  }
+
+  const singleSelected =
+    selectedPaths.size === 1 ? (backups.find((b) => selectedPaths.has(b.filePath)) ?? null) : null
 
   return (
     <div className="backups-tab">
@@ -166,22 +185,27 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
           </button>
           <button
             className="btn-restore-backup"
-            disabled={!selected || busy}
-            onClick={() => selected && void handleRestore(selected)}
+            disabled={!singleSelected || busy}
+            title={selectedPaths.size > 1 ? 'Select just one backup to restore' : undefined}
+            onClick={() => singleSelected && void handleRestore(singleSelected)}
           >
             Restore selected backup
           </button>
-          <button
-            className="btn-delete-backup"
-            disabled={!selected}
-            onClick={() => selected && void handleDelete(selected)}
-          >
-            Delete selected backup
+          <button className="btn-delete-backup" disabled={selectedPaths.size === 0} onClick={() => void handleDeleteSelected()}>
+            Delete selected backup{selectedPaths.size > 1 ? `s (${selectedPaths.size})` : ''}
           </button>
         </div>
         <table className="backups-table">
           <thead>
             <tr>
+              <th className="backups-select-col">
+                <input
+                  type="checkbox"
+                  checked={backups.length > 0 && selectedPaths.size === backups.length}
+                  onChange={toggleSelectAll}
+                  disabled={backups.length === 0}
+                />
+              </th>
               <th>File Name</th>
               <th>Creation Time</th>
             </tr>
@@ -190,17 +214,25 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
             {backups.map((backup) => (
               <tr
                 key={backup.filePath}
-                className={backup.filePath === selectedPath ? 'selected' : ''}
-                onClick={() => setSelectedPath(backup.filePath)}
+                className={selectedPaths.has(backup.filePath) ? 'selected' : ''}
+                onClick={() => toggleSelected(backup.filePath)}
                 title={formatSize(backup.sizeBytes)}
               >
+                <td className="backups-select-col">
+                  <input
+                    type="checkbox"
+                    checked={selectedPaths.has(backup.filePath)}
+                    onChange={() => toggleSelected(backup.filePath)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </td>
                 <td>{backup.fileName}</td>
                 <td>{new Date(backup.createdAt).toLocaleString()}</td>
               </tr>
             ))}
             {backups.length === 0 && (
               <tr>
-                <td colSpan={2}>No backups yet.</td>
+                <td colSpan={3}>No backups yet.</td>
               </tr>
             )}
           </tbody>

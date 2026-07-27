@@ -36,10 +36,13 @@ dedicated servers running on the same machine.
   empty/filled cron field) live here, instead of being split off into Settings. A
   scheduled backup only actually runs while the server is online - if it's stopped when
   the cron fires, that run is skipped rather than backing up (or erroring on) a server
-  that isn't running. The backup file list is a click-to-select table (File Name/Creation
-  Time) with a toolbar above it - Refresh backup file list, Open backup folder (opens the
-  configured backup directory in the OS file explorer), Restore selected backup, Delete
-  selected backup - instead of a Restore/Delete button pair per row.
+  that isn't running. The backup file list is a checkbox-select table (File Name/Creation
+  Time, with a header checkbox to select/deselect all) with a toolbar above it - Refresh
+  backup file list, Open backup folder (opens the configured backup directory in the OS
+  file explorer), Restore selected backup, Delete selected backup(s) - instead of a
+  Restore/Delete button pair per row. Multiple backups can be checked at once to delete
+  them together; Restore only enables when exactly one is checked, since restoring more
+  than one at a time isn't meaningful.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
   the order is persisted and stays the same next time you open the app.
