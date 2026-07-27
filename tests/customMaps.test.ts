@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { getDefaultCustomMaps, parseCustomMapsFile } from '../src/main/lib/customMaps'
 
 describe('getDefaultCustomMaps', () => {
-  it('starts empty - custom maps are user-specific, there is no sensible seed list', () => {
-    expect(getDefaultCustomMaps()).toEqual([])
+  it('seeds just a None entry (empty id) - custom maps are user-specific, everything else is user-added', () => {
+    expect(getDefaultCustomMaps()).toEqual([{ id: '', displayName: 'None' }])
   })
 })
 

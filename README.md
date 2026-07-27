@@ -149,10 +149,13 @@ tab:
   isn't (or isn't yet) in that file. A "Refresh" button next to the dropdown reloads the
   file on demand.
 - **Custom Map** - a dropdown, right above Mod Map, backed by `customMaps.json` (same
-  folder and shape as `maps.json`, but starts empty - custom/modded maps are specific to
+  folder and shape as `maps.json`; the `None` entry - empty id - is part of the file
+  itself, seeded on first run, so it's just another editable row rather than a hardcoded
+  special case; everything else is added by you, since custom/modded maps are specific to
   whatever Workshop mods you use). Picking an entry sets Mod Map below to that entry's id
   and enables it; picking **None** disables Mod Map and falls back to using the Map
-  dropdown above as normal.
+  dropdown above as normal - which is also what actually happens in ARK:SA itself once
+  `-MapModID=` is set, since it takes over regardless of the base Map value.
 - **Mod Map** - a separate "Enable Modded Map" toggle below Custom Map for Workshop-based
   custom maps: paste the mod's Workshop id (or pick one via Custom Map above) and it's
   passed as `-MapModID=<id>` alongside the regular Map value.

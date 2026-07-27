@@ -129,7 +129,6 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
             value={form.moddedMapEnabled ? form.moddedMapId : ''}
             onChange={(e) => selectCustomMap(e.target.value)}
           >
-            <option value="">None</option>
             {form.moddedMapEnabled &&
               form.moddedMapId &&
               !customMaps.some((m) => m.id === form.moddedMapId) && (
@@ -151,8 +150,8 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           </button>
         </div>
         <p className="empty-state">
-          Pick from <code>customMaps.json</code>; set to None to just use the Map above. Edit that file to add
-          your own modded maps - it starts empty.
+          Pick from <code>customMaps.json</code>; pick None to just use the Map above. Edit that file to add your
+          own modded maps - it starts with only the None entry.
         </p>
       </label>
       <label>
