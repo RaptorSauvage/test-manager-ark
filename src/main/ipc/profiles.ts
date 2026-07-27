@@ -37,6 +37,7 @@ export function registerProfileHandlers(): void {
       gamePort: detected.gamePort ?? 7777,
       rconPort: detected.rconPort ?? 27020,
       serverPlatform: 'PC',
+      maxPlayers: 70,
       backupDir: '',
       maxBackups: 10,
       backupSchedule: '',
@@ -46,6 +47,12 @@ export function registerProfileHandlers(): void {
       clusterId: '',
       clusterDirOverride: '',
       noTransferFromFiltering: false,
+      externalIp: '',
+      cultureSettings: 'none',
+      disableBattlEye: false,
+      rconTribeLog: false,
+      forceRespawnDinos: false,
+      noSound: false,
       extraArgs: ''
     }
 

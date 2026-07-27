@@ -11,6 +11,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     gamePort: 7777,
     rconPort: 27020,
     serverPlatform: 'PC',
+    maxPlayers: 70,
     backupDir: '',
     maxBackups: 10,
     backupScheduleEnabled: false,
@@ -19,6 +20,12 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     clusterId: '',
     clusterDirOverride: '',
     noTransferFromFiltering: false,
+    externalIp: '',
+    cultureSettings: 'none',
+    disableBattlEye: false,
+    rconTribeLog: false,
+    forceRespawnDinos: false,
+    noSound: false,
     extraArgs: '',
     ...overrides
   }
@@ -104,5 +111,55 @@ describe('buildLaunchArgs', () => {
     const args = buildLaunchArgs(makeProfile({ clusterEnabled: true, clusterId: '', clusterDirOverride: '' }))
     expect(args.some((a) => a.startsWith('-clusterid='))).toBe(false)
     expect(args.some((a) => a.startsWith('-ClusterDirOverride='))).toBe(false)
+  })
+
+  it('always passes -WinLiveMaxPlayers=', () => {
+    const args = buildLaunchArgs(makeProfile({ maxPlayers: 42 }))
+    expect(args).toContain('-WinLiveMaxPlayers=42')
+  })
+
+  it('omits -ServerIP= when clusterEnabled is false, even with externalIp filled in', () => {
+    const args = buildLaunchArgs(makeProfile({ clusterEnabled: false, externalIp: '203.0.113.10' }))
+    expect(args.some((a) => a.startsWith('-ServerIP='))).toBe(false)
+  })
+
+  it('passes -ServerIP= when clusterEnabled is true and externalIp is set', () => {
+    const args = buildLaunchArgs(makeProfile({ clusterEnabled: true, externalIp: '203.0.113.10' }))
+    expect(args).toContain('-ServerIP=203.0.113.10')
+  })
+
+  it('omits -culture= when cultureSettings is none', () => {
+    const args = buildLaunchArgs(makeProfile({ cultureSettings: 'none' }))
+    expect(args.some((a) => a.startsWith('-culture='))).toBe(false)
+  })
+
+  it('passes -culture=en or -culture=fr', () => {
+    expect(buildLaunchArgs(makeProfile({ cultureSettings: 'en' }))).toContain('-culture=en')
+    expect(buildLaunchArgs(makeProfile({ cultureSettings: 'fr' }))).toContain('-culture=fr')
+  })
+
+  it('passes -NoBattlEye only when disableBattlEye is true', () => {
+    expect(buildLaunchArgs(makeProfile({ disableBattlEye: false }))).not.toContain('-NoBattlEye')
+    expect(buildLaunchArgs(makeProfile({ disableBattlEye: true }))).toContain('-NoBattlEye')
+  })
+
+  it('passes both tribe log flags only when rconTribeLog is true', () => {
+    const withoutFlag = buildLaunchArgs(makeProfile({ rconTribeLog: false }))
+    expect(withoutFlag).not.toContain('-servergamelogincludetribelogs')
+    expect(withoutFlag).not.toContain('-ServerRCONOutputTribeLogs')
+
+    const withFlag = buildLaunchArgs(makeProfile({ rconTribeLog: true }))
+    expect(withFlag).toContain('-servergamelogincludetribelogs')
+    expect(withFlag).toContain('-ServerRCONOutputTribeLogs')
+  })
+
+  it('passes -ForceRespawnDinos only when forceRespawnDinos is true', () => {
+    expect(buildLaunchArgs(makeProfile({ forceRespawnDinos: false }))).not.toContain('-ForceRespawnDinos')
+    expect(buildLaunchArgs(makeProfile({ forceRespawnDinos: true }))).toContain('-ForceRespawnDinos')
+  })
+
+  it('passes -nosound only when noSound is true', () => {
+    expect(buildLaunchArgs(makeProfile({ noSound: false }))).not.toContain('-nosound')
+    expect(buildLaunchArgs(makeProfile({ noSound: true }))).toContain('-nosound')
   })
 })

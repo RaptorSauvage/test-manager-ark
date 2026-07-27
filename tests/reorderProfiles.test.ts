@@ -11,6 +11,7 @@ function profile(id: string): ServerProfile {
     gamePort: 7777,
     rconPort: 27020,
     serverPlatform: 'PC',
+    maxPlayers: 70,
     backupDir: '',
     maxBackups: 10,
     backupScheduleEnabled: false,
@@ -19,6 +20,12 @@ function profile(id: string): ServerProfile {
     clusterId: '',
     clusterDirOverride: '',
     noTransferFromFiltering: false,
+    externalIp: '',
+    cultureSettings: 'none',
+    disableBattlEye: false,
+    rconTribeLog: false,
+    forceRespawnDinos: false,
+    noSound: false,
     extraArgs: ''
   }
 }

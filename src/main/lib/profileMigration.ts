@@ -24,6 +24,8 @@ interface LegacyProfileFields {
  *   keep working (treated as enabled), everyone else defaults to off
  * - `clusterEnabled`/`clusterId`/`clusterDirOverride`/`noTransferFromFiltering`
  *   are new and default to off/empty
+ * - `maxPlayers`/`externalIp`/`cultureSettings`/`disableBattlEye`/`rconTribeLog`/
+ *   `forceRespawnDinos`/`noSound` are new and default to off/empty/70 players
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -54,6 +56,13 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     clusterId: rest.clusterId ?? '',
     clusterDirOverride: rest.clusterDirOverride ?? '',
     noTransferFromFiltering: rest.noTransferFromFiltering ?? false,
-    serverPlatform: rest.serverPlatform ?? 'PC'
+    serverPlatform: rest.serverPlatform ?? 'PC',
+    maxPlayers: rest.maxPlayers ?? 70,
+    externalIp: rest.externalIp ?? '',
+    cultureSettings: rest.cultureSettings ?? 'none',
+    disableBattlEye: rest.disableBattlEye ?? false,
+    rconTribeLog: rest.rconTribeLog ?? false,
+    forceRespawnDinos: rest.forceRespawnDinos ?? false,
+    noSound: rest.noSound ?? false
   }
 }

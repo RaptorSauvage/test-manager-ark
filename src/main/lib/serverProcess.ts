@@ -152,7 +152,13 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
   const params = ['listen', `Port=${profile.gamePort}`, 'RCONEnabled=True', `RCONPort=${profile.rconPort}`]
   if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
 
-  const args = [`${profile.map}?${params.join('?')}`, '-server', '-log', `-ServerPlatform=${profile.serverPlatform}`]
+  const args = [
+    `${profile.map}?${params.join('?')}`,
+    '-server',
+    '-log',
+    `-ServerPlatform=${profile.serverPlatform}`,
+    `-WinLiveMaxPlayers=${profile.maxPlayers}`
+  ]
   const enabledModIds = profile.mods
     .filter((mod) => mod.enabled)
     .map((mod) => (mod.dev ? `${mod.id}-dev` : mod.id))
@@ -164,7 +170,14 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
     if (profile.clusterId.trim()) args.push(`-clusterid=${profile.clusterId.trim()}`)
     if (profile.clusterDirOverride.trim()) args.push(`-ClusterDirOverride=${profile.clusterDirOverride.trim()}`)
     if (profile.noTransferFromFiltering) args.push('-NoTransferFromFiltering')
+    if (profile.externalIp.trim()) args.push(`-ServerIP=${profile.externalIp.trim()}`)
   }
+
+  if (profile.cultureSettings !== 'none') args.push(`-culture=${profile.cultureSettings}`)
+  if (profile.disableBattlEye) args.push('-NoBattlEye')
+  if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
+  if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
+  if (profile.noSound) args.push('-nosound')
 
   if (profile.extraArgs.trim()) {
     args.push(...profile.extraArgs.trim().split(/\s+/))

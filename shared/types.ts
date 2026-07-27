@@ -13,6 +13,8 @@ export interface ServerProfile {
   rconPort: number
   /** Crossplay setting passed as -ServerPlatform=<value> */
   serverPlatform: 'PC' | 'ALL'
+  /** Passed as -WinLiveMaxPlayers=<n> */
+  maxPlayers: number
   /** Directory backups are written to */
   backupDir: string
   /** How many backups to keep per profile before pruning the oldest */
@@ -35,6 +37,18 @@ export interface ServerProfile {
   clusterDirOverride: string
   /** Passed as -NoTransferFromFiltering when clusterEnabled */
   noTransferFromFiltering: boolean
+  /** Passed as -ServerIP=<ip> when clusterEnabled and non-empty */
+  externalIp: string
+  /** Passed as -culture=<value> when not 'none' */
+  cultureSettings: 'none' | 'en' | 'fr'
+  /** Passed as -NoBattlEye when true */
+  disableBattlEye: boolean
+  /** Passed as -servergamelogincludetribelogs -ServerRCONOutputTribeLogs when true */
+  rconTribeLog: boolean
+  /** Passed as -ForceRespawnDinos when true */
+  forceRespawnDinos: boolean
+  /** Passed as -nosound when true */
+  noSound: boolean
   /** Free-form extra launch arguments appended to the command line */
   extraArgs: string
 }

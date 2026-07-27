@@ -11,6 +11,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     gamePort: 7777,
     rconPort: 27020,
     serverPlatform: 'PC',
+    maxPlayers: 70,
     backupDir: '',
     maxBackups: 10,
     backupScheduleEnabled: false,
@@ -18,6 +19,12 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     clusterId: '',
     clusterDirOverride: '',
     noTransferFromFiltering: false,
+    externalIp: '',
+    cultureSettings: 'none',
+    disableBattlEye: false,
+    rconTribeLog: false,
+    forceRespawnDinos: false,
+    noSound: false,
     extraArgs: '',
     mods: [],
     ...overrides
@@ -86,5 +93,25 @@ describe('migrateProfile', () => {
     const legacy = baseProfile({ savedArksSubPath: 'ShooterGame/Saved/SavedArks' })
     const migrated = migrateProfile(legacy)
     expect('savedArksSubPath' in migrated).toBe(false)
+  })
+
+  it('backfills maxPlayers/externalIp/cultureSettings/battlEye/tribeLog/respawn/sound fields', () => {
+    const legacy = baseProfile({
+      maxPlayers: undefined,
+      externalIp: undefined,
+      cultureSettings: undefined,
+      disableBattlEye: undefined,
+      rconTribeLog: undefined,
+      forceRespawnDinos: undefined,
+      noSound: undefined
+    })
+    const migrated = migrateProfile(legacy)
+    expect(migrated.maxPlayers).toBe(70)
+    expect(migrated.externalIp).toBe('')
+    expect(migrated.cultureSettings).toBe('none')
+    expect(migrated.disableBattlEye).toBe(false)
+    expect(migrated.rconTribeLog).toBe(false)
+    expect(migrated.forceRespawnDinos).toBe(false)
+    expect(migrated.noSound).toBe(false)
   })
 })

@@ -65,10 +65,18 @@ dedicated servers running on the same machine.
   just for that action - the app itself keeps running unelevated the rest of the time.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
-  folder picker), and No Transfer From Filtering (`-NoTransferFromFiltering`). All three
-  only apply when the section's enable checkbox is on, and are placed before "Extra
-  launch arguments" in the final command line.
+  folder picker), No Transfer From Filtering (`-NoTransferFromFiltering`), and External IP
+  (`-ServerIP=`). All four only apply when the section's enable checkbox is on, and are
+  placed before "Extra launch arguments" in the final command line.
 - **Server Platform** — PC or ALL (crossplay), passed as `-ServerPlatform=`.
+- **Max Players** — passed as `-WinLiveMaxPlayers=` (defaults to 70).
+- **Extra Settings** (Settings tab) — Culture Settings (None/English/French, passed as
+  `-culture=en`/`-culture=fr`, omitted entirely when set to None), Disable BattlEye
+  (`-NoBattlEye`), RCON Tribe Log (`-servergamelogincludetribelogs` +
+  `-ServerRCONOutputTribeLogs`), Force Respawn Wild Dinos (`-ForceRespawnDinos`), and No
+  Sound (`-nosound`). This section also shows an always-on, non-interactive "RCON Enabled"
+  indicator - RCON can't actually be turned off since the Manager depends on it for
+  Stop/Restart and the RCON tab.
 - **Update / install via SteamCMD** — a per-server button runs
   `steamcmd +force_install_dir <install dir> +login anonymous +app_update 2430930 validate +quit`.
   Works for a first-time install into an empty folder too - the button reads **Install**

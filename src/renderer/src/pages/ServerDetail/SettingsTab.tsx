@@ -70,6 +70,14 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
             <option value="ALL">ALL</option>
           </select>
         </label>
+        <label>
+          Max Players
+          <input
+            type="number"
+            value={form.maxPlayers}
+            onChange={(e) => update('maxPlayers', Number(e.target.value))}
+          />
+        </label>
       </div>
       <section className="cluster-section">
         <h3>Cluster</h3>
@@ -111,6 +119,64 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
             disabled={!form.clusterEnabled}
           />
           No Transfer From Filtering
+        </label>
+        <label>
+          External IP
+          <input
+            value={form.externalIp}
+            onChange={(e) => update('externalIp', e.target.value)}
+            placeholder="203.0.113.10"
+            disabled={!form.clusterEnabled}
+          />
+        </label>
+      </section>
+      <section className="cluster-section">
+        <h3>Extra Settings</h3>
+        <label className="checkbox">
+          <input type="checkbox" checked disabled />
+          RCON Enabled
+        </label>
+        <p className="empty-state">
+          Always on - the Manager needs RCON for Stop/Restart and the RCON tab.
+        </p>
+        <label>
+          Culture Settings
+          <select
+            value={form.cultureSettings}
+            onChange={(e) => update('cultureSettings', e.target.value as ServerProfile['cultureSettings'])}
+          >
+            <option value="none">None</option>
+            <option value="en">English</option>
+            <option value="fr">French</option>
+          </select>
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.disableBattlEye}
+            onChange={(e) => update('disableBattlEye', e.target.checked)}
+          />
+          Disable BattlEye
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.rconTribeLog}
+            onChange={(e) => update('rconTribeLog', e.target.checked)}
+          />
+          RCON Tribe Log
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.forceRespawnDinos}
+            onChange={(e) => update('forceRespawnDinos', e.target.checked)}
+          />
+          Force Respawn Wild Dinos
+        </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={form.noSound} onChange={(e) => update('noSound', e.target.checked)} />
+          No Sound
         </label>
       </section>
       <label>
