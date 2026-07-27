@@ -1,9 +1,11 @@
+import fs from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { ipcMain } from 'electron'
 import { IPC, type ServerProfile } from '@shared/types'
 import { listProfiles, saveProfile, deleteProfile, setProfileOrder } from '../store'
 import { applyBackupSchedule, clearBackupSchedule } from '../lib/schedule'
 import { isValidArkInstall, detectProfileFields, uniqueProfileName } from '../lib/detect'
+import { serializeProfile, parseImportedProfile } from '../lib/profileExport'
 
 export function registerProfileHandlers(): void {
   ipcMain.handle(IPC.profilesList, () => listProfiles())
@@ -20,6 +22,20 @@ export function registerProfileHandlers(): void {
   })
 
   ipcMain.handle(IPC.profilesReorder, (_event, orderedIds: string[]) => setProfileOrder(orderedIds))
+
+  ipcMain.handle(IPC.profilesExport, (_event, profileId: string, filePath: string) => {
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    fs.writeFileSync(filePath, serializeProfile(profile), 'utf-8')
+  })
+
+  ipcMain.handle(IPC.profilesImportFromFile, (_event, filePath: string) => {
+    const existing = listProfiles()
+    const profile = parseImportedProfile(fs.readFileSync(filePath, 'utf-8'), existing.map((p) => p.name))
+    const profiles = saveProfile(profile)
+    applyBackupSchedule(profile)
+    return { profile, profiles }
+  })
 
   ipcMain.handle(IPC.profilesImport, (_event, installDir: string) => {
     if (!isValidArkInstall(installDir)) {

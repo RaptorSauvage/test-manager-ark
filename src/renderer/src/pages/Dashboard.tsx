@@ -69,6 +69,23 @@ export default function Dashboard({
     }
   }
 
+  async function handleImportFromFile(): Promise<void> {
+    setImportError('')
+    const filePath = await window.api.dialog.selectProfileFile()
+    if (!filePath) return
+
+    setImporting(true)
+    try {
+      const { profile, profiles: updated } = await window.api.profiles.importFromFile(filePath)
+      onProfilesChange(updated)
+      onOpenProfile(profile.id, 'settings')
+    } catch (err) {
+      setImportError((err as Error).message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   async function handleDelete(id: string): Promise<void> {
     if (!confirm('Delete this server profile? This does not delete any files on disk.')) return
     const updated = await window.api.profiles.delete(id)
@@ -177,6 +194,9 @@ export default function Dashboard({
           <button onClick={onOpenSteamCmd}>SteamCMD</button>
           <button onClick={() => void handleImport()} disabled={importing}>
             {importing ? 'Scanning...' : 'Import existing server'}
+          </button>
+          <button onClick={() => void handleImportFromFile()} disabled={importing}>
+            Import profile file...
           </button>
           <button onClick={() => void handleCreate()}>+ Add server</button>
         </div>

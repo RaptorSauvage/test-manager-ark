@@ -9,6 +9,7 @@ interface SettingsTabProps {
 export default function SettingsTab({ profile, onProfileChange }: SettingsTabProps): JSX.Element {
   const [form, setForm] = useState<ServerProfile>(profile)
   const [status, setStatus] = useState('')
+  const [exportError, setExportError] = useState('')
 
   function update<K extends keyof ServerProfile>(key: K, value: ServerProfile[K]): void {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -25,6 +26,19 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
     if (saved) onProfileChange(saved)
     setStatus('Saved')
     setTimeout(() => setStatus(''), 2000)
+  }
+
+  async function exportProfile(): Promise<void> {
+    setExportError('')
+    try {
+      const filePath = await window.api.dialog.saveProfileFile(profile.name)
+      if (!filePath) return
+      await window.api.profiles.export(profile.id, filePath)
+      setStatus('Exported')
+      setTimeout(() => setStatus(''), 2000)
+    } catch (err) {
+      setExportError((err as Error).message)
+    }
   }
 
   return (
@@ -183,8 +197,12 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         Extra launch arguments
         <input value={form.extraArgs} onChange={(e) => update('extraArgs', e.target.value)} />
       </label>
+      {exportError && <p className="error-message">{exportError}</p>}
       <div className="form-actions">
         <button type="submit">Save settings</button>
+        <button type="button" onClick={() => void exportProfile()}>
+          Export profile...
+        </button>
         {status && <span className="status-message">{status}</span>}
       </div>
     </form>

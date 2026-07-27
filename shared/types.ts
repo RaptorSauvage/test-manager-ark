@@ -99,9 +99,13 @@ export const IPC = {
   profilesDelete: 'profiles:delete',
   profilesImport: 'profiles:import',
   profilesReorder: 'profiles:reorder',
+  profilesExport: 'profiles:export',
+  profilesImportFromFile: 'profiles:import-from-file',
 
   dialogSelectDirectory: 'dialog:select-directory',
   dialogSelectFile: 'dialog:select-file',
+  dialogSaveProfileFile: 'dialog:save-profile-file',
+  dialogSelectProfileFile: 'dialog:select-profile-file',
 
   serverStart: 'server:start',
   serverStop: 'server:stop',
@@ -145,10 +149,14 @@ export interface Api {
     delete: (id: string) => Promise<ServerProfile[]>
     importFromInstall: (installDir: string) => Promise<ImportResult>
     reorder: (orderedIds: string[]) => Promise<ServerProfile[]>
+    export: (profileId: string, filePath: string) => Promise<void>
+    importFromFile: (filePath: string) => Promise<ImportResult>
   }
   dialog: {
     selectDirectory: () => Promise<string | null>
     selectFile: () => Promise<string | null>
+    saveProfileFile: (defaultName: string) => Promise<string | null>
+    selectProfileFile: () => Promise<string | null>
   }
   server: {
     start: (profileId: string) => Promise<ServerStatus>
