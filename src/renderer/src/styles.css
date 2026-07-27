@@ -110,6 +110,48 @@ label.checkbox {
   gap: 8px;
 }
 
+.server-controls {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.server-controls h3 {
+  margin: 0;
+}
+
+.server-controls-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn-start-all {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.btn-restart-all {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.btn-stop-all {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn-update-all,
+.btn-super-all {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .server-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

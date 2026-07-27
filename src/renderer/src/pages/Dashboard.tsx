@@ -22,6 +22,7 @@ export default function Dashboard({
   const [importing, setImporting] = useState(false)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
   const [dragId, setDragId] = useState<string | null>(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   async function handleCreate(): Promise<void> {
     const profile = createDefaultProfile(`Server ${profiles.length + 1}`)
@@ -75,6 +76,54 @@ export default function Dashboard({
     await runAction(profile, () => window.api.server.update(profile.id))
   }
 
+  function stateOf(profile: ServerProfile): ServerRunState {
+    return statuses[profile.id]?.state ?? 'stopped'
+  }
+
+  async function runBulk(action: () => Promise<void>): Promise<void> {
+    setBulkBusy(true)
+    try {
+      await action()
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  async function startAll(): Promise<void> {
+    const targets = profiles.filter((p) => stateOf(p) === 'stopped')
+    await Promise.all(targets.map((p) => runAction(p, () => window.api.server.start(p.id))))
+  }
+
+  async function restartAll(): Promise<void> {
+    const targets = profiles.filter((p) => stateOf(p) === 'running')
+    await Promise.all(targets.map((p) => runAction(p, () => window.api.server.restart(p.id))))
+  }
+
+  async function stopAll(): Promise<void> {
+    const targets = profiles.filter((p) => stateOf(p) === 'running')
+    await Promise.all(targets.map((p) => runAction(p, () => window.api.server.stop(p.id))))
+  }
+
+  async function updateAll(): Promise<void> {
+    const targets = profiles.filter((p) => stateOf(p) === 'stopped')
+    for (const p of targets) {
+      await runAction(p, () => window.api.server.update(p.id))
+    }
+  }
+
+  async function stopUpdateRestartAll(): Promise<void> {
+    const wasRunning = profiles.filter((p) => stateOf(p) === 'running')
+    await Promise.all(wasRunning.map((p) => runAction(p, () => window.api.server.stop(p.id))))
+
+    // Stop above waits for each server to actually exit, so every profile is stopped now -
+    // update them all sequentially (a single shared SteamCMD install shouldn't be run concurrently).
+    for (const p of profiles) {
+      await runAction(p, () => window.api.server.update(p.id))
+    }
+
+    await Promise.all(wasRunning.map((p) => runAction(p, () => window.api.server.start(p.id))))
+  }
+
   async function handleDrop(targetId: string): Promise<void> {
     const sourceId = dragId
     setDragId(null)
@@ -105,6 +154,34 @@ export default function Dashboard({
       </header>
 
       {importError && <p className="error-message">{importError}</p>}
+
+      {profiles.length > 0 && (
+        <section className="server-controls">
+          <h3>Server Controls</h3>
+          <div className="server-controls-actions">
+            <button className="btn-start-all" disabled={bulkBusy} onClick={() => void runBulk(startAll)}>
+              Start All
+            </button>
+            <button className="btn-restart-all" disabled={bulkBusy} onClick={() => void runBulk(restartAll)}>
+              Restart All
+            </button>
+            <button className="btn-stop-all" disabled={bulkBusy} onClick={() => void runBulk(stopAll)}>
+              Stop All
+            </button>
+            <button className="btn-update-all" disabled={bulkBusy} onClick={() => void runBulk(updateAll)}>
+              Update All
+            </button>
+            <button
+              className="btn-super-all"
+              disabled={bulkBusy}
+              onClick={() => void runBulk(stopUpdateRestartAll)}
+              title="Stops every running server, updates all of them via SteamCMD, then starts the ones that were running back up"
+            >
+              Stop+Update+Restart All
+            </button>
+          </div>
+        </section>
+      )}
 
       {profiles.length === 0 && (
         <p className="empty-state">No server profiles yet. Click &quot;Add server&quot; to configure one.</p>

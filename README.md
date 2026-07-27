@@ -38,6 +38,12 @@ dedicated servers running on the same machine.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
   the order is persisted and stays the same next time you open the app.
+- **Server Controls** — bulk actions across every profile at once: Start All, Restart All,
+  and Stop All only touch the profiles actually in the relevant state (e.g. Restart All
+  skips already-stopped servers). Update All updates every stopped server, one at a time
+  (a single shared SteamCMD install shouldn't be invoked concurrently).
+  Stop+Update+Restart All stops whichever servers are currently running, updates every
+  profile, then starts back up only the ones that were running beforehand.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), and No Transfer From Filtering (`-NoTransferFromFiltering`). All three
