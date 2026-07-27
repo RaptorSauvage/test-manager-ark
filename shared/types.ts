@@ -84,6 +84,7 @@ export const IPC = {
   profilesSave: 'profiles:save',
   profilesDelete: 'profiles:delete',
   profilesImport: 'profiles:import',
+  profilesReorder: 'profiles:reorder',
 
   dialogSelectDirectory: 'dialog:select-directory',
   dialogSelectFile: 'dialog:select-file',
@@ -126,6 +127,7 @@ export interface Api {
     save: (profile: ServerProfile) => Promise<ServerProfile[]>
     delete: (id: string) => Promise<ServerProfile[]>
     importFromInstall: (installDir: string) => Promise<ImportResult>
+    reorder: (orderedIds: string[]) => Promise<ServerProfile[]>
   }
   dialog: {
     selectDirectory: () => Promise<string | null>

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { ipcMain } from 'electron'
 import { IPC, type ServerProfile } from '@shared/types'
-import { listProfiles, saveProfile, deleteProfile } from '../store'
+import { listProfiles, saveProfile, deleteProfile, setProfileOrder } from '../store'
 import { applyBackupSchedule, clearBackupSchedule } from '../lib/schedule'
 import { isValidArkInstall, detectProfileFields, uniqueProfileName } from '../lib/detect'
 
@@ -18,6 +18,8 @@ export function registerProfileHandlers(): void {
     clearBackupSchedule(id)
     return deleteProfile(id)
   })
+
+  ipcMain.handle(IPC.profilesReorder, (_event, orderedIds: string[]) => setProfileOrder(orderedIds))
 
   ipcMain.handle(IPC.profilesImport, (_event, installDir: string) => {
     if (!isValidArkInstall(installDir)) {

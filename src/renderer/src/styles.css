@@ -94,7 +94,7 @@ label.checkbox {
 
 .dashboard {
   padding: 24px;
-  max-width: 1100px;
+  max-width: 1800px;
   margin: 0 auto;
 }
 
@@ -128,13 +128,30 @@ label.checkbox {
 
 .server-card-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
 }
 
 .server-card-header h2 {
   margin: 0;
+  flex: 1;
   font-size: 1.1rem;
+}
+
+.drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  user-select: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.server-card.dragging {
+  opacity: 0.4;
 }
 
 .badge {

@@ -1,6 +1,7 @@
 import Store from 'electron-store'
 import type { ServerProfile, AppSettings } from '@shared/types'
 import { migrateProfile } from './lib/profileMigration'
+import { reorderProfiles } from './lib/reorder'
 
 interface StoreSchema {
   profiles: ServerProfile[]
@@ -30,6 +31,12 @@ export function saveProfile(profile: ServerProfile): ServerProfile[] {
   const idx = profiles.findIndex((p) => p.id === profile.id)
   if (idx >= 0) profiles[idx] = profile
   else profiles.push(profile)
+  store.set('profiles', profiles)
+  return profiles
+}
+
+export function setProfileOrder(orderedIds: string[]): ServerProfile[] {
+  const profiles = reorderProfiles(listProfiles(), orderedIds)
   store.set('profiles', profiles)
   return profiles
 }

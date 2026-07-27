@@ -21,6 +21,7 @@ export default function Dashboard({
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
+  const [dragId, setDragId] = useState<string | null>(null)
 
   async function handleCreate(): Promise<void> {
     const profile = createDefaultProfile(`Server ${profiles.length + 1}`)
@@ -74,6 +75,22 @@ export default function Dashboard({
     await runAction(profile, () => window.api.server.update(profile.id))
   }
 
+  async function handleDrop(targetId: string): Promise<void> {
+    const sourceId = dragId
+    setDragId(null)
+    if (!sourceId || sourceId === targetId) return
+
+    const ids = profiles.map((p) => p.id)
+    const fromIndex = ids.indexOf(sourceId)
+    const toIndex = ids.indexOf(targetId)
+    ids.splice(toIndex, 0, ids.splice(fromIndex, 1)[0])
+
+    const reordered = ids.map((id) => profiles.find((p) => p.id === id)!)
+    onProfilesChange(reordered)
+    const saved = await window.api.profiles.reorder(ids)
+    onProfilesChange(saved)
+  }
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
@@ -98,8 +115,22 @@ export default function Dashboard({
           const status = statuses[profile.id]
           const state: ServerRunState = status?.state ?? 'stopped'
           return (
-            <div className="server-card" key={profile.id}>
+            <div
+              className={`server-card${dragId === profile.id ? ' dragging' : ''}`}
+              key={profile.id}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => void handleDrop(profile.id)}
+            >
               <div className="server-card-header">
+                <span
+                  className="drag-handle"
+                  draggable
+                  onDragStart={() => setDragId(profile.id)}
+                  onDragEnd={() => setDragId(null)}
+                  title="Drag to reorder"
+                >
+                  ⠿
+                </span>
                 <h2>{profile.name}</h2>
                 <span className={`badge badge-${state}`}>{state}</span>
               </div>

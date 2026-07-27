@@ -36,6 +36,8 @@ dedicated servers running on the same machine.
   empty/filled cron field) live here alongside the backup list/create/restore/delete
   actions, instead of being split off into Settings.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
+- **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
+  the order is persisted and stays the same next time you open the app.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), and No Transfer From Filtering (`-NoTransferFromFiltering`). All three

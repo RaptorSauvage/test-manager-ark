@@ -6,7 +6,8 @@ const api: Api = {
     list: () => ipcRenderer.invoke(IPC.profilesList),
     save: (profile: ServerProfile) => ipcRenderer.invoke(IPC.profilesSave, profile),
     delete: (id: string) => ipcRenderer.invoke(IPC.profilesDelete, id),
-    importFromInstall: (installDir: string) => ipcRenderer.invoke(IPC.profilesImport, installDir)
+    importFromInstall: (installDir: string) => ipcRenderer.invoke(IPC.profilesImport, installDir),
+    reorder: (orderedIds: string[]) => ipcRenderer.invoke(IPC.profilesReorder, orderedIds)
   },
   dialog: {
     selectDirectory: () => ipcRenderer.invoke(IPC.dialogSelectDirectory),
