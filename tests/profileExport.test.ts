@@ -78,4 +78,45 @@ describe('parseImportedProfile', () => {
     expect(imported.maxPlayers).toBe(70)
     expect(imported.externalIp).toBe('')
   })
+
+  it('imports a genuinely old-style export missing every field added since v1, all at once', () => {
+    // Simulates a real file exported by an early version of the app: only the fields
+    // that existed back then, nothing added later.
+    const veryOldExport = {
+      id: 'original-id',
+      name: 'Old Server',
+      installDir: '/tmp/ark',
+      map: 'TheIsland_WP',
+      gamePort: 7777,
+      rconPort: 27020,
+      backupDir: '',
+      maxBackups: 10,
+      activeMods: ['111', '222']
+    }
+
+    const imported = parseImportedProfile(JSON.stringify(veryOldExport), [])
+
+    expect(imported.moddedMapEnabled).toBe(false)
+    expect(imported.moddedMapId).toBe('')
+    expect(imported.serverPlatform).toBe('PC')
+    expect(imported.maxPlayers).toBe(70)
+    expect(imported.backupScheduleEnabled).toBe(false)
+    expect(imported.playerProfileBackupEnabled).toBe(false)
+    expect(imported.playerProfileBackupMaxPerPlayer).toBe(20)
+    expect(imported.mods).toEqual([
+      { id: '111', enabled: true, passive: false, dev: false },
+      { id: '222', enabled: true, passive: false, dev: false }
+    ])
+    expect(imported.clusterEnabled).toBe(false)
+    expect(imported.clusterId).toBe('')
+    expect(imported.clusterDirOverride).toBe('')
+    expect(imported.noTransferFromFiltering).toBe(false)
+    expect(imported.externalIp).toBe('')
+    expect(imported.cultureSettings).toBe('none')
+    expect(imported.disableBattlEye).toBe(false)
+    expect(imported.rconTribeLog).toBe(false)
+    expect(imported.forceRespawnDinos).toBe(false)
+    expect(imported.noSound).toBe(false)
+    expect('activeMods' in imported).toBe(false)
+  })
 })
