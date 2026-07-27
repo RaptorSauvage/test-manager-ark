@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { ServerProfile } from '@shared/types'
+import { useEffect, useState } from 'react'
+import type { MapDefinition, ServerProfile } from '@shared/types'
 
 interface SettingsTabProps {
   profile: ServerProfile
@@ -10,6 +10,11 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   const [form, setForm] = useState<ServerProfile>(profile)
   const [status, setStatus] = useState('')
   const [exportError, setExportError] = useState('')
+  const [maps, setMaps] = useState<MapDefinition[]>([])
+
+  useEffect(() => {
+    window.api.maps.list().then(setMaps)
+  }, [])
 
   function update<K extends keyof ServerProfile>(key: K, value: ServerProfile[K]): void {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -63,7 +68,17 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
       </label>
       <label>
         Map
-        <input value={form.map} onChange={(e) => update('map', e.target.value)} placeholder="TheIsland_WP" />
+        <select value={form.map} onChange={(e) => update('map', e.target.value)}>
+          {form.map && !maps.some((m) => m.id === form.map) && <option value={form.map}>{form.map}</option>}
+          {maps.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.displayName}
+            </option>
+          ))}
+        </select>
+        <p className="empty-state">
+          Edit <code>maps.json</code> next to the Manager to add more maps without an app update.
+        </p>
       </label>
       <div className="settings-grid">
         <label>

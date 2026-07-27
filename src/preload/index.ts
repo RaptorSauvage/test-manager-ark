@@ -52,6 +52,9 @@ const api: Api = {
     managedStatus: () => ipcRenderer.invoke(IPC.steamcmdManagedStatus),
     getUpdateLog: (profileId: string) => ipcRenderer.invoke(IPC.steamcmdUpdateLog, profileId),
     addFirewallRule: (steamCmdPath: string) => ipcRenderer.invoke(IPC.steamcmdAddFirewallRule, steamCmdPath)
+  },
+  maps: {
+    list: () => ipcRenderer.invoke(IPC.mapsList)
   }
 }
 

@@ -136,7 +136,10 @@ tab:
 - **Map**, **game/RCON ports**, and **Server Platform** (PC/ALL). RCON authenticates using
   `ServerAdminPassword` from that install's `GameUserSettings.ini` - set it there, not in
   this app - and must be reachable on `127.0.0.1` (start/stop rely on it to save the world
-  before shutting down).
+  before shutting down). The Map dropdown is populated from `maps.json` (next to the
+  Manager, created with a seed list of the official maps on first run) - add a line to
+  that file for any DLC or modded map not already listed, no app update needed. A
+  profile's current map is always shown even if it isn't (or isn't yet) in that file.
 - Backups always read/write `ShooterGame/Saved/SavedArks/<map>` under the install
   directory - only the profile's own map subfolder, not the whole `SavedArks` folder (it
   can hold other maps' saves too, e.g. on a shared cluster install). This location is

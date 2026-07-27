@@ -53,6 +53,13 @@ export interface ServerProfile {
   extraArgs: string
 }
 
+export interface MapDefinition {
+  /** Internal map identifier passed on the command line, e.g. "TheIsland_WP" */
+  id: string
+  /** Human-readable label shown in the map selector */
+  displayName: string
+}
+
 export interface ServerMod {
   id: string
   /** User-supplied label, purely cosmetic - not looked up automatically. */
@@ -131,7 +138,9 @@ export const IPC = {
   steamcmdInstall: 'steamcmd:install',
   steamcmdManagedStatus: 'steamcmd:managed-status',
   steamcmdUpdateLog: 'steamcmd:update-log',
-  steamcmdAddFirewallRule: 'steamcmd:add-firewall-rule'
+  steamcmdAddFirewallRule: 'steamcmd:add-firewall-rule',
+
+  mapsList: 'maps:list'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -189,5 +198,8 @@ export interface Api {
     managedStatus: () => Promise<string | null>
     getUpdateLog: (profileId: string) => Promise<string | null>
     addFirewallRule: (steamCmdPath: string) => Promise<void>
+  }
+  maps: {
+    list: () => Promise<MapDefinition[]>
   }
 }

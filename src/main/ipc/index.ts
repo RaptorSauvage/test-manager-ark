@@ -7,6 +7,7 @@ import { registerBackupHandlers } from './backup'
 import { registerDialogHandlers } from './dialog'
 import { registerSettingsHandlers } from './settings'
 import { registerSteamcmdInstallHandlers } from './steamcmdInstall'
+import { registerMapsHandlers } from './maps'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers()
@@ -17,4 +18,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerDialogHandlers(mainWindow)
   registerSettingsHandlers()
   registerSteamcmdInstallHandlers()
+  registerMapsHandlers()
 }
