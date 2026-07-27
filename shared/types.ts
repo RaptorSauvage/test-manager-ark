@@ -140,6 +140,7 @@ export const IPC = {
   backupList: 'backup:list',
   backupRestore: 'backup:restore',
   backupDelete: 'backup:delete',
+  backupOpenFolder: 'backup:open-folder',
 
   settingsGet: 'settings:get',
   settingsSave: 'settings:save',
@@ -213,6 +214,7 @@ export interface Api {
     list: (profileId: string) => Promise<BackupEntry[]>
     delete: (filePath: string) => Promise<void>
     restore: (profileId: string, filePath: string) => Promise<void>
+    openFolder: (profileId: string) => Promise<void>
   }
   settings: {
     get: () => Promise<AppSettings>

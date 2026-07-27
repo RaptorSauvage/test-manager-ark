@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { shell } from 'electron'
 import archiver from 'archiver'
 import AdmZip from 'adm-zip'
 import type { ServerProfile, BackupEntry } from '@shared/types'
@@ -87,4 +88,13 @@ export function restoreBackup(profile: ServerProfile, backupFilePath: string): v
   fs.mkdirSync(targetDir, { recursive: true })
   const zip = new AdmZip(backupFilePath)
   zip.extractAllTo(targetDir, true)
+}
+
+export async function openBackupFolder(profile: ServerProfile): Promise<void> {
+  if (!profile.backupDir.trim()) {
+    throw new Error('Set a backup directory in the Backups tab first.')
+  }
+  fs.mkdirSync(profile.backupDir, { recursive: true })
+  const error = await shell.openPath(profile.backupDir)
+  if (error) throw new Error(error)
 }

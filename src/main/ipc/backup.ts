@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { IPC } from '@shared/types'
 import { getProfile } from '../store'
-import { createBackup, listBackups, deleteBackup, restoreBackup } from '../lib/backup'
+import { createBackup, listBackups, deleteBackup, restoreBackup, openBackupFolder } from '../lib/backup'
 
 function requireProfile(profileId: string) {
   const profile = getProfile(profileId)
@@ -19,4 +19,6 @@ export function registerBackupHandlers(): void {
   ipcMain.handle(IPC.backupRestore, (_event, profileId: string, filePath: string) =>
     restoreBackup(requireProfile(profileId), filePath)
   )
+
+  ipcMain.handle(IPC.backupOpenFolder, (_event, profileId: string) => openBackupFolder(requireProfile(profileId)))
 }

@@ -41,7 +41,8 @@ const api: Api = {
     create: (profileId: string) => ipcRenderer.invoke(IPC.backupCreate, profileId),
     list: (profileId: string) => ipcRenderer.invoke(IPC.backupList, profileId),
     delete: (filePath: string) => ipcRenderer.invoke(IPC.backupDelete, filePath),
-    restore: (profileId: string, filePath: string) => ipcRenderer.invoke(IPC.backupRestore, profileId, filePath)
+    restore: (profileId: string, filePath: string) => ipcRenderer.invoke(IPC.backupRestore, profileId, filePath),
+    openFolder: (profileId: string) => ipcRenderer.invoke(IPC.backupOpenFolder, profileId)
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet),

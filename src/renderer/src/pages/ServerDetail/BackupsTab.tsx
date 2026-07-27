@@ -15,6 +15,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   const [backups, setBackups] = useState<BackupEntry[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [selectedPath, setSelectedPath] = useState<string | null>(null)
 
   const [form, setForm] = useState<ServerProfile>(profile)
   const [settingsStatus, setSettingsStatus] = useState('')
@@ -39,6 +40,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   const refresh = useCallback(async () => {
     const list = await window.api.backup.list(profile.id)
     setBackups(list)
+    setSelectedPath((prev) => (prev && list.some((b) => b.filePath === prev) ? prev : null))
   }, [profile.id])
 
   useEffect(() => {
@@ -79,6 +81,17 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
     await window.api.backup.delete(backup.filePath)
     await refresh()
   }
+
+  async function handleOpenFolder(): Promise<void> {
+    setError('')
+    try {
+      await window.api.backup.openFolder(profile.id)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  const selected = backups.find((b) => b.filePath === selectedPath) ?? null
 
   return (
     <div className="backups-tab">
@@ -138,38 +151,61 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
         </span>
       </div>
       {error && <p className="error-message">{error}</p>}
-      <table className="backups-table">
-        <thead>
-          <tr>
-            <th>File</th>
-            <th>Created</th>
-            <th>Size</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {backups.map((backup) => (
-            <tr key={backup.filePath}>
-              <td>{backup.fileName}</td>
-              <td>{new Date(backup.createdAt).toLocaleString()}</td>
-              <td>{formatSize(backup.sizeBytes)}</td>
-              <td className="backups-actions">
-                <button onClick={() => void handleRestore(backup)} disabled={busy}>
-                  Restore
-                </button>
-                <button className="danger" onClick={() => void handleDelete(backup)}>
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {backups.length === 0 && (
+
+      <section className="backup-management">
+        <div className="backup-management-actions">
+          <button className="btn-refresh-backups" onClick={() => void refresh()}>
+            Refresh backup file list
+          </button>
+          <button
+            className="btn-open-backup-folder"
+            onClick={() => void handleOpenFolder()}
+            disabled={!profile.backupDir}
+          >
+            Open backup folder
+          </button>
+          <button
+            className="btn-restore-backup"
+            disabled={!selected || busy}
+            onClick={() => selected && void handleRestore(selected)}
+          >
+            Restore selected backup
+          </button>
+          <button
+            className="btn-delete-backup"
+            disabled={!selected}
+            onClick={() => selected && void handleDelete(selected)}
+          >
+            Delete selected backup
+          </button>
+        </div>
+        <table className="backups-table">
+          <thead>
             <tr>
-              <td colSpan={4}>No backups yet.</td>
+              <th>File Name</th>
+              <th>Creation Time</th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {backups.map((backup) => (
+              <tr
+                key={backup.filePath}
+                className={backup.filePath === selectedPath ? 'selected' : ''}
+                onClick={() => setSelectedPath(backup.filePath)}
+                title={formatSize(backup.sizeBytes)}
+              >
+                <td>{backup.fileName}</td>
+                <td>{new Date(backup.createdAt).toLocaleString()}</td>
+              </tr>
+            ))}
+            {backups.length === 0 && (
+              <tr>
+                <td colSpan={2}>No backups yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
     </div>
   )
 }

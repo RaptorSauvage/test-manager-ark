@@ -543,6 +543,42 @@ label.checkbox {
   margin-bottom: 20px;
 }
 
+.backup-management {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.backup-management-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn-refresh-backups {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.btn-open-backup-folder {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn-restore-backup {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.btn-delete-backup {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 .backups-table {
   width: 100%;
   border-collapse: collapse;
@@ -556,7 +592,15 @@ label.checkbox {
   font-size: 0.85rem;
 }
 
-.backups-actions {
-  display: flex;
-  gap: 8px;
+.backups-table tbody tr {
+  cursor: pointer;
+}
+
+.backups-table tbody tr:hover {
+  background: var(--bg);
+}
+
+.backups-table tbody tr.selected {
+  background: var(--accent);
+  color: #fff;
 }
