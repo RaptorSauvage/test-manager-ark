@@ -201,9 +201,10 @@ tab:
 - Backups always read/write `ShooterGame/Saved/SavedArks/<map>` under the install
   directory - only the profile's own map subfolder, not the whole `SavedArks` folder (it
   can hold other maps' saves too, e.g. on a shared cluster install). This location is
-  fixed by ARK:SA and isn't a configurable field. Backup directory, retention, and
-  scheduling live in the **Backups** tab, not here; you must set a backup directory there
-  before creating a backup.
+  fixed by ARK:SA and isn't a configurable field. `.arkrbf` files (ARK's own transient
+  rollback data, not useful in a backup) are left out of the zip. Backup directory,
+  retention, and scheduling live in the **Backups** tab, not here; you must set a backup
+  directory there before creating a backup.
 
 ## Notes / limitations
 

@@ -18,6 +18,12 @@ function backupPrefix(profile: ServerProfile): string {
   return profile.name.replace(/\s+/g, '_')
 }
 
+/** .arkrbf files are ARK's own transient rollback data next to the real saves - not
+ *  useful in a backup and just extra weight/noise, so leave them out of the zip. */
+export function isIgnoredBackupFile(relativePath: string): boolean {
+  return relativePath.toLowerCase().endsWith('.arkrbf')
+}
+
 export function createBackup(profile: ServerProfile): Promise<BackupEntry> {
   return new Promise((resolve, reject) => {
     if (!profile.backupDir.trim()) {
@@ -53,7 +59,7 @@ export function createBackup(profile: ServerProfile): Promise<BackupEntry> {
     archive.on('error', reject)
 
     archive.pipe(output)
-    archive.directory(sourceDir, false)
+    archive.directory(sourceDir, false, (data) => (isIgnoredBackupFile(data.name) ? false : data))
     void archive.finalize()
   })
 }
