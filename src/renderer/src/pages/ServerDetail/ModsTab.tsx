@@ -58,6 +58,33 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
     }
   }
 
+  async function exportMods(): Promise<void> {
+    setError('')
+    try {
+      const filePath = await window.api.dialog.saveModsFile(`${profile.name}-mods`)
+      if (!filePath) return
+      await window.api.mods.exportToFile(filePath, mods)
+      setStatus('Exported')
+      setTimeout(() => setStatus(''), 2000)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  async function importMods(): Promise<void> {
+    setError('')
+    try {
+      const filePath = await window.api.dialog.selectModsFile()
+      if (!filePath) return
+      const imported = await window.api.mods.importFromFile(filePath)
+      setMods(imported)
+      setStatus('Mod list imported - click Save mods to apply.')
+      setTimeout(() => setStatus(''), 3000)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
   return (
     <div className="mods-tab">
       <p>
@@ -174,6 +201,12 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
       {error && <p className="error-message">{error}</p>}
       <div className="form-actions">
         <button onClick={() => void save()}>Save mods</button>
+        <button type="button" onClick={() => void exportMods()}>
+          Export mod list...
+        </button>
+        <button type="button" onClick={() => void importMods()}>
+          Import mod list...
+        </button>
         {status && <span className="status-message">{status}</span>}
       </div>
     </div>

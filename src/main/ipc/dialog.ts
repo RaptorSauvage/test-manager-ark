@@ -39,4 +39,24 @@ export function registerDialogHandlers(mainWindow: BrowserWindow): void {
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
   })
+
+  ipcMain.handle(IPC.dialogSaveModsFile, async (_event, defaultName: string) => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export mod list',
+      defaultPath: `${defaultName}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) return null
+    return result.filePath
+  })
+
+  ipcMain.handle(IPC.dialogSelectModsFile, async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      title: 'Import mod list',
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
 }

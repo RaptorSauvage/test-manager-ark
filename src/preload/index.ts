@@ -15,7 +15,9 @@ const api: Api = {
     selectDirectory: () => ipcRenderer.invoke(IPC.dialogSelectDirectory),
     selectFile: () => ipcRenderer.invoke(IPC.dialogSelectFile),
     saveProfileFile: (defaultName: string) => ipcRenderer.invoke(IPC.dialogSaveProfileFile, defaultName),
-    selectProfileFile: () => ipcRenderer.invoke(IPC.dialogSelectProfileFile)
+    selectProfileFile: () => ipcRenderer.invoke(IPC.dialogSelectProfileFile),
+    saveModsFile: (defaultName: string) => ipcRenderer.invoke(IPC.dialogSaveModsFile, defaultName),
+    selectModsFile: () => ipcRenderer.invoke(IPC.dialogSelectModsFile)
   },
   server: {
     start: (profileId: string) => ipcRenderer.invoke(IPC.serverStart, profileId),
@@ -35,7 +37,9 @@ const api: Api = {
     send: (profileId: string, command: string) => ipcRenderer.invoke(IPC.rconSend, profileId, command)
   },
   mods: {
-    save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods)
+    save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods),
+    exportToFile: (filePath: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsExport, filePath, mods),
+    importFromFile: (filePath: string) => ipcRenderer.invoke(IPC.modsImportFromFile, filePath)
   },
   backup: {
     create: (profileId: string) => ipcRenderer.invoke(IPC.backupCreate, profileId),

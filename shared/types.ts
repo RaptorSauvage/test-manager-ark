@@ -141,6 +141,8 @@ export const IPC = {
   dialogSelectFile: 'dialog:select-file',
   dialogSaveProfileFile: 'dialog:save-profile-file',
   dialogSelectProfileFile: 'dialog:select-profile-file',
+  dialogSaveModsFile: 'dialog:save-mods-file',
+  dialogSelectModsFile: 'dialog:select-mods-file',
 
   serverStart: 'server:start',
   serverStop: 'server:stop',
@@ -154,6 +156,8 @@ export const IPC = {
   rconSend: 'rcon:send',
 
   modsSave: 'mods:save',
+  modsExport: 'mods:export',
+  modsImportFromFile: 'mods:import-from-file',
 
   backupCreate: 'backup:create',
   backupList: 'backup:list',
@@ -216,6 +220,8 @@ export interface Api {
     selectFile: () => Promise<string | null>
     saveProfileFile: (defaultName: string) => Promise<string | null>
     selectProfileFile: () => Promise<string | null>
+    saveModsFile: (defaultName: string) => Promise<string | null>
+    selectModsFile: () => Promise<string | null>
   }
   server: {
     start: (profileId: string) => Promise<ServerStatus>
@@ -232,6 +238,8 @@ export interface Api {
   }
   mods: {
     save: (profileId: string, mods: ServerMod[]) => Promise<ServerProfile>
+    exportToFile: (filePath: string, mods: ServerMod[]) => Promise<void>
+    importFromFile: (filePath: string) => Promise<ServerMod[]>
   }
   backup: {
     create: (profileId: string) => Promise<BackupEntry>

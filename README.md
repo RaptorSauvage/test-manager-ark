@@ -35,6 +35,10 @@ dedicated servers running on the same machine.
   GameUserSettings.ini involvement). Each header checkbox toggles that column for every
   mod at once. Mod Name is a free-text label you type in yourself, not looked up
   automatically. The app never touches your `.ini` files — edit those yourself.
+  **Export mod list...**/**Import mod list...** save/load the whole table (ids, names,
+  enabled/passive/dev flags, and order) as a JSON file - handy for sharing a modpack setup
+  between servers. Importing replaces the table in the editor; nothing is persisted until
+  you click **Save mods** afterwards.
 - **Backups tab** — backup directory (with a folder picker that saves immediately on
   picking a folder, no separate Save click needed for that field specifically - typing a
   path by hand still needs "Save backup settings"), max backups to keep, and scheduled
