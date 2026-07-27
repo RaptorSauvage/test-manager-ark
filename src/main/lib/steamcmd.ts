@@ -110,7 +110,18 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
     // and stalling the process the way leaving it unread would. { end: false } because two
     // sources (stdout and stderr) write into the same destination - only finish() below
     // should close it, once both are done.
-    const child = spawn(steamCmdPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    //
+    // detached: true - on Windows this gives the child its own console, which SteamCMD is
+    // documented to need (community reports: it "has unreliable STDOUT" and should be
+    // "called from an existing console window rather than launching the executable
+    // directly"). Without this, Electron's own child processes have no console at all,
+    // which may be why updates fail here even with a steamcmd.exe otherwise known to work
+    // fine invoked normally. windowsHide keeps that console from actually flashing on screen.
+    const child = spawn(steamCmdPath, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+      windowsHide: true
+    })
     child.stdout?.pipe(logStream, { end: false })
     child.stderr?.pipe(logStream, { end: false })
 
