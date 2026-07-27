@@ -147,6 +147,14 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
   if (!steamCmdPath.trim()) {
     return Promise.reject(new Error('Set the SteamCMD path in Settings before updating.'))
   }
+  if (!fs.existsSync(steamCmdPath)) {
+    return Promise.reject(
+      new Error(
+        `SteamCMD not found at ${steamCmdPath} - it may have been removed (e.g. by ` +
+          'reinstalling or updating the Manager itself). Reinstall it via the SteamCMD menu.'
+      )
+    )
+  }
 
   return new Promise((resolve, reject) => {
     clearStuckManifest(profile.installDir)

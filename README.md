@@ -105,7 +105,11 @@ dedicated servers running on the same machine.
   mid-run to self-update, and the originally spawned process (the one whose exit code gets
   tracked) can then exit with a stale/misleading non-zero code even though the whole chain
   went on to complete successfully afterwards; if the manifest shows no update pending,
-  that's treated as success regardless.
+  that's treated as success regardless. If the configured SteamCMD path no longer points
+  at an actual executable (e.g. a packaged build's managed SteamCMD copy got wiped by
+  reinstalling/updating the Manager itself), Update fails immediately with a clear
+  "SteamCMD not found at ..." message instead of a raw `ENOENT` - reinstall or re-point
+  SteamCMD via the SteamCMD menu to fix it.
 - **Add firewall rule for SteamCMD** (SteamCMD menu, Windows only) — adds Windows Firewall
   allow rules (inbound + outbound) for whichever `steamcmd.exe` is configured above, useful
   if update failures turn out to be network-related. Prompts once for admin rights (UAC)

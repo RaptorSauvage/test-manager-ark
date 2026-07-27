@@ -10,8 +10,51 @@ import {
   getAppManifestPath,
   isManifestStuckInErrorState,
   readManifestStateFlags,
-  isInstallUpToDate
+  isInstallUpToDate,
+  updateServer
 } from '../src/main/lib/steamcmd'
+import type { ServerProfile } from '../shared/types'
+
+function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
+  return {
+    id: 'test',
+    name: 'Test',
+    installDir: '/tmp/ark',
+    map: 'TheIsland_WP',
+    moddedMapEnabled: false,
+    moddedMapId: '',
+    gamePort: 7777,
+    rconPort: 27020,
+    serverPlatform: 'PC',
+    maxPlayers: 70,
+    backupDir: '',
+    maxBackups: 10,
+    backupScheduleEnabled: false,
+    playerProfileBackupEnabled: false,
+    playerProfileBackupMaxPerPlayer: 20,
+    mods: [],
+    clusterEnabled: false,
+    clusterId: '',
+    clusterDirOverride: '',
+    noTransferFromFiltering: false,
+    externalIp: '',
+    cultureSettings: 'none',
+    disableBattlEye: false,
+    rconTribeLog: false,
+    forceRespawnDinos: false,
+    noSound: false,
+    extraArgs: '',
+    scheduledRestartEnabled: false,
+    scheduledRestartTime: '00:00',
+    scheduledRestartDays: [],
+    scheduledRestartUpdateAfter: false,
+    scheduledRestartStartAfter: false,
+    scheduledDinoWipeEnabled: false,
+    scheduledDinoWipeTime: '00:00',
+    scheduledDinoWipeDays: [],
+    ...overrides
+  }
+}
 
 describe('buildUpdateArgs', () => {
   it('targets the ARK:SA dedicated server app id with anonymous login and validation', () => {
@@ -131,5 +174,16 @@ describe('readNewContentLog', () => {
       const size = fs.statSync(logPath).size
       expect(readNewContentLog(steamCmdPath, size)).toBe('')
     })
+  })
+})
+
+describe('updateServer', () => {
+  it('rejects with a clear message when the steamCmdPath is set but no longer exists on disk', async () => {
+    const missingPath = path.join(os.tmpdir(), 'definitely-does-not-exist', 'steamcmd.exe')
+    await expect(updateServer(makeProfile(), missingPath)).rejects.toThrow(/SteamCMD not found at/)
+  })
+
+  it('rejects when no steamCmdPath is configured at all', async () => {
+    await expect(updateServer(makeProfile(), '')).rejects.toThrow(/Set the SteamCMD path/)
   })
 })
