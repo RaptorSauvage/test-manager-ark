@@ -543,6 +543,23 @@ label.checkbox {
   margin-bottom: 20px;
 }
 
+.backup-sections {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.backup-sections > * {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .backup-sections {
+    flex-direction: column;
+  }
+}
+
 .backup-management {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -551,6 +568,10 @@ label.checkbox {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.backup-management h3 {
+  margin: 0;
 }
 
 .backup-management-actions {

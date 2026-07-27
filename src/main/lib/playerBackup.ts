@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { shell } from 'electron'
 import AdmZip from 'adm-zip'
-import type { ServerProfile } from '@shared/types'
+import type { BackupEntry, PlayerBackupFolder, ServerProfile } from '@shared/types'
 import type { PlayerConnectionEvent } from './playerConnectionWatcher'
 
 /** Kept per-player, not per-profile - each player gets their own folder. */
@@ -31,8 +32,60 @@ function getPlayerProfileBakPath(profile: ServerProfile, uniqueNetId: string): s
   )
 }
 
+function getPlayerBackupsRootDir(profile: ServerProfile): string {
+  return path.join(profile.backupDir, 'PlayerBackups')
+}
+
 function getPlayerBackupDir(profile: ServerProfile, event: PlayerConnectionEvent): string {
-  return path.join(profile.backupDir, 'PlayerBackups', `${sanitizeForFilename(event.playerName)}_${event.uniqueNetId}`)
+  return path.join(getPlayerBackupsRootDir(profile), `${sanitizeForFilename(event.playerName)}_${event.uniqueNetId}`)
+}
+
+/** Folder names are "<sanitized player name>_<uniqueNetId>" - split back out for display. */
+const FOLDER_NAME_REGEX = /^(.*)_([0-9a-f]{8,})$/i
+
+export function parsePlayerBackupFolderName(folderName: string): { playerName: string; uniqueNetId: string } | null {
+  const match = folderName.match(FOLDER_NAME_REGEX)
+  if (!match) return null
+  return { playerName: match[1], uniqueNetId: match[2].toLowerCase() }
+}
+
+/** Every player who has at least one backup for this profile, for a "pick a player" selector. */
+export function listPlayerBackupFolders(profile: ServerProfile): PlayerBackupFolder[] {
+  if (!profile.backupDir.trim()) return []
+  const root = getPlayerBackupsRootDir(profile)
+  if (!fs.existsSync(root)) return []
+
+  return fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const parsed = parsePlayerBackupFolderName(entry.name)
+      return { key: entry.name, playerName: parsed?.playerName ?? entry.name, uniqueNetId: parsed?.uniqueNetId ?? '' }
+    })
+    .sort((a, b) => a.playerName.localeCompare(b.playerName))
+}
+
+/** The backup zips for one specific player folder, newest first - same shape as world backups. */
+export function listPlayerBackups(profile: ServerProfile, folderKey: string): BackupEntry[] {
+  const dir = path.join(getPlayerBackupsRootDir(profile), folderKey)
+  if (!fs.existsSync(dir)) return []
+
+  return fs
+    .readdirSync(dir)
+    .filter((fileName) => fileName.endsWith('.zip'))
+    .map((fileName) => {
+      const filePath = path.join(dir, fileName)
+      const stat = fs.statSync(filePath)
+      return { fileName, filePath, createdAt: stat.mtimeMs, sizeBytes: stat.size }
+    })
+    .sort((a, b) => b.createdAt - a.createdAt)
+}
+
+export async function openPlayerBackupFolder(profile: ServerProfile, folderKey: string): Promise<void> {
+  const dir = path.join(getPlayerBackupsRootDir(profile), folderKey)
+  fs.mkdirSync(dir, { recursive: true })
+  const error = await shell.openPath(dir)
+  if (error) throw new Error(error)
 }
 
 function wait(ms: number): Promise<void> {

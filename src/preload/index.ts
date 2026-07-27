@@ -49,6 +49,12 @@ const api: Api = {
       return () => ipcRenderer.removeListener(IPC.backupCreated, listener)
     }
   },
+  playerBackup: {
+    listFolders: (profileId: string) => ipcRenderer.invoke(IPC.playerBackupFoldersList, profileId),
+    list: (profileId: string, folderKey: string) => ipcRenderer.invoke(IPC.playerBackupList, profileId, folderKey),
+    openFolder: (profileId: string, folderKey: string) =>
+      ipcRenderer.invoke(IPC.playerBackupOpenFolder, profileId, folderKey)
+  },
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet),
     save: (settings: AppSettings) => ipcRenderer.invoke(IPC.settingsSave, settings)

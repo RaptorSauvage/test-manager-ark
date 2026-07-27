@@ -59,7 +59,12 @@ dedicated servers running on the same machine.
   `PlayerBackups/<player>_<id>/` under the backup directory as a small `.zip`, timestamped
   and tagged `_joined`/`_left`, with the `.arkprofile` extension restored on the entry
   inside so it drops back in cleanly if ever extracted. Keeps the last 20 snapshots per
-  player, pruning older ones automatically.
+  player, pruning older ones automatically. Managed from its own **Player Profile
+  Backups** block in the Backups tab, shown side-by-side with the world backup list - a
+  player dropdown (with its own Refresh) picks whose folder to browse, then the same
+  checkbox-select table/toolbar as the world backups (Refresh backup file list, Open
+  backup folder, Restore selected backup, Delete selected backup(s)) operates on that
+  player's snapshots specifically.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
   the order is persisted and stays the same next time you open the app.

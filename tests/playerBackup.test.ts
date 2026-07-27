@@ -4,7 +4,13 @@ import os from 'node:os'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
 import type { ServerProfile } from '../shared/types'
-import { backupPlayerProfile, sanitizeForFilename } from '../src/main/lib/playerBackup'
+import {
+  backupPlayerProfile,
+  listPlayerBackupFolders,
+  listPlayerBackups,
+  parsePlayerBackupFolderName,
+  sanitizeForFilename
+} from '../src/main/lib/playerBackup'
 import type { PlayerConnectionEvent } from '../src/main/lib/playerConnectionWatcher'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
@@ -139,5 +145,80 @@ describe('backupPlayerProfile', () => {
     await backupPlayerProfile(profile, event)
 
     expect(fs.readdirSync(destDir).length).toBe(20)
+  })
+})
+
+describe('parsePlayerBackupFolderName', () => {
+  it('splits the sanitized player name from the trailing uniqueNetId', () => {
+    expect(parsePlayerBackupFolderName('LeRaptorSauvage_0002dbe9ab20413e9b8e7e1562b76868')).toEqual({
+      playerName: 'LeRaptorSauvage',
+      uniqueNetId: '0002dbe9ab20413e9b8e7e1562b76868'
+    })
+  })
+
+  it('handles underscores inside the player name itself', () => {
+    expect(parsePlayerBackupFolderName('Le_Raptor_Sauvage_0002dbe9ab20413e9b8e7e1562b76868')).toEqual({
+      playerName: 'Le_Raptor_Sauvage',
+      uniqueNetId: '0002dbe9ab20413e9b8e7e1562b76868'
+    })
+  })
+
+  it('returns null for a folder name with no id suffix', () => {
+    expect(parsePlayerBackupFolderName('not-a-player-folder')).toBeNull()
+  })
+})
+
+describe('listPlayerBackupFolders / listPlayerBackups', () => {
+  let tmpDir: string
+  let backupDir: string
+  const uniqueNetId = '0002dbe9ab20413e9b8e7e1562b76868'
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ark-player-backup-list-test-'))
+    backupDir = path.join(tmpDir, 'backups')
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('returns an empty array when no backup directory is configured', () => {
+    const profile = makeProfile({ backupDir: '' })
+    expect(listPlayerBackupFolders(profile)).toEqual([])
+  })
+
+  it('returns an empty array when nothing has been backed up yet', () => {
+    const profile = makeProfile({ backupDir })
+    expect(listPlayerBackupFolders(profile)).toEqual([])
+  })
+
+  it('lists player folders sorted by player name, parsing the id back out', () => {
+    const root = path.join(backupDir, 'PlayerBackups')
+    fs.mkdirSync(path.join(root, `Zeta_${uniqueNetId}`), { recursive: true })
+    fs.mkdirSync(path.join(root, `Alpha_${uniqueNetId}`), { recursive: true })
+
+    const profile = makeProfile({ backupDir })
+    expect(listPlayerBackupFolders(profile)).toEqual([
+      { key: `Alpha_${uniqueNetId}`, playerName: 'Alpha', uniqueNetId },
+      { key: `Zeta_${uniqueNetId}`, playerName: 'Zeta', uniqueNetId }
+    ])
+  })
+
+  it('lists a player folder\'s zip backups, newest first', () => {
+    const folderKey = `LeRaptorSauvage_${uniqueNetId}`
+    const dir = path.join(backupDir, 'PlayerBackups', folderKey)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'a.zip'), 'a')
+    fs.writeFileSync(path.join(dir, 'ignored.txt'), 'not a zip')
+
+    const profile = makeProfile({ backupDir })
+    const backups = listPlayerBackups(profile, folderKey)
+    expect(backups).toHaveLength(1)
+    expect(backups[0].fileName).toBe('a.zip')
+  })
+
+  it('returns an empty array for an unknown folder key', () => {
+    const profile = makeProfile({ backupDir })
+    expect(listPlayerBackups(profile, 'does-not-exist')).toEqual([])
   })
 })

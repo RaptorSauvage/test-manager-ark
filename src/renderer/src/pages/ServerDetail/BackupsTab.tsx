@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { BackupEntry, ServerProfile } from '@shared/types'
+import PlayerBackupsSection from './PlayerBackupsSection'
 
 interface BackupsTabProps {
   profile: ServerProfile
@@ -229,73 +230,82 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
       </div>
       {error && <p className="error-message">{error}</p>}
 
-      <section className="backup-management">
-        <div className="backup-management-actions">
-          <button className="btn-refresh-backups" onClick={reload} disabled={loading}>
-            {loading ? 'Refreshing...' : 'Refresh backup file list'}
-          </button>
-          <button
-            className="btn-open-backup-folder"
-            onClick={() => void handleOpenFolder()}
-            disabled={!profile.backupDir}
-          >
-            Open backup folder
-          </button>
-          <button
-            className="btn-restore-backup"
-            disabled={!singleSelected || busy}
-            title={selectedPaths.size > 1 ? 'Select just one backup to restore' : undefined}
-            onClick={() => singleSelected && void handleRestore(singleSelected)}
-          >
-            Restore selected backup
-          </button>
-          <button className="btn-delete-backup" disabled={selectedPaths.size === 0} onClick={() => void handleDeleteSelected()}>
-            Delete selected backup{selectedPaths.size > 1 ? `s (${selectedPaths.size})` : ''}
-          </button>
-        </div>
-        <table className="backups-table">
-          <thead>
-            <tr>
-              <th className="backups-select-col">
-                <input
-                  type="checkbox"
-                  checked={backups.length > 0 && selectedPaths.size === backups.length}
-                  onChange={toggleSelectAll}
-                  disabled={backups.length === 0}
-                />
-              </th>
-              <th>File Name</th>
-              <th>Creation Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            {backups.map((backup) => (
-              <tr
-                key={backup.filePath}
-                className={selectedPaths.has(backup.filePath) ? 'selected' : ''}
-                onClick={() => toggleSelected(backup.filePath)}
-                title={formatSize(backup.sizeBytes)}
-              >
-                <td className="backups-select-col">
+      <div className="backup-sections">
+        <section className="backup-management">
+          <h3>World Backups</h3>
+          <div className="backup-management-actions">
+            <button className="btn-refresh-backups" onClick={reload} disabled={loading}>
+              {loading ? 'Refreshing...' : 'Refresh backup file list'}
+            </button>
+            <button
+              className="btn-open-backup-folder"
+              onClick={() => void handleOpenFolder()}
+              disabled={!profile.backupDir}
+            >
+              Open backup folder
+            </button>
+            <button
+              className="btn-restore-backup"
+              disabled={!singleSelected || busy}
+              title={selectedPaths.size > 1 ? 'Select just one backup to restore' : undefined}
+              onClick={() => singleSelected && void handleRestore(singleSelected)}
+            >
+              Restore selected backup
+            </button>
+            <button
+              className="btn-delete-backup"
+              disabled={selectedPaths.size === 0}
+              onClick={() => void handleDeleteSelected()}
+            >
+              Delete selected backup{selectedPaths.size > 1 ? `s (${selectedPaths.size})` : ''}
+            </button>
+          </div>
+          <table className="backups-table">
+            <thead>
+              <tr>
+                <th className="backups-select-col">
                   <input
                     type="checkbox"
-                    checked={selectedPaths.has(backup.filePath)}
-                    onChange={() => toggleSelected(backup.filePath)}
-                    onClick={(e) => e.stopPropagation()}
+                    checked={backups.length > 0 && selectedPaths.size === backups.length}
+                    onChange={toggleSelectAll}
+                    disabled={backups.length === 0}
                   />
-                </td>
-                <td>{backup.fileName}</td>
-                <td>{new Date(backup.createdAt).toLocaleString()}</td>
+                </th>
+                <th>File Name</th>
+                <th>Creation Time</th>
               </tr>
-            ))}
-            {!loading && backups.length === 0 && (
-              <tr>
-                <td colSpan={3}>No backups yet.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </section>
+            </thead>
+            <tbody>
+              {backups.map((backup) => (
+                <tr
+                  key={backup.filePath}
+                  className={selectedPaths.has(backup.filePath) ? 'selected' : ''}
+                  onClick={() => toggleSelected(backup.filePath)}
+                  title={formatSize(backup.sizeBytes)}
+                >
+                  <td className="backups-select-col">
+                    <input
+                      type="checkbox"
+                      checked={selectedPaths.has(backup.filePath)}
+                      onChange={() => toggleSelected(backup.filePath)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </td>
+                  <td>{backup.fileName}</td>
+                  <td>{new Date(backup.createdAt).toLocaleString()}</td>
+                </tr>
+              ))}
+              {!loading && backups.length === 0 && (
+                <tr>
+                  <td colSpan={3}>No backups yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+
+        <PlayerBackupsSection profile={profile} />
+      </div>
     </div>
   )
 }

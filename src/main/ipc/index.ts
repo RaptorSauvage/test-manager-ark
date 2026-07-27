@@ -4,6 +4,7 @@ import { registerServerProcessHandlers } from './serverProcess'
 import { registerRconHandlers } from './rcon'
 import { registerModsHandlers } from './mods'
 import { registerBackupHandlers } from './backup'
+import { registerPlayerBackupHandlers } from './playerBackup'
 import { registerDialogHandlers } from './dialog'
 import { registerSettingsHandlers } from './settings'
 import { registerSteamcmdInstallHandlers } from './steamcmdInstall'
@@ -18,6 +19,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerRconHandlers()
   registerModsHandlers()
   registerBackupHandlers(mainWindow.webContents)
+  registerPlayerBackupHandlers()
   registerDialogHandlers(mainWindow)
   registerSettingsHandlers()
   registerSteamcmdInstallHandlers()

@@ -110,6 +110,14 @@ export interface BackupEntry {
   sizeBytes: number
 }
 
+/** One player's backup folder, for a "pick a player" selector next to the world backup list. */
+export interface PlayerBackupFolder {
+  /** Raw folder name - pass back to playerBackup.list/openFolder as-is. */
+  key: string
+  playerName: string
+  uniqueNetId: string
+}
+
 export interface RconResult {
   ok: boolean
   response?: string
@@ -149,6 +157,10 @@ export const IPC = {
   backupDelete: 'backup:delete',
   backupOpenFolder: 'backup:open-folder',
   backupCreated: 'backup:created',
+
+  playerBackupFoldersList: 'player-backup:folders-list',
+  playerBackupList: 'player-backup:list',
+  playerBackupOpenFolder: 'player-backup:open-folder',
 
   settingsGet: 'settings:get',
   settingsSave: 'settings:save',
@@ -224,6 +236,11 @@ export interface Api {
     restore: (profileId: string, filePath: string) => Promise<void>
     openFolder: (profileId: string) => Promise<void>
     onCreated: (callback: (profileId: string) => void) => () => void
+  }
+  playerBackup: {
+    listFolders: (profileId: string) => Promise<PlayerBackupFolder[]>
+    list: (profileId: string, folderKey: string) => Promise<BackupEntry[]>
+    openFolder: (profileId: string, folderKey: string) => Promise<void>
   }
   settings: {
     get: () => Promise<AppSettings>
