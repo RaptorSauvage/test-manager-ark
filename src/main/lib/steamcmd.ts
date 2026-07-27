@@ -137,10 +137,11 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
     // sources (stdout and stderr) write into the same destination - only finish() below
     // should close it, once both are done.
     //
-    // detached: true - on Windows this gives the child its own console, which SteamCMD is
-    // documented to need (community reports: it "has unreliable STDOUT" and should be
-    // "called from an existing console window rather than launching the executable
-    // directly"). windowsHide keeps that console from actually flashing on screen.
+    // windowsHide: true - Windows still allocates a console for a console-subsystem child
+    // like steamcmd.exe even from a windowless Electron parent; this just keeps it from
+    // flashing on screen. (detached: true was tried here too, on the theory SteamCMD needed
+    // its own console - it didn't turn out to be the actual fix and left its console window
+    // lingering open after steamcmd finished, so it's been dropped.)
     //
     // cwd: steamcmd's own directory - without this the child inherits Electron's working
     // directory, not SteamCMD's. A user-reported fix for the same symptom (works when run
@@ -148,7 +149,6 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
     // folder rather than from elsewhere, which this matches.
     const child = spawn(steamCmdPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
       windowsHide: true,
       cwd: path.dirname(steamCmdPath)
     })
