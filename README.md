@@ -71,14 +71,14 @@ dedicated servers running on the same machine.
   allow rules (inbound + outbound) for whichever `steamcmd.exe` is configured above, useful
   if update failures turn out to be network-related. Prompts once for admin rights (UAC)
   just for that action - the app itself keeps running unelevated the rest of the time.
-- **Official Server Status** (dashboard sidebar) — fetches and displays Wildcard's
-  official ARK:SA server status feed
-  (`https://cdn2.arkdedicated.com/asa/officialserverstatus.ini`). The feed's exact
-  section/key layout isn't documented, so this is parsed generically (every `[section]`
-  and its `key=value` pairs are shown as-is, with a light heuristic - values like `1`,
-  `true`, `up`, `online` render as green, `0`/`false`/`down`/`offline` as red, anything
-  else as neutral) rather than assuming specific field names that might turn out to be
-  wrong; a Refresh button re-fetches on demand.
+- **Official Server Status** (dashboard sidebar) — fetches Wildcard's official ARK:SA
+  server status feed (`https://cdn2.arkdedicated.com/asa/officialserverstatus.ini`).
+  Despite the `.ini` extension, the file isn't key/value INI - it's a single line like
+  `ARK Official Server Network Status: <RichColor Color="0, 1, 0, 1">Online (v92.25)</>`,
+  which is parsed with a dedicated regex into a label, status, version, and the
+  `RichColor` (four 0-1 floats, Unreal Engine's usual color format) converted into a CSS
+  `rgb()`/`rgba()` color, then shown as "Official Server Network Status : Online
+  (92.25)" in that color. A Refresh button re-fetches on demand.
 - **Settings** (dashboard) — lets you override the "Data files location" (default:
   Documents/ARK Server Manager), the folder `maps.json`, `customMaps.json`, and any future
   editable config files live in. Changing it only affects where the app looks going

@@ -163,8 +163,17 @@ export interface ImportResult {
   profiles: ServerProfile[]
 }
 
-/** Official ARK:SA server status feed, parsed generically as section -> key -> value. */
-export type OfficialServerStatusData = Record<string, Record<string, string>>
+/** Official ARK:SA server status feed, parsed from its "<RichColor>" formatted line. */
+export interface OfficialServerStatus {
+  /** e.g. "ARK Official Server Network Status" */
+  label: string
+  /** e.g. "Online" */
+  status: string
+  /** e.g. "92.25" */
+  version: string
+  /** CSS rgb()/rgba() color converted from the feed's 0-1 float RichColor */
+  color: string
+}
 
 /** The contextBridge API surface exposed by the preload script as `window.api`. */
 export interface Api {
@@ -225,6 +234,6 @@ export interface Api {
     getDefault: () => Promise<string>
   }
   officialServerStatus: {
-    get: () => Promise<OfficialServerStatusData>
+    get: () => Promise<OfficialServerStatus>
   }
 }

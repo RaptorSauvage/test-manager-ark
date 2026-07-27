@@ -161,28 +161,12 @@ label.checkbox {
   margin: 0;
 }
 
-.official-status-section h4 {
-  margin: 12px 0 6px;
-  text-transform: capitalize;
-}
-
-.official-status-entries {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.official-status-line {
   margin: 0;
 }
 
-.official-status-entries > div {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.official-status-entries dt {
-  color: var(--muted, #888);
-  overflow-wrap: anywhere;
+.official-status-value {
+  font-weight: 600;
 }
 
 .server-controls {

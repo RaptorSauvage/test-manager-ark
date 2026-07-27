@@ -1,48 +1,41 @@
-import ini from 'ini'
-import type { OfficialServerStatusData } from '@shared/types'
+import type { OfficialServerStatus } from '@shared/types'
 
 /**
- * Official ARK:SA server status feed, published by Wildcard/Snail Games. The exact
- * section/key names aren't documented anywhere - this parses it as a generic INI file
- * (section -> key -> value) instead of assuming specific names, so it keeps working
- * even if this guess doesn't match the real structure and needs adjusting later.
+ * Official ARK:SA server status feed, published by Wildcard/Snail Games. Despite the
+ * .ini extension, the actual content isn't key/value INI - it's a single line like:
+ *   ARK Official Server Network Status: <RichColor Color="0, 1, 0, 1">Online (v92.25)</>
+ * where the RichColor's 4 components are 0-1 floats (Unreal Engine's usual color format).
  */
 export const OFFICIAL_SERVER_STATUS_URL = 'https://cdn2.arkdedicated.com/asa/officialserverstatus.ini'
 
-/** Values seen in the wild (and their ARK:SE-era equivalents) that plausibly mean "up"/"down". */
-const UP_VALUES = new Set(['1', 'true', 'up', 'online', 'ok', 'active'])
-const DOWN_VALUES = new Set(['0', 'false', 'down', 'offline', 'inactive'])
+const STATUS_LINE_REGEX =
+  /^(.*?):\s*<RichColor Color="([^"]+)">\s*(.*?)\s*\(v?([\d.]+)\)\s*<\/>\s*$/i
 
-/** Best-effort up/down guess for a status value; undefined when it can't be guessed. */
-export function guessIsUp(value: string): boolean | undefined {
-  const normalized = value.trim().toLowerCase()
-  if (UP_VALUES.has(normalized)) return true
-  if (DOWN_VALUES.has(normalized)) return false
-  return undefined
-}
-
-/** Parses the raw .ini content into section -> key -> value, flattening non-section top-level keys under "general". */
-export function parseOfficialServerStatus(content: string): OfficialServerStatusData {
-  const parsed = ini.parse(content) as Record<string, unknown>
-  const result: OfficialServerStatusData = {}
-
-  for (const [key, value] of Object.entries(parsed)) {
-    if (value && typeof value === 'object') {
-      const section: Record<string, string> = {}
-      for (const [subKey, subValue] of Object.entries(value as Record<string, unknown>)) {
-        section[subKey] = String(subValue)
-      }
-      result[key] = section
-    } else {
-      result.general = result.general ?? {}
-      result.general[key] = String(value)
-    }
+/** Converts a RichColor "r, g, b[, a]" string (each component 0-1) into a CSS rgb()/rgba() color. */
+export function richColorToCss(richColor: string): string {
+  const [r, g, b, a] = richColor.split(',').map((part) => Number(part.trim()))
+  const to255 = (n: number): number => Math.round(Math.min(1, Math.max(0, n)) * 255)
+  if (a !== undefined && a < 1) {
+    return `rgba(${to255(r)}, ${to255(g)}, ${to255(b)}, ${a})`
   }
-
-  return result
+  return `rgb(${to255(r)}, ${to255(g)}, ${to255(b)})`
 }
 
-export async function fetchOfficialServerStatus(): Promise<OfficialServerStatusData> {
+export function parseOfficialServerStatus(content: string): OfficialServerStatus {
+  const match = content.trim().match(STATUS_LINE_REGEX)
+  if (!match) {
+    throw new Error('Unrecognized official server status format')
+  }
+  const [, label, richColor, status, version] = match
+  return {
+    label: label.trim(),
+    status: status.trim(),
+    version: version.trim(),
+    color: richColorToCss(richColor)
+  }
+}
+
+export async function fetchOfficialServerStatus(): Promise<OfficialServerStatus> {
   const response = await fetch(OFFICIAL_SERVER_STATUS_URL)
   if (!response.ok) {
     throw new Error(`Failed to fetch official server status (HTTP ${response.status})`)

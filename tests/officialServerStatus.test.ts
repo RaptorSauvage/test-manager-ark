@@ -1,48 +1,42 @@
 import { describe, expect, it } from 'vitest'
-import { guessIsUp, parseOfficialServerStatus } from '../src/main/lib/officialServerStatus'
+import { parseOfficialServerStatus, richColorToCss } from '../src/main/lib/officialServerStatus'
 
 describe('parseOfficialServerStatus', () => {
-  it('parses sections into a nested section -> key -> value map', () => {
-    const content = `
-[status]
-prod_asaa_us_east=1
-prod_asaa_us_west=0
-
-[maintenance]
-scheduled=false
-`
+  it('parses the real feed format into label/status/version/color', () => {
+    const content = 'ARK Official Server Network Status: <RichColor Color="0, 1, 0, 1">Online (v92.25)</>'
     expect(parseOfficialServerStatus(content)).toEqual({
-      status: { prod_asaa_us_east: '1', prod_asaa_us_west: '0' },
-      maintenance: { scheduled: 'false' }
+      label: 'ARK Official Server Network Status',
+      status: 'Online',
+      version: '92.25',
+      color: 'rgb(0, 255, 0)'
     })
   })
 
-  it('flattens keys that appear before any section under "general"', () => {
-    const content = `prod_asaa_us_east=1\n[status]\nother=0`
-    const result = parseOfficialServerStatus(content)
-    expect(result.general).toEqual({ prod_asaa_us_east: '1' })
-    expect(result.status).toEqual({ other: '0' })
+  it('tolerates surrounding whitespace/newlines', () => {
+    const content = '\n  ARK Official Server Network Status: <RichColor Color="1, 0, 0, 1">Offline (v92.25)</>  \n'
+    expect(parseOfficialServerStatus(content)).toEqual({
+      label: 'ARK Official Server Network Status',
+      status: 'Offline',
+      version: '92.25',
+      color: 'rgb(255, 0, 0)'
+    })
   })
 
-  it('returns an empty object for empty content', () => {
-    expect(parseOfficialServerStatus('')).toEqual({})
+  it('throws a clear error for content that does not match the known format', () => {
+    expect(() => parseOfficialServerStatus('not the expected format')).toThrow(/Unrecognized/)
   })
 })
 
-describe('guessIsUp', () => {
-  it('recognizes common "up" values', () => {
-    expect(guessIsUp('1')).toBe(true)
-    expect(guessIsUp('true')).toBe(true)
-    expect(guessIsUp('Online')).toBe(true)
+describe('richColorToCss', () => {
+  it('converts 0-1 float components (alpha 1) into a plain rgb()', () => {
+    expect(richColorToCss('0, 1, 0, 1')).toBe('rgb(0, 255, 0)')
   })
 
-  it('recognizes common "down" values', () => {
-    expect(guessIsUp('0')).toBe(false)
-    expect(guessIsUp('false')).toBe(false)
-    expect(guessIsUp('Offline')).toBe(false)
+  it('converts a partial alpha into rgba()', () => {
+    expect(richColorToCss('1, 1, 0, 0.5')).toBe('rgba(255, 255, 0, 0.5)')
   })
 
-  it('returns undefined for anything else', () => {
-    expect(guessIsUp('maintenance')).toBeUndefined()
+  it('clamps out-of-range components', () => {
+    expect(richColorToCss('-1, 2, 0.5, 1')).toBe('rgb(0, 255, 128)')
   })
 })
