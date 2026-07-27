@@ -5,7 +5,7 @@ import AdmZip from 'adm-zip'
 import type { ServerProfile, BackupEntry } from '@shared/types'
 
 function savedArksDir(profile: ServerProfile): string {
-  return path.join(profile.installDir, profile.savedArksSubPath)
+  return path.join(profile.installDir, 'ShooterGame', 'Saved', 'SavedArks')
 }
 
 function backupPrefix(profile: ServerProfile): string {
@@ -14,6 +14,11 @@ function backupPrefix(profile: ServerProfile): string {
 
 export function createBackup(profile: ServerProfile): Promise<BackupEntry> {
   return new Promise((resolve, reject) => {
+    if (!profile.backupDir.trim()) {
+      reject(new Error('Set a backup directory in the Backups tab first.'))
+      return
+    }
+
     const sourceDir = savedArksDir(profile)
     if (!fs.existsSync(sourceDir)) {
       reject(new Error(`SavedArks folder not found: ${sourceDir}`))

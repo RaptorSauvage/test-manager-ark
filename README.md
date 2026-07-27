@@ -47,7 +47,9 @@ dedicated servers running on the same machine.
   Works for a first-time install into an empty folder too. Disabled while the server is
   running or already updating. The app's **Settings** screen can either download and
   manage its own SteamCMD copy (one click, no setup) or point at an existing install you
-  already have.
+  already have. The managed copy installs into a `steamcmd` folder next to the Manager
+  itself (next to the executable when packaged, or the project root in dev) - not a hidden
+  OS app-data folder - so it's easy to find on disk.
 
 ## Prerequisites
 
@@ -83,9 +85,10 @@ tab:
   `ServerAdminPassword` from that install's `GameUserSettings.ini` - set it there, not in
   this app - and must be reachable on `127.0.0.1` (start/stop rely on it to save the world
   before shutting down).
-- **SavedArks path**: relative to the install directory, defaults to
-  `ShooterGame/Saved/SavedArks`.
-- Backup directory, retention, and scheduling live in the **Backups** tab, not here.
+- Backups always read/write `ShooterGame/Saved/SavedArks` under the install directory -
+  this is fixed by ARK:SA and isn't a configurable field. Backup directory, retention, and
+  scheduling live in the **Backups** tab, not here; you must set a backup directory there
+  before creating a backup.
 
 ## Notes / limitations
 

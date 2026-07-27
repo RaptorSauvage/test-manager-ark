@@ -71,10 +71,6 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           </select>
         </label>
       </div>
-      <label>
-        SavedArks path (relative to install dir)
-        <input value={form.savedArksSubPath} onChange={(e) => update('savedArksSubPath', e.target.value)} />
-      </label>
       <section className="cluster-section">
         <h3>Cluster</h3>
         <label className="checkbox">

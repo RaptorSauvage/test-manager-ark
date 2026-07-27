@@ -9,7 +9,6 @@ export function createDefaultProfile(name: string): ServerProfile {
     gamePort: 7777,
     rconPort: 27020,
     serverPlatform: 'PC',
-    savedArksSubPath: 'ShooterGame/Saved/SavedArks',
     backupDir: '',
     maxBackups: 10,
     backupSchedule: '',

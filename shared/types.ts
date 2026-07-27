@@ -13,8 +13,6 @@ export interface ServerProfile {
   rconPort: number
   /** Crossplay setting passed as -ServerPlatform=<value> */
   serverPlatform: 'PC' | 'ALL'
-  /** Path to the SavedArks folder, relative to installDir */
-  savedArksSubPath: string
   /** Directory backups are written to */
   backupDir: string
   /** How many backups to keep per profile before pruning the oldest */

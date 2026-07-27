@@ -12,6 +12,8 @@ interface LegacyProfileFields {
   rconPassword?: string
   /** Removed - ARK:SA doesn't use a separate query port */
   queryPort?: number
+  /** Removed - the SavedArks location is always ShooterGame/Saved/SavedArks */
+  savedArksSubPath?: string
 }
 
 /**
@@ -24,7 +26,13 @@ interface LegacyProfileFields {
  *   are new and default to off/empty
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
-  const { activeMods, rconPassword: _rconPassword, queryPort: _queryPort, ...rest } = raw
+  const {
+    activeMods,
+    rconPassword: _rconPassword,
+    queryPort: _queryPort,
+    savedArksSubPath: _savedArksSubPath,
+    ...rest
+  } = raw
   const sourceMods: Array<Partial<ServerMod> & { id: string }> = Array.isArray(rest.mods)
     ? rest.mods
     : (activeMods ?? []).map((id) => ({ id }))

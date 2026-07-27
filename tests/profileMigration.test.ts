@@ -11,7 +11,6 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     gamePort: 7777,
     rconPort: 27020,
     serverPlatform: 'PC',
-    savedArksSubPath: 'ShooterGame/Saved/SavedArks',
     backupDir: '',
     maxBackups: 10,
     backupScheduleEnabled: false,
@@ -81,5 +80,11 @@ describe('migrateProfile', () => {
     const migrated = migrateProfile(legacy)
     expect('rconPassword' in migrated).toBe(false)
     expect('queryPort' in migrated).toBe(false)
+  })
+
+  it('drops the removed savedArksSubPath field from legacy profiles', () => {
+    const legacy = baseProfile({ savedArksSubPath: 'ShooterGame/Saved/SavedArks' })
+    const migrated = migrateProfile(legacy)
+    expect('savedArksSubPath' in migrated).toBe(false)
   })
 })

@@ -10,9 +10,19 @@ const DOWNLOAD_URLS: Partial<Record<NodeJS.Platform, string>> = {
   darwin: 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_osx.tar.gz'
 }
 
+/**
+ * Base folder the Manager itself lives in: the project root in dev (electron-vite
+ * runs main from `out/main`, two levels below the root), or the folder containing
+ * the executable once packaged - not the OS's hidden per-user AppData folder, so
+ * it's somewhere the user can actually find and browse to.
+ */
+function getManagerBaseDir(): string {
+  return app.isPackaged ? path.dirname(app.getPath('exe')) : app.getAppPath()
+}
+
 /** Where this app keeps its own SteamCMD copy, separate from any install the user points to manually. */
 export function getManagedSteamCmdDir(): string {
-  return path.join(app.getPath('userData'), 'steamcmd')
+  return path.join(getManagerBaseDir(), 'steamcmd')
 }
 
 export function getManagedExecutablePath(dir: string, platform: NodeJS.Platform = process.platform): string {

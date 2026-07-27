@@ -35,7 +35,6 @@ export function registerProfileHandlers(): void {
       gamePort: detected.gamePort ?? 7777,
       rconPort: detected.rconPort ?? 27020,
       serverPlatform: 'PC',
-      savedArksSubPath: 'ShooterGame/Saved/SavedArks',
       backupDir: '',
       maxBackups: 10,
       backupSchedule: '',
