@@ -31,8 +31,10 @@ dedicated servers running on the same machine.
   `-dev` to load that mod's in-development build), applied via the server's `-mods=`
   launch flag - ARK:SA's only mod mechanism (no Steam Workshop, no GameUserSettings.ini
   involvement). The app never touches your `.ini` files — edit those yourself.
-- **Backups tab** — backup directory (with a folder picker), max backups to keep, and
-  scheduled automatic backups (gated behind an explicit enable/disable toggle, not just an
+- **Backups tab** — backup directory (with a folder picker that saves immediately on
+  picking a folder, no separate Save click needed for that field specifically - typing a
+  path by hand still needs "Save backup settings"), max backups to keep, and scheduled
+  automatic backups (gated behind an explicit enable/disable toggle, not just an
   empty/filled cron field) live here, instead of being split off into Settings. A
   scheduled backup only actually runs while the server is online - if it's stopped when
   the cron fires, that run is skipped rather than backing up (or erroring on) a server

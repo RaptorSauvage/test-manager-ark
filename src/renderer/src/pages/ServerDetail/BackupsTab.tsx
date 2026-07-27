@@ -61,22 +61,29 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
     })
   }, [profile.id])
 
-  async function browseBackupDir(): Promise<void> {
-    const dir = await window.api.dialog.selectDirectory()
-    if (dir) update('backupDir', dir)
-  }
-
-  async function saveSettings(): Promise<void> {
+  async function persist(next: ServerProfile): Promise<void> {
     setError('')
     try {
-      const updated = await window.api.profiles.save(form)
-      const saved = updated.find((p) => p.id === form.id)
+      const updated = await window.api.profiles.save(next)
+      const saved = updated.find((p) => p.id === next.id)
       if (saved) onProfileChange(saved)
       setSettingsStatus('Saved')
       setTimeout(() => setSettingsStatus(''), 2000)
     } catch (err) {
       setError((err as Error).message)
     }
+  }
+
+  async function browseBackupDir(): Promise<void> {
+    const dir = await window.api.dialog.selectDirectory()
+    if (!dir) return
+    const next = { ...form, backupDir: dir }
+    setForm(next)
+    await persist(next)
+  }
+
+  async function saveSettings(): Promise<void> {
+    await persist(form)
   }
 
   async function handleCreate(): Promise<void> {
