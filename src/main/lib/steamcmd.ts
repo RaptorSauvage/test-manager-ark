@@ -3,7 +3,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import type { ServerProfile } from '@shared/types'
 import { setUpdating, isRunning, isUpdating, computeTailReadStart } from './serverProcess'
-import { getManagerBaseDir } from './steamcmdInstaller'
+import { getDataDir } from './dataDir'
 
 /** Steam App ID for the ARK: Survival Ascended dedicated server (free, public - anonymous login works). */
 const ARK_ASA_DEDICATED_SERVER_APP_ID = '2430930'
@@ -49,7 +49,7 @@ export function describeSteamCmdExitCode(code: number): string {
 
 /** Where the last SteamCMD update run's output is logged for this profile, so failures are diagnosable. */
 export function getUpdateLogPath(profileId: string): string {
-  return path.join(getManagerBaseDir(), 'logs', `steamcmd-update-${profileId}.log`)
+  return path.join(getDataDir(), 'logs', `steamcmd-update-${profileId}.log`)
 }
 
 /** Returns the last update run's log for this profile, or null if it has never been updated. */

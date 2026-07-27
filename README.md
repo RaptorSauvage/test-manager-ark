@@ -92,7 +92,8 @@ dedicated servers running on the same machine.
   Restart All stops whichever servers are currently running, updates every profile, then
   starts back up only the ones that were running beforehand. Each server's "View update
   log" button shows the last SteamCMD run's output (logged to
-  `logs/steamcmd-update-<profileId>.log` next to the Manager), so an update failure is
+  `logs/steamcmd-update-<profileId>.log` inside the "Data files location", see Settings
+  below), so an update failure is
   diagnosable instead of just a raw exit code. SteamCMD's own piped console output is
   known to be unreliable on Windows and often carries nothing useful, so this log also
   includes whatever SteamCMD wrote to its own `logs/content_log.txt` (next to the
@@ -123,9 +124,10 @@ dedicated servers running on the same machine.
   `rgb()`/`rgba()` color, then shown as "Official Server Network Status : Online
   (92.25)" in that color. A Refresh button re-fetches on demand.
 - **Settings** (dashboard) — lets you override the "Data files location" (default:
-  Documents/ARK Server Manager), the folder `maps.json`, `customMaps.json`, and any future
-  editable config files live in. Changing it only affects where the app looks going
-  forward - it doesn't move existing files to the new folder for you.
+  Documents/ARK Server Manager), the folder `maps.json`, `customMaps.json`, the managed
+  SteamCMD install, per-profile update logs, and any future editable/generated files live
+  in. Changing it only affects where the app looks going forward - it doesn't move
+  existing files to the new folder for you.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), No Transfer From Filtering (`-NoTransferFromFiltering`), and External IP
@@ -163,9 +165,13 @@ dedicated servers running on the same machine.
   directory, then switches over automatically. Disabled while the server is running or
   already updating. The dashboard's own **SteamCMD** menu can either download and
   manage its own SteamCMD copy (one click, no setup) or point at an existing install you
-  already have. The managed copy installs into a `steamcmd` folder next to the Manager
-  itself (next to the executable when packaged, or the project root in dev) - not a hidden
-  OS app-data folder - so it's easy to find on disk.
+  already have. The managed copy installs into a `steamcmd` folder inside the "Data files
+  location" (see Settings below - Documents/ARK Server Manager by default), not next to
+  the packaged app's executable: electron-builder's NSIS installer wipes the install
+  folder's contents on every update/rebuild, which was silently deleting a managed
+  SteamCMD copy kept there while the saved SteamCMD path setting kept pointing at the
+  now-gone location. "View update log" polls every 2 seconds while open, so a
+  scheduled update's outcome shows up without having to close and reopen it.
 
 ## Prerequisites
 

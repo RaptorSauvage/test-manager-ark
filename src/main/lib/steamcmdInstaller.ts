@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
-import { app } from 'electron'
 import AdmZip from 'adm-zip'
+import { getDataDir } from './dataDir'
 
 const DOWNLOAD_URLS: Partial<Record<NodeJS.Platform, string>> = {
   win32: 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip',
@@ -11,18 +11,14 @@ const DOWNLOAD_URLS: Partial<Record<NodeJS.Platform, string>> = {
 }
 
 /**
- * Base folder the Manager itself lives in: the project root in dev (electron-vite
- * runs main from `out/main`, two levels below the root), or the folder containing
- * the executable once packaged - not the OS's hidden per-user AppData folder, so
- * it's somewhere the user can actually find and browse to.
+ * Where this app keeps its own SteamCMD copy, separate from any install the user points to
+ * manually - inside the persistent data dir (see getDataDir()), not next to the packaged
+ * app's executable: electron-builder's NSIS installer wipes the install folder's contents
+ * on every update/rebuild, which was silently deleting this copy while the saved
+ * steamCmdPath setting kept pointing at the now-gone location.
  */
-export function getManagerBaseDir(): string {
-  return app.isPackaged ? path.dirname(app.getPath('exe')) : app.getAppPath()
-}
-
-/** Where this app keeps its own SteamCMD copy, separate from any install the user points to manually. */
 export function getManagedSteamCmdDir(): string {
-  return path.join(getManagerBaseDir(), 'steamcmd')
+  return path.join(getDataDir(), 'steamcmd')
 }
 
 export function getManagedExecutablePath(dir: string, platform: NodeJS.Platform = process.platform): string {

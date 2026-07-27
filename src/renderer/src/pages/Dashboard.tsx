@@ -35,6 +35,16 @@ export default function Dashboard({
     window.api.maps.list().then(setMaps)
   }, [])
 
+  useEffect(() => {
+    if (!logProfileId) return
+    const interval = setInterval(() => {
+      void window.api.steamcmd
+        .getUpdateLog(logProfileId)
+        .then((log) => setLogContent(log ?? 'No update log yet - run Update at least once.'))
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [logProfileId])
+
   function mapDisplayName(mapId: string): string {
     return maps.find((m) => m.id === mapId)?.displayName ?? mapId
   }
