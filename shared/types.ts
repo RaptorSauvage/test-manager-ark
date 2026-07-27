@@ -111,7 +111,8 @@ export const IPC = {
 
   steamcmdInstall: 'steamcmd:install',
   steamcmdManagedStatus: 'steamcmd:managed-status',
-  steamcmdUpdateLog: 'steamcmd:update-log'
+  steamcmdUpdateLog: 'steamcmd:update-log',
+  steamcmdAddFirewallRule: 'steamcmd:add-firewall-rule'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -163,5 +164,6 @@ export interface Api {
     install: () => Promise<string>
     managedStatus: () => Promise<string | null>
     getUpdateLog: (profileId: string) => Promise<string | null>
+    addFirewallRule: (steamCmdPath: string) => Promise<void>
   }
 }

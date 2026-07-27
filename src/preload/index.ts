@@ -45,7 +45,8 @@ const api: Api = {
   steamcmd: {
     install: () => ipcRenderer.invoke(IPC.steamcmdInstall),
     managedStatus: () => ipcRenderer.invoke(IPC.steamcmdManagedStatus),
-    getUpdateLog: (profileId: string) => ipcRenderer.invoke(IPC.steamcmdUpdateLog, profileId)
+    getUpdateLog: (profileId: string) => ipcRenderer.invoke(IPC.steamcmdUpdateLog, profileId),
+    addFirewallRule: (steamCmdPath: string) => ipcRenderer.invoke(IPC.steamcmdAddFirewallRule, steamCmdPath)
   }
 }
 

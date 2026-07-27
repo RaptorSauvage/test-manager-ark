@@ -11,6 +11,9 @@ export default function AppSettingsView({ onBack }: AppSettingsViewProps): JSX.E
   const [managedPath, setManagedPath] = useState<string | null>(null)
   const [installing, setInstalling] = useState(false)
   const [installError, setInstallError] = useState('')
+  const [addingFirewallRule, setAddingFirewallRule] = useState(false)
+  const [firewallStatus, setFirewallStatus] = useState('')
+  const [firewallError, setFirewallError] = useState('')
 
   useEffect(() => {
     window.api.settings.get().then(setSettings)
@@ -40,6 +43,21 @@ export default function AppSettingsView({ onBack }: AppSettingsViewProps): JSX.E
       setInstallError((err as Error).message)
     } finally {
       setInstalling(false)
+    }
+  }
+
+  async function addFirewallRule(): Promise<void> {
+    setAddingFirewallRule(true)
+    setFirewallError('')
+    setFirewallStatus('')
+    try {
+      await window.api.steamcmd.addFirewallRule(settings.steamCmdPath)
+      setFirewallStatus('Firewall rule added')
+      setTimeout(() => setFirewallStatus(''), 3000)
+    } catch (err) {
+      setFirewallError((err as Error).message)
+    } finally {
+      setAddingFirewallRule(false)
     }
   }
 
@@ -92,6 +110,22 @@ export default function AppSettingsView({ onBack }: AppSettingsViewProps): JSX.E
           {status && <span className="status-message">{status}</span>}
         </div>
       </form>
+
+      <section className="managed-steamcmd">
+        <h3>Firewall (Windows)</h3>
+        <p className="empty-state">
+          Adds Windows Firewall allow rules for the SteamCMD path above (inbound + outbound). Prompts once for
+          admin rights (UAC) just for this action - the app itself keeps running without elevation.
+        </p>
+        {firewallError && <p className="error-message">{firewallError}</p>}
+        <button
+          onClick={() => void addFirewallRule()}
+          disabled={addingFirewallRule || !settings.steamCmdPath.trim()}
+        >
+          {addingFirewallRule ? 'Adding rule...' : 'Add firewall rule for SteamCMD'}
+        </button>
+        {firewallStatus && <span className="status-message">{firewallStatus}</span>}
+      </section>
     </div>
   )
 }

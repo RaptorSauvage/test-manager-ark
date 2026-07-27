@@ -50,6 +50,10 @@ dedicated servers running on the same machine.
   known to be unreliable on Windows and often carries nothing useful, so this log also
   includes whatever SteamCMD wrote to its own `logs/content_log.txt` (next to the
   SteamCMD executable) during that run.
+- **Add firewall rule for SteamCMD** (app Settings, Windows only) — adds Windows Firewall
+  allow rules (inbound + outbound) for whichever `steamcmd.exe` is configured above, useful
+  if update failures turn out to be network-related. Prompts once for admin rights (UAC)
+  just for that action - the app itself keeps running unelevated the rest of the time.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), and No Transfer From Filtering (`-NoTransferFromFiltering`). All three
