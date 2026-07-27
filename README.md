@@ -49,7 +49,11 @@ dedicated servers running on the same machine.
   diagnosable instead of just a raw exit code. SteamCMD's own piped console output is
   known to be unreliable on Windows and often carries nothing useful, so this log also
   includes whatever SteamCMD wrote to its own `logs/content_log.txt` (next to the
-  SteamCMD executable) during that run.
+  SteamCMD executable) during that run. Before each update, a stuck
+  `steamapps/appmanifest_2430930.acf` (SteamCMD's documented "StateFlags 6" state - it
+  otherwise makes every later attempt fail instantly with the same error, regardless of
+  whether the original problem is still there) is detected and deleted automatically so
+  the update can actually run.
 - **Add firewall rule for SteamCMD** (app Settings, Windows only) — adds Windows Firewall
   allow rules (inbound + outbound) for whichever `steamcmd.exe` is configured above, useful
   if update failures turn out to be network-related. Prompts once for admin rights (UAC)

@@ -83,6 +83,30 @@ export function readNewContentLog(steamCmdPath: string, previousSize: number): s
   return fs.readFileSync(logPath).subarray(readStart).toString('utf-8')
 }
 
+/** Where SteamCMD tracks this app's install state within a given install directory. */
+export function getAppManifestPath(installDir: string): string {
+  return path.join(installDir, 'steamapps', `appmanifest_${ARK_ASA_DEDICATED_SERVER_APP_ID}.acf`)
+}
+
+/**
+ * True if `manifestContent` has SteamCMD's documented "StateFlags 6" stuck-error state.
+ * Once an update fails, SteamCMD writes this into the manifest and every later run reads
+ * it back, aborts immediately without even attempting a download, and reports the exact
+ * same failure - regardless of whether the original problem is still there.
+ */
+export function isManifestStuckInErrorState(manifestContent: string): boolean {
+  return /"StateFlags"\s*"6"/.test(manifestContent)
+}
+
+/** Deletes the app manifest if it's stuck in the error state above, so the next update can actually run. */
+function clearStuckManifest(installDir: string): void {
+  const manifestPath = getAppManifestPath(installDir)
+  if (!fs.existsSync(manifestPath)) return
+  if (isManifestStuckInErrorState(fs.readFileSync(manifestPath, 'utf-8'))) {
+    fs.rmSync(manifestPath, { force: true })
+  }
+}
+
 export function updateServer(profile: ServerProfile, steamCmdPath: string): Promise<void> {
   if (isRunning(profile.id)) {
     return Promise.reject(new Error('Stop the server before updating it.'))
@@ -95,6 +119,8 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
   }
 
   return new Promise((resolve, reject) => {
+    clearStuckManifest(profile.installDir)
+
     const args = buildUpdateArgs(profile.installDir)
 
     setUpdating(profile.id, true)

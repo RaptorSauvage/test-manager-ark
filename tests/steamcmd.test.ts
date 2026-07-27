@@ -6,7 +6,9 @@ import {
   buildUpdateArgs,
   describeSteamCmdExitCode,
   getSteamCmdContentLogPath,
-  readNewContentLog
+  readNewContentLog,
+  getAppManifestPath,
+  isManifestStuckInErrorState
 } from '../src/main/lib/steamcmd'
 
 describe('buildUpdateArgs', () => {
@@ -44,6 +46,26 @@ describe('getSteamCmdContentLogPath', () => {
     expect(getSteamCmdContentLogPath('/managed/steamcmd/steamcmd.exe')).toBe(
       path.join('/managed/steamcmd', 'logs', 'content_log.txt')
     )
+  })
+})
+
+describe('getAppManifestPath', () => {
+  it('points at steamapps/appmanifest_2430930.acf inside the install directory', () => {
+    expect(getAppManifestPath('/servers/my-ark')).toBe(
+      path.join('/servers/my-ark', 'steamapps', 'appmanifest_2430930.acf')
+    )
+  })
+})
+
+describe('isManifestStuckInErrorState', () => {
+  it('detects the documented StateFlags 6 stuck-error state', () => {
+    const manifest = '"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"StateFlags"\t\t"6"\n}\n'
+    expect(isManifestStuckInErrorState(manifest)).toBe(true)
+  })
+
+  it('returns false for a healthy manifest', () => {
+    const manifest = '"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"StateFlags"\t\t"4"\n}\n'
+    expect(isManifestStuckInErrorState(manifest)).toBe(false)
   })
 })
 
