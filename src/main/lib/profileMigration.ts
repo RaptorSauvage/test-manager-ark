@@ -63,6 +63,8 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     disableBattlEye: rest.disableBattlEye ?? false,
     rconTribeLog: rest.rconTribeLog ?? false,
     forceRespawnDinos: rest.forceRespawnDinos ?? false,
-    noSound: rest.noSound ?? false
+    noSound: rest.noSound ?? false,
+    moddedMapEnabled: rest.moddedMapEnabled ?? false,
+    moddedMapId: rest.moddedMapId ?? ''
   }
 }

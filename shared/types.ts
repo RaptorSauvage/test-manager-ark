@@ -9,6 +9,10 @@ export interface ServerProfile {
   installDir: string
   /** Map identifier passed on the command line, e.g. "TheIsland_WP" */
   map: string
+  /** Whether a modded map overrides the map above */
+  moddedMapEnabled: boolean
+  /** Workshop mod id for the modded map, passed as -MapModID=<id> when moddedMapEnabled */
+  moddedMapId: string
   gamePort: number
   rconPort: number
   /** Crossplay setting passed as -ServerPlatform=<value> */

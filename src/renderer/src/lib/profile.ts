@@ -6,6 +6,8 @@ export function createDefaultProfile(name: string): ServerProfile {
     name,
     installDir: '',
     map: 'TheIsland_WP',
+    moddedMapEnabled: false,
+    moddedMapId: '',
     gamePort: 7777,
     rconPort: 27020,
     serverPlatform: 'PC',

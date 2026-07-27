@@ -136,10 +136,17 @@ tab:
 - **Map**, **game/RCON ports**, and **Server Platform** (PC/ALL). RCON authenticates using
   `ServerAdminPassword` from that install's `GameUserSettings.ini` - set it there, not in
   this app - and must be reachable on `127.0.0.1` (start/stop rely on it to save the world
-  before shutting down). The Map dropdown is populated from `maps.json` (next to the
-  Manager, created with a seed list of the official maps on first run) - add a line to
-  that file for any DLC or modded map not already listed, no app update needed. A
-  profile's current map is always shown even if it isn't (or isn't yet) in that file.
+  before shutting down). The Map dropdown is populated from `maps.json` (in your
+  Documents folder, under "ARK Server Manager" - not next to the Manager executable,
+  since electron-builder's NSIS installer wipes that folder's contents on every update;
+  Documents is untouched by that and by swapping the portable exe) - a seed list of the
+  official maps is created there on first run, and a line can be added to that file for
+  any DLC or modded map not already listed, no app update needed. A profile's current map
+  is always shown even if it isn't (or isn't yet) in that file. A "Refresh" button next to
+  the dropdown reloads the file on demand.
+- **Mod Map** - a separate "Enable Modded Map" toggle below the Map dropdown for
+  Workshop-based custom maps: paste the mod's Workshop id and it's passed as
+  `-MapModID=<id>` alongside the regular Map value.
 - Backups always read/write `ShooterGame/Saved/SavedArks/<map>` under the install
   directory - only the profile's own map subfolder, not the whole `SavedArks` folder (it
   can hold other maps' saves too, e.g. on a shared cluster install). This location is

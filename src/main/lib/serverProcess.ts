@@ -178,6 +178,7 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
   if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
   if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
   if (profile.noSound) args.push('-nosound')
+  if (profile.moddedMapEnabled && profile.moddedMapId.trim()) args.push(`-MapModID=${profile.moddedMapId.trim()}`)
 
   if (profile.extraArgs.trim()) {
     args.push(...profile.extraArgs.trim().split(/\s+/))

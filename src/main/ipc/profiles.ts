@@ -50,6 +50,8 @@ export function registerProfileHandlers(): void {
       name: uniqueProfileName(detected.suggestedName, existing.map((p) => p.name)),
       installDir,
       map: detected.map,
+      moddedMapEnabled: false,
+      moddedMapId: '',
       gamePort: detected.gamePort ?? 7777,
       rconPort: detected.rconPort ?? 27020,
       serverPlatform: 'PC',

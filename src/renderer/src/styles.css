@@ -47,6 +47,11 @@ button.danger:hover:not(:disabled) {
   color: var(--danger);
 }
 
+button.active {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
 input,
 select,
 textarea {

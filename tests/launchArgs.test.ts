@@ -8,6 +8,8 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     name: 'Test',
     installDir: '/tmp/ark',
     map: 'TheIsland_WP',
+    moddedMapEnabled: false,
+    moddedMapId: '',
     gamePort: 7777,
     rconPort: 27020,
     serverPlatform: 'PC',
@@ -161,5 +163,20 @@ describe('buildLaunchArgs', () => {
   it('passes -nosound only when noSound is true', () => {
     expect(buildLaunchArgs(makeProfile({ noSound: false }))).not.toContain('-nosound')
     expect(buildLaunchArgs(makeProfile({ noSound: true }))).toContain('-nosound')
+  })
+
+  it('omits -MapModID= when moddedMapEnabled is false, even with moddedMapId filled in', () => {
+    const args = buildLaunchArgs(makeProfile({ moddedMapEnabled: false, moddedMapId: '123456' }))
+    expect(args.some((a) => a.startsWith('-MapModID='))).toBe(false)
+  })
+
+  it('omits -MapModID= when moddedMapEnabled is true but moddedMapId is blank', () => {
+    const args = buildLaunchArgs(makeProfile({ moddedMapEnabled: true, moddedMapId: '' }))
+    expect(args.some((a) => a.startsWith('-MapModID='))).toBe(false)
+  })
+
+  it('passes -MapModID= when moddedMapEnabled is true and moddedMapId is set', () => {
+    const args = buildLaunchArgs(makeProfile({ moddedMapEnabled: true, moddedMapId: '123456' }))
+    expect(args).toContain('-MapModID=123456')
   })
 })

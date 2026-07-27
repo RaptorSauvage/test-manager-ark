@@ -8,6 +8,8 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     name: 'Test',
     installDir: '/tmp/ark',
     map: 'TheIsland_WP',
+    moddedMapEnabled: false,
+    moddedMapId: '',
     gamePort: 7777,
     rconPort: 27020,
     serverPlatform: 'PC',
@@ -113,5 +115,12 @@ describe('migrateProfile', () => {
     expect(migrated.rconTribeLog).toBe(false)
     expect(migrated.forceRespawnDinos).toBe(false)
     expect(migrated.noSound).toBe(false)
+  })
+
+  it('backfills moddedMapEnabled/moddedMapId on profiles saved before they existed', () => {
+    const legacy = baseProfile({ moddedMapEnabled: undefined, moddedMapId: undefined })
+    const migrated = migrateProfile(legacy)
+    expect(migrated.moddedMapEnabled).toBe(false)
+    expect(migrated.moddedMapId).toBe('')
   })
 })

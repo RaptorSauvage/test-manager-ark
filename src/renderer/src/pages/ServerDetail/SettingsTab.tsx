@@ -98,8 +98,28 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           </button>
         </div>
         <p className="empty-state">
-          Edit <code>maps.json</code> next to the Manager to add more maps without an app update.
+          Edit <code>maps.json</code> (in your Documents folder, under "ARK Server Manager") to add more maps
+          without an app update.
         </p>
+      </label>
+      <label>
+        Mod Map
+        <div className="path-input-row">
+          <input
+            value={form.moddedMapId}
+            onChange={(e) => update('moddedMapId', e.target.value)}
+            placeholder="Workshop mod id"
+            disabled={!form.moddedMapEnabled}
+          />
+          <button
+            type="button"
+            className={form.moddedMapEnabled ? 'active' : ''}
+            onClick={() => update('moddedMapEnabled', !form.moddedMapEnabled)}
+          >
+            {form.moddedMapEnabled ? 'Modded Map Enabled' : 'Enable Modded Map'}
+          </button>
+        </div>
+        <p className="empty-state">Passed as -MapModID=&lt;id&gt; when enabled, alongside the Map above.</p>
       </label>
       <div className="settings-grid">
         <label>

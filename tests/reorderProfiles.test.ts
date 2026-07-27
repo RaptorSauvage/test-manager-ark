@@ -8,6 +8,8 @@ function profile(id: string): ServerProfile {
     name: `Profile ${id}`,
     installDir: '/tmp/ark',
     map: 'TheIsland_WP',
+    moddedMapEnabled: false,
+    moddedMapId: '',
     gamePort: 7777,
     rconPort: 27020,
     serverPlatform: 'PC',
