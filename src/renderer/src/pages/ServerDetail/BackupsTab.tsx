@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { BackupEntry, ServerProfile } from '@shared/types'
 
 interface BackupsTabProps {
@@ -13,9 +13,11 @@ function formatSize(bytes: number): string {
 
 export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps): JSX.Element {
   const [backups, setBackups] = useState<BackupEntry[]>([])
+  const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  const [reloadToken, setReloadToken] = useState(0)
 
   const [form, setForm] = useState<ServerProfile>(profile)
   const [settingsStatus, setSettingsStatus] = useState('')
@@ -23,6 +25,41 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   function update<K extends keyof ServerProfile>(key: K, value: ServerProfile[K]): void {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
+
+  function reload(): void {
+    setReloadToken((prev) => prev + 1)
+  }
+
+  // Re-fetches whenever the profile's own backupDir changes (not just on an explicit
+  // Refresh click) - tied directly to the prop instead of relying on every action that
+  // might change it remembering to also trigger a reload.
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    window.api.backup
+      .list(profile.id)
+      .then((list) => {
+        if (cancelled) return
+        setBackups(list)
+        setSelectedPaths((prev) => new Set([...prev].filter((p) => list.some((b) => b.filePath === p))))
+        setError('')
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setError(err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [profile.id, profile.backupDir, reloadToken])
+
+  useEffect(() => {
+    return window.api.backup.onCreated((profileId) => {
+      if (profileId === profile.id) reload()
+    })
+  }, [profile.id])
 
   async function browseBackupDir(): Promise<void> {
     const dir = await window.api.dialog.selectDirectory()
@@ -37,31 +74,10 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
       if (saved) onProfileChange(saved)
       setSettingsStatus('Saved')
       setTimeout(() => setSettingsStatus(''), 2000)
-      await refresh()
     } catch (err) {
       setError((err as Error).message)
     }
   }
-
-  const refresh = useCallback(async () => {
-    try {
-      const list = await window.api.backup.list(profile.id)
-      setBackups(list)
-      setSelectedPaths((prev) => new Set([...prev].filter((p) => list.some((b) => b.filePath === p))))
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }, [profile.id])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  useEffect(() => {
-    return window.api.backup.onCreated((profileId) => {
-      if (profileId === profile.id) void refresh()
-    })
-  }, [profile.id, refresh])
 
   async function handleCreate(): Promise<void> {
     setBusy(true)
@@ -71,7 +87,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
       const saved = updated.find((p) => p.id === form.id)
       if (saved) onProfileChange(saved)
       await window.api.backup.create(form.id)
-      await refresh()
+      reload()
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -97,10 +113,15 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
     if (targets.length === 0) return
     const label = targets.length === 1 ? targets[0].fileName : `${targets.length} backups`
     if (!confirm(`Delete ${label}?`)) return
-    for (const backup of targets) {
-      await window.api.backup.delete(backup.filePath)
+    setError('')
+    try {
+      for (const backup of targets) {
+        await window.api.backup.delete(backup.filePath)
+      }
+      reload()
+    } catch (err) {
+      setError((err as Error).message)
     }
-    await refresh()
   }
 
   async function handleOpenFolder(): Promise<void> {
@@ -189,8 +210,8 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
 
       <section className="backup-management">
         <div className="backup-management-actions">
-          <button className="btn-refresh-backups" onClick={() => void refresh()}>
-            Refresh backup file list
+          <button className="btn-refresh-backups" onClick={reload} disabled={loading}>
+            {loading ? 'Refreshing...' : 'Refresh backup file list'}
           </button>
           <button
             className="btn-open-backup-folder"
@@ -246,7 +267,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
                 <td>{new Date(backup.createdAt).toLocaleString()}</td>
               </tr>
             ))}
-            {backups.length === 0 && (
+            {!loading && backups.length === 0 && (
               <tr>
                 <td colSpan={3}>No backups yet.</td>
               </tr>
