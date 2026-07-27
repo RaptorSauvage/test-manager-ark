@@ -86,7 +86,14 @@ Other scripts:
 npm run typecheck   # type-check main/preload/renderer
 npm run build        # production build into out/
 npm test             # unit tests for the pure logic (launch args incl. cluster flags, RCON parsing, backup rotation, profile migration, SteamCMD args/paths, process adoption, startup log-file watching)
+npm run dist          # package a Windows installer + portable .exe into release/ (must be run on Windows)
 ```
+
+`npm run dist` produces both an NSIS installer and a standalone portable `.exe` (via
+`electron-builder`) in `release/`. It has to run on an actual Windows machine - cross-
+building Windows targets from Linux/macOS needs Wine for the code-signing step, which
+isn't set up here. The portable `.exe` is the easiest way to right-click → "Run as
+administrator" without installing anything.
 
 ## Setting up a server profile
 
