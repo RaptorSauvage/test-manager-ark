@@ -85,8 +85,10 @@ tab:
   `ServerAdminPassword` from that install's `GameUserSettings.ini` - set it there, not in
   this app - and must be reachable on `127.0.0.1` (start/stop rely on it to save the world
   before shutting down).
-- Backups always read/write `ShooterGame/Saved/SavedArks` under the install directory -
-  this is fixed by ARK:SA and isn't a configurable field. Backup directory, retention, and
+- Backups always read/write `ShooterGame/Saved/SavedArks/<map>` under the install
+  directory - only the profile's own map subfolder, not the whole `SavedArks` folder (it
+  can hold other maps' saves too, e.g. on a shared cluster install). This location is
+  fixed by ARK:SA and isn't a configurable field. Backup directory, retention, and
   scheduling live in the **Backups** tab, not here; you must set a backup directory there
   before creating a backup.
 

@@ -5,7 +5,7 @@ import AdmZip from 'adm-zip'
 import type { ServerProfile, BackupEntry } from '@shared/types'
 
 function savedArksDir(profile: ServerProfile): string {
-  return path.join(profile.installDir, 'ShooterGame', 'Saved', 'SavedArks')
+  return path.join(profile.installDir, 'ShooterGame', 'Saved', 'SavedArks', profile.map)
 }
 
 function backupPrefix(profile: ServerProfile): string {
