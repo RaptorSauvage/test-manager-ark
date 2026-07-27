@@ -85,34 +85,40 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
         <thead>
           <tr>
             <th className="mods-select-col">
-              <input
-                type="checkbox"
-                checked={mods.length > 0 && mods.every((m) => m.enabled)}
-                onChange={() => toggleAll('enabled')}
-                disabled={mods.length === 0}
-                title="Enable all"
-              />
-              <span>Enable</span>
+              <div className="mods-select-col-header">
+                <input
+                  type="checkbox"
+                  checked={mods.length > 0 && mods.every((m) => m.enabled)}
+                  onChange={() => toggleAll('enabled')}
+                  disabled={mods.length === 0}
+                  title="Enable all"
+                />
+                <span>Enable</span>
+              </div>
             </th>
             <th className="mods-select-col">
-              <input
-                type="checkbox"
-                checked={mods.length > 0 && mods.every((m) => m.passive)}
-                onChange={() => toggleAll('passive')}
-                disabled={mods.length === 0}
-                title="Mark all as passive"
-              />
-              <span>Passive</span>
+              <div className="mods-select-col-header">
+                <input
+                  type="checkbox"
+                  checked={mods.length > 0 && mods.every((m) => m.passive)}
+                  onChange={() => toggleAll('passive')}
+                  disabled={mods.length === 0}
+                  title="Mark all as passive"
+                />
+                <span>Passive</span>
+              </div>
             </th>
             <th className="mods-select-col">
-              <input
-                type="checkbox"
-                checked={mods.length > 0 && mods.every((m) => m.dev)}
-                onChange={() => toggleAll('dev')}
-                disabled={mods.length === 0}
-                title="Mark all as dev"
-              />
-              <span>Dev</span>
+              <div className="mods-select-col-header">
+                <input
+                  type="checkbox"
+                  checked={mods.length > 0 && mods.every((m) => m.dev)}
+                  onChange={() => toggleAll('dev')}
+                  disabled={mods.length === 0}
+                  title="Mark all as dev"
+                />
+                <span>Dev</span>
+              </div>
             </th>
             <th>Mod Name</th>
             <th>Mod ID</th>

@@ -509,7 +509,7 @@ label.checkbox {
   white-space: nowrap;
 }
 
-.mods-table th.mods-select-col {
+.mods-select-col-header {
   display: flex;
   align-items: center;
   gap: 6px;
