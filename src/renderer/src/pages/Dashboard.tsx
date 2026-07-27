@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ServerProfile, ServerRunState } from '@shared/types'
+import type { MapDefinition, ServerProfile, ServerRunState } from '@shared/types'
 import { useServerStatuses } from '../lib/useServerStatuses'
 import { createDefaultProfile } from '../lib/profile'
 import type { TabKey } from './ServerDetail'
@@ -28,6 +28,15 @@ export default function Dashboard({
   const [logProfileId, setLogProfileId] = useState<string | null>(null)
   const [logContent, setLogContent] = useState('')
   const [installedById, setInstalledById] = useState<Record<string, boolean>>({})
+  const [maps, setMaps] = useState<MapDefinition[]>([])
+
+  useEffect(() => {
+    window.api.maps.list().then(setMaps)
+  }, [])
+
+  function mapDisplayName(mapId: string): string {
+    return maps.find((m) => m.id === mapId)?.displayName ?? mapId
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -266,7 +275,7 @@ export default function Dashboard({
               <dl className="server-card-info">
                 <div>
                   <dt>Map</dt>
-                  <dd>{profile.map || '(not set)'}</dd>
+                  <dd>{profile.map ? mapDisplayName(profile.map) : '(not set)'}</dd>
                 </div>
                 <div>
                   <dt>Port</dt>
