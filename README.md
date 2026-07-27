@@ -136,3 +136,9 @@ tab:
 - Because the server survives the Manager closing, deleting a profile does **not** stop
   its server if one is running — it only removes the profile from the app. Stop or Kill it
   first if you actually want it gone.
+- **If Update repeatedly fails** (SteamCMD exit codes 7/8, or "Failed to get manifest
+  request code, 'Access Denied'" in the update log) even though the exact same command
+  works fine run manually: check that your antivirus (e.g. Malwarebytes) isn't silently
+  blocking the Manager's `.exe` and/or `cmd.exe`/`steamcmd.exe` - add an exception for both
+  and retry. This was confirmed as the actual root cause in one real case, after disk
+  space, admin rights, and a stuck SteamCMD manifest state had all been ruled out first.
