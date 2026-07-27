@@ -66,8 +66,7 @@ export interface ServerProfile {
   extraArgs: string
   /**
    * Scheduled restart: gracefully stops the server at `scheduledRestartTime` on the
-   * selected days, optionally updates it via SteamCMD and/or starts it back up, optionally
-   * sending RCON DestroyWildDinos once it's back up (only if it was also started back up).
+   * selected days, optionally updates it via SteamCMD and/or starts it back up.
    */
   scheduledRestartEnabled: boolean
   /** 24h "HH:MM" */
@@ -76,7 +75,6 @@ export interface ServerProfile {
   scheduledRestartDays: number[]
   scheduledRestartUpdateAfter: boolean
   scheduledRestartStartAfter: boolean
-  scheduledRestartDestroyWildDinosAfter: boolean
   /** Scheduled dino wipe - independent of the restart above: sends RCON DestroyWildDinos
    *  at `scheduledDinoWipeTime` on the selected days, while the server is running. */
   scheduledDinoWipeEnabled: boolean

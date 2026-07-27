@@ -141,17 +141,14 @@ dedicated servers running on the same machine.
   - **Scheduled restart** ("Shutdown server at:" + Sun-Sat day checkboxes) gracefully
     stops the server (SaveWorld confirmed, then DoExit - the same path as the manual Stop
     button) at that time on the selected days, then optionally, in order: **Update server
-    from steam after shutdown** (runs the same SteamCMD update as the Update button),
-    **Start server after shutdown**, and - only once it's actually back up and
-    advertising for join, not just spawned - **Destroy WildDino After Start** (RCON
-    `DestroyWildDinos`; only available when "Start server after shutdown" is also
-    checked).
+    from steam after shutdown** (runs the same SteamCMD update as the Update button) and
+    **Start server after shutdown**.
   - **Scheduled dino wipe** is independent of the restart above: its own time/day picker
     that just sends RCON `DestroyWildDinos` directly, while the server is running - no
     shutdown involved.
-  Both schedules are profile settings like any other (saved via the tab's own Save
-  button, included in profile export/import) and are re-armed immediately when saved -
-  no need to restart the server or the Manager for a change to take effect.
+  Both schedules are profile settings like any other (included in profile export/import)
+  and save immediately on every change - no separate Save button, and no need to restart
+  the server or the Manager for a change to take effect.
 - **Update / install via SteamCMD** — a per-server button runs
   `steamcmd +force_install_dir <install dir> +login anonymous +app_update 2430930 validate +quit`.
   Works for a first-time install into an empty folder too - the button reads **Install**

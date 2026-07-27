@@ -9,24 +9,23 @@ interface ServerManagementTabProps {
 
 export default function ServerManagementTab({ profile, onProfileChange }: ServerManagementTabProps): JSX.Element {
   const [form, setForm] = useState<ServerProfile>(profile)
-  const [status, setStatus] = useState('')
   const [error, setError] = useState('')
 
-  function update<K extends keyof ServerProfile>(key: K, value: ServerProfile[K]): void {
-    setForm((prev) => ({ ...prev, [key]: value }))
-  }
-
-  async function save(): Promise<void> {
+  async function persist(next: ServerProfile): Promise<void> {
     setError('')
     try {
-      const updated = await window.api.profiles.save(form)
-      const saved = updated.find((p) => p.id === form.id)
+      const updated = await window.api.profiles.save(next)
+      const saved = updated.find((p) => p.id === next.id)
       if (saved) onProfileChange(saved)
-      setStatus('Saved')
-      setTimeout(() => setStatus(''), 2000)
     } catch (err) {
       setError((err as Error).message)
     }
+  }
+
+  function update<K extends keyof ServerProfile>(key: K, value: ServerProfile[K]): void {
+    const next = { ...form, [key]: value }
+    setForm(next)
+    void persist(next)
   }
 
   return (
@@ -62,15 +61,6 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
               />
               Start server after shutdown
             </label>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={form.scheduledRestartDestroyWildDinosAfter}
-                onChange={(e) => update('scheduledRestartDestroyWildDinosAfter', e.target.checked)}
-                disabled={!form.scheduledRestartEnabled || !form.scheduledRestartStartAfter}
-              />
-              Destroy WildDino After Start
-            </label>
           </div>
         </ScheduleDaysPicker>
       </section>
@@ -94,10 +84,6 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
       </section>
 
       {error && <p className="error-message">{error}</p>}
-      <div className="form-actions">
-        <button onClick={() => void save()}>Save server management settings</button>
-        {status && <span className="status-message">{status}</span>}
-      </div>
     </div>
   )
 }

@@ -93,7 +93,6 @@ export function registerProfileHandlers(): void {
       scheduledRestartDays: [],
       scheduledRestartUpdateAfter: false,
       scheduledRestartStartAfter: false,
-      scheduledRestartDestroyWildDinosAfter: false,
       scheduledDinoWipeEnabled: false,
       scheduledDinoWipeTime: '00:00',
       scheduledDinoWipeDays: []

@@ -14,6 +14,8 @@ interface LegacyProfileFields {
   queryPort?: number
   /** Removed - the SavedArks location is always ShooterGame/Saved/SavedArks */
   savedArksSubPath?: string
+  /** Removed - folded into the separate, independent scheduled dino wipe instead */
+  scheduledRestartDestroyWildDinosAfter?: boolean
 }
 
 /**
@@ -28,6 +30,8 @@ interface LegacyProfileFields {
  *   `forceRespawnDinos`/`noSound`/`playerProfileBackupEnabled`/
  *   `playerProfileBackupMaxPerPlayer` are new and default to off/empty/70 players/20
  * - `scheduledRestart*`/`scheduledDinoWipe*` are new and default to off/00:00/no days
+ * - `scheduledRestartDestroyWildDinosAfter` was dropped from the restart schedule -
+ *   folded into the separate, independent scheduled dino wipe instead
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -35,6 +39,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     rconPassword: _rconPassword,
     queryPort: _queryPort,
     savedArksSubPath: _savedArksSubPath,
+    scheduledRestartDestroyWildDinosAfter: _scheduledRestartDestroyWildDinosAfter,
     ...rest
   } = raw
   const sourceMods: Array<Partial<ServerMod> & { id: string }> = Array.isArray(rest.mods)
@@ -76,7 +81,6 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     scheduledRestartDays: rest.scheduledRestartDays ?? [],
     scheduledRestartUpdateAfter: rest.scheduledRestartUpdateAfter ?? false,
     scheduledRestartStartAfter: rest.scheduledRestartStartAfter ?? false,
-    scheduledRestartDestroyWildDinosAfter: rest.scheduledRestartDestroyWildDinosAfter ?? false,
     scheduledDinoWipeEnabled: rest.scheduledDinoWipeEnabled ?? false,
     scheduledDinoWipeTime: rest.scheduledDinoWipeTime ?? '00:00',
     scheduledDinoWipeDays: rest.scheduledDinoWipeDays ?? []

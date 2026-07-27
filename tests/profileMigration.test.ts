@@ -35,7 +35,6 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     scheduledRestartDays: [],
     scheduledRestartUpdateAfter: false,
     scheduledRestartStartAfter: false,
-    scheduledRestartDestroyWildDinosAfter: false,
     scheduledDinoWipeEnabled: false,
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],
@@ -106,6 +105,12 @@ describe('migrateProfile', () => {
     const legacy = baseProfile({ savedArksSubPath: 'ShooterGame/Saved/SavedArks' })
     const migrated = migrateProfile(legacy)
     expect('savedArksSubPath' in migrated).toBe(false)
+  })
+
+  it('drops the removed scheduledRestartDestroyWildDinosAfter field from legacy profiles', () => {
+    const legacy = baseProfile({ scheduledRestartDestroyWildDinosAfter: true })
+    const migrated = migrateProfile(legacy)
+    expect('scheduledRestartDestroyWildDinosAfter' in migrated).toBe(false)
   })
 
   it('backfills maxPlayers/externalIp/cultureSettings/battlEye/tribeLog/respawn/sound fields', () => {

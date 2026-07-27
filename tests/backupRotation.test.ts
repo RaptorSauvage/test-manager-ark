@@ -40,7 +40,6 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     scheduledRestartDays: [],
     scheduledRestartUpdateAfter: false,
     scheduledRestartStartAfter: false,
-    scheduledRestartDestroyWildDinosAfter: false,
     scheduledDinoWipeEnabled: false,
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],
