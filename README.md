@@ -53,7 +53,12 @@ dedicated servers running on the same machine.
   `steamapps/appmanifest_2430930.acf` (SteamCMD's documented "StateFlags 6" state - it
   otherwise makes every later attempt fail instantly with the same error, regardless of
   whether the original problem is still there) is detected and deleted automatically so
-  the update can actually run.
+  the update can actually run. After the run, the manifest is also checked to decide
+  success/failure alongside the process's own exit code - SteamCMD can relaunch itself
+  mid-run to self-update, and the originally spawned process (the one whose exit code gets
+  tracked) can then exit with a stale/misleading non-zero code even though the whole chain
+  went on to complete successfully afterwards; if the manifest shows no update pending,
+  that's treated as success regardless.
 - **Add firewall rule for SteamCMD** (app Settings, Windows only) — adds Windows Firewall
   allow rules (inbound + outbound) for whichever `steamcmd.exe` is configured above, useful
   if update failures turn out to be network-related. Prompts once for admin rights (UAC)

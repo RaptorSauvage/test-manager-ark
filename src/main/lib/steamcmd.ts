@@ -107,6 +107,36 @@ function clearStuckManifest(installDir: string): void {
   }
 }
 
+/** SteamCMD's documented appmanifest StateFlags bit for "an update is required". */
+const STATE_FLAG_UPDATE_REQUIRED = 2
+
+/**
+ * Reads the StateFlags bitmask out of an appmanifest .acf file, or null if it's missing/unparseable.
+ */
+export function readManifestStateFlags(manifestContent: string): number | null {
+  const match = manifestContent.match(/"StateFlags"\s*"(\d+)"/)
+  return match ? Number(match[1]) : null
+}
+
+/**
+ * True once the manifest shows no update is required - i.e. the actual, ground-truth
+ * outcome of an update run, independent of the process's own exit code. SteamCMD can
+ * relaunch itself mid-run to self-update (seen in the wild: two chained self-updates
+ * before it got to the real app_update), and the originally spawned process - the one
+ * whose exit code Node tracks - can exit with a stale/misleading non-zero code as part of
+ * that relaunch even though the whole chain completes successfully afterwards. Checking
+ * the manifest catches that case instead of reporting a false failure.
+ */
+export function isInstallUpToDate(stateFlags: number | null): boolean {
+  return stateFlags !== null && (stateFlags & STATE_FLAG_UPDATE_REQUIRED) === 0
+}
+
+function checkInstallUpToDate(installDir: string): boolean {
+  const manifestPath = getAppManifestPath(installDir)
+  if (!fs.existsSync(manifestPath)) return false
+  return isInstallUpToDate(readManifestStateFlags(fs.readFileSync(manifestPath, 'utf-8')))
+}
+
 export function updateServer(profile: ServerProfile, steamCmdPath: string): Promise<void> {
   if (isRunning(profile.id)) {
     return Promise.reject(new Error('Stop the server before updating it.'))
@@ -178,7 +208,7 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
     child.on('close', (code) => {
       setUpdating(profile.id, false)
       finish()
-      if (code === 0) {
+      if (code === 0 || checkInstallUpToDate(profile.installDir)) {
         resolve()
       } else {
         reject(new Error(describeSteamCmdExitCode(code ?? -1)))

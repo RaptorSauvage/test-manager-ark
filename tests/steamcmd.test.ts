@@ -8,7 +8,9 @@ import {
   getSteamCmdContentLogPath,
   readNewContentLog,
   getAppManifestPath,
-  isManifestStuckInErrorState
+  isManifestStuckInErrorState,
+  readManifestStateFlags,
+  isInstallUpToDate
 } from '../src/main/lib/steamcmd'
 
 describe('buildUpdateArgs', () => {
@@ -66,6 +68,32 @@ describe('isManifestStuckInErrorState', () => {
   it('returns false for a healthy manifest', () => {
     const manifest = '"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"StateFlags"\t\t"4"\n}\n'
     expect(isManifestStuckInErrorState(manifest)).toBe(false)
+  })
+})
+
+describe('readManifestStateFlags', () => {
+  it('parses the StateFlags integer out of the manifest', () => {
+    const manifest = '"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"StateFlags"\t\t"4"\n}\n'
+    expect(readManifestStateFlags(manifest)).toBe(4)
+  })
+
+  it('returns null when there is no StateFlags entry', () => {
+    expect(readManifestStateFlags('"AppState"\n{\n\t"appid"\t\t"2430930"\n}\n')).toBeNull()
+  })
+})
+
+describe('isInstallUpToDate', () => {
+  it('is true when the UpdateRequired bit is not set', () => {
+    expect(isInstallUpToDate(4)).toBe(true)
+  })
+
+  it('is false when the UpdateRequired bit is set (e.g. the stuck 6 state)', () => {
+    expect(isInstallUpToDate(6)).toBe(false)
+    expect(isInstallUpToDate(2)).toBe(false)
+  })
+
+  it('is false when the manifest could not be read at all', () => {
+    expect(isInstallUpToDate(null)).toBe(false)
   })
 })
 
