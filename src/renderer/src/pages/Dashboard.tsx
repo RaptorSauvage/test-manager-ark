@@ -106,20 +106,15 @@ export default function Dashboard({
 
   async function updateAll(): Promise<void> {
     const targets = profiles.filter((p) => stateOf(p) === 'stopped')
-    for (const p of targets) {
-      await runAction(p, () => window.api.server.update(p.id))
-    }
+    await Promise.all(targets.map((p) => runAction(p, () => window.api.server.update(p.id))))
   }
 
   async function stopUpdateRestartAll(): Promise<void> {
     const wasRunning = profiles.filter((p) => stateOf(p) === 'running')
     await Promise.all(wasRunning.map((p) => runAction(p, () => window.api.server.stop(p.id))))
 
-    // Stop above waits for each server to actually exit, so every profile is stopped now -
-    // update them all sequentially (a single shared SteamCMD install shouldn't be run concurrently).
-    for (const p of profiles) {
-      await runAction(p, () => window.api.server.update(p.id))
-    }
+    // Stop above waits for each server to actually exit, so every profile is stopped now.
+    await Promise.all(profiles.map((p) => runAction(p, () => window.api.server.update(p.id))))
 
     await Promise.all(wasRunning.map((p) => runAction(p, () => window.api.server.start(p.id))))
   }

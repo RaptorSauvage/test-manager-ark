@@ -40,10 +40,10 @@ dedicated servers running on the same machine.
   the order is persisted and stays the same next time you open the app.
 - **Server Controls** — bulk actions across every profile at once: Start All, Restart All,
   and Stop All only touch the profiles actually in the relevant state (e.g. Restart All
-  skips already-stopped servers). Update All updates every stopped server, one at a time
-  (a single shared SteamCMD install shouldn't be invoked concurrently).
-  Stop+Update+Restart All stops whichever servers are currently running, updates every
-  profile, then starts back up only the ones that were running beforehand.
+  skips already-stopped servers). Update All updates every stopped server in parallel
+  (each is a separate anonymous-login SteamCMD process, so this is safe). Stop+Update+
+  Restart All stops whichever servers are currently running, updates every profile, then
+  starts back up only the ones that were running beforehand.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), and No Transfer From Filtering (`-NoTransferFromFiltering`). All three
