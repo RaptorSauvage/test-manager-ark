@@ -208,9 +208,10 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
           Back up player profiles on join/leave
         </label>
         <p className="empty-state">
-          Watches this server&apos;s own log for players joining/leaving and copies their{' '}
-          <code>.arkprofile</code> file into <code>PlayerBackups/&lt;player&gt;/</code> under the backup
-          directory above (keeping the last 20 per player). Requires a backup directory to be set.
+          Watches this server&apos;s own log for players joining/leaving and zips the{' '}
+          <code>.profilebak</code> file ARK itself writes for that player into{' '}
+          <code>PlayerBackups/&lt;player&gt;/</code> under the backup directory above (keeping the last 20
+          per player). Requires a backup directory to be set.
         </p>
         <div className="form-actions">
           <button type="submit">Save backup settings</button>

@@ -1,20 +1,34 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import AdmZip from 'adm-zip'
 import type { ServerProfile } from '@shared/types'
 import type { PlayerConnectionEvent } from './playerConnectionWatcher'
 
-const MTIME_POLL_INTERVAL_MS = 500
-const MTIME_POLL_TIMEOUT_MS = 15000
 /** Kept per-player, not per-profile - each player gets their own folder. */
 const MAX_BACKUPS_PER_PLAYER = 20
+/** How long to give ARK's own .profilebak write a moment to land before giving up. */
+const PROFILEBAK_WAIT_INTERVAL_MS = 200
+const PROFILEBAK_WAIT_ATTEMPTS = 10
 
 /** Strips characters that aren't safe in a Windows file/folder name. */
 export function sanitizeForFilename(name: string): string {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'unknown'
 }
 
-function getPlayerProfileFilePath(profile: ServerProfile, uniqueNetId: string): string {
-  return path.join(profile.installDir, 'ShooterGame', 'Saved', 'SavedArks', profile.map, `${uniqueNetId}.arkprofile`)
+/**
+ * ARK itself writes <UniqueNetId>.profilebak - a copy of the player's .arkprofile under a
+ * different extension - right around both connect and disconnect. Reading that instead of
+ * the live .arkprofile means there's no need to guess/wait for the main file to be rewritten.
+ */
+function getPlayerProfileBakPath(profile: ServerProfile, uniqueNetId: string): string {
+  return path.join(
+    profile.installDir,
+    'ShooterGame',
+    'Saved',
+    'SavedArks',
+    profile.map,
+    `${uniqueNetId}.profilebak`
+  )
 }
 
 function getPlayerBackupDir(profile: ServerProfile, event: PlayerConnectionEvent): string {
@@ -25,21 +39,12 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/**
- * Waits (bounded) for the profile file's mtime to move past `sinceMs` - ARK writes the
- * updated file shortly after a disconnect rather than instantly. Gives up and proceeds
- * anyway after the timeout: a slightly-stale snapshot beats silently backing up nothing.
- */
-async function waitForFileUpdate(filePath: string, sinceMs: number, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    try {
-      if (fs.statSync(filePath).mtimeMs > sinceMs) return
-    } catch {
-      // Not written yet - keep waiting.
-    }
-    await wait(MTIME_POLL_INTERVAL_MS)
+async function waitForFileToExist(filePath: string): Promise<boolean> {
+  for (let attempt = 0; attempt < PROFILEBAK_WAIT_ATTEMPTS; attempt++) {
+    if (fs.existsSync(filePath)) return true
+    await wait(PROFILEBAK_WAIT_INTERVAL_MS)
   }
+  return fs.existsSync(filePath)
 }
 
 function pruneOldPlayerBackups(dir: string): void {
@@ -55,30 +60,28 @@ function pruneOldPlayerBackups(dir: string): void {
 }
 
 /**
- * Backs up a player's .arkprofile at connect/disconnect into its own dedicated,
- * per-player folder under the profile's backup directory. On 'left', waits briefly for
- * ARK to actually finish writing the post-disconnect save before copying.
+ * Backs up a player's profile at connect/disconnect into a dedicated per-player folder
+ * under the profile's backup directory, as a small zip containing the .profilebak
+ * content restored to its normal .arkprofile name/extension.
  */
 export async function backupPlayerProfile(profile: ServerProfile, event: PlayerConnectionEvent): Promise<void> {
   if (!profile.backupDir.trim()) {
     throw new Error('Set a backup directory in the Backups tab first.')
   }
 
-  const sourcePath = getPlayerProfileFilePath(profile, event.uniqueNetId)
-
-  if (event.type === 'left') {
-    const sinceMs = fs.existsSync(sourcePath) ? fs.statSync(sourcePath).mtimeMs : 0
-    await waitForFileUpdate(sourcePath, sinceMs, MTIME_POLL_TIMEOUT_MS)
-  }
-
-  if (!fs.existsSync(sourcePath)) {
-    throw new Error(`Player profile file not found: ${sourcePath}`)
+  const sourcePath = getPlayerProfileBakPath(profile, event.uniqueNetId)
+  if (!(await waitForFileToExist(sourcePath))) {
+    throw new Error(`Player profile backup file not found: ${sourcePath}`)
   }
 
   const destDir = getPlayerBackupDir(profile, event)
   fs.mkdirSync(destDir, { recursive: true })
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const destPath = path.join(destDir, `${timestamp}_${event.type}.arkprofile`)
-  fs.copyFileSync(sourcePath, destPath)
+  const destZipPath = path.join(destDir, `${timestamp}_${event.type}.zip`)
+
+  const zip = new AdmZip()
+  zip.addLocalFile(sourcePath, '', `${event.uniqueNetId}.arkprofile`)
+  zip.writeZip(destZipPath)
+
   pruneOldPlayerBackups(destDir)
 }

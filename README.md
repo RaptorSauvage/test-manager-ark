@@ -52,14 +52,14 @@ dedicated servers running on the same machine.
 - **Per-player profile backups** (Backups tab, opt-in toggle - "Back up player profiles on
   join/leave", off by default) — tails the server's own `ShooterGame.log` for join/leave
   lines (e.g. `LeRaptorSauvage [UniqueNetId:0002dbe9... Platform:None] joined this ARK!`)
-  rather than polling RCON, and copies that player's `<UniqueNetId>.arkprofile` file (from
-  `SavedArks/<map>`, ARK:SA names it after the player's EOS-based UniqueNetId) into
-  `PlayerBackups/<player>_<id>/` under the backup directory, timestamped and tagged
-  `_joined`/`_left`. On a leave event, it waits up to 15s for the file's own modified time
-  to actually move past what it was before backing up - ARK writes the post-disconnect
-  save shortly after the event, not instantly - and proceeds with whatever's there if that
-  never happens rather than staying stuck. Keeps the last 20 snapshots per player,
-  pruning older ones automatically.
+  rather than polling RCON, and zips up that player's `<UniqueNetId>.profilebak` file from
+  `SavedArks/<map>` (ARK:SA writes this itself, right around both connect and disconnect -
+  it's the same content as `.arkprofile` under a different extension, so reading it means
+  never having to guess/wait for the live `.arkprofile` to be rewritten) into
+  `PlayerBackups/<player>_<id>/` under the backup directory as a small `.zip`, timestamped
+  and tagged `_joined`/`_left`, with the `.arkprofile` extension restored on the entry
+  inside so it drops back in cleanly if ever extracted. Keeps the last 20 snapshots per
+  player, pruning older ones automatically.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
   the order is persisted and stays the same next time you open the app.
@@ -207,9 +207,10 @@ tab:
 - The exact ARK launch command-line flags can change between game updates
   (`src/main/lib/serverProcess.ts`, `buildLaunchArgs`); use the profile's "Extra launch
   arguments" field if your install needs something different.
-- The player-profile-backup join/leave line format and the ".arkprofile filename equals
-  the UniqueNetId" mapping were confirmed against a real log sample, not guessed - but if
-  a future ARK:SA update changes either, the parser (`parsePlayerConnectionEvents` in
+- The player-profile-backup join/leave line format, the ".profilebak filename equals the
+  UniqueNetId" mapping, and ARK writing that file itself around both events were all
+  confirmed against a real setup, not guessed - but if a future ARK:SA update changes any
+  of that, the parser (`parsePlayerConnectionEvents` in
   `src/main/lib/playerConnectionWatcher.ts`) simply stops matching lines and the feature
   quietly does nothing rather than backing up the wrong file.
 - Out of scope for this version: remote/SSH or Docker-based control, and multi-user/remote
