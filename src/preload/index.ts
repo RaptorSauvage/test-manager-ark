@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, type Api, type ServerProfile, type ServerStatus, type ServerMod, type AppSettings } from '@shared/types'
+import {
+  IPC,
+  type Api,
+  type ServerProfile,
+  type ServerStatus,
+  type ServerMod,
+  type AppSettings,
+  type LogEvent
+} from '@shared/types'
 
 const api: Api = {
   profiles: {
@@ -80,6 +88,15 @@ const api: Api = {
   },
   officialServerStatus: {
     get: () => ipcRenderer.invoke(IPC.officialServerStatusGet)
+  },
+  logEvents: {
+    list: (profileId: string) => ipcRenderer.invoke(IPC.serverLogEventsList, profileId),
+    onEvent: (callback: (profileId: string, event: LogEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, profileId: string, logEvent: LogEvent): void =>
+        callback(profileId, logEvent)
+      ipcRenderer.on(IPC.serverLogEvent, listener)
+      return () => ipcRenderer.removeListener(IPC.serverLogEvent, listener)
+    }
   }
 }
 

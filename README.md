@@ -21,12 +21,18 @@ dedicated servers running on the same machine.
   default on Windows otherwise). Relaunching the Manager re-detects any server that's
   still running (by pid) and picks it back up under management rather than losing track
   of it or letting you start a conflicting second instance.
-- **RCON tab** — send admin commands and see responses. The server's own stdout/stderr is
-  intentionally not captured here (ARK's dedicated server already shows it in its own
-  console window on Windows), keeping this to just RCON. The RCON/admin password isn't a
-  field in this app at all - it's read live from the server's own `GameUserSettings.ini`
-  (`ServerAdminPassword`) every time it's needed, since ARK:SA doesn't have a separate
-  concept of an "RCON password".
+- **Console & RCON tab** — a live, color-coded event feed above the RCON command box.
+  The server's own stdout/stderr is intentionally not captured (ARK's dedicated server
+  already shows it in its own console window on Windows) - instead, this tails the
+  server's `ShooterGame.log` file directly and classifies each interesting line into
+  JOIN/LEFT/CHAT/CMD (admin commands)/WARN (structure destroyed)/KILL/TAME/SAVE/CRYO
+  (freeze)/MISSION/READY, filtering out the engine's internal noise (garbage collection,
+  mod loading, etc). Only active while the server is running; the last ~300 events are
+  kept in memory so reopening the tab shows recent history immediately instead of an
+  empty feed. Below it, the RCON command box sends admin commands and shows responses.
+  The RCON/admin password isn't a field in this app at all - it's read live from the
+  server's own `GameUserSettings.ini` (`ServerAdminPassword`) every time it's needed,
+  since ARK:SA doesn't have a separate concept of an "RCON password".
 - **Mod manager** — a table (Enable/Passive/Dev checkboxes, Mod Name, Mod ID, plus
   reorder/remove) instead of a plain list. Enable/disable/reorder mod IDs and toggle a Dev
   flag per mod (appends `-dev` to load that mod's in-development build); enabled mods are
@@ -193,7 +199,7 @@ Other scripts:
 ```bash
 npm run typecheck   # type-check main/preload/renderer
 npm run build        # production build into out/
-npm test             # unit tests for the pure logic (launch args incl. cluster flags, RCON parsing, backup rotation, profile migration, SteamCMD args/paths, process adoption, startup log-file watching)
+npm test             # unit tests for the pure logic (launch args incl. cluster flags, RCON parsing, backup rotation, profile migration, SteamCMD args/paths, process adoption, startup log-file watching, live console event parsing)
 npm run dist          # package a Windows installer + portable .exe into release/ (must be run on Windows)
 ```
 

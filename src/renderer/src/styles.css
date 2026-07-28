@@ -456,9 +456,19 @@ label.checkbox {
   min-height: 0;
 }
 
-.rcon-panel-standalone {
-  max-width: 640px;
-  height: 60vh;
+.rcon-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 900px;
+}
+
+.rcon-tab .rcon-panel:first-child {
+  height: 50vh;
+}
+
+.rcon-tab .rcon-panel:last-child {
+  height: 30vh;
 }
 
 .rcon-panel h3 {
@@ -487,6 +497,64 @@ label.checkbox {
 
 .rcon-panel input {
   flex: 1;
+}
+
+.log-event-list {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 0.82rem;
+  font-family: Consolas, Menlo, monospace;
+}
+
+.log-event {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--text);
+}
+
+.log-event-ts {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.log-event-label {
+  flex-shrink: 0;
+  width: 60px;
+  font-weight: 600;
+}
+
+.log-event-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-event.log-event-join,
+.log-event.log-event-ready {
+  color: var(--status-running);
+}
+
+.log-event.log-event-leave,
+.log-event.log-event-save {
+  color: var(--muted);
+}
+
+.log-event.log-event-cmd,
+.log-event.log-event-freeze {
+  color: var(--accent);
+}
+
+.log-event.log-event-warn,
+.log-event.log-event-mission {
+  color: var(--warn);
+}
+
+.log-event.log-event-kill {
+  color: var(--danger);
+}
+
+.log-event.log-event-tame {
+  color: var(--ok);
 }
 
 .mods-tab {

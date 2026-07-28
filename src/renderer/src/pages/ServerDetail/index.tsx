@@ -16,7 +16,7 @@ interface ServerDetailProps {
 }
 
 const TABS: Array<{ key: TabKey; label: string }> = [
-  { key: 'rcon', label: 'RCON' },
+  { key: 'rcon', label: 'Console & RCON' },
   { key: 'mods', label: 'Mods' },
   { key: 'backups', label: 'Backups' },
   { key: 'management', label: 'Server Management' },

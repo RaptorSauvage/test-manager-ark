@@ -200,7 +200,10 @@ export const IPC = {
   customMapsList: 'custom-maps:list',
   dataDirGetDefault: 'data-dir:get-default',
 
-  officialServerStatusGet: 'official-server-status:get'
+  officialServerStatusGet: 'official-server-status:get',
+
+  serverLogEventsList: 'server:log-events-list',
+  serverLogEvent: 'server:log-event'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -208,6 +211,18 @@ export type IpcChannel = (typeof IPC)[keyof typeof IPC]
 export interface ImportResult {
   profile: ServerProfile
   profiles: ServerProfile[]
+}
+
+/** A single classified, human-readable line parsed out of a server's ShooterGame.log. */
+export interface LogEvent {
+  /** Short uppercase category, e.g. "JOIN", "CHAT", "KILL" - drives the CSS class/color. */
+  label: string
+  /** Lowercase CSS class suffix (log-event-<cls>) matching `label`. */
+  cls: string
+  /** Human-readable, already-formatted display text. */
+  text: string
+  /** Local time the line was logged, "HH:MM:SS". */
+  ts: string
 }
 
 /** Official ARK:SA server status feed, parsed from its "<RichColor>" formatted line. */
@@ -293,5 +308,9 @@ export interface Api {
   }
   officialServerStatus: {
     get: () => Promise<OfficialServerStatus>
+  }
+  logEvents: {
+    list: (profileId: string) => Promise<LogEvent[]>
+    onEvent: (callback: (profileId: string, event: LogEvent) => void) => () => void
   }
 }
