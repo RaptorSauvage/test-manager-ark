@@ -161,6 +161,16 @@ export interface BackupScheduleStatus {
   nextRunAt: number | null
 }
 
+/** Polled every 30 minutes from SteamCMD (anonymous, no download) for the Analytics tab's
+ *  "update available" check - see src/main/lib/updateCheck.ts. */
+export interface LatestBuildIdCache {
+  buildId: string | null
+  /** When that value was captured (epoch ms), or null before the first check. */
+  checkedAt: number | null
+  /** The last check's failure, if the most recent attempt didn't produce a build id. */
+  error: string | null
+}
+
 /** One player's backup folder, for a "pick a player" selector next to the world backup list. */
 export interface PlayerBackupFolder {
   /** Raw folder name - pass back to playerBackup.list/openFolder as-is. */
@@ -224,6 +234,7 @@ export const IPC = {
   steamcmdManagedStatus: 'steamcmd:managed-status',
   steamcmdUpdateLog: 'steamcmd:update-log',
   steamcmdAddFirewallRule: 'steamcmd:add-firewall-rule',
+  steamcmdLatestBuildId: 'steamcmd:latest-build-id',
 
   mapsList: 'maps:list',
   customMapsList: 'custom-maps:list',
@@ -337,6 +348,7 @@ export interface Api {
     managedStatus: () => Promise<string | null>
     getUpdateLog: (profileId: string) => Promise<string | null>
     addFirewallRule: (steamCmdPath: string) => Promise<void>
+    getLatestBuildId: () => Promise<LatestBuildIdCache>
   }
   maps: {
     list: () => Promise<MapDefinition[]>

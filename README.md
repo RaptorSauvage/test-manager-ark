@@ -95,7 +95,14 @@ dedicated servers running on the same machine.
     usage (MB and % of total system RAM), and connected players (X / configured max).
   - **Version**: the SteamCMD-installed build id, read straight from that install's
     `appmanifest_2430930.acf` (the same file the Update button's "up to date" check
-    already reads) - `null`/"Not installed yet" before the first install.
+    already reads) - `null`/"Not installed yet" before the first install - next to the
+    latest build id available from Steam, with an "Update available" line when they
+    differ. The latest build id is polled every 30 minutes by asking SteamCMD itself
+    (anonymous login, `+app_info_print 2430930`, no download involved) for the current
+    public-branch build id and caching it in memory - deliberately not scraping
+    [SteamDB](https://steamdb.info/app/2430930/depots/), since that's an unofficial,
+    Cloudflare-protected page with no supported API, fragile to rely on for a background
+    poll. SteamCMD needs to be configured in Settings for this to resolve to anything.
   - **Backup Status**: whether the backup schedule (from the Backups tab) is actually
     active right now, and a live countdown to its next run - computed with `cron-parser`
     against the profile's own cron expression, not tracked/stored anywhere.

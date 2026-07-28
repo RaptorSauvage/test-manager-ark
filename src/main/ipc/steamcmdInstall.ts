@@ -4,6 +4,7 @@ import { getSettings, saveSettings } from '../store'
 import { installManagedSteamCmd, getManagedSteamCmdStatus } from '../lib/steamcmdInstaller'
 import { readUpdateLog } from '../lib/steamcmd'
 import { addFirewallRulesForSteamCmd } from '../lib/firewall'
+import { getLatestBuildIdCache } from '../lib/updateCheck'
 
 export function registerSteamcmdInstallHandlers(): void {
   ipcMain.handle(IPC.steamcmdManagedStatus, () => getManagedSteamCmdStatus())
@@ -19,4 +20,6 @@ export function registerSteamcmdInstallHandlers(): void {
   ipcMain.handle(IPC.steamcmdAddFirewallRule, (_event, steamCmdPath: string) =>
     addFirewallRulesForSteamCmd(steamCmdPath)
   )
+
+  ipcMain.handle(IPC.steamcmdLatestBuildId, () => getLatestBuildIdCache())
 }

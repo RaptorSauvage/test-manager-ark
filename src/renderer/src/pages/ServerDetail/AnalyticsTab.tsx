@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { BackupScheduleStatus, ServerProfile } from '@shared/types'
+import type { BackupScheduleStatus, LatestBuildIdCache, ServerProfile } from '@shared/types'
 import { formatCountdown } from '@shared/scheduleTime'
 import { useServerStatuses } from '../../lib/useServerStatuses'
 
@@ -24,6 +24,7 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   const status = statuses[profile.id]
   const [now, setNow] = useState(() => Date.now())
   const [buildId, setBuildId] = useState<string | null>(null)
+  const [latestBuildId, setLatestBuildId] = useState<LatestBuildIdCache | null>(null)
   const [backupStatus, setBackupStatus] = useState<BackupScheduleStatus | null>(null)
   const [configFolderError, setConfigFolderError] = useState('')
 
@@ -35,6 +36,21 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   useEffect(() => {
     window.api.server.getInstalledBuildId(profile.id).then(setBuildId)
   }, [profile.id])
+
+  useEffect(() => {
+    let cancelled = false
+    function refresh(): void {
+      window.api.steamcmd.getLatestBuildId().then((cache) => {
+        if (!cancelled) setLatestBuildId(cache)
+      })
+    }
+    refresh()
+    const interval = setInterval(refresh, 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -101,7 +117,23 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
             <dt>Server Version</dt>
             <dd>{buildId ?? 'Not installed yet'}</dd>
           </div>
+          <div>
+            <dt>Latest available</dt>
+            <dd>{latestBuildId?.buildId ?? (latestBuildId?.error ? 'Check failed' : 'Checking...')}</dd>
+          </div>
         </dl>
+        {buildId && latestBuildId?.buildId && buildId !== latestBuildId.buildId && (
+          <p className="status-warn">
+            Update available - installed build {buildId}, latest is {latestBuildId.buildId}. Use the Update
+            button on the dashboard.
+          </p>
+        )}
+        {latestBuildId?.error && (
+          <p className="empty-state">
+            Last update check failed: {latestBuildId.error} (checked automatically every 30 minutes via SteamCMD,
+            no download involved).
+          </p>
+        )}
       </section>
 
       <section className="cluster-section">
