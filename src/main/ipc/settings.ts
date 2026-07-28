@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { IPC, type AppSettings } from '@shared/types'
 import { getSettings, saveSettings } from '../store'
-import { applyWebDashboardSettings, getWebDashboardStatus } from '../lib/webDashboard'
+import { applyWebDashboardSettings, getWebDashboardStatus, getLocalNetworkIps } from '../lib/webDashboard'
 
 export function registerSettingsHandlers(): void {
   ipcMain.handle(IPC.settingsGet, () => getSettings())
@@ -11,4 +11,5 @@ export function registerSettingsHandlers(): void {
     return saved
   })
   ipcMain.handle(IPC.webDashboardStatus, () => getWebDashboardStatus())
+  ipcMain.handle(IPC.webDashboardLocalIps, () => getLocalNetworkIps())
 }

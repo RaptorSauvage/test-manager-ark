@@ -1,19 +1,36 @@
 import fs from 'node:fs'
 import http from 'node:http'
+import os from 'node:os'
 import type { AppSettings, LogEvent } from '@shared/types'
-import { listProfiles } from '../store'
+import { listProfiles, getSettings, saveSettings } from '../store'
 import { getStatus, getLogFilePath, watchLogFile } from './serverProcess'
 import { sendRconCommand } from './rcon'
 import { parseLogChunk, createLogEventCaches } from './logEvents'
 
 let server: http.Server | null = null
 let lastError: string | null = null
+let lastHost: string | null = null
 
 /** How much of ShooterGame.log to re-read for backlog on a fresh page load/reconnect,
  *  and how many of the parsed events out of that backlog to actually keep - same defaults
  *  as the standalone Python dashboard this page replaces. */
 const BACKLOG_BYTES = 300_000
 const BACKLOG_MAX_LINES = 60
+
+/** Event categories that can be individually hidden from the web dashboard's feed. */
+const ALL_EVENT_LABELS = ['JOIN', 'LEFT', 'CHAT', 'WARN', 'KILL', 'TAME', 'CMD', 'SAVE', 'CRYO', 'MISSION', 'READY']
+
+function getDisabledLabels(): Set<string> {
+  return new Set(getSettings().webDashboardDisabledLabels ?? [])
+}
+
+function setLabelEnabled(label: string, enabled: boolean): void {
+  const settings = getSettings()
+  const disabled = new Set(settings.webDashboardDisabledLabels ?? [])
+  if (enabled) disabled.delete(label)
+  else disabled.add(label)
+  saveSettings({ ...settings, webDashboardDisabledLabels: Array.from(disabled) })
+}
 
 /**
  * Reads a server's live event feed straight from its own ShooterGame.log, independent of
@@ -43,7 +60,10 @@ function readLogBacklog(installDir: string): LogEvent[] {
     if (firstNewline >= 0) text = text.slice(firstNewline + 1)
   }
 
-  return parseLogChunk(text, createLogEventCaches()).slice(-BACKLOG_MAX_LINES)
+  const disabled = getDisabledLabels()
+  return parseLogChunk(text, createLogEventCaches())
+    .filter((event) => !disabled.has(event.label))
+    .slice(-BACKLOG_MAX_LINES)
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -123,11 +143,38 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     res.write('\n')
     const caches = createLogEventCaches()
     const stopWatching = watchLogFile(profile.installDir, (chunk) => {
+      const disabled = getDisabledLabels()
       for (const event of parseLogChunk(chunk, caches)) {
+        if (disabled.has(event.label)) continue
         res.write(`data: ${JSON.stringify(event)}\n\n`)
       }
     })
     req.on('close', stopWatching)
+    return
+  }
+
+  if (req.method === 'GET' && path === '/api/labelsettings') {
+    const disabled = getDisabledLabels()
+    const result: Record<string, boolean> = {}
+    for (const label of ALL_EVENT_LABELS) result[label] = !disabled.has(label)
+    sendJson(res, 200, result)
+    return
+  }
+
+  const labelMatch = path.match(/^\/api\/labelsettings\/([^/]+)$/)
+  if (req.method === 'POST' && labelMatch) {
+    const label = decodeURIComponent(labelMatch[1])
+    if (!ALL_EVENT_LABELS.includes(label)) {
+      sendJson(res, 404, { error: 'Unknown event label' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const enabled = typeof body.enabled !== 'boolean' || body.enabled
+        setLabelEnabled(label, enabled)
+        sendJson(res, 200, { label, enabled })
+      })
+      .catch(() => sendJson(res, 400, { error: 'Invalid request body' }))
     return
   }
 
@@ -164,27 +211,42 @@ export function stopWebDashboard(): void {
   }
 }
 
-/** Starts the web dashboard, bound to 127.0.0.1 only - this page has no authentication
- *  (same posture as the standalone Python dashboard it replaces), so it must never listen
- *  on any other interface. */
-export function startWebDashboard(port: number): void {
+/** Starts the web dashboard bound to `host` - '127.0.0.1' (default) keeps it reachable
+ *  from this machine only; '0.0.0.0' or a specific local IP makes it reachable from other
+ *  devices on the LAN. This page has no authentication of its own (same posture as the
+ *  standalone Python dashboard it replaces), so widening this is a deliberate choice made
+ *  in Settings, never a default. */
+export function startWebDashboard(port: number, host: string): void {
   stopWebDashboard()
   lastError = null
+  lastHost = host
   server = http.createServer(handleRequest)
   server.on('error', (err) => {
     lastError = (err as Error).message
     server = null
   })
-  server.listen(port, '127.0.0.1')
+  server.listen(port, host)
 }
 
 export function applyWebDashboardSettings(settings: AppSettings): void {
-  if (settings.webDashboardEnabled) startWebDashboard(settings.webDashboardPort)
+  if (settings.webDashboardEnabled) startWebDashboard(settings.webDashboardPort, settings.webDashboardHost || '127.0.0.1')
   else stopWebDashboard()
 }
 
-export function getWebDashboardStatus(): { running: boolean; error: string | null } {
-  return { running: server !== null, error: lastError }
+export function getWebDashboardStatus(): { running: boolean; error: string | null; host: string | null } {
+  return { running: server !== null, error: lastError, host: server ? lastHost : null }
+}
+
+/** Non-internal IPv4 addresses of this machine, so Settings can suggest what to type into
+ *  the Host field for LAN access instead of the user having to look it up themselves. */
+export function getLocalNetworkIps(): string[] {
+  const ips: string[] = []
+  for (const addresses of Object.values(os.networkInterfaces())) {
+    for (const addr of addresses ?? []) {
+      if (addr.family === 'IPv4' && !addr.internal) ips.push(addr.address)
+    }
+  }
+  return ips
 }
 
 const DASHBOARD_HTML = `<!doctype html>
@@ -229,6 +291,9 @@ const DASHBOARD_HTML = `<!doctype html>
   #rcon-form { display: flex; gap: 8px; margin-top: 8px; }
   #rcon-input { flex: 1; }
   .empty-state { color: var(--muted); font-size: 0.85rem; }
+  #filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--muted); margin-bottom: 10px; }
+  #filters label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  #filters input { padding: 0; width: auto; }
 </style>
 </head>
 <body>
@@ -238,6 +303,7 @@ const DASHBOARD_HTML = `<!doctype html>
   <span id="status"></span>
 </header>
 <main>
+  <div id="filters"></div>
   <section class="panel">
     <div id="console"></div>
     <form id="rcon-form">
@@ -255,6 +321,32 @@ const DASHBOARD_HTML = `<!doctype html>
   var statusEl = document.getElementById('status');
   var rconForm = document.getElementById('rcon-form');
   var rconInput = document.getElementById('rcon-input');
+  var filtersEl = document.getElementById('filters');
+
+  function loadLabelSettings() {
+    fetch('/api/labelsettings').then(function (r) { return r.json(); }).then(function (settings) {
+      filtersEl.innerHTML = '';
+      var title = document.createElement('span');
+      title.textContent = 'Show:';
+      filtersEl.appendChild(title);
+      Object.keys(settings).forEach(function (label) {
+        var wrapper = document.createElement('label');
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = settings[label];
+        cb.addEventListener('change', function () {
+          fetch('/api/labelsettings/' + encodeURIComponent(label), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: cb.checked })
+          });
+        });
+        wrapper.appendChild(cb);
+        wrapper.appendChild(document.createTextNode(label));
+        filtersEl.appendChild(wrapper);
+      });
+    });
+  }
 
   function nowTs() {
     return new Date().toTimeString().slice(0, 8);
@@ -336,6 +428,7 @@ const DASHBOARD_HTML = `<!doctype html>
   });
 
   loadServers();
+  loadLabelSettings();
   setInterval(loadServers, 5000);
 })();
 </script>

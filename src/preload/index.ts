@@ -99,7 +99,8 @@ const api: Api = {
     }
   },
   webDashboard: {
-    getStatus: () => ipcRenderer.invoke(IPC.webDashboardStatus)
+    getStatus: () => ipcRenderer.invoke(IPC.webDashboardStatus),
+    getLocalIps: () => ipcRenderer.invoke(IPC.webDashboardLocalIps)
   }
 }
 

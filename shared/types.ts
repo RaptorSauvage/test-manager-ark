@@ -114,8 +114,16 @@ export interface AppSettings {
   dataDir: string
   /** Whether the local browser-accessible web dashboard (live console + RCON) is running. */
   webDashboardEnabled: boolean
-  /** Port the web dashboard listens on - always bound to 127.0.0.1 only, never other interfaces. */
+  /** Port the web dashboard listens on. */
   webDashboardPort: number
+  /**
+   * Interface the web dashboard binds to. '127.0.0.1' (default) - this machine only.
+   * '0.0.0.0' or a specific local IP makes it reachable from other devices on the LAN -
+   * there's no login of its own, so that's a deliberate, explicit choice.
+   */
+  webDashboardHost: string
+  /** Event labels (JOIN, CHAT, ...) hidden from the web dashboard's live feed. */
+  webDashboardDisabledLabels: string[]
 }
 
 export interface ServerStatus {
@@ -209,7 +217,8 @@ export const IPC = {
   serverLogEventsList: 'server:log-events-list',
   serverLogEvent: 'server:log-event',
 
-  webDashboardStatus: 'web-dashboard:status'
+  webDashboardStatus: 'web-dashboard:status',
+  webDashboardLocalIps: 'web-dashboard:local-ips'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -320,6 +329,7 @@ export interface Api {
     onEvent: (callback: (profileId: string, event: LogEvent) => void) => () => void
   }
   webDashboard: {
-    getStatus: () => Promise<{ running: boolean; error: string | null }>
+    getStatus: () => Promise<{ running: boolean; error: string | null; host: string | null }>
+    getLocalIps: () => Promise<string[]>
   }
 }

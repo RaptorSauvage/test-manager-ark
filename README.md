@@ -143,15 +143,21 @@ dedicated servers running on the same machine.
   server's `ShooterGame.log` file itself on every page load/reconnect - the same
   per-connection approach the standalone Python dashboard this replaces used - so it
   keeps working for a server regardless of whether the Manager's own process tracking
-  currently considers it running. Always bound to `127.0.0.1` only regardless of the
-  configured port - reachable from a
-  browser on this same machine only, not from other devices on the network, since it has
-  no login of its own and full RCON/admin control of your servers is too much to leave
-  unauthenticated on anything reachable beyond loopback. There's no built-in remote-access
-  option in this version; ask if you need to reach it from another device (e.g. a phone)
-  and that can be added deliberately, with real authentication, rather than by widening
-  what this already listens on. Enabling/disabling or changing the port takes effect
-  immediately on Save, no restart needed.
+  currently considers it running.
+  - **Host** controls who can reach it - `127.0.0.1` (default) keeps it reachable from
+    this machine only. Setting it to `0.0.0.0` (all interfaces) or one specific local IP
+    makes it reachable from other devices on your local network, which Settings shows a
+    warning for once set: the page still has no login of its own, so that's full
+    RCON/admin control of your servers available to anyone who can reach that address -
+    only do this on a network you trust, and Settings lists this machine's own local IPs
+    as a hint for what to type in. Enabling/disabling, or changing the host or port,
+    takes effect immediately on Save, no restart needed.
+  - **Filters** - a "Show:" row of checkboxes at the top of the dashboard page itself lets
+    you hide individual event categories (JOIN, CHAT, KILL, etc.) from the feed. This is
+    server-side and persisted (survives closing the browser tab or restarting the
+    Manager): a disabled category is simply never sent to the browser, for the backlog
+    and the live stream alike, the same behavior as the standalone Python dashboard this
+    replaces.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), No Transfer From Filtering (`-NoTransferFromFiltering`), and External IP

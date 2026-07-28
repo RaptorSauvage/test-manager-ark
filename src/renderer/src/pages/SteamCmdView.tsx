@@ -10,7 +10,9 @@ export default function SteamCmdView({ onBack }: SteamCmdViewProps): JSX.Element
     steamCmdPath: '',
     dataDir: '',
     webDashboardEnabled: false,
-    webDashboardPort: 8090
+    webDashboardPort: 8090,
+    webDashboardHost: '127.0.0.1',
+    webDashboardDisabledLabels: []
   })
   const [status, setStatus] = useState('')
   const [managedPath, setManagedPath] = useState<string | null>(null)

@@ -13,7 +13,14 @@ interface StoreSchema {
 const store = new Store<StoreSchema>({
   defaults: {
     profiles: [],
-    settings: { steamCmdPath: '', dataDir: '', webDashboardEnabled: false, webDashboardPort: 8090 },
+    settings: {
+      steamCmdPath: '',
+      dataDir: '',
+      webDashboardEnabled: false,
+      webDashboardPort: 8090,
+      webDashboardHost: '127.0.0.1',
+      webDashboardDisabledLabels: []
+    },
     runningPids: {}
   }
 })
@@ -52,7 +59,15 @@ export function getSettings(): AppSettings {
   // Cast to Partial: settings saved before dataDir existed won't actually have it at
   // runtime, even though the stored type says otherwise.
   const settings = store.get('settings') as Partial<AppSettings> | undefined
-  return { steamCmdPath: '', dataDir: '', webDashboardEnabled: false, webDashboardPort: 8090, ...settings }
+  return {
+    steamCmdPath: '',
+    dataDir: '',
+    webDashboardEnabled: false,
+    webDashboardPort: 8090,
+    webDashboardHost: '127.0.0.1',
+    webDashboardDisabledLabels: [],
+    ...settings
+  }
 }
 
 export function saveSettings(settings: AppSettings): AppSettings {

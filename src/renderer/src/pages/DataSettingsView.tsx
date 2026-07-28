@@ -10,19 +10,24 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     steamCmdPath: '',
     dataDir: '',
     webDashboardEnabled: false,
-    webDashboardPort: 8090
+    webDashboardPort: 8090,
+    webDashboardHost: '127.0.0.1',
+    webDashboardDisabledLabels: []
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
   const [status, setStatus] = useState('')
-  const [webDashboardStatus, setWebDashboardStatus] = useState<{ running: boolean; error: string | null }>({
-    running: false,
-    error: null
-  })
+  const [webDashboardStatus, setWebDashboardStatus] = useState<{
+    running: boolean
+    error: string | null
+    host: string | null
+  }>({ running: false, error: null, host: null })
+  const [localIps, setLocalIps] = useState<string[]>([])
 
   useEffect(() => {
     window.api.settings.get().then(setSettings)
     window.api.dataDir.getDefault().then(setDefaultDataDir)
     window.api.webDashboard.getStatus().then(setWebDashboardStatus)
+    window.api.webDashboard.getLocalIps().then(setLocalIps)
   }, [])
 
   async function browse(): Promise<void> {
@@ -37,6 +42,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     setTimeout(() => setStatus(''), 2000)
     setWebDashboardStatus(await window.api.webDashboard.getStatus())
   }
+
+  const isLan = settings.webDashboardHost.trim() !== '' && settings.webDashboardHost.trim() !== '127.0.0.1'
 
   return (
     <div className="server-detail">
@@ -80,6 +87,15 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
           Enable web dashboard
         </label>
         <label>
+          Host
+          <input
+            value={settings.webDashboardHost}
+            onChange={(e) => setSettings({ ...settings, webDashboardHost: e.target.value })}
+            placeholder="127.0.0.1"
+            disabled={!settings.webDashboardEnabled}
+          />
+        </label>
+        <label>
           Port
           <input
             type="number"
@@ -93,16 +109,42 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
         <p className="empty-state">
           A browser-accessible page (live console feed + RCON command box, one server at a time) - the same
           content as the Console &amp; RCON tab, reachable from a normal web browser instead of only from inside
-          this app. Always bound to <code>127.0.0.1</code> only, never other network interfaces - it has no login
-          of its own, so anything reachable at that address has full RCON/admin control of your servers. Save
-          this form to apply a change immediately, no restart needed.
+          this app. It has no login of its own, so anything that can reach it has full RCON/admin control of
+          your servers.
         </p>
+        <p className="empty-state">
+          <strong>Host</strong> controls who can reach it. Leave at <code>127.0.0.1</code> (default) to keep it
+          reachable from this machine only. Set it to <code>0.0.0.0</code> to accept connections on every network
+          interface, or to one specific local IP below to accept connections on just that one - either way, that
+          means anyone on your local network can reach it, unauthenticated, so only do this on a network you
+          trust.
+          {localIps.length > 0 && (
+            <>
+              {' '}
+              This machine&apos;s local IP{localIps.length > 1 ? 's' : ''}:{' '}
+              {localIps.map((ip, i) => (
+                <span key={ip}>
+                  <code>{ip}</code>
+                  {i < localIps.length - 1 ? ', ' : ''}
+                </span>
+              ))}
+              .
+            </>
+          )}
+        </p>
+        {isLan && (
+          <p className="error-message">
+            Web dashboard host is set to {settings.webDashboardHost} - reachable from other devices on your
+            network with no login required.
+          </p>
+        )}
+        <p className="empty-state">Save this form to apply a change immediately, no restart needed.</p>
         {settings.webDashboardEnabled && (
           <p className={webDashboardStatus.error ? 'error-message' : 'empty-state'}>
             {webDashboardStatus.error
               ? `Failed to start: ${webDashboardStatus.error}`
               : webDashboardStatus.running
-                ? `Running at http://127.0.0.1:${settings.webDashboardPort}`
+                ? `Running at http://${webDashboardStatus.host}:${settings.webDashboardPort}`
                 : 'Not running yet - save to start it.'}
           </p>
         )}

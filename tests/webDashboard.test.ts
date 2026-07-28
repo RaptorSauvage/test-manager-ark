@@ -7,11 +7,25 @@ import os from 'node:os'
 const EMPTY_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-empty-${process.pid}`)
 const LOGGED_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-logged-${process.pid}`)
 
+let mockSettings = {
+  steamCmdPath: '',
+  dataDir: '',
+  webDashboardEnabled: false,
+  webDashboardPort: 47091,
+  webDashboardHost: '127.0.0.1',
+  webDashboardDisabledLabels: [] as string[]
+}
+
 vi.mock('../src/main/store', () => ({
   listProfiles: () => [
     { id: 'p1', name: 'Test Server', installDir: EMPTY_INSTALL_DIR },
     { id: 'p2', name: 'Logged Server', installDir: LOGGED_INSTALL_DIR }
-  ]
+  ],
+  getSettings: () => mockSettings,
+  saveSettings: (settings: typeof mockSettings) => {
+    mockSettings = settings
+    return mockSettings
+  }
 }))
 vi.mock('../src/main/lib/serverProcess', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/main/lib/serverProcess')>()
@@ -24,7 +38,7 @@ vi.mock('../src/main/lib/rcon', () => ({
   sendRconCommand: async () => ({ ok: true, response: 'pong' })
 }))
 
-import { startWebDashboard, stopWebDashboard } from '../src/main/lib/webDashboard'
+import { startWebDashboard, stopWebDashboard, getWebDashboardStatus } from '../src/main/lib/webDashboard'
 
 const PORT = 47091
 
@@ -52,7 +66,7 @@ describe('web dashboard HTTP server', () => {
       '[2026.07.27-21.25.23:191][991]2026.07.27_21.25.23: LeRaptorSauvage ' +
         '[UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] joined this ARK!\n'
     )
-    startWebDashboard(PORT)
+    startWebDashboard(PORT, '127.0.0.1')
   })
 
   afterAll(() => {
@@ -126,5 +140,59 @@ describe('web dashboard HTTP server', () => {
   it('404s an unknown route', async () => {
     const res = await request('/nope')
     expect(res.status).toBe(404)
+  })
+
+  it('reports the host it is bound to', () => {
+    expect(getWebDashboardStatus()).toEqual({ running: true, error: null, host: '127.0.0.1' })
+  })
+
+  it('lists every event label as enabled by default', async () => {
+    const res = await request('/api/labelsettings')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({
+      JOIN: true,
+      LEFT: true,
+      CHAT: true,
+      WARN: true,
+      KILL: true,
+      TAME: true,
+      CMD: true,
+      SAVE: true,
+      CRYO: true,
+      MISSION: true,
+      READY: true
+    })
+  })
+
+  it('404s an unknown event label', async () => {
+    const res = await request('/api/labelsettings/NOT_A_LABEL', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false })
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('disabling a label persists it and hides it from a fresh backlog read', async () => {
+    const disable = await request('/api/labelsettings/JOIN', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false })
+    })
+    expect(disable.status).toBe(200)
+    expect(JSON.parse(disable.body)).toEqual({ label: 'JOIN', enabled: false })
+
+    const settings = await request('/api/labelsettings')
+    expect(JSON.parse(settings.body).JOIN).toBe(false)
+
+    const events = await request('/api/servers/p2/events')
+    expect(JSON.parse(events.body)).toEqual([])
+
+    // re-enable so it doesn't leak into other tests/runs
+    await request('/api/labelsettings/JOIN', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true })
+    })
   })
 })
