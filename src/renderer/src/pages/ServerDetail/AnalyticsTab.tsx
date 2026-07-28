@@ -103,6 +103,15 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
             <dd>{buildId ?? 'Not installed yet'}</dd>
           </div>
         </dl>
+        {!buildId && (
+          <p className="empty-state">
+            No <code>appmanifest_2430930.acf</code> found under <code>{profile.installDir}\steamapps</code> -
+            SteamCMD writes this the first time it installs/updates this server. If this install folder was set up
+            by another tool or copied in manually without ever running an update through SteamCMD here, this stays
+            empty even though the server itself runs fine - it only affects the Version/update-check display, not
+            Start.
+          </p>
+        )}
       </section>
 
       <UpdateCheckPanel profileIds={[profile.id]} />

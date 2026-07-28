@@ -280,7 +280,11 @@ export default function Dashboard({
           <button
             disabled={state !== 'stopped'}
             onClick={() => void handleUpdate(profile)}
-            title="Install/update the server files via SteamCMD"
+            title={
+              installedById[profile.id] === false
+                ? `No server executable found - expected one of:\n${profile.installDir}\\ShooterGame\\Binaries\\Win64\\ArkAscendedServer.exe\n${profile.installDir}/ShooterGame/Binaries/Linux/ArkAscendedServer`
+                : "Install/update the server files via SteamCMD"
+            }
           >
             {installedById[profile.id] === false
               ? state === 'updating'
