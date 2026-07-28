@@ -3,9 +3,11 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE } from '../src/main/lib/logEvents'
 
 const EMPTY_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-empty-${process.pid}`)
 const LOGGED_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-logged-${process.pid}`)
+const PLAYER = `${PLAYER_NAME_OPEN}LeRaptorSauvage${PLAYER_NAME_CLOSE}`
 
 let mockSettings = {
   steamCmdPath: '',
@@ -103,7 +105,7 @@ describe('web dashboard HTTP server', () => {
       {
         label: 'JOIN',
         cls: 'join',
-        text: 'LeRaptorSauvage joined the server (ID: 0002dbe9ab20413e9b8e7e1562b76868)',
+        text: `${PLAYER} joined the server (ID: 0002dbe9ab20413e9b8e7e1562b76868)`,
         ts: '21:25:23'
       }
     ])

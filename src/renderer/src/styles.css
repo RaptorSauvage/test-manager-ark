@@ -511,44 +511,50 @@ label.checkbox {
   word-break: break-word;
 }
 
-.log-event.log-event-join,
-.log-event.log-event-ready {
+.log-event.log-event-join .log-event-label,
+.log-event.log-event-ready .log-event-label {
   color: var(--status-running);
 }
 
-.log-event.log-event-leave,
-.log-event.log-event-save {
+.log-event.log-event-leave .log-event-label,
+.log-event.log-event-save .log-event-label {
   color: var(--muted);
 }
 
-.log-event.log-event-cmd,
-.log-event.log-event-freeze {
+.log-event.log-event-cmd .log-event-label,
+.log-event.log-event-freeze .log-event-label {
   color: var(--accent);
 }
 
-.log-event.log-event-warn,
-.log-event.log-event-mission {
+.log-event.log-event-warn .log-event-label,
+.log-event.log-event-mission .log-event-label {
   color: var(--warn);
 }
 
-.log-event.log-event-kill {
+.log-event.log-event-kill .log-event-label {
   color: var(--danger);
 }
 
-.log-event.log-event-tame {
+.log-event.log-event-tame .log-event-label {
   color: var(--ok);
 }
 
-.log-event.log-event-rcon-cmd {
+.log-event.log-event-rcon-cmd .log-event-label {
   color: var(--accent);
 }
 
-.log-event.log-event-rcon-resp {
-  color: var(--text);
+.log-event.log-event-rcon-error .log-event-label {
+  color: var(--danger);
 }
 
-.log-event.log-event-rcon-error {
-  color: var(--danger);
+/* Special case: the player's name within a JOIN/LEFT line also picks up the event's
+   color (see PLAYER_NAME_OPEN/CLOSE) - everything else in .log-event-text stays default. */
+.log-event.log-event-join .log-event-player {
+  color: var(--status-running);
+}
+
+.log-event.log-event-leave .log-event-player {
+  color: var(--muted);
 }
 
 .mods-tab {

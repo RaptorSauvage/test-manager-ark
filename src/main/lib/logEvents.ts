@@ -1,7 +1,9 @@
 import { EventEmitter } from 'node:events'
-import type { LogEvent, ServerProfile, ServerStatus } from '@shared/types'
+import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE, type LogEvent, type ServerProfile, type ServerStatus } from '@shared/types'
 import { watchLogFile, serverEvents } from './serverProcess'
 import { getProfile } from '../store'
+
+export { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE }
 
 /** Ported from the standalone Python "ARK Ops Dashboard" this app's live console feed
  *  replaces - same event categories/regexes, adapted to this app's log-tailing plumbing
@@ -53,12 +55,13 @@ export function parseLogLine(rawLine: string, caches: LogEventCaches): LogEvent 
   if (jm) {
     const [, player, accountId, action] = jm
     caches.playerCache.set(accountId, player)
+    const playerHl = `${PLAYER_NAME_OPEN}${player}${PLAYER_NAME_CLOSE}`
     if (action === 'joined') {
       const ip = caches.ipCache.get(accountId)
       const ipPart = ip ? `, IP: ${ip}` : ''
-      return { label: 'JOIN', cls: 'join', text: `${player} joined the server (ID: ${accountId}${ipPart})`, ts }
+      return { label: 'JOIN', cls: 'join', text: `${playerHl} joined the server (ID: ${accountId}${ipPart})`, ts }
     }
-    return { label: 'LEFT', cls: 'leave', text: `${player} left the server`, ts }
+    return { label: 'LEFT', cls: 'leave', text: `${playerHl} left the server`, ts }
   }
 
   const cm = rest.match(CHAT_MSG_RE)

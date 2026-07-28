@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { createLogEventCaches, parseLogLine, parseLogChunk } from '../src/main/lib/logEvents'
+import {
+  createLogEventCaches,
+  parseLogLine,
+  parseLogChunk,
+  PLAYER_NAME_OPEN,
+  PLAYER_NAME_CLOSE
+} from '../src/main/lib/logEvents'
+
+function hl(name: string): string {
+  return `${PLAYER_NAME_OPEN}${name}${PLAYER_NAME_CLOSE}`
+}
 
 describe('parseLogLine', () => {
   it('parses a join line, with no IP shown when none was looked up', () => {
@@ -8,7 +18,7 @@ describe('parseLogLine', () => {
     expect(parseLogLine(line, createLogEventCaches())).toEqual({
       label: 'JOIN',
       cls: 'join',
-      text: 'LeRaptorSauvage joined the server (ID: 0002dbe9ab20413e9b8e7e1562b76868)',
+      text: `${hl('LeRaptorSauvage')} joined the server (ID: 0002dbe9ab20413e9b8e7e1562b76868)`,
       ts: '21:25:23'
     })
   })
@@ -23,7 +33,7 @@ describe('parseLogLine', () => {
     expect(parseLogLine(joinLine, caches)).toEqual({
       label: 'JOIN',
       cls: 'join',
-      text: 'LeRaptorSauvage joined the server (ID: 0002dbe9ab20413e9b8e7e1562b76868, IP: 93.24.55.66)',
+      text: `${hl('LeRaptorSauvage')} joined the server (ID: 0002dbe9ab20413e9b8e7e1562b76868, IP: 93.24.55.66)`,
       ts: '21:25:23'
     })
   })
@@ -34,7 +44,7 @@ describe('parseLogLine', () => {
     expect(parseLogLine(line, createLogEventCaches())).toEqual({
       label: 'LEFT',
       cls: 'leave',
-      text: 'LeRaptorSauvage left the server',
+      text: `${hl('LeRaptorSauvage')} left the server`,
       ts: '21:25:35'
     })
   })
@@ -192,10 +202,10 @@ describe('parseLogChunk', () => {
       {
         label: 'JOIN',
         cls: 'join',
-        text: 'LeRaptorSauvage joined the server (ID: 0002dbe9ab20413e9b8e7e1562b76868)',
+        text: `${hl('LeRaptorSauvage')} joined the server (ID: 0002dbe9ab20413e9b8e7e1562b76868)`,
         ts: '21:25:23'
       },
-      { label: 'LEFT', cls: 'leave', text: 'LeRaptorSauvage left the server', ts: '21:25:35' }
+      { label: 'LEFT', cls: 'leave', text: `${hl('LeRaptorSauvage')} left the server`, ts: '21:25:35' }
     ])
   })
 })

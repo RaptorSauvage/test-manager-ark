@@ -280,14 +280,16 @@ const DASHBOARD_HTML = `<!doctype html>
   .log-event .ts { color: var(--muted); flex-shrink: 0; }
   .log-event .label { flex-shrink: 0; width: 60px; font-weight: 600; }
   .log-event .text { white-space: pre-wrap; word-break: break-word; }
-  .log-event-join .label, .log-event-ready .label, .log-event-join .text, .log-event-ready .text { color: #1f8a4c; }
-  .log-event-leave .label, .log-event-save .label, .log-event-leave .text, .log-event-save .text { color: var(--muted); }
-  .log-event-cmd .label, .log-event-freeze .label, .log-event-cmd .text, .log-event-freeze .text { color: var(--accent); }
-  .log-event-warn .label, .log-event-mission .label, .log-event-warn .text, .log-event-mission .text { color: var(--warn); }
-  .log-event-kill .label, .log-event-kill .text { color: var(--danger); }
-  .log-event-tame .label, .log-event-tame .text { color: var(--ok); }
-  .log-event-rcon-cmd .label, .log-event-rcon-cmd .text { color: var(--accent); }
-  .log-event-rcon-error .label, .log-event-rcon-error .text { color: var(--danger); }
+  .log-event-join .label, .log-event-ready .label { color: #1f8a4c; }
+  .log-event-leave .label, .log-event-save .label { color: var(--muted); }
+  .log-event-cmd .label, .log-event-freeze .label { color: var(--accent); }
+  .log-event-warn .label, .log-event-mission .label { color: var(--warn); }
+  .log-event-kill .label { color: var(--danger); }
+  .log-event-tame .label { color: var(--ok); }
+  .log-event-rcon-cmd .label { color: var(--accent); }
+  .log-event-rcon-error .label { color: var(--danger); }
+  .log-event-join .player { color: #1f8a4c; }
+  .log-event-leave .player { color: var(--muted); }
   #rcon-form { display: flex; gap: 8px; margin-top: 8px; }
   #rcon-input { flex: 1; }
   .empty-state { color: var(--muted); font-size: 0.85rem; }
@@ -352,12 +354,35 @@ const DASHBOARD_HTML = `<!doctype html>
     return new Date().toTimeString().slice(0, 8);
   }
 
+  var PLAYER_OPEN = String.fromCharCode(1);
+  var PLAYER_CLOSE = String.fromCharCode(2);
+
+  // Renders event text as plain text, except for a JOIN/LEFT event's player name (marked
+  // with invisible open/close characters by the parser), which gets its own colored span
+  // so only that portion picks up the event's color - not the whole line.
+  function renderEventText(container, text) {
+    var openIdx = text.indexOf(PLAYER_OPEN);
+    var closeIdx = text.indexOf(PLAYER_CLOSE);
+    if (openIdx === -1 || closeIdx === -1 || closeIdx < openIdx) {
+      container.textContent = text;
+      return;
+    }
+    if (openIdx > 0) container.appendChild(document.createTextNode(text.slice(0, openIdx)));
+    var playerSpan = document.createElement('span');
+    playerSpan.className = 'player';
+    playerSpan.textContent = text.slice(openIdx + 1, closeIdx);
+    container.appendChild(playerSpan);
+    var after = text.slice(closeIdx + 1);
+    if (after) container.appendChild(document.createTextNode(after));
+  }
+
   function addEvent(ev) {
     var div = document.createElement('div');
     div.className = 'log-event log-event-' + ev.cls;
     var ts = document.createElement('span'); ts.className = 'ts'; ts.textContent = ev.ts;
     var label = document.createElement('span'); label.className = 'label'; label.textContent = ev.label;
-    var text = document.createElement('span'); text.className = 'text'; text.textContent = ev.text;
+    var text = document.createElement('span'); text.className = 'text';
+    renderEventText(text, ev.text);
     div.appendChild(ts); div.appendChild(label); div.appendChild(text);
     consoleEl.appendChild(div);
     consoleEl.scrollTop = consoleEl.scrollHeight;

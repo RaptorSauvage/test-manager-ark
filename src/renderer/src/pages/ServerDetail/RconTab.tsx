@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { LogEvent, ServerProfile } from '@shared/types'
+import type { ReactNode } from 'react'
+import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE, type LogEvent, type ServerProfile } from '@shared/types'
 
 interface RconTabProps {
   profile: ServerProfile
@@ -7,6 +8,22 @@ interface RconTabProps {
 
 function nowTs(): string {
   return new Date().toTimeString().slice(0, 8)
+}
+
+/** Renders event text as plain text, except for a JOIN/LEFT event's player name (marked
+ *  with invisible open/close characters by the parser) which gets its own colored span
+ *  so only that portion picks up the event's color - not the whole line. */
+function renderEventText(text: string): ReactNode {
+  const openIdx = text.indexOf(PLAYER_NAME_OPEN)
+  const closeIdx = text.indexOf(PLAYER_NAME_CLOSE)
+  if (openIdx === -1 || closeIdx === -1 || closeIdx < openIdx) return text
+  return (
+    <>
+      {text.slice(0, openIdx)}
+      <span className="log-event-player">{text.slice(openIdx + 1, closeIdx)}</span>
+      {text.slice(closeIdx + 1)}
+    </>
+  )
 }
 
 export default function RconTab({ profile }: RconTabProps): JSX.Element {
@@ -66,7 +83,7 @@ export default function RconTab({ profile }: RconTabProps): JSX.Element {
             <div key={i} className={`log-event log-event-${event.cls}`}>
               <span className="log-event-ts">{event.ts}</span>
               <span className="log-event-label">{event.label}</span>
-              <span className="log-event-text">{event.text}</span>
+              <span className="log-event-text">{renderEventText(event.text)}</span>
             </div>
           ))}
         </div>

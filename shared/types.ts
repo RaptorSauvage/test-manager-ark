@@ -240,6 +240,16 @@ export interface LogEvent {
   ts: string
 }
 
+/**
+ * Invisible markers wrapping a player's name inside a JOIN/LEFT LogEvent's `text`, so the
+ * UI can color just that portion (the rest of the line stays the default text color)
+ * without having to guess where a name starts/ends. Shared between the parser (main) and
+ * the renderers (React tab + web dashboard page) that both need to strip them back out
+ * while building the DOM. Never rendered as literal characters.
+ */
+export const PLAYER_NAME_OPEN = '\u0001'
+export const PLAYER_NAME_CLOSE = '\u0002'
+
 /** Official ARK:SA server status feed, parsed from its "<RichColor>" formatted line. */
 export interface OfficialServerStatus {
   /** e.g. "ARK Official Server Network Status" */
