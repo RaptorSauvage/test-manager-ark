@@ -1,7 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import { registerProfileHandlers } from './profiles'
 import { registerServerProcessHandlers } from './serverProcess'
-import { registerRconHandlers } from './rcon'
 import { registerModsHandlers } from './mods'
 import { registerBackupHandlers } from './backup'
 import { registerPlayerBackupHandlers } from './playerBackup'
@@ -12,12 +11,10 @@ import { registerMapsHandlers } from './maps'
 import { registerCustomMapsHandlers } from './customMaps'
 import { registerDataDirHandlers } from './dataDir'
 import { registerOfficialServerStatusHandlers } from './officialServerStatus'
-import { registerLogEventHandlers } from './logEvents'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers()
   registerServerProcessHandlers(mainWindow.webContents)
-  registerRconHandlers()
   registerModsHandlers()
   registerBackupHandlers(mainWindow.webContents)
   registerPlayerBackupHandlers()
@@ -28,5 +25,4 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerCustomMapsHandlers()
   registerDataDirHandlers()
   registerOfficialServerStatusHandlers()
-  registerLogEventHandlers(mainWindow.webContents)
 }

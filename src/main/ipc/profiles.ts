@@ -13,7 +13,6 @@ import {
 import { isValidArkInstall, detectProfileFields, uniqueProfileName } from '../lib/detect'
 import { serializeProfile, parseImportedProfile } from '../lib/profileExport'
 import { syncPlayerBackupWatch } from '../lib/playerBackupWatch'
-import { stopLogEventCapture, clearLogEventBuffer } from '../lib/logEvents'
 
 export function registerProfileHandlers(): void {
   ipcMain.handle(IPC.profilesList, () => listProfiles())
@@ -31,8 +30,6 @@ export function registerProfileHandlers(): void {
     clearBackupSchedule(id)
     clearScheduledRestart(id)
     clearScheduledDinoWipe(id)
-    stopLogEventCapture(id)
-    clearLogEventBuffer(id)
     return deleteProfile(id)
   })
 

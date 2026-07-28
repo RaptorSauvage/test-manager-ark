@@ -183,8 +183,6 @@ export const IPC = {
   serverStatus: 'server:status',
   serverStatusChanged: 'server:status-changed',
 
-  rconSend: 'rcon:send',
-
   modsSave: 'mods:save',
   modsExport: 'mods:export',
   modsImportFromFile: 'mods:import-from-file',
@@ -213,9 +211,6 @@ export const IPC = {
   dataDirGetDefault: 'data-dir:get-default',
 
   officialServerStatusGet: 'official-server-status:get',
-
-  serverLogEventsList: 'server:log-events-list',
-  serverLogEvent: 'server:log-event',
 
   webDashboardStatus: 'web-dashboard:status',
   webDashboardLocalIps: 'web-dashboard:local-ips'
@@ -291,9 +286,6 @@ export interface Api {
     status: (profileId: string) => Promise<ServerStatus>
     onStatusChanged: (callback: (status: ServerStatus) => void) => () => void
   }
-  rcon: {
-    send: (profileId: string, command: string) => Promise<RconResult>
-  }
   mods: {
     save: (profileId: string, mods: ServerMod[]) => Promise<ServerProfile>
     exportToFile: (filePath: string, mods: ServerMod[]) => Promise<void>
@@ -333,10 +325,6 @@ export interface Api {
   }
   officialServerStatus: {
     get: () => Promise<OfficialServerStatus>
-  }
-  logEvents: {
-    list: (profileId: string) => Promise<LogEvent[]>
-    onEvent: (callback: (profileId: string, event: LogEvent) => void) => () => void
   }
   webDashboard: {
     getStatus: () => Promise<{ running: boolean; error: string | null; host: string | null }>

@@ -21,18 +21,12 @@ dedicated servers running on the same machine.
   default on Windows otherwise). Relaunching the Manager re-detects any server that's
   still running (by pid) and picks it back up under management rather than losing track
   of it or letting you start a conflicting second instance.
-- **Console & RCON tab** — a live, color-coded event feed above the RCON command box.
-  The server's own stdout/stderr is intentionally not captured (ARK's dedicated server
-  already shows it in its own console window on Windows) - instead, this tails the
-  server's `ShooterGame.log` file directly and classifies each interesting line into
-  JOIN/LEFT/CHAT/CMD (admin commands)/WARN (structure destroyed)/KILL/TAME/SAVE/CRYO
-  (freeze)/MISSION/READY, filtering out the engine's internal noise (garbage collection,
-  mod loading, etc). Only active while the server is running; the last ~300 events are
-  kept in memory so reopening the tab shows recent history immediately instead of an
-  empty feed. Below it, the RCON command box sends admin commands and shows responses.
-  The RCON/admin password isn't a field in this app at all - it's read live from the
-  server's own `GameUserSettings.ini` (`ServerAdminPassword`) every time it's needed,
-  since ARK:SA doesn't have a separate concept of an "RCON password".
+- **No in-app console/RCON tab** — that live event feed + RCON command box lives only in
+  the **web dashboard** (see below), not duplicated in the desktop app's per-server tabs.
+  Stop/Restart still use RCON internally (`SaveWorld` before `DoExit`), and the RCON/admin
+  password still isn't a field anywhere in this app - it's read live from the server's own
+  `GameUserSettings.ini` (`ServerAdminPassword`) every time it's needed, since ARK:SA
+  doesn't have a separate concept of an "RCON password".
 - **Mod manager** — a table (Enable/Passive/Dev checkboxes, Mod Name, Mod ID, plus
   reorder/remove) instead of a plain list. Enable/disable/reorder mod IDs and toggle a Dev
   flag per mod (appends `-dev` to load that mod's in-development build); enabled mods are
@@ -134,30 +128,33 @@ dedicated servers running on the same machine.
   SteamCMD install, per-profile update logs, and any future editable/generated files live
   in. Changing it only affects where the app looks going forward - it doesn't move
   existing files to the new folder for you. This is also where the **web dashboard** is
-  enabled: a browser-accessible page with the same content as the Console & RCON tab
-  (live event feed + RCON command box, one server at a time), for when it's more
-  convenient to check on a server from a browser tab than to bring the whole app to the
-  front. It's a plain HTTP server built into the Manager itself (no separate process).
-  Unlike the Console & RCON tab (which shows events the Manager already captured while
-  tracking that server's own lifecycle), the web dashboard reads straight from the
-  server's `ShooterGame.log` file itself on every page load/reconnect - the same
-  per-connection approach the standalone Python dashboard this replaces used - so it
-  keeps working for a server regardless of whether the Manager's own process tracking
-  currently considers it running.
-  - **Host** controls who can reach it - `127.0.0.1` (default) keeps it reachable from
-    this machine only. Setting it to `0.0.0.0` (all interfaces) or one specific local IP
-    makes it reachable from other devices on your local network, which Settings shows a
-    warning for once set: the page still has no login of its own, so that's full
-    RCON/admin control of your servers available to anyone who can reach that address -
-    only do this on a network you trust, and Settings lists this machine's own local IPs
-    as a hint for what to type in. Enabling/disabling, or changing the host or port,
-    takes effect immediately on Save, no restart needed.
-  - **Filters** - a "Show:" row of checkboxes at the top of the dashboard page itself lets
-    you hide individual event categories (JOIN, CHAT, KILL, etc.) from the feed. This is
-    server-side and persisted (survives closing the browser tab or restarting the
-    Manager): a disabled category is simply never sent to the browser, for the backlog
-    and the live stream alike, the same behavior as the standalone Python dashboard this
-    replaces.
+  enabled - the only place in this app for a live console feed and RCON, on purpose (the
+  desktop app itself has no console/RCON tab). It's a plain HTTP server built into the
+  Manager (no separate process), serving a page with, one server at a time:
+  - A live, color-coded event feed - only the event label is colored (plus the player's
+    name specifically for JOIN/LEFT), not the whole line. It tails the server's
+    `ShooterGame.log` file directly on every page load/reconnect (the same per-connection
+    approach the standalone Python dashboard this replaces used), classifying each
+    interesting line into JOIN/LEFT/CHAT/CMD (admin commands)/WARN (structure
+    destroyed)/KILL/TAME/SAVE/CRYO (freeze)/MISSION/READY and filtering out the engine's
+    internal noise - independent of whether the Manager's own process tracking currently
+    considers that server running. A "Show:" row of checkboxes lets you hide individual
+    categories from the feed; this is server-side and persisted, applied to the backlog
+    and the live stream alike, so a disabled category is simply never sent to the
+    browser.
+  - An RCON command box right below the feed - commands sent and their responses appear
+    as entries in that same feed, in order.
+  - An **online players** panel to the right, refreshed every few seconds via RCON
+    `ListPlayers`. Right-click a player for **Copy ID** (their EOS unique id, to the
+    clipboard) or **Kick** (red, asks to confirm, then sends RCON `KickPlayer <id>`).
+  - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
+    reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one
+    specific local IP makes it reachable from other devices on your local network, which
+    Settings shows a warning for once set: the page still has no login of its own, so
+    that's full RCON/admin control of your servers available to anyone who can reach that
+    address - only do this on a network you trust. Settings lists this machine's own
+    local IPs as a hint for what to type in. Enabling/disabling, or changing the host or
+    port, takes effect immediately on Save, no restart needed.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), No Transfer From Filtering (`-NoTransferFromFiltering`), and External IP
@@ -171,7 +168,7 @@ dedicated servers running on the same machine.
   `-ServerRCONOutputTribeLogs`), Force Respawn Wild Dinos (`-ForceRespawnDinos`), and No
   Sound (`-nosound`). This section also shows an always-on, non-interactive "RCON Enabled"
   indicator - RCON can't actually be turned off since the Manager depends on it for
-  Stop/Restart and the RCON tab.
+  Stop/Restart and the web dashboard.
 - **Server Management tab** — two independent time/day-of-week schedules, each with a
   live "next occurrence" countdown (`DD:HH:MM:SS`):
   - **Scheduled restart** ("Shutdown server at:" + Sun-Sat day checkboxes) gracefully

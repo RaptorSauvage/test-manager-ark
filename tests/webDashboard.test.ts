@@ -36,9 +36,18 @@ vi.mock('../src/main/lib/serverProcess', async (importOriginal) => {
     getStatus: () => ({ profileId: 'p1', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 })
   }
 })
-vi.mock('../src/main/lib/rcon', () => ({
-  sendRconCommand: async () => ({ ok: true, response: 'pong' })
-}))
+vi.mock('../src/main/lib/rcon', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/lib/rcon')>()
+  return {
+    ...actual,
+    sendRconCommand: async (_profile: unknown, command: string) => {
+      if (command === 'ListPlayers') {
+        return { ok: true, response: '0. Alice, 000211a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5' }
+      }
+      return { ok: true, response: 'pong' }
+    }
+  }
+})
 
 import { startWebDashboard, stopWebDashboard, getWebDashboardStatus } from '../src/main/lib/webDashboard'
 
@@ -115,10 +124,22 @@ describe('web dashboard HTTP server', () => {
     const res = await request('/api/servers/p1/rcon', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: 'ListPlayers' })
+      body: JSON.stringify({ command: 'Broadcast Hello world' })
     })
     expect(res.status).toBe(200)
     expect(JSON.parse(res.body)).toEqual({ ok: true, response: 'pong' })
+  })
+
+  it('lists online players with their ids via a fresh RCON ListPlayers call', async () => {
+    const res = await request('/api/servers/p1/players')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([{ name: 'Alice', id: '000211a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5' }])
+  })
+
+  it('returns an empty player list for an unknown server', async () => {
+    const res = await request('/api/servers/unknown/players')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([])
   })
 
   it('rejects an empty RCON command with a 400', async () => {

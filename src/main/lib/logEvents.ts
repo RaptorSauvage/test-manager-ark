@@ -1,13 +1,10 @@
-import { EventEmitter } from 'node:events'
-import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE, type LogEvent, type ServerProfile, type ServerStatus } from '@shared/types'
-import { watchLogFile, serverEvents } from './serverProcess'
-import { getProfile } from '../store'
+import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE, type LogEvent } from '@shared/types'
 
 export { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE }
 
-/** Ported from the standalone Python "ARK Ops Dashboard" this app's live console feed
- *  replaces - same event categories/regexes, adapted to this app's log-tailing plumbing
- *  (watchLogFile) instead of a per-connection Python file tailer. */
+/** Ported from the standalone Python "ARK Ops Dashboard" the web dashboard's live console
+ *  feed replaces - same event categories/regexes. Used only by webDashboard.ts, which
+ *  tails each server's log directly per browser connection (see readLogBacklog there). */
 const LOG_LINE_RE = /^\[(\d{4}\.\d{2}\.\d{2})-(\d{2})\.(\d{2})\.(\d{2}):\d+\]\[\s*\d+\]\s?(.*)$/
 const RICHCOLOR_OPEN_RE = /<RichColor[^>]*>/g
 const RICHCOLOR_CLOSE_RE = /<\/>/g
@@ -115,65 +112,4 @@ export function parseLogChunk(chunk: string, caches: LogEventCaches): LogEvent[]
     if (event) events.push(event)
   }
   return events
-}
-
-const MAX_BUFFERED_EVENTS = 300
-
-/** Emits ('event', profileId, event) for every newly-parsed line, across all profiles. */
-export const logEventEmitter = new EventEmitter()
-
-const buffers = new Map<string, LogEvent[]>()
-const stopFns = new Map<string, () => void>()
-
-/** The most recent buffered events for a profile, so a freshly opened Console tab has
- *  something to show immediately instead of waiting for the next live line. */
-export function getRecentLogEvents(profileId: string): LogEvent[] {
-  return buffers.get(profileId) ?? []
-}
-
-export function stopLogEventCapture(profileId: string): void {
-  const stop = stopFns.get(profileId)
-  if (stop) {
-    stop()
-    stopFns.delete(profileId)
-  }
-}
-
-export function clearLogEventBuffer(profileId: string): void {
-  buffers.delete(profileId)
-}
-
-/** Starts tailing profile.installDir's log for classifiable events. Safe to call for an
- *  already-running server adopted at app startup, not just one just spawned this session. */
-export function startLogEventCapture(profile: ServerProfile): void {
-  stopLogEventCapture(profile.id)
-  const caches = createLogEventCaches()
-  buffers.set(profile.id, [])
-
-  const stop = watchLogFile(profile.installDir, (chunk) => {
-    const events = parseLogChunk(chunk, caches)
-    if (events.length === 0) return
-
-    const buffer = buffers.get(profile.id) ?? []
-    buffer.push(...events)
-    if (buffer.length > MAX_BUFFERED_EVENTS) buffer.splice(0, buffer.length - MAX_BUFFERED_EVENTS)
-    buffers.set(profile.id, buffer)
-
-    for (const event of events) logEventEmitter.emit('event', profile.id, event)
-  })
-  stopFns.set(profile.id, stop)
-}
-
-/** Starts/stops the per-server log-event capture alongside the server's own lifecycle -
- *  wired off serverEvents so it self-cleans on a crash, not just an explicit Stop/Kill.
- *  Call once at app startup. */
-export function registerLogEventCapture(): void {
-  serverEvents.on('status', (status: ServerStatus) => {
-    if (status.state === 'starting') {
-      const profile = getProfile(status.profileId)
-      if (profile) startLogEventCapture(profile)
-    } else if (status.state === 'stopped' || status.state === 'error') {
-      stopLogEventCapture(status.profileId)
-    }
-  })
 }

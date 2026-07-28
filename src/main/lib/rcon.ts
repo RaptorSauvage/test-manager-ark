@@ -50,3 +50,24 @@ export async function listPlayers(profile: ServerProfile): Promise<string[]> {
   if (!result.ok || !result.response) return []
   return parsePlayerList(result.response)
 }
+
+export interface RconPlayer {
+  name: string
+  id: string
+}
+
+/** Parses the raw text ARK's RCON "ListPlayers" command returns into name+id pairs -
+ *  unlike parsePlayerList, keeps the id so callers can target a specific player (e.g.
+ *  Kick). Lines that don't match the expected format are skipped rather than guessed at,
+ *  since there'd be no id to act on for them anyway. */
+export function parsePlayerListWithIds(raw: string): RconPlayer[] {
+  if (!raw || /no players connected/i.test(raw)) return []
+  const players: RconPlayer[] = []
+  for (const rawLine of raw.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const match = line.match(/^\d+\.\s*(.+?),\s*([0-9A-Fa-f]+)$/)
+    if (match) players.push({ name: match[1], id: match[2] })
+  }
+  return players
+}

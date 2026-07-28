@@ -8,7 +8,6 @@ import { applyScheduledRestart, applyScheduledDinoWipe } from './lib/scheduledAc
 import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
 import { startMonitoring } from './lib/monitor'
 import { registerPlayerBackupWatch, startPlayerBackupWatch } from './lib/playerBackupWatch'
-import { registerLogEventCapture, startLogEventCapture } from './lib/logEvents'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -57,7 +56,6 @@ app.whenReady().then(() => {
   // this app crashing/closing by design - see serverProcess.startServer).
   adoptPersistedProcesses(profiles, getRunningPids())
   registerPlayerBackupWatch()
-  registerLogEventCapture()
   applyWebDashboardSettings(getSettings())
 
   for (const profile of profiles) {
@@ -67,7 +65,6 @@ app.whenReady().then(() => {
     if (isRunning(profile.id)) {
       startMonitoring(profile)
       startPlayerBackupWatch(profile)
-      startLogEventCapture(profile)
     }
   }
 

@@ -4,7 +4,7 @@ import os from 'node:os'
 import type { AppSettings, LogEvent } from '@shared/types'
 import { listProfiles, getSettings, saveSettings } from '../store'
 import { getStatus, getLogFilePath, watchLogFile } from './serverProcess'
-import { sendRconCommand } from './rcon'
+import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches } from './logEvents'
 
 let server: http.Server | null = null
@@ -178,6 +178,19 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return
   }
 
+  const playersMatch = path.match(/^\/api\/servers\/([^/]+)\/players$/)
+  if (req.method === 'GET' && playersMatch) {
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(playersMatch[1]))
+    if (!profile) {
+      sendJson(res, 200, [])
+      return
+    }
+    sendRconCommand(profile, 'ListPlayers').then((result) => {
+      sendJson(res, 200, result.ok && result.response ? parsePlayerListWithIds(result.response) : [])
+    })
+    return
+  }
+
   const rconMatch = path.match(/^\/api\/servers\/([^/]+)\/rcon$/)
   if (req.method === 'POST' && rconMatch) {
     const profileId = decodeURIComponent(rconMatch[1])
@@ -281,7 +294,8 @@ const DASHBOARD_HTML = `<!doctype html>
   .log-event .label { flex-shrink: 0; width: 60px; font-weight: 600; }
   .log-event .text { white-space: pre-wrap; word-break: break-word; }
   .log-event-join .label, .log-event-ready .label { color: #1f8a4c; }
-  .log-event-leave .label, .log-event-save .label { color: var(--muted); }
+  .log-event-leave .label { color: #a83239; }
+  .log-event-save .label { color: var(--muted); }
   .log-event-cmd .label, .log-event-freeze .label { color: var(--accent); }
   .log-event-warn .label, .log-event-mission .label { color: var(--warn); }
   .log-event-kill .label { color: var(--danger); }
@@ -289,13 +303,26 @@ const DASHBOARD_HTML = `<!doctype html>
   .log-event-rcon-cmd .label { color: var(--accent); }
   .log-event-rcon-error .label { color: var(--danger); }
   .log-event-join .player { color: #1f8a4c; }
-  .log-event-leave .player { color: var(--muted); }
+  .log-event-leave .player { color: #a83239; }
   #rcon-form { display: flex; gap: 8px; margin-top: 8px; }
   #rcon-input { flex: 1; }
   .empty-state { color: var(--muted); font-size: 0.85rem; }
   #filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--muted); margin-bottom: 10px; }
   #filters label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
   #filters input { padding: 0; width: auto; }
+  .content-row { flex: 1; display: flex; gap: 12px; min-height: 0; }
+  .console-panel { flex: 3; }
+  .players-panel { flex: 1; min-width: 220px; max-width: 300px; }
+  .players-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .players-header h3 { margin: 0; font-size: 0.95rem; }
+  .players-count { background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 9px; font-size: 0.75rem; }
+  #players-list { flex: 1; overflow-y: auto; font-size: 0.85rem; }
+  .player-row { padding: 6px 8px; border-radius: 6px; }
+  .player-row:hover { background: var(--bg); }
+  .context-menu { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 4px; z-index: 1000; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); min-width: 150px; }
+  .context-menu button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 7px 10px; border-radius: 4px; font-size: 0.85rem; }
+  .context-menu button:hover { background: var(--bg); }
+  .context-menu button.danger { color: var(--danger); }
 </style>
 </head>
 <body>
@@ -306,13 +333,22 @@ const DASHBOARD_HTML = `<!doctype html>
 </header>
 <main>
   <div id="filters"></div>
-  <section class="panel">
-    <div id="console"></div>
-    <form id="rcon-form">
-      <input id="rcon-input" placeholder="e.g. Broadcast Hello world" autocomplete="off" />
-      <button type="submit">Send</button>
-    </form>
-  </section>
+  <div class="content-row">
+    <section class="panel console-panel">
+      <div id="console"></div>
+      <form id="rcon-form">
+        <input id="rcon-input" placeholder="e.g. Broadcast Hello world" autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+    </section>
+    <aside class="panel players-panel">
+      <div class="players-header">
+        <h3>Online players</h3>
+        <span class="players-count" id="players-count">0</span>
+      </div>
+      <div id="players-list"></div>
+    </aside>
+  </div>
 </main>
 <script>
 (function () {
@@ -324,6 +360,79 @@ const DASHBOARD_HTML = `<!doctype html>
   var rconForm = document.getElementById('rcon-form');
   var rconInput = document.getElementById('rcon-input');
   var filtersEl = document.getElementById('filters');
+  var playersListEl = document.getElementById('players-list');
+  var playersCountEl = document.getElementById('players-count');
+  var contextMenuEl = null;
+
+  function closeContextMenu() {
+    if (contextMenuEl) { contextMenuEl.remove(); contextMenuEl = null; }
+  }
+  document.addEventListener('click', closeContextMenu);
+  document.addEventListener('scroll', closeContextMenu, true);
+
+  function showContextMenu(x, y, player) {
+    closeContextMenu();
+    var menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+
+    var copyBtn = document.createElement('button');
+    copyBtn.textContent = 'Copy ID';
+    copyBtn.addEventListener('click', function () {
+      navigator.clipboard.writeText(player.id);
+    });
+    menu.appendChild(copyBtn);
+
+    var kickBtn = document.createElement('button');
+    kickBtn.className = 'danger';
+    kickBtn.textContent = 'Kick';
+    kickBtn.addEventListener('click', function () {
+      if (!currentId) return;
+      if (!confirm('Kick ' + player.name + '?')) return;
+      fetch('/api/servers/' + encodeURIComponent(currentId) + '/rcon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: 'KickPlayer ' + player.id })
+      });
+    });
+    menu.appendChild(kickBtn);
+
+    document.body.appendChild(menu);
+    contextMenuEl = menu;
+  }
+
+  function loadPlayers() {
+    if (!currentId) {
+      playersListEl.innerHTML = '';
+      playersCountEl.textContent = '0';
+      return;
+    }
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/players')
+      .then(function (r) { return r.json(); })
+      .then(function (players) {
+        playersCountEl.textContent = String(players.length);
+        playersListEl.innerHTML = '';
+        if (players.length === 0) {
+          var empty = document.createElement('p');
+          empty.className = 'empty-state';
+          empty.textContent = 'No players connected';
+          playersListEl.appendChild(empty);
+          return;
+        }
+        players.forEach(function (p) {
+          var row = document.createElement('div');
+          row.className = 'player-row';
+          row.textContent = p.name;
+          row.addEventListener('contextmenu', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            showContextMenu(e.clientX, e.clientY, p);
+          });
+          playersListEl.appendChild(row);
+        });
+      });
+  }
 
   function loadLabelSettings() {
     fetch('/api/labelsettings').then(function (r) { return r.json(); }).then(function (settings) {
@@ -402,6 +511,7 @@ const DASHBOARD_HTML = `<!doctype html>
     currentId = id;
     consoleEl.innerHTML = '';
     if (es) { es.close(); es = null; }
+    loadPlayers();
     if (!id) return;
     fetch('/api/servers/' + encodeURIComponent(id) + '/events')
       .then(function (r) { return r.json(); })
@@ -455,6 +565,7 @@ const DASHBOARD_HTML = `<!doctype html>
   loadServers();
   loadLabelSettings();
   setInterval(loadServers, 5000);
+  setInterval(loadPlayers, 5000);
 })();
 </script>
 </body>

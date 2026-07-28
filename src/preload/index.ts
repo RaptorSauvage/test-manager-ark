@@ -1,13 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import {
-  IPC,
-  type Api,
-  type ServerProfile,
-  type ServerStatus,
-  type ServerMod,
-  type AppSettings,
-  type LogEvent
-} from '@shared/types'
+import { IPC, type Api, type ServerProfile, type ServerStatus, type ServerMod, type AppSettings } from '@shared/types'
 
 const api: Api = {
   profiles: {
@@ -40,9 +32,6 @@ const api: Api = {
       ipcRenderer.on(IPC.serverStatusChanged, listener)
       return () => ipcRenderer.removeListener(IPC.serverStatusChanged, listener)
     }
-  },
-  rcon: {
-    send: (profileId: string, command: string) => ipcRenderer.invoke(IPC.rconSend, profileId, command)
   },
   mods: {
     save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods),
@@ -88,15 +77,6 @@ const api: Api = {
   },
   officialServerStatus: {
     get: () => ipcRenderer.invoke(IPC.officialServerStatusGet)
-  },
-  logEvents: {
-    list: (profileId: string) => ipcRenderer.invoke(IPC.serverLogEventsList, profileId),
-    onEvent: (callback: (profileId: string, event: LogEvent) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, profileId: string, logEvent: LogEvent): void =>
-        callback(profileId, logEvent)
-      ipcRenderer.on(IPC.serverLogEvent, listener)
-      return () => ipcRenderer.removeListener(IPC.serverLogEvent, listener)
-    }
   },
   webDashboard: {
     getStatus: () => ipcRenderer.invoke(IPC.webDashboardStatus),
