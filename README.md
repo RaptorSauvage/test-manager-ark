@@ -160,7 +160,11 @@ dedicated servers running on the same machine.
     Restart, and Stop+Update+Restart respond immediately once kicked off rather than
     waiting for completion - a SteamCMD update alone can take minutes - so the button
     doesn't hang; the status line and player panel simply update on their next poll as
-    the state actually changes (stopping → updating → starting → running).
+    the state actually changes (stopping → updating → starting → running). There's also
+    a standalone update endpoint (`POST /api/servers/:id/update`, no button on the page
+    itself - Stop+Update+Restart already covers the interactive case) meant for external
+    automation, e.g. a Discord bot on the same machine calling into this same API - see
+    [Web dashboard API](#web-dashboard-api-for-bots--other-tools) below.
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
     reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one
     specific local IP makes it reachable from other devices on your local network, which
@@ -280,6 +284,42 @@ tab:
   rollback data, not useful in a backup) are left out of the zip. Backup directory,
   retention, and scheduling live in the **Backups** tab, not here; you must set a backup
   directory there before creating a backup.
+
+## Web dashboard API (for bots / other tools)
+
+Everything the web dashboard page itself calls is plain JSON over HTTP - nothing
+dashboard-page-specific about it, so any other local process (a Discord bot, a script,
+`curl`) on the same machine can call it too, once **Settings → Enable web dashboard** is
+on. Base URL is `http://<host>:<port>` using whatever Host/Port you set there (defaults
+to `http://127.0.0.1:8090`). There's no authentication - the same posture as RCON itself,
+appropriate for `127.0.0.1` or a trusted LAN, never the open internet.
+
+| Method | Path | Body | Response | Notes |
+| --- | --- | --- | --- | --- |
+| GET | `/api/servers` | — | `[{ id, name, state, players, cpu, memoryMB }]` | `id` is what every other endpoint below expects |
+| POST | `/api/servers/:id/start` | — | `{ ok, error? }` | 400 with `error` if it can't start right now (e.g. an update is running) |
+| POST | `/api/servers/:id/stop` | — | `{ ok: true }` | Returns immediately; state changes (`stopping` → `stopped`) show up in the next `GET /api/servers` poll |
+| POST | `/api/servers/:id/restart` | — | `{ ok: true }` | Same - returns immediately, doesn't wait for the restart to finish |
+| POST | `/api/servers/:id/update` | — | `{ ok: true }` | Runs the SteamCMD update alone; fails quietly (logged in the Manager's own console) if the server is currently running - stop it first |
+| POST | `/api/servers/:id/stop-update-restart` | — | `{ ok: true }` | Stops if running, updates, starts back up - the single-server "do everything" action |
+| POST | `/api/servers/:id/rcon` | `{ "command": "Broadcast hello" }` | `{ ok, response? , error? }` | Same RCON connection the page's own console box uses |
+| GET | `/api/servers/:id/players` | — | `[{ name, id }]` | Fresh `ListPlayers` call every time, not cached |
+
+A minimal example from a Node.js bot (works the same from Python, or any HTTP client):
+
+```js
+const BASE = 'http://127.0.0.1:8090'
+
+async function startServer(profileId) {
+  const res = await fetch(`${BASE}/api/servers/${profileId}/start`, { method: 'POST' })
+  return res.json() // { ok: true } or { ok: false, error: '...' }
+}
+
+async function findProfileIdByName(name) {
+  const servers = await (await fetch(`${BASE}/api/servers`)).json()
+  return servers.find((s) => s.name === name)?.id
+}
+```
 
 ## Notes / limitations
 

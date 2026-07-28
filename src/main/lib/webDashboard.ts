@@ -6,7 +6,7 @@ import { listProfiles, getSettings, saveSettings } from '../store'
 import { getStatus, getLogFilePath, watchLogFile } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches } from './logEvents'
-import { doStartServer, doStopServer, doRestartServer, doStopUpdateRestart } from './serverActions'
+import { doStartServer, doStopServer, doRestartServer, doUpdateServer, doStopUpdateRestart } from './serverActions'
 
 let server: http.Server | null = null
 let lastError: string | null = null
@@ -236,6 +236,18 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     doRestartServer(profile).catch((err: Error) =>
       console.error(`Web dashboard restart failed for ${profile.name}:`, err.message)
     )
+    sendJson(res, 200, { ok: true })
+    return
+  }
+
+  const updateMatch = path.match(/^\/api\/servers\/([^/]+)\/update$/)
+  if (req.method === 'POST' && updateMatch) {
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(updateMatch[1]))
+    if (!profile) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    doUpdateServer(profile).catch((err: Error) => console.error(`Web dashboard update failed for ${profile.name}:`, err.message))
     sendJson(res, 200, { ok: true })
     return
   }

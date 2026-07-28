@@ -52,6 +52,7 @@ vi.mock('../src/main/lib/serverActions', () => ({
   doStartServer: vi.fn((profile: { id: string }) => ({ profileId: profile.id, state: 'starting' })),
   doStopServer: vi.fn(async (profile: { id: string }) => ({ profileId: profile.id, state: 'stopping' })),
   doRestartServer: vi.fn(async (profile: { id: string }) => ({ profileId: profile.id, state: 'starting' })),
+  doUpdateServer: vi.fn(async () => {}),
   doStopUpdateRestart: vi.fn(async () => {})
 }))
 
@@ -182,6 +183,18 @@ describe('web dashboard HTTP server', () => {
     expect(res.status).toBe(200)
     expect(JSON.parse(res.body)).toEqual({ ok: true })
     expect(serverActions.doRestartServer).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
+  })
+
+  it('kicks off a standalone update', async () => {
+    const res = await request('/api/servers/p1/update', { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ ok: true })
+    expect(serverActions.doUpdateServer).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
+  })
+
+  it('404s an update for an unknown server', async () => {
+    const res = await request('/api/servers/unknown/update', { method: 'POST' })
+    expect(res.status).toBe(404)
   })
 
   it('kicks off stop+update+restart', async () => {
