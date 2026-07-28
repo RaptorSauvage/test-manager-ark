@@ -411,11 +411,11 @@ const DASHBOARD_HTML = `<!doctype html>
   #server-actions button.warn:hover:not(:disabled) { background: var(--warn); color: #14161a; }
   main { flex: 1; display: flex; flex-direction: column; padding: 12px 16px; min-height: 0; }
   .panel { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; min-height: 0; }
-  #console { flex: 1; overflow-y: auto; font-size: 0.95rem; font-family: Consolas, Menlo, monospace; min-height: 200px; }
+  #console { flex: 1; overflow-y: auto; font-size: 0.82rem; font-family: Consolas, Menlo, monospace; min-height: 200px; }
   /* Deliberately not a flex row: letting ts/label/text flow as regular inline content
      means a wrapped line breaks back to the panel's own left edge, not indented under
      wherever the text happened to start - much more readable on a narrow phone screen. */
-  .log-event { padding: 8px 0; line-height: 1.5; }
+  .log-event { padding: 3px 0; line-height: 1.4; }
   .log-event .ts { color: var(--muted); margin-right: 8px; }
   .log-event .label { font-weight: 700; margin-right: 8px; }
   .log-event .text { white-space: pre-wrap; word-break: break-word; }
