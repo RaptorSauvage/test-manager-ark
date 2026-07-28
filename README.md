@@ -117,6 +117,19 @@ dedicated servers running on the same machine.
   running server): a single `config.json`, written by `electron-store` at Electron's
   standard per-OS user-data location. It's already plain JSON, just one shared file for
   everything rather than one file per profile like an exported profile.
+- **Profile Management** — a dashboard header button opens a dedicated view to **Copy**
+  or **Move** an entire server install (every file under its install folder - binaries,
+  saves, configs, all of it) to a different folder:
+  - **Copy** duplicates it as a brand new, independent profile (fresh id) - the original
+    is left untouched.
+  - **Move** relocates (and optionally renames) the same profile in place - nothing is
+    duplicated.
+  Both require the server to be stopped first, reject a destination that already has
+  files in it, and reject picking the current install folder as the destination. A move
+  tries a plain rename first and only falls back to a real copy-then-delete if that fails
+  across drives/filesystems (`EXDEV`). No app restart is needed either way - saving the
+  resulting profile goes through the same path as any other Settings change, so its
+  backup schedule/watchers etc. get reapplied against the new location automatically.
 - **Export / import a profile as a file** — a server's Settings tab has an "Export
   profile..." button that saves its whole config (ports, mods, cluster, extra settings -
   everything except backups/logs) as a JSON file; the dashboard's "Import profile file..."

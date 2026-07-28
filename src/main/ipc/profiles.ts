@@ -13,6 +13,13 @@ import {
 import { isValidArkInstall, detectProfileFields, uniqueProfileName } from '../lib/detect'
 import { serializeProfile, parseImportedProfile } from '../lib/profileExport'
 import { syncPlayerBackupWatch } from '../lib/playerBackupWatch'
+import { copyProfile, moveProfile } from '../lib/profileCopyMove'
+
+function requireProfile(profileId: string): ServerProfile {
+  const profile = listProfiles().find((p) => p.id === profileId)
+  if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+  return profile
+}
 
 export function registerProfileHandlers(): void {
   ipcMain.handle(IPC.profilesList, () => listProfiles())
@@ -36,9 +43,7 @@ export function registerProfileHandlers(): void {
   ipcMain.handle(IPC.profilesReorder, (_event, orderedIds: string[]) => setProfileOrder(orderedIds))
 
   ipcMain.handle(IPC.profilesExport, (_event, profileId: string, filePath: string) => {
-    const profile = listProfiles().find((p) => p.id === profileId)
-    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
-    fs.writeFileSync(filePath, serializeProfile(profile), 'utf-8')
+    fs.writeFileSync(filePath, serializeProfile(requireProfile(profileId)), 'utf-8')
   })
 
   ipcMain.handle(IPC.profilesImportFromFile, (_event, filePath: string) => {
@@ -103,5 +108,25 @@ export function registerProfileHandlers(): void {
     const profiles = saveProfile(profile)
     applyBackupSchedule(profile)
     return { profile, profiles }
+  })
+
+  ipcMain.handle(IPC.profilesCopy, async (_event, profileId: string, destInstallDir: string, newName: string) => {
+    const copied = await copyProfile(requireProfile(profileId), destInstallDir, newName)
+    const profiles = saveProfile(copied)
+    applyBackupSchedule(copied)
+    syncPlayerBackupWatch(copied)
+    applyScheduledRestart(copied)
+    applyScheduledDinoWipe(copied)
+    return { profile: copied, profiles }
+  })
+
+  ipcMain.handle(IPC.profilesMove, async (_event, profileId: string, destInstallDir: string, newName: string) => {
+    const moved = await moveProfile(requireProfile(profileId), destInstallDir, newName)
+    const profiles = saveProfile(moved)
+    applyBackupSchedule(moved)
+    syncPlayerBackupWatch(moved)
+    applyScheduledRestart(moved)
+    applyScheduledDinoWipe(moved)
+    return { profile: moved, profiles }
   })
 }

@@ -193,6 +193,8 @@ export const IPC = {
   profilesReorder: 'profiles:reorder',
   profilesExport: 'profiles:export',
   profilesImportFromFile: 'profiles:import-from-file',
+  profilesCopy: 'profiles:copy',
+  profilesMove: 'profiles:move',
 
   dialogSelectDirectory: 'dialog:select-directory',
   dialogSelectFile: 'dialog:select-file',
@@ -300,6 +302,8 @@ export interface Api {
     reorder: (orderedIds: string[]) => Promise<ServerProfile[]>
     export: (profileId: string, filePath: string) => Promise<void>
     importFromFile: (filePath: string) => Promise<ImportResult>
+    copy: (profileId: string, destInstallDir: string, newName: string) => Promise<ImportResult>
+    move: (profileId: string, destInstallDir: string, newName: string) => Promise<ImportResult>
   }
   dialog: {
     selectDirectory: () => Promise<string | null>

@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import ServerDetail, { type TabKey } from './pages/ServerDetail'
 import SteamCmdView from './pages/SteamCmdView'
 import DataSettingsView from './pages/DataSettingsView'
+import ProfileManagementView from './pages/ProfileManagementView'
 
 export default function App(): JSX.Element {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
@@ -11,6 +12,7 @@ export default function App(): JSX.Element {
   const [initialTab, setInitialTab] = useState<TabKey | undefined>(undefined)
   const [showSteamCmd, setShowSteamCmd] = useState(false)
   const [showDataSettings, setShowDataSettings] = useState(false)
+  const [showProfileManagement, setShowProfileManagement] = useState(false)
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
@@ -50,6 +52,16 @@ export default function App(): JSX.Element {
     return <DataSettingsView onBack={() => setShowDataSettings(false)} />
   }
 
+  if (showProfileManagement) {
+    return (
+      <ProfileManagementView
+        profiles={profiles}
+        onProfilesChange={handleProfilesChange}
+        onBack={() => setShowProfileManagement(false)}
+      />
+    )
+  }
+
   return selected ? (
     <ServerDetail
       profile={selected}
@@ -64,6 +76,7 @@ export default function App(): JSX.Element {
       onOpenProfile={handleOpenProfile}
       onOpenSteamCmd={() => setShowSteamCmd(true)}
       onOpenDataSettings={() => setShowDataSettings(true)}
+      onOpenProfileManagement={() => setShowProfileManagement(true)}
     />
   )
 }

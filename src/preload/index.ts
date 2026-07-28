@@ -9,7 +9,11 @@ const api: Api = {
     importFromInstall: (installDir: string) => ipcRenderer.invoke(IPC.profilesImport, installDir),
     reorder: (orderedIds: string[]) => ipcRenderer.invoke(IPC.profilesReorder, orderedIds),
     export: (profileId: string, filePath: string) => ipcRenderer.invoke(IPC.profilesExport, profileId, filePath),
-    importFromFile: (filePath: string) => ipcRenderer.invoke(IPC.profilesImportFromFile, filePath)
+    importFromFile: (filePath: string) => ipcRenderer.invoke(IPC.profilesImportFromFile, filePath),
+    copy: (profileId: string, destInstallDir: string, newName: string) =>
+      ipcRenderer.invoke(IPC.profilesCopy, profileId, destInstallDir, newName),
+    move: (profileId: string, destInstallDir: string, newName: string) =>
+      ipcRenderer.invoke(IPC.profilesMove, profileId, destInstallDir, newName)
   },
   dialog: {
     selectDirectory: () => ipcRenderer.invoke(IPC.dialogSelectDirectory),
