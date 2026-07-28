@@ -1,7 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
-import { listProfiles, getRunningPids, getSettings } from './store'
+import { listProfiles, getRunningPids, getRunningStartedAt, getSettings } from './store'
 import { applyWebDashboardSettings } from './lib/webDashboard'
 import { applyBackupSchedule } from './lib/schedule'
 import { applyScheduledRestart, applyScheduledDinoWipe } from './lib/scheduledActions'
@@ -56,7 +56,7 @@ app.whenReady().then(() => {
 
   // Re-attach to servers still running from a previous session (they survive
   // this app crashing/closing by design - see serverProcess.startServer).
-  adoptPersistedProcesses(profiles, getRunningPids())
+  adoptPersistedProcesses(profiles, getRunningPids(), getRunningStartedAt())
   registerPlayerBackupWatch()
   applyWebDashboardSettings(getSettings())
   applyLaunchOnStartup(getSettings())

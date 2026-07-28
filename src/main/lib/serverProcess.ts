@@ -6,7 +6,7 @@ import { platform } from 'node:process'
 import type { ServerMod, ServerProfile, ServerStatus } from '@shared/types'
 import { sendRconCommand } from './rcon'
 import { readAdminPassword } from './config'
-import { setRunningPid } from '../store'
+import { setRunningPid, setRunningStartedAt } from '../store'
 
 /** ARK writes this once the world has actually finished loading and is ready for players. */
 const STARTUP_COMPLETE_MARKER = 'Server has completed startup and is now advertising for join'
@@ -127,6 +127,7 @@ function emitStatus(status: ServerStatus): void {
 function finalizeStopped(profileId: string): void {
   running.delete(profileId)
   setRunningPid(profileId, null)
+  setRunningStartedAt(profileId, null)
   emitStatus({ profileId, state: 'stopped' })
 }
 
@@ -238,7 +239,11 @@ export function markProcessExited(profileId: string): void {
  * Without this, a relaunched app would "forget" about them and let the user
  * start a second instance on the same ports.
  */
-export function adoptPersistedProcesses(profiles: ServerProfile[], persistedPids: Record<string, number>): void {
+export function adoptPersistedProcesses(
+  profiles: ServerProfile[],
+  persistedPids: Record<string, number>,
+  persistedStartedAt: Record<string, number> = {}
+): void {
   for (const profile of profiles) {
     const pid = persistedPids[profile.id]
     if (pid === undefined) continue
@@ -247,10 +252,16 @@ export function adoptPersistedProcesses(profiles: ServerProfile[], persistedPids
       running.set(profile.id, {
         process: null,
         pid,
-        status: { profileId: profile.id, state: 'running', pid }
+        status: {
+          profileId: profile.id,
+          state: 'running',
+          pid,
+          ...(persistedStartedAt[profile.id] !== undefined ? { startedAt: persistedStartedAt[profile.id] } : {})
+        }
       })
     } else {
       setRunningPid(profile.id, null)
+      setRunningStartedAt(profile.id, null)
     }
   }
 }
@@ -292,14 +303,16 @@ export function startServer(profile: ServerProfile): ServerStatus {
   // Still "starting" here - the OS process exists, but ARK itself hasn't
   // finished loading the world yet. We only flip to "running" once we see
   // the startup-complete marker (or the fallback timeout below fires).
+  const startedAt = Date.now()
   const status: ServerStatus = {
     profileId: profile.id,
     state: 'starting',
     pid,
-    startedAt: Date.now()
+    startedAt
   }
   running.set(profile.id, { process: child, pid, status })
   setRunningPid(profile.id, pid)
+  setRunningStartedAt(profile.id, startedAt)
   emitStatus(status)
 
   const fallback = setTimeout(() => markReady(), STARTUP_FALLBACK_MS)

@@ -21,8 +21,8 @@ let mockSettings = {
 
 vi.mock('../src/main/store', () => ({
   listProfiles: () => [
-    { id: 'p1', name: 'Test Server', installDir: EMPTY_INSTALL_DIR },
-    { id: 'p2', name: 'Logged Server', installDir: LOGGED_INSTALL_DIR }
+    { id: 'p1', name: 'Test Server', installDir: EMPTY_INSTALL_DIR, hidden: false, group: '' },
+    { id: 'p2', name: 'Logged Server', installDir: LOGGED_INSTALL_DIR, hidden: false, group: '' }
   ],
   getSettings: () => mockSettings,
   saveSettings: (settings: typeof mockSettings) => {
@@ -59,7 +59,8 @@ vi.mock('../src/main/lib/serverActions', () => ({
   doStopUpdateRestart: vi.fn(async () => {})
 }))
 
-import { startWebDashboard, stopWebDashboard, getWebDashboardStatus } from '../src/main/lib/webDashboard'
+import { startWebDashboard, stopWebDashboard, getWebDashboardStatus, sortProfilesForDisplay } from '../src/main/lib/webDashboard'
+import type { ServerProfile } from '../shared/types'
 import * as serverActions from '../src/main/lib/serverActions'
 import { serverEvents } from '../src/main/lib/serverProcess'
 
@@ -110,6 +111,39 @@ function openStream(reqPath: string): Promise<{ waitFor: (needle: string, timeou
     req.end()
   })
 }
+
+function profile(overrides: Partial<ServerProfile>): ServerProfile {
+  return { id: '', name: '', hidden: false, group: '', ...overrides } as ServerProfile
+}
+
+describe('sortProfilesForDisplay', () => {
+  it('drops hidden profiles', () => {
+    const result = sortProfilesForDisplay([
+      profile({ id: 'a', hidden: false }),
+      profile({ id: 'b', hidden: true })
+    ])
+    expect(result.map((p) => p.id)).toEqual(['a'])
+  })
+
+  it('keeps ungrouped profiles first, in their stored order', () => {
+    const result = sortProfilesForDisplay([
+      profile({ id: 'a', group: 'Cluster' }),
+      profile({ id: 'b', group: '' }),
+      profile({ id: 'c', group: '' })
+    ])
+    expect(result.map((p) => p.id)).toEqual(['b', 'c', 'a'])
+  })
+
+  it('orders groups alphabetically, each group in stored order', () => {
+    const result = sortProfilesForDisplay([
+      profile({ id: 'a', group: 'Zeta' }),
+      profile({ id: 'b', group: 'Alpha' }),
+      profile({ id: 'c', group: 'Zeta' }),
+      profile({ id: 'd', group: 'Alpha' })
+    ])
+    expect(result.map((p) => p.id)).toEqual(['b', 'd', 'a', 'c'])
+  })
+})
 
 describe('web dashboard HTTP server', () => {
   beforeAll(() => {

@@ -9,6 +9,10 @@ interface StoreSchema {
   settings: AppSettings
   /** profileId -> OS pid, so a re-launched app can find a server that's still running. */
   runningPids: Record<string, number>
+  /** profileId -> when that server was actually started (Date.now() at spawn time), so
+   *  a re-launched app can still compute an accurate uptime for a server it re-adopts
+   *  instead of one that resets to "just started". */
+  runningStartedAt: Record<string, number>
 }
 
 const store = new Store<StoreSchema>({
@@ -23,7 +27,8 @@ const store = new Store<StoreSchema>({
       webDashboardDisabledLabels: [],
       launchOnStartup: false
     },
-    runningPids: {}
+    runningPids: {},
+    runningStartedAt: {}
   }
 })
 
@@ -60,6 +65,7 @@ export function deleteProfile(id: string): ServerProfile[] {
   const profiles = listProfiles().filter((p) => p.id !== id)
   store.set('profiles', profiles)
   setRunningPid(id, null)
+  setRunningStartedAt(id, null)
   return profiles
 }
 
@@ -96,4 +102,18 @@ export function setRunningPid(profileId: string, pid: number | null): void {
     pids[profileId] = pid
   }
   store.set('runningPids', pids)
+}
+
+export function getRunningStartedAt(): Record<string, number> {
+  return store.get('runningStartedAt') ?? {}
+}
+
+export function setRunningStartedAt(profileId: string, startedAt: number | null): void {
+  const startedAtByProfile = getRunningStartedAt()
+  if (startedAt === null) {
+    delete startedAtByProfile[profileId]
+  } else {
+    startedAtByProfile[profileId] = startedAt
+  }
+  store.set('runningStartedAt', startedAtByProfile)
 }

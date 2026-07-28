@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
-import type { AppSettings, LogEvent, ServerStatus } from '@shared/types'
+import type { AppSettings, LogEvent, ServerProfile, ServerStatus } from '@shared/types'
 import { listProfiles, getSettings, saveSettings } from '../store'
 import { getStatus, getLogFilePath, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
@@ -26,6 +26,21 @@ const BACKLOG_MAX_LINES = 60
 
 /** Event categories that can be individually hidden from the web dashboard's feed. */
 const ALL_EVENT_LABELS = ['JOIN', 'LEFT', 'CHAT', 'WARN', 'KILL', 'TAME', 'CMD', 'SAVE', 'CRYO', 'MISSION', 'READY']
+
+/**
+ * Orders profiles the same way the Manager's own dashboard grid does, and drops hidden
+ * ones: ungrouped profiles first (in their stored/reordered position), then each named
+ * group's profiles (alphabetical by group name), also in their stored position within
+ * the group. Hidden profiles never appear here, matching the desktop dashboard where
+ * they're tucked away in a separate collapsed section.
+ */
+export function sortProfilesForDisplay(profiles: ServerProfile[]): ServerProfile[] {
+  const visible = profiles.filter((p) => !p.hidden)
+  const ungrouped = visible.filter((p) => !p.group.trim())
+  const groupNames = Array.from(new Set(visible.filter((p) => p.group.trim()).map((p) => p.group.trim()))).sort()
+  const grouped = groupNames.flatMap((groupName) => visible.filter((p) => p.group.trim() === groupName))
+  return [...ungrouped, ...grouped]
+}
 
 function getDisabledLabels(): Set<string> {
   return new Set(getSettings().webDashboardDisabledLabels ?? [])
@@ -112,7 +127,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 
   if (req.method === 'GET' && path === '/api/servers') {
-    const servers = listProfiles().map((profile) => {
+    const servers = sortProfilesForDisplay(listProfiles()).map((profile) => {
       const status = getStatus(profile.id)
       return {
         id: profile.id,

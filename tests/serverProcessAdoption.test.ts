@@ -77,4 +77,19 @@ describe('adoptPersistedProcesses', () => {
 
     expect(isRunning(profile.id)).toBe(false)
   })
+
+  it('carries over the persisted startedAt so uptime survives a Manager restart', () => {
+    const profile = makeProfile('adopt-started-at')
+    const startedAt = Date.now() - 60_000
+    adoptPersistedProcesses([profile], { [profile.id]: process.pid }, { [profile.id]: startedAt })
+
+    expect(getStatus(profile.id)).toEqual({ profileId: profile.id, state: 'running', pid: process.pid, startedAt })
+  })
+
+  it('has no startedAt when none was persisted for that profile', () => {
+    const profile = makeProfile('adopt-no-started-at')
+    adoptPersistedProcesses([profile], { [profile.id]: process.pid }, {})
+
+    expect(getStatus(profile.id)).toEqual({ profileId: profile.id, state: 'running', pid: process.pid })
+  })
 })

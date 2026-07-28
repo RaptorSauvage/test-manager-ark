@@ -93,14 +93,16 @@ dedicated servers running on the same machine.
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: PID, uptime (live, ticking every second while running), memory
     usage (MB and % of total system RAM), and connected players (X / configured max).
+    Uptime survives a Manager restart too - the actual start time is persisted alongside
+    the pid it already tracks to re-adopt a still-running server, so a re-adopted server
+    shows real elapsed uptime instead of losing it.
   - **Version**: the SteamCMD-installed build id, read straight from that install's
     `appmanifest_2430930.acf` (the same file the Update button's "up to date" check
     already reads) - `null`/"Not installed yet" before the first install.
   - **New update** panel: "A server update is available" or "No new update available",
     depending on whether that profile's installed build id matches the latest one Steam
-    has published. The same panel (same embed as the dashboard's Official Server Status
-    one) also appears in the dashboard sidebar, checking every profile at once instead of
-    just one. The latest build id behind it is polled every 30 minutes by asking SteamCMD
+    has published (same embed styling as the dashboard's Official Server Status panel).
+    The latest build id behind it is polled every 30 minutes by asking SteamCMD
     itself (anonymous login, `+app_info_print 2430930`, no download involved) for the
     current public-branch build id and caching it in memory - deliberately not scraping
     [SteamDB](https://steamdb.info/app/2430930/depots/), since that's an unofficial,
@@ -187,6 +189,10 @@ dedicated servers running on the same machine.
   enabled - the only place in this app for a live console feed and RCON, on purpose (the
   desktop app itself has no console/RCON tab). It's a plain HTTP server built into the
   Manager (no separate process), serving a page with, one server at a time:
+  - A server picker at the top, listing profiles in the same order as the desktop
+    dashboard (ungrouped profiles first in their reordered position, then each group
+    alphabetically) and leaving out anything marked **Hidden** there - it mirrors what
+    you'd see on the desktop dashboard, not just the raw stored profile list.
   - A live, color-coded event feed - only the event label is colored (plus the player's
     name specifically for JOIN/LEFT), not the whole line. It tails the server's
     `ShooterGame.log` file directly on every page load/reconnect (the same per-connection
