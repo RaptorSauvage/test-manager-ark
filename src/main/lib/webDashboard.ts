@@ -323,6 +323,7 @@ const DASHBOARD_HTML = `<!doctype html>
   .context-menu button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 7px 10px; border-radius: 4px; font-size: 0.85rem; }
   .context-menu button:hover { background: var(--bg); }
   .context-menu button.danger { color: var(--danger); }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); z-index: 1100; }
 </style>
 </head>
 <body>
@@ -370,6 +371,42 @@ const DASHBOARD_HTML = `<!doctype html>
   document.addEventListener('click', closeContextMenu);
   document.addEventListener('scroll', closeContextMenu, true);
 
+  function showToast(message) {
+    var toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(function () { toast.remove(); }, 2200);
+  }
+
+  // navigator.clipboard is only available in a "secure context" - https, or the
+  // literal hostnames localhost/127.0.0.1. Reaching this page via a LAN IP (Settings'
+  // Host field set to something other than 127.0.0.1) is plain http from a non-localhost
+  // hostname, so the Clipboard API is simply absent there - fall back to the older
+  // execCommand('copy') approach via a temporary textarea, which still works.
+  function copyToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      var ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch (err) {
+        // fall through - ok stays false, handled below
+      }
+      textarea.remove();
+      if (ok) resolve(); else reject(new Error('Copy command was not available'));
+    });
+  }
+
   function showContextMenu(x, y, player) {
     closeContextMenu();
     var menu = document.createElement('div');
@@ -380,7 +417,9 @@ const DASHBOARD_HTML = `<!doctype html>
     var copyBtn = document.createElement('button');
     copyBtn.textContent = 'Copy ID';
     copyBtn.addEventListener('click', function () {
-      navigator.clipboard.writeText(player.id);
+      copyToClipboard(player.id)
+        .then(function () { showToast('Copied ' + player.name + ' ID to clipboard'); })
+        .catch(function () { showToast('Could not copy automatically - ID: ' + player.id); });
     });
     menu.appendChild(copyBtn);
 
