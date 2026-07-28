@@ -668,9 +668,12 @@ const DASHBOARD_HTML = `<!doctype html>
     postServerAction('stop-update-restart');
   });
 
+  var SELECTED_SERVER_KEY = 'ark-dashboard-selected-server';
+
   function selectServer(id) {
     if (id === currentId) return;
     currentId = id;
+    try { localStorage.setItem(SELECTED_SERVER_KEY, id); } catch (err) { /* storage unavailable - not fatal */ }
     consoleEl.innerHTML = '';
     if (es) { es.close(); es = null; }
     loadPlayers();
@@ -695,7 +698,13 @@ const DASHBOARD_HTML = `<!doctype html>
       if (previousValue && servers.some(function (s) { return s.id === previousValue; })) {
         select.value = previousValue;
       }
-      if (!currentId && servers.length > 0) selectServer(servers[0].id);
+      if (!currentId && servers.length > 0) {
+        var remembered = null;
+        try { remembered = localStorage.getItem(SELECTED_SERVER_KEY); } catch (err) { /* storage unavailable - not fatal */ }
+        var toSelect = remembered && servers.some(function (s) { return s.id === remembered; }) ? remembered : servers[0].id;
+        select.value = toSelect;
+        selectServer(toSelect);
+      }
       renderStatus(servers.find(function (s) { return s.id === select.value; }));
     });
   }

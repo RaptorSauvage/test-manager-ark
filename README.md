@@ -165,6 +165,9 @@ dedicated servers running on the same machine.
     itself - Stop+Update+Restart already covers the interactive case) meant for external
     automation, e.g. a Discord bot on the same machine calling into this same API - see
     [Web dashboard API](#web-dashboard-api-for-bots--other-tools) below.
+  - The selected server is remembered across page reloads (via `localStorage`), so
+    reopening or refreshing the dashboard reselects the same server instead of always
+    falling back to the first one in the list.
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
     reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one
     specific local IP makes it reachable from other devices on your local network, which
