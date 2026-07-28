@@ -142,8 +142,15 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       Connection: 'keep-alive'
     })
     res.write('\n')
-    const caches = createLogEventCaches()
-    const stopWatching = watchLogFile(profile.installDir, (chunk) => {
+    let caches = createLogEventCaches()
+    const stopWatching = watchLogFile(profile.installDir, (chunk, rotated) => {
+      if (rotated) {
+        // The server was restarted (ARK opened a fresh log file) - tell the page to
+        // drop whatever it was showing from the previous session rather than mixing
+        // old and new session events together, and start resolving player names fresh.
+        caches = createLogEventCaches()
+        res.write('event: reset\ndata: {}\n\n')
+      }
       const disabled = getDisabledLabels()
       for (const event of parseLogChunk(chunk, caches)) {
         if (disabled.has(event.label)) continue
@@ -717,6 +724,7 @@ const DASHBOARD_HTML = `<!doctype html>
       .then(function (events) { events.forEach(addEvent); });
     es = new EventSource('/api/servers/' + encodeURIComponent(id) + '/events/stream');
     es.onmessage = function (msg) { addEvent(JSON.parse(msg.data)); };
+    es.addEventListener('reset', function () { consoleEl.innerHTML = ''; });
   }
 
   function loadServers() {

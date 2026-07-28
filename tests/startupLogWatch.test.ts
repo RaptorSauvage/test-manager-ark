@@ -122,7 +122,15 @@ describe('watchLogFile', () => {
     fs.writeFileSync(logPath, 'old session line 1\nold session line 2\n')
 
     const chunks: string[] = []
-    const stop = watchLogFile(tmpDir, (chunk) => chunks.push(chunk), 20)
+    const rotatedFlags: boolean[] = []
+    const stop = watchLogFile(
+      tmpDir,
+      (chunk, rotated) => {
+        chunks.push(chunk)
+        rotatedFlags.push(rotated)
+      },
+      20
+    )
     await wait(60) // let it capture the old file's size as the baseline first
 
     // Simulate a restart that completes within a single poll interval: the old log is
@@ -139,5 +147,21 @@ describe('watchLogFile', () => {
     const combined = chunks.join('')
     expect(combined).toContain('new session line 1')
     expect(combined).not.toContain('old session line')
+    expect(rotatedFlags).toContain(true)
+  })
+
+  it('reports rotated as false for ordinary growth of the same log file', async () => {
+    fs.writeFileSync(logPath, 'line 1\n')
+
+    const rotatedFlags: boolean[] = []
+    const stop = watchLogFile(tmpDir, (_chunk, rotated) => rotatedFlags.push(rotated), 20)
+    await wait(60)
+
+    fs.appendFileSync(logPath, 'line 2\n')
+    await wait(150)
+    stop()
+
+    expect(rotatedFlags.length).toBeGreaterThan(0)
+    expect(rotatedFlags.every((r) => r === false)).toBe(true)
   })
 })

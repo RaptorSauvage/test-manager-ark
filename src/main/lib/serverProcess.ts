@@ -39,7 +39,11 @@ export function computeTailReadStart(previousSize: number, currentSize: number):
  * previous session can't cause a false match immediately on start. Returns a function
  * that stops watching.
  */
-export function watchLogFile(installDir: string, onChunk: (chunk: string) => void, intervalMs = 2000): () => void {
+export function watchLogFile(
+  installDir: string,
+  onChunk: (chunk: string, rotated: boolean) => void,
+  intervalMs = 2000
+): () => void {
   const logPath = getLogFilePath(installDir)
   let previousSize: number | null = null
   let previousIno: number | null = null
@@ -76,7 +80,7 @@ export function watchLogFile(installDir: string, onChunk: (chunk: string) => voi
       })
       stream.on('error', () => {})
       stream.on('end', () => {
-        if (!stopped) onChunk(chunk)
+        if (!stopped) onChunk(chunk, rotated)
       })
     })
   }, intervalMs)
