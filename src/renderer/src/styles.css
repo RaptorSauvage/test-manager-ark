@@ -463,39 +463,21 @@ label.checkbox {
   max-width: 900px;
 }
 
-.rcon-tab .rcon-panel:first-child {
-  height: 50vh;
-}
-
-.rcon-tab .rcon-panel:last-child {
-  height: 30vh;
+.rcon-tab .rcon-panel {
+  height: 75vh;
 }
 
 .rcon-panel h3 {
   margin: 0 0 8px;
 }
 
-.rcon-history {
-  flex: 1;
-  overflow-y: auto;
-  font-size: 0.85rem;
-  margin-bottom: 8px;
-}
-
-.rcon-entry {
-  margin-bottom: 8px;
-}
-
-.rcon-command {
-  color: var(--accent);
-}
-
-.rcon-panel form {
+.rcon-input-row {
   display: flex;
   gap: 8px;
+  margin-top: 8px;
 }
 
-.rcon-panel input {
+.rcon-input-row input {
   flex: 1;
 }
 
@@ -555,6 +537,18 @@ label.checkbox {
 
 .log-event.log-event-tame {
   color: var(--ok);
+}
+
+.log-event.log-event-rcon-cmd {
+  color: var(--accent);
+}
+
+.log-event.log-event-rcon-resp {
+  color: var(--text);
+}
+
+.log-event.log-event-rcon-error {
+  color: var(--danger);
 }
 
 .mods-tab {

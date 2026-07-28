@@ -166,11 +166,9 @@ const DASHBOARD_HTML = `<!doctype html>
   button { cursor: pointer; }
   button:hover { border-color: var(--accent); }
   #status { color: var(--muted); font-size: 0.85rem; }
-  main { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 12px 16px; min-height: 0; }
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; min-height: 0; }
+  main { flex: 1; display: flex; flex-direction: column; padding: 12px 16px; min-height: 0; }
+  .panel { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; min-height: 0; }
   #console { flex: 1; overflow-y: auto; font-size: 0.82rem; font-family: Consolas, Menlo, monospace; min-height: 200px; }
-  #console-panel { flex: 1; }
-  #rcon-panel { height: 34vh; }
   .log-event { display: flex; gap: 8px; padding: 2px 0; }
   .log-event .ts { color: var(--muted); flex-shrink: 0; }
   .log-event .label { flex-shrink: 0; width: 60px; font-weight: 600; }
@@ -181,10 +179,9 @@ const DASHBOARD_HTML = `<!doctype html>
   .log-event-warn .label, .log-event-mission .label, .log-event-warn .text, .log-event-mission .text { color: var(--warn); }
   .log-event-kill .label, .log-event-kill .text { color: var(--danger); }
   .log-event-tame .label, .log-event-tame .text { color: var(--ok); }
-  #rcon-history { flex: 1; overflow-y: auto; font-size: 0.85rem; margin-bottom: 8px; }
-  .rcon-entry { margin-bottom: 8px; }
-  .rcon-command { color: var(--accent); }
-  #rcon-form { display: flex; gap: 8px; }
+  .log-event-rcon-cmd .label, .log-event-rcon-cmd .text { color: var(--accent); }
+  .log-event-rcon-error .label, .log-event-rcon-error .text { color: var(--danger); }
+  #rcon-form { display: flex; gap: 8px; margin-top: 8px; }
   #rcon-input { flex: 1; }
   .empty-state { color: var(--muted); font-size: 0.85rem; }
 </style>
@@ -196,11 +193,8 @@ const DASHBOARD_HTML = `<!doctype html>
   <span id="status"></span>
 </header>
 <main>
-  <section class="panel" id="console-panel">
+  <section class="panel">
     <div id="console"></div>
-  </section>
-  <section class="panel" id="rcon-panel">
-    <div id="rcon-history"></div>
     <form id="rcon-form">
       <input id="rcon-input" placeholder="e.g. Broadcast Hello world" autocomplete="off" />
       <button type="submit">Send</button>
@@ -216,7 +210,10 @@ const DASHBOARD_HTML = `<!doctype html>
   var statusEl = document.getElementById('status');
   var rconForm = document.getElementById('rcon-form');
   var rconInput = document.getElementById('rcon-input');
-  var rconHistory = document.getElementById('rcon-history');
+
+  function nowTs() {
+    return new Date().toTimeString().slice(0, 8);
+  }
 
   function addEvent(ev) {
     var div = document.createElement('div');
@@ -276,6 +273,7 @@ const DASHBOARD_HTML = `<!doctype html>
     var command = rconInput.value.trim();
     if (!command || !currentId) return;
     rconInput.value = '';
+    addEvent({ label: 'RCON', cls: 'rcon-cmd', text: '> ' + command, ts: nowTs() });
     fetch('/api/servers/' + encodeURIComponent(currentId) + '/rcon', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -283,14 +281,12 @@ const DASHBOARD_HTML = `<!doctype html>
     })
       .then(function (r) { return r.json(); })
       .then(function (result) {
-        var div = document.createElement('div');
-        div.className = 'rcon-entry';
-        var cmdDiv = document.createElement('div'); cmdDiv.className = 'rcon-command'; cmdDiv.textContent = '> ' + command;
-        var respDiv = document.createElement('div'); respDiv.className = 'rcon-response';
-        respDiv.textContent = result.ok ? (result.response || '(no response)') : ('Error: ' + result.error);
-        div.appendChild(cmdDiv); div.appendChild(respDiv);
-        rconHistory.appendChild(div);
-        rconHistory.scrollTop = rconHistory.scrollHeight;
+        addEvent({
+          label: 'RCON',
+          cls: result.ok ? 'rcon-resp' : 'rcon-error',
+          text: result.ok ? (result.response || '(no response)') : ('Error: ' + result.error),
+          ts: nowTs()
+        });
       });
   });
 

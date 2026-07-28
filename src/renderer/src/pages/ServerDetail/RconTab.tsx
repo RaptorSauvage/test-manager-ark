@@ -5,14 +5,12 @@ interface RconTabProps {
   profile: ServerProfile
 }
 
-interface RconHistoryEntry {
-  command: string
-  response: string
+function nowTs(): string {
+  return new Date().toTimeString().slice(0, 8)
 }
 
 export default function RconTab({ profile }: RconTabProps): JSX.Element {
   const [command, setCommand] = useState('')
-  const [rconHistory, setRconHistory] = useState<RconHistoryEntry[]>([])
   const [events, setEvents] = useState<LogEvent[]>([])
   const consoleRef = useRef<HTMLDivElement>(null)
 
@@ -40,20 +38,27 @@ export default function RconTab({ profile }: RconTabProps): JSX.Element {
     const trimmed = command.trim()
     if (!trimmed) return
     setCommand('')
+    setEvents((prev) => [...prev, { label: 'RCON', cls: 'rcon-cmd', text: `> ${trimmed}`, ts: nowTs() }])
     const result = await window.api.rcon.send(profile.id, trimmed)
-    setRconHistory((prev) => [
+    setEvents((prev) => [
       ...prev,
-      { command: trimmed, response: result.ok ? (result.response ?? '(no response)') : `Error: ${result.error}` }
+      {
+        label: 'RCON',
+        cls: result.ok ? 'rcon-resp' : 'rcon-error',
+        text: result.ok ? (result.response ?? '(no response)') : `Error: ${result.error}`,
+        ts: nowTs()
+      }
     ])
   }
 
   return (
     <div className="rcon-tab">
       <section className="rcon-panel">
-        <h3>Live console</h3>
+        <h3>Console &amp; RCON</h3>
         <p className="empty-state">
           Classified events parsed live from this server&apos;s own ShooterGame.log (connections, chat, tames,
-          kills, admin commands, saves, cryo, missions). Only shown while the server is running.
+          kills, admin commands, saves, cryo, missions) - only while the server is running - plus every RCON
+          command you send below and its response, right in the same feed.
         </p>
         <div className="log-event-list" ref={consoleRef}>
           {events.length === 0 && <p className="empty-state">No events yet.</p>}
@@ -65,19 +70,8 @@ export default function RconTab({ profile }: RconTabProps): JSX.Element {
             </div>
           ))}
         </div>
-      </section>
-
-      <section className="rcon-panel">
-        <h3>RCON console</h3>
-        <div className="rcon-history">
-          {rconHistory.map((entry, i) => (
-            <div key={i} className="rcon-entry">
-              <div className="rcon-command">&gt; {entry.command}</div>
-              <div className="rcon-response">{entry.response}</div>
-            </div>
-          ))}
-        </div>
         <form
+          className="rcon-input-row"
           onSubmit={(e) => {
             e.preventDefault()
             void sendCommand()
