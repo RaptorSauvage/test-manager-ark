@@ -12,7 +12,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     webDashboardEnabled: false,
     webDashboardPort: 8090,
     webDashboardHost: '127.0.0.1',
-    webDashboardDisabledLabels: []
+    webDashboardDisabledLabels: [],
+    launchOnStartup: false
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
   const [status, setStatus] = useState('')
@@ -76,6 +77,19 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
           Where <code>maps.json</code>, <code>customMaps.json</code>, and any future editable config files live.
           Leave blank to use the default ({defaultDataDir || 'Documents/ARK Server Manager'}). Changing this only
           affects where the app looks going forward - it won&apos;t move any existing files for you.
+        </p>
+
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={settings.launchOnStartup}
+            onChange={(e) => setSettings({ ...settings, launchOnStartup: e.target.checked })}
+          />
+          Start Manager when you log into Windows
+        </label>
+        <p className="empty-state">
+          Registers this app to launch automatically at login (minimized to the background isn&apos;t supported yet
+          - it opens its normal window). Save this form to apply the change immediately.
         </p>
 
         <label>

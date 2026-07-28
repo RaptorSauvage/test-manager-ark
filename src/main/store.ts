@@ -20,7 +20,8 @@ const store = new Store<StoreSchema>({
       webDashboardEnabled: false,
       webDashboardPort: 8090,
       webDashboardHost: '127.0.0.1',
-      webDashboardDisabledLabels: []
+      webDashboardDisabledLabels: [],
+      launchOnStartup: false
     },
     runningPids: {}
   }
@@ -73,6 +74,7 @@ export function getSettings(): AppSettings {
     webDashboardPort: 8090,
     webDashboardHost: '127.0.0.1',
     webDashboardDisabledLabels: [],
+    launchOnStartup: false,
     ...settings
   }
 }

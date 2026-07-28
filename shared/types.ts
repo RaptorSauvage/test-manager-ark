@@ -132,6 +132,9 @@ export interface AppSettings {
   webDashboardHost: string
   /** Event labels (JOIN, CHAT, ...) hidden from the web dashboard's live feed. */
   webDashboardDisabledLabels: string[]
+  /** Whether the Manager registers itself to launch automatically when you log into
+   *  Windows (or the equivalent on macOS/Linux), via Electron's own login-item API. */
+  launchOnStartup: boolean
 }
 
 export interface ServerStatus {

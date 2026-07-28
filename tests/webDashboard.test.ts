@@ -15,7 +15,8 @@ let mockSettings = {
   webDashboardEnabled: false,
   webDashboardPort: 47091,
   webDashboardHost: '127.0.0.1',
-  webDashboardDisabledLabels: [] as string[]
+  webDashboardDisabledLabels: [] as string[],
+  launchOnStartup: false
 }
 
 vi.mock('../src/main/store', () => ({

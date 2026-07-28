@@ -117,6 +117,11 @@ dedicated servers running on the same machine.
   running server): a single `config.json`, written by `electron-store` at Electron's
   standard per-OS user-data location. It's already plain JSON, just one shared file for
   everything rather than one file per profile like an exported profile.
+- **Start Manager when you log into Windows** — a checkbox in the app-wide Settings view,
+  backed by Electron's own `app.setLoginItemSettings`. Applied both right away when you
+  save Settings and again at every app launch, so it stays in sync even if the OS-level
+  registration was changed outside the app. Opens the normal window on login (no
+  minimized/background mode yet).
 - **Profile Management** — a dashboard header button opens a dedicated view to **Copy**
   or **Move** an entire server install (every file under its install folder - binaries,
   saves, configs, all of it) to a different folder:
