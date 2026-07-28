@@ -394,7 +394,7 @@ const DASHBOARD_HTML = `<!doctype html>
   }
   header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   header h1 { font-size: 1rem; margin: 0; }
-  select, input, button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 9px 14px; font-size: 1rem; }
+  select, input, button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 0.9rem; }
   button { cursor: pointer; }
   button:hover { border-color: var(--accent); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -431,6 +431,7 @@ const DASHBOARD_HTML = `<!doctype html>
   .log-event-join .player { color: #1f8a4c; }
   .log-event-leave .player { color: #a83239; }
   #rcon-form { display: flex; gap: 8px; margin-top: 8px; }
+  #rcon-form input, #rcon-form button { padding: 10px 14px; font-size: 1rem; border-radius: 8px; }
   #rcon-input { flex: 1; }
   .empty-state { color: var(--muted); font-size: 0.85rem; }
   #filters-bar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
