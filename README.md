@@ -339,13 +339,17 @@ tab:
   folder and shape as `maps.json`; the `None` entry - empty id - is part of the file
   itself, seeded on first run, so it's just another editable row rather than a hardcoded
   special case; everything else is added by you, since custom/modded maps are specific to
-  whatever Workshop mods you use). Picking an entry sets Mod Map below to that entry's id
-  and enables it; picking **None** disables Mod Map and falls back to using the Map
-  dropdown above as normal - which is also what actually happens in ARK:SA itself once
-  `-MapModID=` is set, since it takes over regardless of the base Map value.
+  whatever Workshop mods you use). It's a one-way quick-fill shortcut for Mod Map below,
+  not a mirror of it: picking an entry sets Mod Map to that entry's id and turns it on,
+  but the reverse never happens - typing a Mod Map id by hand, or switching Custom Map
+  back to **None**, never clears or disables Mod Map. The two can disagree (e.g. after
+  hand-editing Mod Map to something Custom Map doesn't know about) - that's expected,
+  since only Mod Map's own value/toggle actually feeds the launch args.
 - **Mod Map** - a separate "Enable Modded Map" toggle below Custom Map for Workshop-based
-  custom maps: paste the mod's Workshop id (or pick one via Custom Map above) and it's
-  passed as `-MapModID=<id>` alongside the regular Map value.
+  custom maps: paste the mod's Workshop id (or pick one via Custom Map above) and, while
+  enabled, it's passed as `-MapModID=<id>` alongside the regular Map value - which is also
+  what actually happens in ARK:SA itself once that flag is set, since it takes over
+  regardless of the base Map value.
 - Backups always read/write `ShooterGame/Saved/SavedArks/<map>` under the install
   directory - only the profile's own map subfolder, not the whole `SavedArks` folder (it
   can hold other maps' saves too, e.g. on a shared cluster install). This location is

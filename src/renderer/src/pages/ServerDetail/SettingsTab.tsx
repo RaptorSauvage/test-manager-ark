@@ -14,12 +14,27 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   const [refreshingMaps, setRefreshingMaps] = useState(false)
   const [customMaps, setCustomMaps] = useState<MapDefinition[]>([])
   const [refreshingCustomMaps, setRefreshingCustomMaps] = useState(false)
+  // Which Custom Map preset is picked, independent of Mod Map's own moddedMapId/
+  // moddedMapEnabled fields: picking a preset still writes into those (see
+  // selectCustomMap below), but the reverse never happens - typing directly into Mod Map,
+  // or picking "None" here, never touches the other field. Initialized once customMaps
+  // loads, from whichever preset (if any) matches the profile's current moddedMapId.
+  const [customMapSelection, setCustomMapSelection] = useState('')
 
   useEffect(() => {
     void refreshMaps()
     void refreshCustomMaps()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (form.moddedMapEnabled && customMaps.some((m) => m.id === form.moddedMapId)) {
+      setCustomMapSelection(form.moddedMapId)
+    }
+    // Only re-run when the presets list itself loads/changes - not on every Mod Map
+    // keystroke, so manually editing Mod Map never fights with this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customMaps])
 
   async function refreshMaps(): Promise<void> {
     setRefreshingMaps(true)
@@ -40,9 +55,11 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   }
 
   function selectCustomMap(value: string): void {
-    if (!value) {
-      setForm((prev) => ({ ...prev, moddedMapEnabled: false, moddedMapId: '' }))
-    } else {
+    setCustomMapSelection(value)
+    // Picking "None" only resets this dropdown's own selection - it deliberately never
+    // clears/disables Mod Map, so a manually-typed Mod Map value is never overwritten by
+    // switching this back to None.
+    if (value) {
       setForm((prev) => ({ ...prev, moddedMapEnabled: true, moddedMapId: value }))
     }
   }
@@ -135,15 +152,7 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
       <label>
         Custom Map
         <div className="path-input-row">
-          <select
-            value={form.moddedMapEnabled ? form.moddedMapId : ''}
-            onChange={(e) => selectCustomMap(e.target.value)}
-          >
-            {form.moddedMapEnabled &&
-              form.moddedMapId &&
-              !customMaps.some((m) => m.id === form.moddedMapId) && (
-                <option value={form.moddedMapId}>{form.moddedMapId}</option>
-              )}
+          <select value={customMapSelection} onChange={(e) => selectCustomMap(e.target.value)}>
             {customMaps.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.displayName}
@@ -160,8 +169,10 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           </button>
         </div>
         <p className="empty-state">
-          Pick from <code>customMaps.json</code>; pick None to just use the Map above. Edit that file to add your
-          own modded maps - it starts with only the None entry.
+          A quick-fill shortcut for Mod Map below, picked from <code>customMaps.json</code> - selecting one fills in
+          its id and turns Mod Map on. Picking None only resets this dropdown itself; it never clears or disables
+          Mod Map, so a manually-typed Mod Map value is safe from this. Edit that file to add your own modded maps -
+          it starts with only the None entry.
         </p>
       </label>
       <label>
