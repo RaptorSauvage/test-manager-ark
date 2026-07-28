@@ -141,7 +141,9 @@ dedicated servers running on the same machine.
     considers that server running. A "Show:" row of checkboxes lets you hide individual
     categories from the feed; this is server-side and persisted, applied to the backlog
     and the live stream alike, so a disabled category is simply never sent to the
-    browser.
+    browser. An **Events** button next to that row collapses/expands the whole checkbox
+    row (handy on a small screen); the collapsed/expanded state is remembered in
+    `localStorage`.
   - An RCON command box right below the feed - commands sent and their responses appear
     as entries in that same feed, in order.
   - An **online players** panel to the right, refreshed every few seconds via RCON
@@ -168,6 +170,10 @@ dedicated servers running on the same machine.
   - The selected server is remembered across page reloads (via `localStorage`), so
     reopening or refreshing the dashboard reselects the same server instead of always
     falling back to the first one in the list.
+  - Responsive layout below 700px wide (phones/small tablets): the console and online
+    players panels stack vertically instead of side by side, with the console on top and
+    the player list below it as a horizontally wrapping row of names instead of a tall
+    vertical list.
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
     reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one
     specific local IP makes it reachable from other devices on your local network, which

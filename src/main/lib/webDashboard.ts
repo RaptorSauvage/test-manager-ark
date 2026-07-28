@@ -393,7 +393,10 @@ const DASHBOARD_HTML = `<!doctype html>
   #rcon-form { display: flex; gap: 8px; margin-top: 8px; }
   #rcon-input { flex: 1; }
   .empty-state { color: var(--muted); font-size: 0.85rem; }
-  #filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--muted); margin-bottom: 10px; }
+  #filters-bar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+  #btn-toggle-filters { font-size: 0.8rem; padding: 4px 8px; flex-shrink: 0; }
+  #filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--muted); }
+  #filters-bar.collapsed #filters { display: none; }
   #filters label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
   #filters input { padding: 0; width: auto; }
   .content-row { flex: 1; display: flex; gap: 12px; min-height: 0; }
@@ -410,6 +413,16 @@ const DASHBOARD_HTML = `<!doctype html>
   .context-menu button:hover { background: var(--bg); }
   .context-menu button.danger { color: var(--danger); }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); z-index: 1100; }
+  @media (max-width: 700px) {
+    header { padding: 10px 12px; gap: 8px; }
+    main { padding: 8px 10px; }
+    select, #server-actions button { flex: 1 1 auto; }
+    .content-row { flex-direction: column; }
+    .console-panel { flex: 2; min-height: 260px; }
+    .players-panel { flex: none; width: 100%; max-width: none; max-height: 160px; }
+    #players-list { display: flex; flex-direction: row; flex-wrap: wrap; overflow-y: hidden; gap: 6px; }
+    .player-row { flex: 0 0 auto; background: var(--bg); border: 1px solid var(--border); }
+  }
 </style>
 </head>
 <body>
@@ -425,7 +438,10 @@ const DASHBOARD_HTML = `<!doctype html>
   <span id="status"></span>
 </header>
 <main>
-  <div id="filters"></div>
+  <div id="filters-bar">
+    <button id="btn-toggle-filters" type="button">Events ▾</button>
+    <div id="filters"></div>
+  </div>
   <div class="content-row">
     <section class="panel console-panel">
       <div id="console"></div>
@@ -453,6 +469,8 @@ const DASHBOARD_HTML = `<!doctype html>
   var rconForm = document.getElementById('rcon-form');
   var rconInput = document.getElementById('rcon-input');
   var filtersEl = document.getElementById('filters');
+  var filtersBarEl = document.getElementById('filters-bar');
+  var toggleFiltersBtn = document.getElementById('btn-toggle-filters');
   var playersListEl = document.getElementById('players-list');
   var playersCountEl = document.getElementById('players-count');
   var startBtn = document.getElementById('btn-start');
@@ -568,6 +586,22 @@ const DASHBOARD_HTML = `<!doctype html>
         });
       });
   }
+
+  var FILTERS_COLLAPSED_KEY = 'ark-dashboard-filters-collapsed';
+  var filtersCollapsed = false;
+  try { filtersCollapsed = localStorage.getItem(FILTERS_COLLAPSED_KEY) === '1'; } catch (err) { /* storage unavailable - not fatal */ }
+
+  function applyFiltersCollapsed() {
+    filtersBarEl.classList.toggle('collapsed', filtersCollapsed);
+    toggleFiltersBtn.textContent = filtersCollapsed ? 'Events ▸' : 'Events ▾';
+  }
+  applyFiltersCollapsed();
+
+  toggleFiltersBtn.addEventListener('click', function () {
+    filtersCollapsed = !filtersCollapsed;
+    try { localStorage.setItem(FILTERS_COLLAPSED_KEY, filtersCollapsed ? '1' : '0'); } catch (err) { /* storage unavailable - not fatal */ }
+    applyFiltersCollapsed();
+  });
 
   function loadLabelSettings() {
     fetch('/api/labelsettings').then(function (r) { return r.json(); }).then(function (settings) {
