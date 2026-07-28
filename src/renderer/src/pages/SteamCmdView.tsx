@@ -6,7 +6,12 @@ interface SteamCmdViewProps {
 }
 
 export default function SteamCmdView({ onBack }: SteamCmdViewProps): JSX.Element {
-  const [settings, setSettings] = useState<AppSettings>({ steamCmdPath: '', dataDir: '' })
+  const [settings, setSettings] = useState<AppSettings>({
+    steamCmdPath: '',
+    dataDir: '',
+    webDashboardEnabled: false,
+    webDashboardPort: 8090
+  })
   const [status, setStatus] = useState('')
   const [managedPath, setManagedPath] = useState<string | null>(null)
   const [installing, setInstalling] = useState(false)

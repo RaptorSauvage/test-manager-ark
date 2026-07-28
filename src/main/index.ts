@@ -1,7 +1,8 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
-import { listProfiles, getRunningPids } from './store'
+import { listProfiles, getRunningPids, getSettings } from './store'
+import { applyWebDashboardSettings } from './lib/webDashboard'
 import { applyBackupSchedule } from './lib/schedule'
 import { applyScheduledRestart, applyScheduledDinoWipe } from './lib/scheduledActions'
 import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
@@ -57,6 +58,7 @@ app.whenReady().then(() => {
   adoptPersistedProcesses(profiles, getRunningPids())
   registerPlayerBackupWatch()
   registerLogEventCapture()
+  applyWebDashboardSettings(getSettings())
 
   for (const profile of profiles) {
     applyBackupSchedule(profile)

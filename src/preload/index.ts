@@ -97,6 +97,9 @@ const api: Api = {
       ipcRenderer.on(IPC.serverLogEvent, listener)
       return () => ipcRenderer.removeListener(IPC.serverLogEvent, listener)
     }
+  },
+  webDashboard: {
+    getStatus: () => ipcRenderer.invoke(IPC.webDashboardStatus)
   }
 }
 

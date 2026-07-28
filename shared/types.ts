@@ -112,6 +112,10 @@ export interface AppSettings {
    * ones). Empty means "use the default" (Documents/ARK Server Manager).
    */
   dataDir: string
+  /** Whether the local browser-accessible web dashboard (live console + RCON) is running. */
+  webDashboardEnabled: boolean
+  /** Port the web dashboard listens on - always bound to 127.0.0.1 only, never other interfaces. */
+  webDashboardPort: number
 }
 
 export interface ServerStatus {
@@ -203,7 +207,9 @@ export const IPC = {
   officialServerStatusGet: 'official-server-status:get',
 
   serverLogEventsList: 'server:log-events-list',
-  serverLogEvent: 'server:log-event'
+  serverLogEvent: 'server:log-event',
+
+  webDashboardStatus: 'web-dashboard:status'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -312,5 +318,8 @@ export interface Api {
   logEvents: {
     list: (profileId: string) => Promise<LogEvent[]>
     onEvent: (callback: (profileId: string, event: LogEvent) => void) => () => void
+  }
+  webDashboard: {
+    getStatus: () => Promise<{ running: boolean; error: string | null }>
   }
 }

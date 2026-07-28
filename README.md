@@ -133,7 +133,19 @@ dedicated servers running on the same machine.
   Documents/ARK Server Manager), the folder `maps.json`, `customMaps.json`, the managed
   SteamCMD install, per-profile update logs, and any future editable/generated files live
   in. Changing it only affects where the app looks going forward - it doesn't move
-  existing files to the new folder for you.
+  existing files to the new folder for you. This is also where the **web dashboard** is
+  enabled: a browser-accessible page with the same content as the Console & RCON tab
+  (live event feed + RCON command box, one server at a time), for when it's more
+  convenient to check on a server from a browser tab than to bring the whole app to the
+  front. It's a plain HTTP server built into the Manager itself (no separate process),
+  always bound to `127.0.0.1` only regardless of the configured port - reachable from a
+  browser on this same machine only, not from other devices on the network, since it has
+  no login of its own and full RCON/admin control of your servers is too much to leave
+  unauthenticated on anything reachable beyond loopback. There's no built-in remote-access
+  option in this version; ask if you need to reach it from another device (e.g. a phone)
+  and that can be added deliberately, with real authentication, rather than by widening
+  what this already listens on. Enabling/disabling or changing the port takes effect
+  immediately on Save, no restart needed.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), No Transfer From Filtering (`-NoTransferFromFiltering`), and External IP
@@ -199,7 +211,7 @@ Other scripts:
 ```bash
 npm run typecheck   # type-check main/preload/renderer
 npm run build        # production build into out/
-npm test             # unit tests for the pure logic (launch args incl. cluster flags, RCON parsing, backup rotation, profile migration, SteamCMD args/paths, process adoption, startup log-file watching, live console event parsing)
+npm test             # unit tests for the pure logic (launch args incl. cluster flags, RCON parsing, backup rotation, profile migration, SteamCMD args/paths, process adoption, startup log-file watching, live console event parsing, web dashboard HTTP routes)
 npm run dist          # package a Windows installer + portable .exe into release/ (must be run on Windows)
 ```
 
