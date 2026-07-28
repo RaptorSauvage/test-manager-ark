@@ -6,7 +6,13 @@ import { listProfiles, getSettings, saveSettings } from '../store'
 import { getStatus, getLogFilePath, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches } from './logEvents'
-import { doStartServer, doStopServer, doRestartServer, doUpdateServer, doStopUpdateRestart } from './serverActions'
+import {
+  doStartServer,
+  doStopServerConfirmSave,
+  doRestartServerConfirmSave,
+  doUpdateServer,
+  doStopUpdateRestart
+} from './serverActions'
 
 let server: http.Server | null = null
 let lastError: string | null = null
@@ -95,7 +101,7 @@ function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown
   })
 }
 
-function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://localhost')
   const path = url.pathname
 
@@ -246,11 +252,14 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   }
 
   // Stop/restart/stop+update+restart can take a while (RCON SaveWorld+DoExit, a
-  // multi-minute SteamCMD download) - respond immediately once the action is kicked off
-  // rather than holding the request open, same as the desktop app's own buttons: the
-  // periodic /api/servers poll picks up the state changes (stopping/updating/starting/
-  // running) as they happen. A failure past this point is logged server-side since
-  // there's no request left to answer by then.
+  // multi-minute SteamCMD download) - respond once SaveWorld's outcome is confirmed
+  // rather than holding the request open for the whole thing, same as the desktop app's
+  // own buttons: the periodic /api/servers poll picks up the state changes (stopping/
+  // updating/starting/running) as they happen. A failure past this point is logged
+  // server-side since there's no request left to answer by then. Responding only once
+  // SaveWorld is confirmed (rather than the instant the action is merely kicked off)
+  // means `saved` in the response is meaningful - a caller polling too fast right after
+  // a bare "ok" can't mistake "we started stopping it" for "it actually saved first".
   const stopMatch = path.match(/^\/api\/servers\/([^/]+)\/stop$/)
   if (req.method === 'POST' && stopMatch) {
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopMatch[1]))
@@ -258,8 +267,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
-    doStopServer(profile).catch((err: Error) => console.error(`Web dashboard stop failed for ${profile.name}:`, err.message))
-    sendJson(res, 200, { ok: true })
+    const { saved } = await doStopServerConfirmSave(profile)
+    sendJson(res, 200, { ok: true, saved })
     return
   }
 
@@ -270,10 +279,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
-    doRestartServer(profile).catch((err: Error) =>
-      console.error(`Web dashboard restart failed for ${profile.name}:`, err.message)
-    )
-    sendJson(res, 200, { ok: true })
+    const { saved } = await doRestartServerConfirmSave(profile)
+    sendJson(res, 200, { ok: true, saved })
     return
   }
 
@@ -729,7 +736,11 @@ const DASHBOARD_HTML = `<!doctype html>
     fetch('/api/servers/' + encodeURIComponent(currentId) + '/' + action, { method: 'POST' })
       .then(function (r) { return r.json(); })
       .then(function (result) {
-        if (!result.ok) showToast('Error: ' + result.error);
+        if (!result.ok) {
+          showToast('Error: ' + result.error);
+        } else if (result.saved === false) {
+          showToast('Stopped without a confirmed save - RCON may be unreachable');
+        }
         loadServers();
       })
       .catch(function () { showToast('Request failed'); });

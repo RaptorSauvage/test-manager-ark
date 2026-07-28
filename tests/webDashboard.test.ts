@@ -51,7 +51,9 @@ vi.mock('../src/main/lib/rcon', async (importOriginal) => {
 vi.mock('../src/main/lib/serverActions', () => ({
   doStartServer: vi.fn((profile: { id: string }) => ({ profileId: profile.id, state: 'starting' })),
   doStopServer: vi.fn(async (profile: { id: string }) => ({ profileId: profile.id, state: 'stopping' })),
+  doStopServerConfirmSave: vi.fn(async (_profile: { id: string }) => ({ saved: true })),
   doRestartServer: vi.fn(async (profile: { id: string }) => ({ profileId: profile.id, state: 'starting' })),
+  doRestartServerConfirmSave: vi.fn(async (_profile: { id: string }) => ({ saved: true })),
   doUpdateServer: vi.fn(async () => {}),
   doStopUpdateRestart: vi.fn(async () => {})
 }))
@@ -203,18 +205,25 @@ describe('web dashboard HTTP server', () => {
     expect(JSON.parse(res.body)).toEqual({ ok: false, error: 'Cannot start the server while an update is in progress.' })
   })
 
-  it('stops a server without waiting for it to actually finish stopping', async () => {
+  it('stops a server, waiting only for SaveWorld to be confirmed rather than the full shutdown', async () => {
     const res = await request('/api/servers/p1/stop', { method: 'POST' })
     expect(res.status).toBe(200)
-    expect(JSON.parse(res.body)).toEqual({ ok: true })
-    expect(serverActions.doStopServer).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
+    expect(JSON.parse(res.body)).toEqual({ ok: true, saved: true })
+    expect(serverActions.doStopServerConfirmSave).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
   })
 
-  it('restarts a server', async () => {
+  it('reports saved: false when a stop could not confirm SaveWorld', async () => {
+    vi.mocked(serverActions.doStopServerConfirmSave).mockResolvedValueOnce({ saved: false })
+    const res = await request('/api/servers/p1/stop', { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ ok: true, saved: false })
+  })
+
+  it('restarts a server, waiting only for SaveWorld to be confirmed rather than the full restart', async () => {
     const res = await request('/api/servers/p1/restart', { method: 'POST' })
     expect(res.status).toBe(200)
-    expect(JSON.parse(res.body)).toEqual({ ok: true })
-    expect(serverActions.doRestartServer).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
+    expect(JSON.parse(res.body)).toEqual({ ok: true, saved: true })
+    expect(serverActions.doRestartServerConfirmSave).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
   })
 
   it('kicks off a standalone update', async () => {

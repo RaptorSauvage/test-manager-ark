@@ -364,34 +364,74 @@ async function waitForExitOrKill(entry: RunningServer, profileId: string, graceM
   finalizeStopped(profileId)
 }
 
+export interface StopPhases {
+  /** Resolves as soon as SaveWorld's RCON outcome is known - true only if it was
+   *  confirmed before DoExit was sent. Lets a caller that just wants proof a save was
+   *  attempted return without waiting out the rest of the shutdown below. */
+  saved: Promise<boolean>
+  /** Resolves once the process has actually exited (or been force-killed after the
+   *  grace period) - the same completion `stopServer` itself waits for. */
+  finished: Promise<ServerStatus>
+}
+
 /**
- * Graceful shutdown: SaveWorld, wait for its RCON confirmation, then DoExit.
- * DoExit is only sent once SaveWorld is confirmed - if RCON is unreachable or
- * the save fails, there is no safe orderly path, so we skip straight to the
- * grace-period/kill fallback instead of exiting on an unconfirmed save.
+ * Graceful shutdown, split into two independently-awaitable phases: SaveWorld, wait for
+ * its RCON confirmation, then DoExit. DoExit is only sent once SaveWorld is confirmed -
+ * if RCON is unreachable or the save fails, there is no safe orderly path, so we skip
+ * straight to the grace-period/kill fallback instead of exiting on an unconfirmed save.
  */
+export function stopServerPhased(
+  profile: ServerProfile,
+  graceMs = 15000,
+  transientState: 'stopping' | 'restarting' = 'stopping'
+): StopPhases {
+  const entry = running.get(profile.id)
+  if (!entry) {
+    return {
+      saved: Promise.resolve(false),
+      finished: Promise.resolve({ profileId: profile.id, state: 'stopped' })
+    }
+  }
+
+  emitStatus({ ...entry.status, state: transientState })
+
+  let resolveSaved!: (saved: boolean) => void
+  const saved = new Promise<boolean>((resolve) => {
+    resolveSaved = resolve
+  })
+
+  const finished = (async () => {
+    const saveResult = await sendRconCommand(profile, 'SaveWorld')
+    resolveSaved(saveResult.ok)
+    if (saveResult.ok) {
+      await sendRconCommand(profile, 'DoExit')
+    }
+    await waitForExitOrKill(entry, profile.id, graceMs)
+    return getStatus(profile.id)
+  })()
+
+  return { saved, finished }
+}
+
 export async function stopServer(
   profile: ServerProfile,
   graceMs = 15000,
   transientState: 'stopping' | 'restarting' = 'stopping'
 ): Promise<ServerStatus> {
-  const entry = running.get(profile.id)
-  if (!entry) return { profileId: profile.id, state: 'stopped' }
+  return stopServerPhased(profile, graceMs, transientState).finished
+}
 
-  emitStatus({ ...entry.status, state: transientState })
-
-  const saveResult = await sendRconCommand(profile, 'SaveWorld')
-  if (saveResult.ok) {
-    await sendRconCommand(profile, 'DoExit')
-  }
-
-  await waitForExitOrKill(entry, profile.id, graceMs)
-  return getStatus(profile.id)
+/** Same restart, split the same way as stopServerPhased - `saved` resolves once the
+ *  shutdown's SaveWorld is confirmed, `finished` once the new process has actually
+ *  spawned back up. */
+export function restartServerPhased(profile: ServerProfile): StopPhases {
+  const { saved, finished: stopFinished } = stopServerPhased(profile, 15000, 'restarting')
+  const finished = stopFinished.then(() => startServer(profile))
+  return { saved, finished }
 }
 
 export async function restartServer(profile: ServerProfile): Promise<ServerStatus> {
-  await stopServer(profile, 15000, 'restarting')
-  return startServer(profile)
+  return restartServerPhased(profile).finished
 }
 
 /** Immediately force-kills the process with no SaveWorld/DoExit - current world state since the last save is lost. */

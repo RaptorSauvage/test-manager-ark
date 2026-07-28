@@ -216,11 +216,13 @@ dedicated servers running on the same machine.
     into `src/main/lib/serverActions.ts`, so starting/stopping the CPU/RAM monitor stays
     in sync regardless of which UI triggered it). Buttons enable/disable based on the
     server's current state, same rules as the desktop app (Start only when stopped,
-    Stop/Restart only when running, Stop+Update+Restart disabled mid-update). Stop,
-    Restart, and Stop+Update+Restart respond immediately once kicked off rather than
-    waiting for completion - a SteamCMD update alone can take minutes - so the button
-    doesn't hang; the status line and player panel simply update on their next poll as
-    the state actually changes (stopping → updating → starting → running). There's also
+    Stop/Restart only when running, Stop+Update+Restart disabled mid-update). Stop and
+    Restart wait only for SaveWorld's RCON outcome before responding (usually a couple of
+    seconds) - a toast warns if that couldn't be confirmed - then the rest keeps running
+    in the background; Stop+Update+Restart responds immediately once kicked off without
+    waiting for any of it, since a SteamCMD update alone can take minutes. Either way the
+    button doesn't hang; the status line and player panel simply update on their next
+    poll as the state actually changes (stopping → updating → starting → running). There's also
     a standalone update endpoint (`POST /api/servers/:id/update`, no button on the page
     itself - Stop+Update+Restart already covers the interactive case) meant for external
     automation, e.g. a Discord bot on the same machine calling into this same API - see
@@ -371,8 +373,8 @@ appropriate for `127.0.0.1` or a trusted LAN, never the open internet.
 | --- | --- | --- | --- | --- |
 | GET | `/api/servers` | — | `[{ id, name, state, players, cpu, memoryMB }]` | `id` is what every other endpoint below expects |
 | POST | `/api/servers/:id/start` | — | `{ ok, error? }` | 400 with `error` if it can't start right now (e.g. an update is running) |
-| POST | `/api/servers/:id/stop` | — | `{ ok: true }` | Returns immediately; state changes (`stopping` → `stopped`) show up in the next `GET /api/servers` poll |
-| POST | `/api/servers/:id/restart` | — | `{ ok: true }` | Same - returns immediately, doesn't wait for the restart to finish |
+| POST | `/api/servers/:id/stop` | — | `{ ok: true, saved: boolean }` | Waits for SaveWorld's RCON outcome (`saved`) before responding, then returns - the rest of the shutdown keeps running in the background; state changes (`stopping` → `stopped`) show up in the next `GET /api/servers` poll. `saved: false` means RCON was unreachable or the save failed, so it skipped straight to the grace-period/force-kill fallback |
+| POST | `/api/servers/:id/restart` | — | `{ ok: true, saved: boolean }` | Same as stop above, for the shutdown half - responds once `saved` is known, then the restart (including starting back up) continues in the background |
 | POST | `/api/servers/:id/update` | — | `{ ok: true }` | Runs the SteamCMD update alone; fails quietly (logged in the Manager's own console) if the server is currently running - stop it first |
 | POST | `/api/servers/:id/stop-update-restart` | — | `{ ok: true }` | Stops if running, updates, starts back up - the single-server "do everything" action |
 | POST | `/api/servers/:id/rcon` | `{ "command": "Broadcast hello" }` | `{ ok, response? , error? }` | Same RCON connection the page's own console box uses |
