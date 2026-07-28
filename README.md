@@ -143,11 +143,14 @@ dedicated servers running on the same machine.
     and the live stream alike, so a disabled category is simply never sent to the
     browser. An **Events** button next to that row collapses/expands the whole checkbox
     row (handy on a small screen); the collapsed/expanded state is remembered in
-    `localStorage`. When the server restarts - by any means, not just a click from this
-    page - ARK opens a brand new `ShooterGame.log`; the feed detects that (by the log
-    file's inode changing, not just its size, so a fast restart can't be missed) and
-    clears the console instead of mixing the previous session's lines in with the new
-    one's.
+    `localStorage`. Whenever the Manager (re)starts that server - Start, Restart, or the
+    restart step of Stop+Update+Restart, from this page, the desktop app, or a bot calling
+    the [API](#web-dashboard-api-for-bots--other-tools) - the feed clears and starts fresh
+    for the new session instead of mixing its lines in with the previous one's, since the
+    Manager knows the exact moment it spawns a new process for that profile. As a backup
+    for a restart the Manager didn't itself trigger, the feed also clears when it notices
+    `ShooterGame.log` itself has been replaced (its inode changed, not just its size, so a
+    fast restart can't be missed).
   - An RCON command box right below the feed - commands sent and their responses appear
     as entries in that same feed, in order.
   - An **online players** panel to the right, refreshed every few seconds via RCON

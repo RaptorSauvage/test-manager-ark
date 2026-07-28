@@ -58,6 +58,7 @@ vi.mock('../src/main/lib/serverActions', () => ({
 
 import { startWebDashboard, stopWebDashboard, getWebDashboardStatus } from '../src/main/lib/webDashboard'
 import * as serverActions from '../src/main/lib/serverActions'
+import { serverEvents } from '../src/main/lib/serverProcess'
 
 const PORT = 47091
 
@@ -73,6 +74,37 @@ function request(
     })
     req.on('error', reject)
     req.end(options.body)
+  })
+}
+
+/** Opens a persistent SSE connection and lets a test wait for a specific chunk of raw
+ *  wire content to show up (e.g. an `event: reset` line), without waiting for the
+ *  response to end - which for this route, by design, never happens on its own. */
+function openStream(reqPath: string): Promise<{ waitFor: (needle: string, timeoutMs?: number) => Promise<void>; destroy: () => void }> {
+  return new Promise((resolveOpen) => {
+    let buffer = ''
+    let waiters: Array<{ needle: string; resolve: () => void }> = []
+    const req = http.request({ host: '127.0.0.1', port: PORT, path: reqPath }, (res) => {
+      res.on('data', (chunk) => {
+        buffer += chunk
+        waiters = waiters.filter(({ needle, resolve }) => {
+          if (!buffer.includes(needle)) return true
+          resolve()
+          return false
+        })
+      })
+      resolveOpen({
+        waitFor(needle: string, timeoutMs = 2000): Promise<void> {
+          if (buffer.includes(needle)) return Promise.resolve()
+          return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error(`Timed out waiting for "${needle}"`)), timeoutMs)
+            waiters.push({ needle, resolve: () => { clearTimeout(timer); resolve() } })
+          })
+        },
+        destroy: () => req.destroy()
+      })
+    })
+    req.end()
   })
 }
 
@@ -225,6 +257,20 @@ describe('web dashboard HTTP server', () => {
   it('404s an unknown route', async () => {
     const res = await request('/nope')
     expect(res.status).toBe(404)
+  })
+
+  it('emits a reset event on the live stream when the Manager (re)starts that server', async () => {
+    const stream = await openStream('/api/servers/p1/events/stream')
+    serverEvents.emit('status', { profileId: 'p1', state: 'starting' })
+    await stream.waitFor('event: reset')
+    stream.destroy()
+  })
+
+  it('does not reset a stream for a status change belonging to a different server', async () => {
+    const stream = await openStream('/api/servers/p1/events/stream')
+    serverEvents.emit('status', { profileId: 'p2', state: 'starting' })
+    await expect(stream.waitFor('event: reset', 150)).rejects.toThrow()
+    stream.destroy()
   })
 
   it('reports the host it is bound to', () => {

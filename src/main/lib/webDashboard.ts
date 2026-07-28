@@ -1,9 +1,9 @@
 import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
-import type { AppSettings, LogEvent } from '@shared/types'
+import type { AppSettings, LogEvent, ServerStatus } from '@shared/types'
 import { listProfiles, getSettings, saveSettings } from '../store'
-import { getStatus, getLogFilePath, watchLogFile } from './serverProcess'
+import { getStatus, getLogFilePath, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches } from './logEvents'
 import { doStartServer, doStopServer, doRestartServer, doUpdateServer, doStopUpdateRestart } from './serverActions'
@@ -142,12 +142,20 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       Connection: 'keep-alive'
     })
     res.write('\n')
+    // Captured into their own consts so the nested function declarations below (whose
+    // closures TypeScript can't narrow the same way it narrows inline callbacks) don't
+    // need to re-check profile for undefined on every use.
+    const profileId = profile.id
+    const installDir = profile.installDir
+
     let caches = createLogEventCaches()
-    const stopWatching = watchLogFile(profile.installDir, (chunk, rotated) => {
+
+    function onLogChunk(chunk: string, rotated: boolean): void {
       if (rotated) {
-        // The server was restarted (ARK opened a fresh log file) - tell the page to
-        // drop whatever it was showing from the previous session rather than mixing
-        // old and new session events together, and start resolving player names fresh.
+        // ARK opened a fresh log file (detected here by its inode changing) - drop
+        // whatever the page was showing from the previous session and start resolving
+        // player names fresh. Kept as a backup signal alongside the 'starting' status
+        // hook below, for a server the Manager didn't itself (re)start.
         caches = createLogEventCaches()
         res.write('event: reset\ndata: {}\n\n')
       }
@@ -156,8 +164,30 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         if (disabled.has(event.label)) continue
         res.write(`data: ${JSON.stringify(event)}\n\n`)
       }
+    }
+
+    let stopWatching = watchLogFile(installDir, onLogChunk)
+
+    // The log file's own rotation isn't a reliable enough signal by itself - whether and
+    // when ARK actually replaces the file on disk isn't consistently observable across
+    // platforms. Spawning the process is something the Manager does itself, though, so
+    // treat that as the definitive "a new session is starting" moment whenever it's the
+    // Manager doing the (re)starting: drop the old tailer and start a fresh one so it
+    // re-establishes its own read position from scratch instead of an offset that could
+    // belong to a session that no longer exists.
+    function onStatus(status: ServerStatus): void {
+      if (status.profileId !== profileId || status.state !== 'starting') return
+      caches = createLogEventCaches()
+      res.write('event: reset\ndata: {}\n\n')
+      stopWatching()
+      stopWatching = watchLogFile(installDir, onLogChunk)
+    }
+    serverEvents.on('status', onStatus)
+
+    req.on('close', () => {
+      stopWatching()
+      serverEvents.off('status', onStatus)
     })
-    req.on('close', stopWatching)
     return
   }
 
