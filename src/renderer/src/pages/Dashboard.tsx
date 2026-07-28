@@ -4,6 +4,7 @@ import { useServerStatuses } from '../lib/useServerStatuses'
 import { createDefaultProfile } from '../lib/profile'
 import type { TabKey } from './ServerDetail'
 import OfficialServerStatusPanel from '../components/OfficialServerStatusPanel'
+import UpdateCheckPanel from '../components/UpdateCheckPanel'
 
 interface DashboardProps {
   profiles: ServerProfile[]
@@ -401,6 +402,7 @@ export default function Dashboard({
 
         <aside className="dashboard-sidebar">
           <OfficialServerStatusPanel />
+          <UpdateCheckPanel profileIds={profiles.map((p) => p.id)} />
         </aside>
       </div>
     </div>
