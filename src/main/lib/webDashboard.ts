@@ -370,6 +370,8 @@ const DASHBOARD_HTML = `<!doctype html>
   #server-actions button.danger:hover:not(:disabled) { background: var(--danger); color: #14161a; }
   #server-actions button.info { border-color: var(--accent); color: var(--accent); }
   #server-actions button.info:hover:not(:disabled) { background: var(--accent); color: #14161a; }
+  #server-actions button.warn { border-color: var(--warn); color: var(--warn); }
+  #server-actions button.warn:hover:not(:disabled) { background: var(--warn); color: #14161a; }
   main { flex: 1; display: flex; flex-direction: column; padding: 12px 16px; min-height: 0; }
   .panel { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; min-height: 0; }
   #console { flex: 1; overflow-y: auto; font-size: 0.82rem; font-family: Consolas, Menlo, monospace; min-height: 200px; }
@@ -417,8 +419,8 @@ const DASHBOARD_HTML = `<!doctype html>
   <div id="server-actions">
     <button id="btn-start" class="ok">Start</button>
     <button id="btn-stop" class="danger">Stop</button>
-    <button id="btn-restart">Restart</button>
-    <button id="btn-stop-update-restart" class="info">Stop+Update+Restart</button>
+    <button id="btn-restart" class="warn">Restart</button>
+    <button id="btn-stop-update-restart" class="info">Update Restart</button>
   </div>
   <span id="status"></span>
 </header>
