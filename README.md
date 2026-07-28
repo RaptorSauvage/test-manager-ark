@@ -146,7 +146,21 @@ dedicated servers running on the same machine.
     as entries in that same feed, in order.
   - An **online players** panel to the right, refreshed every few seconds via RCON
     `ListPlayers`. Right-click a player for **Copy ID** (their EOS unique id, to the
-    clipboard) or **Kick** (red, asks to confirm, then sends RCON `KickPlayer <id>`).
+    clipboard - falls back to a `document.execCommand`-based copy when the page isn't in
+    a secure context, e.g. reached via a LAN IP over plain http, since `navigator.clipboard`
+    isn't available there) or **Kick** (red, asks to confirm, then sends RCON
+    `KickPlayer <id>`).
+  - **Start / Stop / Restart / Stop+Update+Restart** buttons in the header, for the
+    currently selected server - the same actions as the desktop app's own per-profile
+    buttons and bulk "…All" actions, reusing the exact same underlying logic (both call
+    into `src/main/lib/serverActions.ts`, so starting/stopping the CPU/RAM monitor stays
+    in sync regardless of which UI triggered it). Buttons enable/disable based on the
+    server's current state, same rules as the desktop app (Start only when stopped,
+    Stop/Restart only when running, Stop+Update+Restart disabled mid-update). Stop,
+    Restart, and Stop+Update+Restart respond immediately once kicked off rather than
+    waiting for completion - a SteamCMD update alone can take minutes - so the button
+    doesn't hang; the status line and player panel simply update on their next poll as
+    the state actually changes (stopping → updating → starting → running).
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
     reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one
     specific local IP makes it reachable from other devices on your local network, which

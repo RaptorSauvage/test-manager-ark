@@ -6,6 +6,7 @@ import { listProfiles, getSettings, saveSettings } from '../store'
 import { getStatus, getLogFilePath, watchLogFile } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches } from './logEvents'
+import { doStartServer, doStopServer, doRestartServer, doStopUpdateRestart } from './serverActions'
 
 let server: http.Server | null = null
 let lastError: string | null = null
@@ -191,6 +192,68 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return
   }
 
+  const startMatch = path.match(/^\/api\/servers\/([^/]+)\/start$/)
+  if (req.method === 'POST' && startMatch) {
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(startMatch[1]))
+    if (!profile) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    try {
+      doStartServer(profile)
+      sendJson(res, 200, { ok: true })
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: (err as Error).message })
+    }
+    return
+  }
+
+  // Stop/restart/stop+update+restart can take a while (RCON SaveWorld+DoExit, a
+  // multi-minute SteamCMD download) - respond immediately once the action is kicked off
+  // rather than holding the request open, same as the desktop app's own buttons: the
+  // periodic /api/servers poll picks up the state changes (stopping/updating/starting/
+  // running) as they happen. A failure past this point is logged server-side since
+  // there's no request left to answer by then.
+  const stopMatch = path.match(/^\/api\/servers\/([^/]+)\/stop$/)
+  if (req.method === 'POST' && stopMatch) {
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopMatch[1]))
+    if (!profile) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    doStopServer(profile).catch((err: Error) => console.error(`Web dashboard stop failed for ${profile.name}:`, err.message))
+    sendJson(res, 200, { ok: true })
+    return
+  }
+
+  const restartMatch = path.match(/^\/api\/servers\/([^/]+)\/restart$/)
+  if (req.method === 'POST' && restartMatch) {
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(restartMatch[1]))
+    if (!profile) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    doRestartServer(profile).catch((err: Error) =>
+      console.error(`Web dashboard restart failed for ${profile.name}:`, err.message)
+    )
+    sendJson(res, 200, { ok: true })
+    return
+  }
+
+  const stopUpdateRestartMatch = path.match(/^\/api\/servers\/([^/]+)\/stop-update-restart$/)
+  if (req.method === 'POST' && stopUpdateRestartMatch) {
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopUpdateRestartMatch[1]))
+    if (!profile) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    doStopUpdateRestart(profile).catch((err: Error) =>
+      console.error(`Web dashboard stop+update+restart failed for ${profile.name}:`, err.message)
+    )
+    sendJson(res, 200, { ok: true })
+    return
+  }
+
   const rconMatch = path.match(/^\/api\/servers\/([^/]+)\/rcon$/)
   if (req.method === 'POST' && rconMatch) {
     const profileId = decodeURIComponent(rconMatch[1])
@@ -285,7 +348,12 @@ const DASHBOARD_HTML = `<!doctype html>
   select, input, button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 0.9rem; }
   button { cursor: pointer; }
   button:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button:disabled:hover { border-color: var(--border); }
   #status { color: var(--muted); font-size: 0.85rem; }
+  #server-actions { display: flex; gap: 6px; }
+  #server-actions button.warn { border-color: var(--warn); color: var(--warn); }
+  #server-actions button.warn:hover:not(:disabled) { background: var(--warn); color: #14161a; }
   main { flex: 1; display: flex; flex-direction: column; padding: 12px 16px; min-height: 0; }
   .panel { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; min-height: 0; }
   #console { flex: 1; overflow-y: auto; font-size: 0.82rem; font-family: Consolas, Menlo, monospace; min-height: 200px; }
@@ -330,6 +398,12 @@ const DASHBOARD_HTML = `<!doctype html>
 <header>
   <h1>ARK Server Manager</h1>
   <select id="server-select"></select>
+  <div id="server-actions">
+    <button id="btn-start">Start</button>
+    <button id="btn-stop">Stop</button>
+    <button id="btn-restart">Restart</button>
+    <button id="btn-stop-update-restart" class="warn">Stop+Update+Restart</button>
+  </div>
   <span id="status"></span>
 </header>
 <main>
@@ -363,6 +437,10 @@ const DASHBOARD_HTML = `<!doctype html>
   var filtersEl = document.getElementById('filters');
   var playersListEl = document.getElementById('players-list');
   var playersCountEl = document.getElementById('players-count');
+  var startBtn = document.getElementById('btn-start');
+  var stopBtn = document.getElementById('btn-stop');
+  var restartBtn = document.getElementById('btn-restart');
+  var stopUpdateRestartBtn = document.getElementById('btn-stop-update-restart');
   var contextMenuEl = null;
 
   function closeContextMenu() {
@@ -537,13 +615,40 @@ const DASHBOARD_HTML = `<!doctype html>
   }
 
   function renderStatus(s) {
-    if (!s) { statusEl.textContent = ''; return; }
+    if (!s) {
+      statusEl.textContent = '';
+      startBtn.disabled = true; stopBtn.disabled = true; restartBtn.disabled = true; stopUpdateRestartBtn.disabled = true;
+      return;
+    }
     var parts = [s.state];
     if (s.players) parts.push(s.players.length + ' player(s)' + (s.players.length ? ': ' + s.players.join(', ') : ''));
     if (s.cpu != null) parts.push('CPU ' + s.cpu + '%');
     if (s.memoryMB != null) parts.push('RAM ' + s.memoryMB + ' MB');
     statusEl.textContent = parts.join(' — ');
+    startBtn.disabled = s.state !== 'stopped';
+    stopBtn.disabled = s.state !== 'running';
+    restartBtn.disabled = s.state !== 'running';
+    stopUpdateRestartBtn.disabled = s.state === 'updating';
   }
+
+  function postServerAction(action) {
+    if (!currentId) return;
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/' + action, { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) showToast('Error: ' + result.error);
+        loadServers();
+      })
+      .catch(function () { showToast('Request failed'); });
+  }
+
+  startBtn.addEventListener('click', function () { postServerAction('start'); });
+  stopBtn.addEventListener('click', function () { postServerAction('stop'); });
+  restartBtn.addEventListener('click', function () { postServerAction('restart'); });
+  stopUpdateRestartBtn.addEventListener('click', function () {
+    if (!confirm('Stop this server, update it via SteamCMD, then start it back up?')) return;
+    postServerAction('stop-update-restart');
+  });
 
   function selectServer(id) {
     if (id === currentId) return;

@@ -48,8 +48,15 @@ vi.mock('../src/main/lib/rcon', async (importOriginal) => {
     }
   }
 })
+vi.mock('../src/main/lib/serverActions', () => ({
+  doStartServer: vi.fn((profile: { id: string }) => ({ profileId: profile.id, state: 'starting' })),
+  doStopServer: vi.fn(async (profile: { id: string }) => ({ profileId: profile.id, state: 'stopping' })),
+  doRestartServer: vi.fn(async (profile: { id: string }) => ({ profileId: profile.id, state: 'starting' })),
+  doStopUpdateRestart: vi.fn(async () => {})
+}))
 
 import { startWebDashboard, stopWebDashboard, getWebDashboardStatus } from '../src/main/lib/webDashboard'
+import * as serverActions from '../src/main/lib/serverActions'
 
 const PORT = 47091
 
@@ -140,6 +147,48 @@ describe('web dashboard HTTP server', () => {
     const res = await request('/api/servers/unknown/players')
     expect(res.status).toBe(200)
     expect(JSON.parse(res.body)).toEqual([])
+  })
+
+  it('starts a server', async () => {
+    const res = await request('/api/servers/p1/start', { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ ok: true })
+    expect(serverActions.doStartServer).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
+  })
+
+  it('404s starting an unknown server', async () => {
+    const res = await request('/api/servers/unknown/start', { method: 'POST' })
+    expect(res.status).toBe(404)
+  })
+
+  it('reports a synchronous start failure (e.g. an update in progress) as a 400', async () => {
+    vi.mocked(serverActions.doStartServer).mockImplementationOnce(() => {
+      throw new Error('Cannot start the server while an update is in progress.')
+    })
+    const res = await request('/api/servers/p1/start', { method: 'POST' })
+    expect(res.status).toBe(400)
+    expect(JSON.parse(res.body)).toEqual({ ok: false, error: 'Cannot start the server while an update is in progress.' })
+  })
+
+  it('stops a server without waiting for it to actually finish stopping', async () => {
+    const res = await request('/api/servers/p1/stop', { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ ok: true })
+    expect(serverActions.doStopServer).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
+  })
+
+  it('restarts a server', async () => {
+    const res = await request('/api/servers/p1/restart', { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ ok: true })
+    expect(serverActions.doRestartServer).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
+  })
+
+  it('kicks off stop+update+restart', async () => {
+    const res = await request('/api/servers/p1/stop-update-restart', { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ ok: true })
+    expect(serverActions.doStopUpdateRestart).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
   })
 
   it('rejects an empty RCON command with a 400', async () => {
