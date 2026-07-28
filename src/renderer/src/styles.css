@@ -220,6 +220,21 @@ label.checkbox {
   gap: 16px;
 }
 
+.hidden-servers {
+  margin-top: 20px;
+}
+
+.hidden-servers summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.hidden-servers .server-grid {
+  margin-top: 12px;
+}
+
 .server-card {
   background: var(--panel);
   border: 1px solid var(--border);

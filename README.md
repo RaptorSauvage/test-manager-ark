@@ -78,7 +78,13 @@ dedicated servers running on the same machine.
   backup, Delete selected backup(s)) operates on that player's snapshots specifically.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running.
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
-  the order is persisted and stays the same next time you open the app.
+  the order is persisted and stays the same next time you open the app. A **Hide**/**Unhide**
+  button on each card removes it from the main grid and the "...All" bulk actions without
+  deleting it or touching whatever server process is actually running underneath - just a
+  way to declutter the dashboard for a profile you're not actively using right now. Hidden
+  profiles collapse into a "Hidden servers (N)" section at the bottom (collapsed by
+  default) where they're still fully functional - Start/Stop/RCON/etc. all still work
+  there - so unhiding one is a single click away.
 - **Export / import a profile as a file** — a server's Settings tab has an "Export
   profile..." button that saves its whole config (ports, mods, cluster, extra settings -
   everything except backups/logs) as a JSON file; the dashboard's "Import profile file..."

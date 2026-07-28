@@ -32,6 +32,7 @@ interface LegacyProfileFields {
  * - `scheduledRestart*`/`scheduledDinoWipe*` are new and default to off/00:00/no days
  * - `scheduledRestartDestroyWildDinosAfter` was dropped from the restart schedule -
  *   folded into the separate, independent scheduled dino wipe instead
+ * - `hidden` is new and defaults to false (shown on the dashboard)
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -83,6 +84,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     scheduledRestartStartAfter: rest.scheduledRestartStartAfter ?? false,
     scheduledDinoWipeEnabled: rest.scheduledDinoWipeEnabled ?? false,
     scheduledDinoWipeTime: rest.scheduledDinoWipeTime ?? '00:00',
-    scheduledDinoWipeDays: rest.scheduledDinoWipeDays ?? []
+    scheduledDinoWipeDays: rest.scheduledDinoWipeDays ?? [],
+    hidden: rest.hidden ?? false
   }
 }

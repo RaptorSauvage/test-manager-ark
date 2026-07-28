@@ -21,6 +21,8 @@ export default function Dashboard({
   onOpenDataSettings
 }: DashboardProps): JSX.Element {
   const statuses = useServerStatuses(profiles.map((p) => p.id))
+  const visibleProfiles = profiles.filter((p) => !p.hidden)
+  const hiddenProfiles = profiles.filter((p) => p.hidden)
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
@@ -114,6 +116,11 @@ export default function Dashboard({
     onProfilesChange(updated)
   }
 
+  async function handleToggleHidden(profile: ServerProfile): Promise<void> {
+    const updated = await window.api.profiles.save({ ...profile, hidden: !profile.hidden })
+    onProfilesChange(updated)
+  }
+
   async function runAction(profile: ServerProfile, action: () => Promise<unknown>): Promise<void> {
     setActionErrors((prev) => ({ ...prev, [profile.id]: '' }))
     try {
@@ -161,35 +168,138 @@ export default function Dashboard({
   }
 
   async function startAll(): Promise<void> {
-    const targets = profiles.filter((p) => stateOf(p) === 'stopped')
+    const targets = visibleProfiles.filter((p) => stateOf(p) === 'stopped')
     await Promise.all(targets.map((p) => runAction(p, () => window.api.server.start(p.id))))
   }
 
   async function restartAll(): Promise<void> {
-    const targets = profiles.filter((p) => stateOf(p) === 'running')
+    const targets = visibleProfiles.filter((p) => stateOf(p) === 'running')
     await Promise.all(targets.map((p) => runAction(p, () => window.api.server.restart(p.id))))
   }
 
   async function stopAll(): Promise<void> {
-    const targets = profiles.filter((p) => stateOf(p) === 'running')
+    const targets = visibleProfiles.filter((p) => stateOf(p) === 'running')
     await Promise.all(targets.map((p) => runAction(p, () => window.api.server.stop(p.id))))
   }
 
   async function updateAll(): Promise<void> {
-    const targets = profiles.filter((p) => stateOf(p) === 'stopped')
+    const targets = visibleProfiles.filter((p) => stateOf(p) === 'stopped')
     await Promise.all(targets.map((p) => runAction(p, () => window.api.server.update(p.id))))
     await Promise.all(targets.map((p) => refreshInstalled(p.id)))
   }
 
   async function stopUpdateRestartAll(): Promise<void> {
-    const wasRunning = profiles.filter((p) => stateOf(p) === 'running')
+    const wasRunning = visibleProfiles.filter((p) => stateOf(p) === 'running')
     await Promise.all(wasRunning.map((p) => runAction(p, () => window.api.server.stop(p.id))))
 
     // Stop above waits for each server to actually exit, so every profile is stopped now.
-    await Promise.all(profiles.map((p) => runAction(p, () => window.api.server.update(p.id))))
-    await Promise.all(profiles.map((p) => refreshInstalled(p.id)))
+    await Promise.all(visibleProfiles.map((p) => runAction(p, () => window.api.server.update(p.id))))
+    await Promise.all(visibleProfiles.map((p) => refreshInstalled(p.id)))
 
     await Promise.all(wasRunning.map((p) => runAction(p, () => window.api.server.start(p.id))))
+  }
+
+  function renderCard(profile: ServerProfile): JSX.Element {
+    const status = statuses[profile.id]
+    const state: ServerRunState = status?.state ?? 'stopped'
+    return (
+      <div
+        className={`server-card${dragId === profile.id ? ' dragging' : ''}`}
+        key={profile.id}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={() => void handleDrop(profile.id)}
+      >
+        <div className="server-card-header">
+          <span
+            className="drag-handle"
+            draggable
+            onDragStart={() => setDragId(profile.id)}
+            onDragEnd={() => setDragId(null)}
+            title="Drag to reorder"
+          >
+            ⠿
+          </span>
+          <h2>{profile.name}</h2>
+          <span className={`badge badge-${state}`}>{state}</span>
+        </div>
+        <dl className="server-card-info">
+          <div>
+            <dt>Map</dt>
+            <dd>{profile.map ? mapDisplayName(profile.map) : '(not set)'}</dd>
+          </div>
+          <div>
+            <dt>Port</dt>
+            <dd>{profile.gamePort}</dd>
+          </div>
+          {status?.players && (
+            <div>
+              <dt>Players</dt>
+              <dd>{status.players.length}</dd>
+            </div>
+          )}
+          {status?.cpu !== undefined && (
+            <div>
+              <dt>CPU</dt>
+              <dd>{status.cpu}%</dd>
+            </div>
+          )}
+          {status?.memoryMB !== undefined && (
+            <div>
+              <dt>RAM</dt>
+              <dd>{status.memoryMB} MB</dd>
+            </div>
+          )}
+        </dl>
+        {status?.lastError && <p className="error-message">{status.lastError}</p>}
+        {actionErrors[profile.id] && <p className="error-message">{actionErrors[profile.id]}</p>}
+        <div className="server-card-actions">
+          <button disabled={state !== 'stopped'} onClick={() => void handleAction(profile, 'start')}>
+            Start
+          </button>
+          <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'stop')}>
+            Stop
+          </button>
+          <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'restart')}>
+            Restart
+          </button>
+          <button
+            className="danger"
+            disabled={state === 'stopped' || state === 'updating'}
+            onClick={() => void handleKill(profile)}
+            title="Force-kill immediately, without saving"
+          >
+            Kill
+          </button>
+          <button
+            disabled={state !== 'stopped'}
+            onClick={() => void handleUpdate(profile)}
+            title="Install/update the server files via SteamCMD"
+          >
+            {installedById[profile.id] === false
+              ? state === 'updating'
+                ? 'Installing...'
+                : 'Install'
+              : state === 'updating'
+                ? 'Updating...'
+                : 'Update'}
+          </button>
+          <button onClick={() => void handleViewLog(profile)} title="Show the last SteamCMD update's output">
+            {logProfileId === profile.id ? 'Hide update log' : 'View update log'}
+          </button>
+          <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
+          <button
+            onClick={() => void handleToggleHidden(profile)}
+            title={profile.hidden ? 'Show this server on the main dashboard again' : 'Hide this server from the main dashboard'}
+          >
+            {profile.hidden ? 'Unhide' : 'Hide'}
+          </button>
+          <button className="danger" onClick={() => void handleDelete(profile.id)}>
+            Delete
+          </button>
+        </div>
+        {logProfileId === profile.id && <pre className="log-output">{logContent}</pre>}
+      </div>
+    )
   }
 
   async function handleDrop(targetId: string): Promise<void> {
@@ -229,7 +339,7 @@ export default function Dashboard({
 
       <div className="dashboard-body">
         <div className="dashboard-content">
-          {profiles.length > 0 && (
+          {visibleProfiles.length > 0 && (
             <section className="server-controls">
               <h3>Server Controls</h3>
               <div className="server-controls-actions">
@@ -260,105 +370,20 @@ export default function Dashboard({
           {profiles.length === 0 && (
             <p className="empty-state">No server profiles yet. Click &quot;Add server&quot; to configure one.</p>
           )}
+          {profiles.length > 0 && visibleProfiles.length === 0 && (
+            <p className="empty-state">
+              Every server profile is hidden. Expand &quot;Hidden servers&quot; below to unhide one.
+            </p>
+          )}
 
-          <div className="server-grid">
-            {profiles.map((profile) => {
-              const status = statuses[profile.id]
-              const state: ServerRunState = status?.state ?? 'stopped'
-              return (
-                <div
-                  className={`server-card${dragId === profile.id ? ' dragging' : ''}`}
-                  key={profile.id}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => void handleDrop(profile.id)}
-                >
-                  <div className="server-card-header">
-                    <span
-                      className="drag-handle"
-                      draggable
-                      onDragStart={() => setDragId(profile.id)}
-                      onDragEnd={() => setDragId(null)}
-                      title="Drag to reorder"
-                    >
-                      ⠿
-                    </span>
-                    <h2>{profile.name}</h2>
-                    <span className={`badge badge-${state}`}>{state}</span>
-                  </div>
-                  <dl className="server-card-info">
-                    <div>
-                      <dt>Map</dt>
-                      <dd>{profile.map ? mapDisplayName(profile.map) : '(not set)'}</dd>
-                    </div>
-                    <div>
-                      <dt>Port</dt>
-                      <dd>{profile.gamePort}</dd>
-                    </div>
-                    {status?.players && (
-                      <div>
-                        <dt>Players</dt>
-                        <dd>{status.players.length}</dd>
-                      </div>
-                    )}
-                    {status?.cpu !== undefined && (
-                      <div>
-                        <dt>CPU</dt>
-                        <dd>{status.cpu}%</dd>
-                      </div>
-                    )}
-                    {status?.memoryMB !== undefined && (
-                      <div>
-                        <dt>RAM</dt>
-                        <dd>{status.memoryMB} MB</dd>
-                      </div>
-                    )}
-                  </dl>
-                  {status?.lastError && <p className="error-message">{status.lastError}</p>}
-                  {actionErrors[profile.id] && <p className="error-message">{actionErrors[profile.id]}</p>}
-                  <div className="server-card-actions">
-                    <button disabled={state !== 'stopped'} onClick={() => void handleAction(profile, 'start')}>
-                      Start
-                    </button>
-                    <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'stop')}>
-                      Stop
-                    </button>
-                    <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'restart')}>
-                      Restart
-                    </button>
-                    <button
-                      className="danger"
-                      disabled={state === 'stopped' || state === 'updating'}
-                      onClick={() => void handleKill(profile)}
-                      title="Force-kill immediately, without saving"
-                    >
-                      Kill
-                    </button>
-                    <button
-                      disabled={state !== 'stopped'}
-                      onClick={() => void handleUpdate(profile)}
-                      title="Install/update the server files via SteamCMD"
-                    >
-                      {installedById[profile.id] === false
-                        ? state === 'updating'
-                          ? 'Installing...'
-                          : 'Install'
-                        : state === 'updating'
-                          ? 'Updating...'
-                          : 'Update'}
-                    </button>
-                    <button onClick={() => void handleViewLog(profile)} title="Show the last SteamCMD update's output">
-                      {logProfileId === profile.id ? 'Hide update log' : 'View update log'}
-                    </button>
-                    <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
-                    <button className="danger" onClick={() => void handleDelete(profile.id)}>
-                      Delete
-                    </button>
-                  </div>
-                  {logProfileId === profile.id && <pre className="log-output">{logContent}</pre>}
-                </div>
-              )
-            })}
-          </div>
+          <div className="server-grid">{visibleProfiles.map(renderCard)}</div>
+
+          {hiddenProfiles.length > 0 && (
+            <details className="hidden-servers">
+              <summary>Hidden servers ({hiddenProfiles.length})</summary>
+              <div className="server-grid">{hiddenProfiles.map(renderCard)}</div>
+            </details>
+          )}
         </div>
 
         <aside className="dashboard-sidebar">

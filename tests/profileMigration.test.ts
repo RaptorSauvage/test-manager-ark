@@ -38,6 +38,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     scheduledDinoWipeEnabled: false,
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],
+    hidden: false,
     mods: [],
     ...overrides
   } as ServerProfile
@@ -143,6 +144,11 @@ describe('migrateProfile', () => {
   it('defaults playerProfileBackupEnabled to false on profiles saved before it existed', () => {
     const legacy = baseProfile({ playerProfileBackupEnabled: undefined })
     expect(migrateProfile(legacy).playerProfileBackupEnabled).toBe(false)
+  })
+
+  it('defaults hidden to false on profiles saved before it existed', () => {
+    const legacy = baseProfile({ hidden: undefined })
+    expect(migrateProfile(legacy).hidden).toBe(false)
   })
 
   it('defaults playerProfileBackupMaxPerPlayer to 20 on profiles saved before it existed', () => {

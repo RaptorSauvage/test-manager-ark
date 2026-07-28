@@ -82,6 +82,10 @@ export interface ServerProfile {
   scheduledDinoWipeTime: string
   /** Days it fires on, 0=Sunday..6=Saturday */
   scheduledDinoWipeDays: number[]
+  /** When true, hidden from the main dashboard grid (and bulk "...All" actions) without
+   *  deleting it or touching whatever server process is actually running - just a way to
+   *  declutter the main list for a profile you're not actively using right now. */
+  hidden: boolean
 }
 
 export interface MapDefinition {
