@@ -42,6 +42,7 @@ export function computeTailReadStart(previousSize: number, currentSize: number):
 export function watchLogFile(installDir: string, onChunk: (chunk: string) => void, intervalMs = 2000): () => void {
   const logPath = getLogFilePath(installDir)
   let previousSize: number | null = null
+  let previousIno: number | null = null
   let stopped = false
 
   const interval = setInterval(() => {
@@ -50,11 +51,22 @@ export function watchLogFile(installDir: string, onChunk: (chunk: string) => voi
 
       if (previousSize === null) {
         previousSize = stats.size
+        previousIno = stats.ino
         return
       }
 
-      const readStart = computeTailReadStart(previousSize, stats.size)
-      if (readStart === null) return
+      // A changed inode means the file itself was recreated (ARK starts a fresh log per
+      // server session), so always re-read from the start in that case - relying on size
+      // alone would miss a restart where the new session already writes past the old
+      // file's size before our next poll, leaving the tailer reading from a stale offset
+      // in the new file and never surfacing anything from it.
+      const rotated = stats.ino !== previousIno
+      const readStart = rotated ? 0 : computeTailReadStart(previousSize, stats.size)
+      previousIno = stats.ino
+      if (readStart === null) {
+        previousSize = stats.size
+        return
+      }
       previousSize = stats.size
 
       const stream = fs.createReadStream(logPath, { start: readStart, encoding: 'utf-8' })

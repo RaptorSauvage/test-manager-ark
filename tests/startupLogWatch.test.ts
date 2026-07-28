@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { computeTailReadStart, watchLogFileForMarker } from '../src/main/lib/serverProcess'
+import { computeTailReadStart, watchLogFile, watchLogFileForMarker } from '../src/main/lib/serverProcess'
 
 const MARKER = 'READY_MARKER'
 
@@ -100,5 +100,44 @@ describe('watchLogFileForMarker', () => {
     await wait(150)
 
     expect(fired).toBe(false)
+  })
+})
+
+describe('watchLogFile', () => {
+  let tmpDir: string
+  let logPath: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ark-log-watch-test-'))
+    const logDir = path.join(tmpDir, 'ShooterGame', 'Saved', 'Logs')
+    fs.mkdirSync(logDir, { recursive: true })
+    logPath = path.join(logDir, 'ShooterGame.log')
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('detects a server restart even when the new log already exceeds the old one\'s size by the next poll', async () => {
+    fs.writeFileSync(logPath, 'old session line 1\nold session line 2\n')
+
+    const chunks: string[] = []
+    const stop = watchLogFile(tmpDir, (chunk) => chunks.push(chunk), 20)
+    await wait(60) // let it capture the old file's size as the baseline first
+
+    // Simulate a restart that completes within a single poll interval: the old log is
+    // rotated away to a backup filename (as ARK does on every server start, so the old
+    // inode stays alive under the new name rather than being freed/reused) and a brand
+    // new, already-bigger log is written before the tailer gets a chance to notice the
+    // file shrank first.
+    fs.renameSync(logPath, logPath + '.bak')
+    fs.writeFileSync(logPath, 'new session line 1\nnew session line 2\nnew session line 3\n')
+
+    await wait(150)
+    stop()
+
+    const combined = chunks.join('')
+    expect(combined).toContain('new session line 1')
+    expect(combined).not.toContain('old session line')
   })
 })
