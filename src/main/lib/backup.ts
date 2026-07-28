@@ -5,6 +5,8 @@ import { shell } from 'electron'
 import archiver from 'archiver'
 import AdmZip from 'adm-zip'
 import type { ServerProfile, BackupEntry } from '@shared/types'
+import { sendRconCommand } from './rcon'
+import { isRunning } from './serverProcess'
 
 /** Emits 'created' with a profileId whenever a backup finishes - manual or scheduled -
  *  so the renderer can reload its backup list without polling. */
@@ -39,13 +41,20 @@ export function isIgnoredBackupFile(relativePath: string): boolean {
   return relativePath.toLowerCase().endsWith('.arkrbf')
 }
 
-export function createBackup(profile: ServerProfile): Promise<BackupEntry> {
-  return new Promise((resolve, reject) => {
-    if (!profile.backupDir.trim()) {
-      reject(new Error('Set a backup directory in the Backups tab first.'))
-      return
-    }
+export async function createBackup(profile: ServerProfile): Promise<BackupEntry> {
+  if (!profile.backupDir.trim()) {
+    throw new Error('Set a backup directory in the Backups tab first.')
+  }
 
+  if (isRunning(profile.id)) {
+    // Best-effort: SaveWorld flushes the server's in-memory state to the SavedArks files
+    // this zips up, so a manual or scheduled backup taken between ARK's own autosaves
+    // still reflects the latest world state. If RCON is unreachable, still take the
+    // backup off whatever's already on disk rather than skip it entirely.
+    await sendRconCommand(profile, 'SaveWorld')
+  }
+
+  return new Promise((resolve, reject) => {
     const sourceDir = savedArksDir(profile)
     if (!fs.existsSync(sourceDir)) {
       reject(new Error(`SavedArks folder not found: ${sourceDir}`))

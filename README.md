@@ -46,7 +46,11 @@ dedicated servers running on the same machine.
   empty/filled cron field) live here, instead of being split off into Settings. A
   scheduled backup only actually runs while the server is online - if it's stopped when
   the cron fires, that run is skipped rather than backing up (or erroring on) a server
-  that isn't running. The backup file list is a checkbox-select table (File Name/Creation
+  that isn't running. When it is running, a backup (manual or scheduled) first sends
+  `SaveWorld` over RCON and waits for it before zipping - best-effort, so a backup still
+  happens off whatever's already on disk even if RCON is unreachable - so it reflects the
+  latest world state instead of whatever ARK's own autosave last wrote. The backup file
+  list is a checkbox-select table (File Name/Creation
   Time, with a header checkbox to select/deselect all) with a toolbar above it - Refresh
   backup file list, Open backup folder (opens the configured backup directory in the OS
   file explorer), Restore selected backup, Delete selected backup(s) - instead of a
