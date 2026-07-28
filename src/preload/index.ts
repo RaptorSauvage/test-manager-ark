@@ -1,5 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, type Api, type ServerProfile, type ServerStatus, type ServerMod, type AppSettings } from '@shared/types'
+import {
+  IPC,
+  type Api,
+  type ServerProfile,
+  type ServerStatus,
+  type ServerMod,
+  type AppSettings,
+  type AppUpdateStatus
+} from '@shared/types'
 
 const api: Api = {
   profiles: {
@@ -92,6 +100,16 @@ const api: Api = {
   system: {
     openProfilesFolder: () => ipcRenderer.invoke(IPC.appOpenProfilesFolder),
     openServerConfigFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenConfigFolder, profileId)
+  },
+  appUpdate: {
+    getVersion: () => ipcRenderer.invoke(IPC.appUpdateGetVersion),
+    checkAndInstall: () => ipcRenderer.invoke(IPC.appUpdateCheckAndInstall),
+    getStatus: () => ipcRenderer.invoke(IPC.appUpdateStatus),
+    onStatusChanged: (callback: (status: AppUpdateStatus) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus): void => callback(status)
+      ipcRenderer.on(IPC.appUpdateStatusChanged, listener)
+      return () => ipcRenderer.removeListener(IPC.appUpdateStatusChanged, listener)
+    }
   }
 }
 

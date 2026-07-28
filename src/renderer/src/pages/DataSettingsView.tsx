@@ -1,8 +1,27 @@
 import { useEffect, useState } from 'react'
-import type { AppSettings } from '@shared/types'
+import type { AppSettings, AppUpdateStatus } from '@shared/types'
 
 interface DataSettingsViewProps {
   onBack: () => void
+}
+
+function describeAppUpdateStatus(appUpdateStatus: AppUpdateStatus, appVersion: string): string {
+  switch (appUpdateStatus.state) {
+    case 'checking':
+      return 'Checking for updates...'
+    case 'available':
+      return `Update ${appUpdateStatus.version} found - starting download...`
+    case 'downloading':
+      return `Downloading update ${appUpdateStatus.version ?? ''}... ${appUpdateStatus.percent ?? 0}%`
+    case 'downloaded':
+      return `Update ${appUpdateStatus.version} downloaded - installing and restarting...`
+    case 'not-available':
+      return `You're on the latest version (${appVersion}).`
+    case 'error':
+      return appUpdateStatus.error ?? 'Update check failed.'
+    default:
+      return ''
+  }
 }
 
 export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX.Element {
@@ -23,13 +42,20 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     host: string | null
   }>({ running: false, error: null, host: null })
   const [localIps, setLocalIps] = useState<string[]>([])
+  const [appVersion, setAppVersion] = useState('')
+  const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus>({ state: 'idle' })
 
   useEffect(() => {
     window.api.settings.get().then(setSettings)
     window.api.dataDir.getDefault().then(setDefaultDataDir)
     window.api.webDashboard.getStatus().then(setWebDashboardStatus)
     window.api.webDashboard.getLocalIps().then(setLocalIps)
+    window.api.appUpdate.getVersion().then(setAppVersion)
+    window.api.appUpdate.getStatus().then(setAppUpdateStatus)
+    return window.api.appUpdate.onStatusChanged(setAppUpdateStatus)
   }, [])
+
+  const appUpdateBusy = appUpdateStatus.state === 'checking' || appUpdateStatus.state === 'available' || appUpdateStatus.state === 'downloading'
 
   async function browse(): Promise<void> {
     const dir = await window.api.dialog.selectDirectory()
@@ -183,6 +209,23 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
           {status && <span className="status-message">{status}</span>}
         </div>
       </form>
+
+      <section className="managed-steamcmd">
+        <h3>Manager updates</h3>
+        <p className="empty-state">
+          Current version: <code>{appVersion || '...'}</code>. Checks this app&apos;s GitHub Releases for a newer
+          version, downloads it, and installs it - the Manager quits and restarts on the new version once the
+          download finishes. Only works in an installed/packaged build, not when running from source.
+        </p>
+        {appUpdateStatus.state !== 'idle' && (
+          <p className={appUpdateStatus.state === 'error' ? 'error-message' : 'empty-state'}>
+            {describeAppUpdateStatus(appUpdateStatus, appVersion)}
+          </p>
+        )}
+        <button onClick={() => void window.api.appUpdate.checkAndInstall()} disabled={appUpdateBusy}>
+          {appUpdateBusy ? 'Working...' : 'Check for updates'}
+        </button>
+      </section>
     </div>
   )
 }

@@ -16,7 +16,8 @@ const bundledMainDeps = [
   'cron-parser',
   'pidusage',
   'rcon-client',
-  'electron-store'
+  'electron-store',
+  'electron-updater'
 ]
 
 export default defineConfig({

@@ -178,6 +178,18 @@ export interface LatestBuildIdCache {
   error: string | null
 }
 
+/** Progress of a Manager self-update, driven by electron-updater against this repo's
+ *  GitHub Releases - see src/main/lib/appUpdater.ts. Pushed to the renderer as it changes
+ *  so the Settings button can show live status instead of just the final result. */
+export interface AppUpdateStatus {
+  state: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
+  /** The update's version, once known (from 'available' onward). */
+  version?: string
+  /** Download progress 0-100, while state is 'downloading'. */
+  percent?: number
+  error?: string
+}
+
 /** One player's backup folder, for a "pick a player" selector next to the world backup list. */
 export interface PlayerBackupFolder {
   /** Raw folder name - pass back to playerBackup.list/openFolder as-is. */
@@ -255,7 +267,12 @@ export const IPC = {
   webDashboardLocalIps: 'web-dashboard:local-ips',
 
   appOpenProfilesFolder: 'app:open-profiles-folder',
-  serverOpenConfigFolder: 'server:open-config-folder'
+  serverOpenConfigFolder: 'server:open-config-folder',
+
+  appUpdateGetVersion: 'app-update:get-version',
+  appUpdateCheckAndInstall: 'app-update:check-and-install',
+  appUpdateStatus: 'app-update:status',
+  appUpdateStatusChanged: 'app-update:status-changed'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -380,5 +397,11 @@ export interface Api {
   system: {
     openProfilesFolder: () => Promise<void>
     openServerConfigFolder: (profileId: string) => Promise<void>
+  }
+  appUpdate: {
+    getVersion: () => Promise<string>
+    checkAndInstall: () => Promise<void>
+    getStatus: () => Promise<AppUpdateStatus>
+    onStatusChanged: (callback: (status: AppUpdateStatus) => void) => () => void
   }
 }

@@ -19,6 +19,7 @@
     "archiver": "^7.0.1",
     "cron-parser": "^5.6.2",
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.9",
     "ini": "^4.1.3",
     "node-cron": "^3.0.3",
     "pidusage": "^3.0.2",
@@ -53,6 +54,11 @@
       "out/**/*",
       "package.json"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "RaptorSauvage",
+      "repo": "test-manager-ark"
+    },
     "win": {
       "target": [
         "nsis",

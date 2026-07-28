@@ -124,6 +124,16 @@ dedicated servers running on the same machine.
   save Settings and again at every app launch, so it stays in sync even if the OS-level
   registration was changed outside the app. Opens the normal window on login (no
   minimized/background mode yet).
+- **Manager updates** — a "Check for updates" button in the app-wide Settings view, next
+  to the current version. Built on `electron-updater` against this repo's GitHub
+  Releases: checking, downloading, and installing all happen behind that one button, with
+  live status (checking / downloading with a percentage / up to date / error) pushed to
+  the button's status line as it progresses. Once the download finishes the Manager quits
+  and relaunches itself already on the new version - no separate installer step needed.
+  Only works in an installed build (the NSIS installer or the portable exe, both produced
+  by `npm run dist`), not when running from source with `npm run dev`, since there's no
+  update feed to read from in that case. See [Publishing a
+  release](#publishing-a-release) for how a new version actually reaches this button.
 - **Profile Management** — a dashboard header button opens a dedicated view to **Copy**
   or **Move** an entire server install (every file under its install folder - binaries,
   saves, configs, all of it) to a different folder:
@@ -327,6 +337,36 @@ npm run dist          # package a Windows installer + portable .exe into release
 building Windows targets from Linux/macOS needs Wine for the code-signing step, which
 isn't set up here. The portable `.exe` is the easiest way to right-click → "Run as
 administrator" without installing anything.
+
+## Publishing a release
+
+For the in-app **Check for updates** button (see Features above) to find a new version,
+a build has to actually reach this repo's [GitHub
+Releases](https://github.com/RaptorSauvage/test-manager-ark/releases) - `electron-builder`
+is already configured (`build.publish` in `package.json`) to look there.
+
+1. Bump `version` in `package.json` (electron-updater compares this against the latest
+   release's tag, so it has to actually increase - plain semver, no `v` prefix needed in
+   the field itself).
+2. On Windows, with a `GH_TOKEN` environment variable set to a GitHub personal access
+   token that can push releases to this repo:
+   ```bash
+   npm run build
+   npx electron-builder --win --publish always
+   ```
+   `--publish always` uploads the installer, the portable exe, and the `latest.yml`
+   metadata file electron-updater actually reads, as a new draft/published GitHub Release
+   tagged with the `package.json` version. Without a `GH_TOKEN` (e.g. just running
+   `npm run dist`), electron-builder still builds normally into `release/` but skips
+   publishing - you'd need to attach the installer and `latest.yml` from `release/` to a
+   GitHub Release by hand for the update check to see it.
+3. Every installed copy of the Manager will then find it next time someone clicks
+   **Check for updates**. There's no forced/background check on a schedule - it's
+   deliberately opt-in per click, same as the SteamCMD update button for the ARK server
+   itself.
+
+Since the repo is public, no token is needed on the *reading* side - `electron-updater`
+downloads release assets anonymously, `GH_TOKEN` is only for the publish step above.
 
 ## Setting up a server profile
 
