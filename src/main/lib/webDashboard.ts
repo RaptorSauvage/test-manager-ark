@@ -1,12 +1,50 @@
+import fs from 'node:fs'
 import http from 'node:http'
 import type { AppSettings, LogEvent } from '@shared/types'
 import { listProfiles } from '../store'
-import { getStatus } from './serverProcess'
+import { getStatus, getLogFilePath, watchLogFile } from './serverProcess'
 import { sendRconCommand } from './rcon'
-import { getRecentLogEvents, logEventEmitter } from './logEvents'
+import { parseLogChunk, createLogEventCaches } from './logEvents'
 
 let server: http.Server | null = null
 let lastError: string | null = null
+
+/** How much of ShooterGame.log to re-read for backlog on a fresh page load/reconnect,
+ *  and how many of the parsed events out of that backlog to actually keep - same defaults
+ *  as the standalone Python dashboard this page replaces. */
+const BACKLOG_BYTES = 300_000
+const BACKLOG_MAX_LINES = 60
+
+/**
+ * Reads a server's live event feed straight from its own ShooterGame.log, independent of
+ * whatever the Manager's own process tracking thinks its state is - same approach as the
+ * standalone Python dashboard this page replaces (a fresh per-connection file tailer, not
+ * tied to any "is this server running" bookkeeping), so the web dashboard keeps working
+ * even for a server the Manager didn't itself start/adopt.
+ */
+function readLogBacklog(installDir: string): LogEvent[] {
+  const logPath = getLogFilePath(installDir)
+  if (!fs.existsSync(logPath)) return []
+
+  const size = fs.statSync(logPath).size
+  const readSize = Math.min(size, BACKLOG_BYTES)
+  const buffer = Buffer.alloc(readSize)
+  const fd = fs.openSync(logPath, 'r')
+  try {
+    fs.readSync(fd, buffer, 0, readSize, size - readSize)
+  } finally {
+    fs.closeSync(fd)
+  }
+
+  let text = buffer.toString('utf-8')
+  if (readSize < size) {
+    // Drop a possibly-truncated first line when starting mid-file.
+    const firstNewline = text.indexOf('\n')
+    if (firstNewline >= 0) text = text.slice(firstNewline + 1)
+  }
+
+  return parseLogChunk(text, createLogEventCaches()).slice(-BACKLOG_MAX_LINES)
+}
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)
@@ -64,25 +102,32 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
   const eventsMatch = path.match(/^\/api\/servers\/([^/]+)\/events$/)
   if (req.method === 'GET' && eventsMatch) {
-    sendJson(res, 200, getRecentLogEvents(decodeURIComponent(eventsMatch[1])))
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(eventsMatch[1]))
+    sendJson(res, 200, profile ? readLogBacklog(profile.installDir) : [])
     return
   }
 
   const streamMatch = path.match(/^\/api\/servers\/([^/]+)\/events\/stream$/)
   if (req.method === 'GET' && streamMatch) {
-    const profileId = decodeURIComponent(streamMatch[1])
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(streamMatch[1]))
+    if (!profile) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end('Unknown server')
+      return
+    }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive'
     })
     res.write('\n')
-    const onEvent = (eventProfileId: string, event: LogEvent): void => {
-      if (eventProfileId !== profileId) return
-      res.write(`data: ${JSON.stringify(event)}\n\n`)
-    }
-    logEventEmitter.on('event', onEvent)
-    req.on('close', () => logEventEmitter.off('event', onEvent))
+    const caches = createLogEventCaches()
+    const stopWatching = watchLogFile(profile.installDir, (chunk) => {
+      for (const event of parseLogChunk(chunk, caches)) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`)
+      }
+    })
+    req.on('close', stopWatching)
     return
   }
 

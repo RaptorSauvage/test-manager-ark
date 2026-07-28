@@ -1,12 +1,25 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import http from 'node:http'
+import fs from 'node:fs'
+import path from 'node:path'
+import os from 'node:os'
+
+const EMPTY_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-empty-${process.pid}`)
+const LOGGED_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-logged-${process.pid}`)
 
 vi.mock('../src/main/store', () => ({
-  listProfiles: () => [{ id: 'p1', name: 'Test Server' }]
+  listProfiles: () => [
+    { id: 'p1', name: 'Test Server', installDir: EMPTY_INSTALL_DIR },
+    { id: 'p2', name: 'Logged Server', installDir: LOGGED_INSTALL_DIR }
+  ]
 }))
-vi.mock('../src/main/lib/serverProcess', () => ({
-  getStatus: () => ({ profileId: 'p1', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 })
-}))
+vi.mock('../src/main/lib/serverProcess', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/lib/serverProcess')>()
+  return {
+    ...actual,
+    getStatus: () => ({ profileId: 'p1', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 })
+  }
+})
 vi.mock('../src/main/lib/rcon', () => ({
   sendRconCommand: async () => ({ ok: true, response: 'pong' })
 }))
@@ -16,11 +29,11 @@ import { startWebDashboard, stopWebDashboard } from '../src/main/lib/webDashboar
 const PORT = 47091
 
 function request(
-  path: string,
+  reqPath: string,
   options: http.RequestOptions & { body?: string } = {}
 ): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port: PORT, path, ...options }, (res) => {
+    const req = http.request({ host: '127.0.0.1', port: PORT, path: reqPath, ...options }, (res) => {
       let body = ''
       res.on('data', (chunk) => (body += chunk))
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body }))
@@ -32,11 +45,20 @@ function request(
 
 describe('web dashboard HTTP server', () => {
   beforeAll(() => {
+    const logsDir = path.join(LOGGED_INSTALL_DIR, 'ShooterGame', 'Saved', 'Logs')
+    fs.mkdirSync(logsDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(logsDir, 'ShooterGame.log'),
+      '[2026.07.27-21.25.23:191][991]2026.07.27_21.25.23: LeRaptorSauvage ' +
+        '[UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] joined this ARK!\n'
+    )
     startWebDashboard(PORT)
   })
 
   afterAll(() => {
     stopWebDashboard()
+    fs.rmSync(EMPTY_INSTALL_DIR, { recursive: true, force: true })
+    fs.rmSync(LOGGED_INSTALL_DIR, { recursive: true, force: true })
   })
 
   it('serves the dashboard page at /', async () => {
@@ -49,14 +71,28 @@ describe('web dashboard HTTP server', () => {
     const res = await request('/api/servers')
     expect(res.status).toBe(200)
     expect(JSON.parse(res.body)).toEqual([
-      { id: 'p1', name: 'Test Server', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 }
+      { id: 'p1', name: 'Test Server', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 },
+      { id: 'p2', name: 'Logged Server', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 }
     ])
   })
 
-  it('returns the buffered events for a server (empty when none captured)', async () => {
+  it('returns an empty backlog when the server has no log file yet', async () => {
     const res = await request('/api/servers/p1/events')
     expect(res.status).toBe(200)
     expect(JSON.parse(res.body)).toEqual([])
+  })
+
+  it("reads the backlog straight from the server's own ShooterGame.log, not a captured buffer", async () => {
+    const res = await request('/api/servers/p2/events')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([
+      {
+        label: 'JOIN',
+        cls: 'join',
+        text: 'LeRaptorSauvage joined the server (ID: 0002dbe9ab20413e9b8e7e1562b76868)',
+        ts: '21:25:23'
+      }
+    ])
   })
 
   it('sends an RCON command through and returns its result', async () => {

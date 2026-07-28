@@ -137,8 +137,14 @@ dedicated servers running on the same machine.
   enabled: a browser-accessible page with the same content as the Console & RCON tab
   (live event feed + RCON command box, one server at a time), for when it's more
   convenient to check on a server from a browser tab than to bring the whole app to the
-  front. It's a plain HTTP server built into the Manager itself (no separate process),
-  always bound to `127.0.0.1` only regardless of the configured port - reachable from a
+  front. It's a plain HTTP server built into the Manager itself (no separate process).
+  Unlike the Console & RCON tab (which shows events the Manager already captured while
+  tracking that server's own lifecycle), the web dashboard reads straight from the
+  server's `ShooterGame.log` file itself on every page load/reconnect - the same
+  per-connection approach the standalone Python dashboard this replaces used - so it
+  keeps working for a server regardless of whether the Manager's own process tracking
+  currently considers it running. Always bound to `127.0.0.1` only regardless of the
+  configured port - reachable from a
   browser on this same machine only, not from other devices on the network, since it has
   no login of its own and full RCON/admin control of your servers is too much to leave
   unauthenticated on anything reachable beyond loopback. There's no built-in remote-access
