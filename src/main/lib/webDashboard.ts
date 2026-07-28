@@ -394,7 +394,7 @@ const DASHBOARD_HTML = `<!doctype html>
   }
   header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   header h1 { font-size: 1rem; margin: 0; }
-  select, input, button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 0.9rem; }
+  select, input, button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 9px 14px; font-size: 1rem; }
   button { cursor: pointer; }
   button:hover { border-color: var(--accent); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -411,10 +411,13 @@ const DASHBOARD_HTML = `<!doctype html>
   #server-actions button.warn:hover:not(:disabled) { background: var(--warn); color: #14161a; }
   main { flex: 1; display: flex; flex-direction: column; padding: 12px 16px; min-height: 0; }
   .panel { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; min-height: 0; }
-  #console { flex: 1; overflow-y: auto; font-size: 0.82rem; font-family: Consolas, Menlo, monospace; min-height: 200px; }
-  .log-event { display: flex; gap: 8px; padding: 2px 0; }
-  .log-event .ts { color: var(--muted); flex-shrink: 0; }
-  .log-event .label { flex-shrink: 0; width: 60px; font-weight: 600; }
+  #console { flex: 1; overflow-y: auto; font-size: 0.95rem; font-family: Consolas, Menlo, monospace; min-height: 200px; }
+  /* Deliberately not a flex row: letting ts/label/text flow as regular inline content
+     means a wrapped line breaks back to the panel's own left edge, not indented under
+     wherever the text happened to start - much more readable on a narrow phone screen. */
+  .log-event { padding: 8px 0; line-height: 1.5; }
+  .log-event .ts { color: var(--muted); margin-right: 8px; }
+  .log-event .label { font-weight: 700; margin-right: 8px; }
   .log-event .text { white-space: pre-wrap; word-break: break-word; }
   .log-event-join .label, .log-event-ready .label { color: #1f8a4c; }
   .log-event-leave .label { color: #a83239; }
