@@ -103,7 +103,8 @@ const api: Api = {
   },
   appUpdate: {
     getVersion: () => ipcRenderer.invoke(IPC.appUpdateGetVersion),
-    checkAndInstall: () => ipcRenderer.invoke(IPC.appUpdateCheckAndInstall),
+    check: () => ipcRenderer.invoke(IPC.appUpdateCheck),
+    install: () => ipcRenderer.invoke(IPC.appUpdateInstall),
     getStatus: () => ipcRenderer.invoke(IPC.appUpdateStatus),
     onStatusChanged: (callback: (status: AppUpdateStatus) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus): void => callback(status)

@@ -130,14 +130,16 @@ dedicated servers running on the same machine.
   minimized/background mode yet).
 - **Manager updates** — a "Check for updates" button in the app-wide Settings view, next
   to the current version. Built on `electron-updater` against this repo's GitHub
-  Releases: checking, downloading, and installing all happen behind that one button, with
-  live status (checking / downloading with a percentage / up to date / error) pushed to
-  the button's status line as it progresses. Once the download finishes the Manager quits
-  and relaunches itself already on the new version - no separate installer step needed.
-  Only works in an installed build (the NSIS installer or the portable exe, both produced
-  by `npm run dist`), not when running from source with `npm run dev`, since there's no
-  update feed to read from in that case. See [Publishing a
-  release](#publishing-a-release) for how a new version actually reaches this button.
+  Releases, with live status (checking / downloading with a percentage / up to date /
+  error) pushed to the button's status line as it progresses. Checking and downloading
+  are automatic, but installing is a deliberate second step: once a download finishes, a
+  separate **Restart & install now** button appears - the app never quits and restarts on
+  its own, so it can't cut off unsaved changes elsewhere in the app (e.g. a SteamCMD path
+  typed but not yet saved) mid-edit. Only works in an installed build (the NSIS installer
+  or the portable exe, both produced by `npm run dist`), not when running from source
+  with `npm run dev`, since there's no update feed to read from in that case. See
+  [Publishing a release](#publishing-a-release) for how a new version actually reaches
+  this button.
 - **Profile Management** — a dashboard header button opens a dedicated view to **Copy**
   or **Move** an entire server install (every file under its install folder - binaries,
   saves, configs, all of it) to a different folder:

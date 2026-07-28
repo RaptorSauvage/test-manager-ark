@@ -14,7 +14,7 @@ function describeAppUpdateStatus(appUpdateStatus: AppUpdateStatus, appVersion: s
     case 'downloading':
       return `Downloading update ${appUpdateStatus.version ?? ''}... ${appUpdateStatus.percent ?? 0}%`
     case 'downloaded':
-      return `Update ${appUpdateStatus.version} downloaded - installing and restarting...`
+      return `Update ${appUpdateStatus.version} downloaded - save any unsaved changes, then click Restart & install.`
     case 'not-available':
       return `You're on the latest version (${appVersion}).`
     case 'error':
@@ -214,17 +214,21 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
         <h3>Manager updates</h3>
         <p className="empty-state">
           Current version: <code>{appVersion || '...'}</code>. Checks this app&apos;s GitHub Releases for a newer
-          version, downloads it, and installs it - the Manager quits and restarts on the new version once the
-          download finishes. Only works in an installed/packaged build, not when running from source.
+          version and downloads it - installing it (which restarts the Manager) is a separate step below, so it
+          never restarts on its own out from under unsaved changes elsewhere in the app. Only works in an
+          installed/packaged build, not when running from source.
         </p>
         {appUpdateStatus.state !== 'idle' && (
           <p className={appUpdateStatus.state === 'error' ? 'error-message' : 'empty-state'}>
             {describeAppUpdateStatus(appUpdateStatus, appVersion)}
           </p>
         )}
-        <button onClick={() => void window.api.appUpdate.checkAndInstall()} disabled={appUpdateBusy}>
+        <button onClick={() => void window.api.appUpdate.check()} disabled={appUpdateBusy}>
           {appUpdateBusy ? 'Working...' : 'Check for updates'}
         </button>
+        {appUpdateStatus.state === 'downloaded' && (
+          <button onClick={() => void window.api.appUpdate.install()}>Restart &amp; install now</button>
+        )}
       </section>
     </div>
   )

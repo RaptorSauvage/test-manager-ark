@@ -270,7 +270,8 @@ export const IPC = {
   serverOpenConfigFolder: 'server:open-config-folder',
 
   appUpdateGetVersion: 'app-update:get-version',
-  appUpdateCheckAndInstall: 'app-update:check-and-install',
+  appUpdateCheck: 'app-update:check',
+  appUpdateInstall: 'app-update:install',
   appUpdateStatus: 'app-update:status',
   appUpdateStatusChanged: 'app-update:status-changed'
 } as const
@@ -400,7 +401,8 @@ export interface Api {
   }
   appUpdate: {
     getVersion: () => Promise<string>
-    checkAndInstall: () => Promise<void>
+    check: () => Promise<void>
+    install: () => Promise<void>
     getStatus: () => Promise<AppUpdateStatus>
     onStatusChanged: (callback: (status: AppUpdateStatus) => void) => () => void
   }
