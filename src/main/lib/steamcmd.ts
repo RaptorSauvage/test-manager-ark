@@ -137,6 +137,19 @@ function checkInstallUpToDate(installDir: string): boolean {
   return isInstallUpToDate(readManifestStateFlags(fs.readFileSync(manifestPath, 'utf-8')))
 }
 
+/** Reads the installed build id out of an appmanifest .acf file, or null if missing/unparseable. */
+export function readManifestBuildId(manifestContent: string): string | null {
+  const match = manifestContent.match(/"buildid"\s*"(\d+)"/i)
+  return match ? match[1] : null
+}
+
+/** The build id currently installed for this profile, or null if it's never been installed. */
+export function getInstalledBuildId(installDir: string): string | null {
+  const manifestPath = getAppManifestPath(installDir)
+  if (!fs.existsSync(manifestPath)) return null
+  return readManifestBuildId(fs.readFileSync(manifestPath, 'utf-8'))
+}
+
 export function updateServer(profile: ServerProfile, steamCmdPath: string): Promise<void> {
   if (isRunning(profile.id)) {
     return Promise.reject(new Error('Stop the server before updating it.'))

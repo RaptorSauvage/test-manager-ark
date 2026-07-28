@@ -39,7 +39,8 @@ function profile(id: string): ServerProfile {
     scheduledDinoWipeEnabled: false,
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],
-    hidden: false
+    hidden: false,
+    group: ''
   }
 }
 

@@ -78,6 +78,21 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
           affects where the app looks going forward - it won&apos;t move any existing files for you.
         </p>
 
+        <label>
+          Server profiles
+          <div className="path-input-row">
+            <button type="button" onClick={() => void window.api.system.openProfilesFolder()}>
+              Open profiles folder
+            </button>
+          </div>
+        </label>
+        <p className="empty-state">
+          Opens the folder holding this app&apos;s own data file (profiles, app settings, and which pid belongs to
+          which running server) - a single <code>config.json</code>, written by the underlying storage library this
+          app uses. It&apos;s already plain JSON today, just not broken out into one file per profile the way an
+          exported profile is.
+        </p>
+
         <label className="checkbox">
           <input
             type="checkbox"

@@ -31,7 +31,8 @@ const api: Api = {
       const listener = (_event: Electron.IpcRendererEvent, status: ServerStatus): void => callback(status)
       ipcRenderer.on(IPC.serverStatusChanged, listener)
       return () => ipcRenderer.removeListener(IPC.serverStatusChanged, listener)
-    }
+    },
+    getInstalledBuildId: (profileId: string) => ipcRenderer.invoke(IPC.serverGetInstalledBuildId, profileId)
   },
   mods: {
     save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods),
@@ -48,7 +49,8 @@ const api: Api = {
       const listener = (_event: Electron.IpcRendererEvent, profileId: string): void => callback(profileId)
       ipcRenderer.on(IPC.backupCreated, listener)
       return () => ipcRenderer.removeListener(IPC.backupCreated, listener)
-    }
+    },
+    getScheduleStatus: (profileId: string) => ipcRenderer.invoke(IPC.backupScheduleStatus, profileId)
   },
   playerBackup: {
     listFolders: (profileId: string) => ipcRenderer.invoke(IPC.playerBackupFoldersList, profileId),
@@ -81,6 +83,10 @@ const api: Api = {
   webDashboard: {
     getStatus: () => ipcRenderer.invoke(IPC.webDashboardStatus),
     getLocalIps: () => ipcRenderer.invoke(IPC.webDashboardLocalIps)
+  },
+  system: {
+    openProfilesFolder: () => ipcRenderer.invoke(IPC.appOpenProfilesFolder),
+    openServerConfigFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenConfigFolder, profileId)
   }
 }
 

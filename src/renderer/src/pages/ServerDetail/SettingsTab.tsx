@@ -300,6 +300,19 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           <input type="checkbox" checked={form.noSound} onChange={(e) => update('noSound', e.target.checked)} />
           No Sound
         </label>
+        <label>
+          Dashboard group
+          <input
+            value={form.group}
+            onChange={(e) => update('group', e.target.value)}
+            placeholder="Leave blank for no group"
+          />
+        </label>
+        <p className="empty-state">
+          Every profile sharing the same group name collects into its own collapsible section on the dashboard,
+          named after the group - handy for organizing a cluster or a set of test servers. Leave blank to show
+          this server directly in the main grid.
+        </p>
       </section>
       <label>
         Extra launch arguments

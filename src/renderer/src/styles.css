@@ -220,18 +220,21 @@ label.checkbox {
   gap: 16px;
 }
 
-.hidden-servers {
+.hidden-servers,
+.server-group {
   margin-top: 20px;
 }
 
-.hidden-servers summary {
+.hidden-servers summary,
+.server-group summary {
   cursor: pointer;
   color: var(--muted);
   font-weight: 600;
   margin-bottom: 12px;
 }
 
-.hidden-servers .server-grid {
+.hidden-servers .server-grid,
+.server-group .server-grid {
   margin-top: 12px;
 }
 
@@ -331,6 +334,37 @@ label.checkbox {
 
 .server-card-info dt {
   color: var(--muted);
+}
+
+.analytics-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin: 0;
+}
+
+.analytics-grid div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.analytics-grid dt {
+  color: var(--muted);
+}
+
+.status-ok {
+  color: var(--status-running);
+}
+
+.status-warn {
+  color: var(--danger);
 }
 
 .server-card-actions {

@@ -10,6 +10,8 @@ import {
   getAppManifestPath,
   isManifestStuckInErrorState,
   readManifestStateFlags,
+  readManifestBuildId,
+  getInstalledBuildId,
   isInstallUpToDate,
   updateServer
 } from '../src/main/lib/steamcmd'
@@ -53,6 +55,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],
     hidden: false,
+    group: '',
     ...overrides
   }
 }
@@ -123,6 +126,42 @@ describe('readManifestStateFlags', () => {
 
   it('returns null when there is no StateFlags entry', () => {
     expect(readManifestStateFlags('"AppState"\n{\n\t"appid"\t\t"2430930"\n}\n')).toBeNull()
+  })
+})
+
+describe('readManifestBuildId', () => {
+  it('parses the buildid out of the manifest', () => {
+    const manifest = '"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"buildid"\t\t"18742069"\n}\n'
+    expect(readManifestBuildId(manifest)).toBe('18742069')
+  })
+
+  it('returns null when there is no buildid entry', () => {
+    expect(readManifestBuildId('"AppState"\n{\n\t"appid"\t\t"2430930"\n}\n')).toBeNull()
+  })
+})
+
+describe('getInstalledBuildId', () => {
+  it('returns null when the install has no manifest yet', () => {
+    const installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ark-buildid-test-'))
+    try {
+      expect(getInstalledBuildId(installDir)).toBeNull()
+    } finally {
+      fs.rmSync(installDir, { recursive: true, force: true })
+    }
+  })
+
+  it('reads the buildid from an existing manifest', () => {
+    const installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ark-buildid-test-'))
+    try {
+      fs.mkdirSync(path.join(installDir, 'steamapps'), { recursive: true })
+      fs.writeFileSync(
+        getAppManifestPath(installDir),
+        '"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"buildid"\t\t"18742069"\n}\n'
+      )
+      expect(getInstalledBuildId(installDir)).toBe('18742069')
+    } finally {
+      fs.rmSync(installDir, { recursive: true, force: true })
+    }
   })
 })
 

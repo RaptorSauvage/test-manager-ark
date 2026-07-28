@@ -1,5 +1,6 @@
 import cron, { type ScheduledTask } from 'node-cron'
-import type { ServerProfile } from '@shared/types'
+import { CronExpressionParser } from 'cron-parser'
+import type { BackupScheduleStatus, ServerProfile } from '@shared/types'
 import { createBackup } from './backup'
 import { isRunning } from './serverProcess'
 
@@ -31,5 +32,20 @@ export function clearBackupSchedule(profileId: string): void {
   if (existing) {
     existing.stop()
     scheduledTasks.delete(profileId)
+  }
+}
+
+/** Whether a profile's backup schedule is actually active, and when it next fires - for
+ *  the Analytics tab's "Backup Status" panel. Purely computed from the profile + a fresh
+ *  cron-parser read, not from any state stored by the scheduler itself. */
+export function getBackupScheduleStatus(profile: ServerProfile): BackupScheduleStatus {
+  const active = scheduledTasks.has(profile.id)
+  if (!active) return { active: false, nextRunAt: null }
+
+  try {
+    const nextRunAt = CronExpressionParser.parse(profile.backupSchedule ?? '').next().getTime()
+    return { active: true, nextRunAt }
+  } catch {
+    return { active: true, nextRunAt: null }
   }
 }

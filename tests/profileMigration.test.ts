@@ -39,6 +39,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],
     hidden: false,
+    group: '',
     mods: [],
     ...overrides
   } as ServerProfile

@@ -86,6 +86,10 @@ export interface ServerProfile {
    *  deleting it or touching whatever server process is actually running - just a way to
    *  declutter the main list for a profile you're not actively using right now. */
   hidden: boolean
+  /** Free-form dashboard grouping label. Empty (the default) means "no group" - shown
+   *  directly in the main grid. Any other value collects every profile sharing it into
+   *  its own collapsible section on the dashboard, named after the group. */
+  group: string
 }
 
 export interface MapDefinition {
@@ -137,6 +141,7 @@ export interface ServerStatus {
   startedAt?: number
   cpu?: number
   memoryMB?: number
+  memoryPercent?: number
   players?: string[]
   lastError?: string
 }
@@ -146,6 +151,14 @@ export interface BackupEntry {
   filePath: string
   createdAt: number
   sizeBytes: number
+}
+
+/** For the Analytics tab's "Backup Status" panel. */
+export interface BackupScheduleStatus {
+  /** Whether the schedule is actually running right now (enabled, valid cron, applied). */
+  active: boolean
+  /** Epoch ms of the next scheduled run, or null if inactive/unparseable. */
+  nextRunAt: number | null
 }
 
 /** One player's backup folder, for a "pick a player" selector next to the world backup list. */
@@ -186,6 +199,7 @@ export const IPC = {
   serverIsInstalled: 'server:is-installed',
   serverStatus: 'server:status',
   serverStatusChanged: 'server:status-changed',
+  serverGetInstalledBuildId: 'server:get-installed-build-id',
 
   modsSave: 'mods:save',
   modsExport: 'mods:export',
@@ -197,6 +211,7 @@ export const IPC = {
   backupDelete: 'backup:delete',
   backupOpenFolder: 'backup:open-folder',
   backupCreated: 'backup:created',
+  backupScheduleStatus: 'backup:schedule-status',
 
   playerBackupFoldersList: 'player-backup:folders-list',
   playerBackupList: 'player-backup:list',
@@ -217,7 +232,10 @@ export const IPC = {
   officialServerStatusGet: 'official-server-status:get',
 
   webDashboardStatus: 'web-dashboard:status',
-  webDashboardLocalIps: 'web-dashboard:local-ips'
+  webDashboardLocalIps: 'web-dashboard:local-ips',
+
+  appOpenProfilesFolder: 'app:open-profiles-folder',
+  serverOpenConfigFolder: 'server:open-config-folder'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -289,6 +307,7 @@ export interface Api {
     isInstalled: (profileId: string) => Promise<boolean>
     status: (profileId: string) => Promise<ServerStatus>
     onStatusChanged: (callback: (status: ServerStatus) => void) => () => void
+    getInstalledBuildId: (profileId: string) => Promise<string | null>
   }
   mods: {
     save: (profileId: string, mods: ServerMod[]) => Promise<ServerProfile>
@@ -302,6 +321,7 @@ export interface Api {
     restore: (profileId: string, filePath: string) => Promise<void>
     openFolder: (profileId: string) => Promise<void>
     onCreated: (callback: (profileId: string) => void) => () => void
+    getScheduleStatus: (profileId: string) => Promise<BackupScheduleStatus>
   }
   playerBackup: {
     listFolders: (profileId: string) => Promise<PlayerBackupFolder[]>
@@ -333,5 +353,9 @@ export interface Api {
   webDashboard: {
     getStatus: () => Promise<{ running: boolean; error: string | null; host: string | null }>
     getLocalIps: () => Promise<string[]>
+  }
+  system: {
+    openProfilesFolder: () => Promise<void>
+    openServerConfigFolder: (profileId: string) => Promise<void>
   }
 }

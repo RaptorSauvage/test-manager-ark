@@ -96,7 +96,8 @@ export function registerProfileHandlers(): void {
       scheduledDinoWipeEnabled: false,
       scheduledDinoWipeTime: '00:00',
       scheduledDinoWipeDays: [],
-      hidden: false
+      hidden: false,
+      group: ''
     }
 
     const profiles = saveProfile(profile)

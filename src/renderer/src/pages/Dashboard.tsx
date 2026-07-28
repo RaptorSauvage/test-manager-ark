@@ -23,6 +23,10 @@ export default function Dashboard({
   const statuses = useServerStatuses(profiles.map((p) => p.id))
   const visibleProfiles = profiles.filter((p) => !p.hidden)
   const hiddenProfiles = profiles.filter((p) => p.hidden)
+  const ungroupedProfiles = visibleProfiles.filter((p) => !p.group.trim())
+  const groupNames = Array.from(new Set(visibleProfiles.filter((p) => p.group.trim()).map((p) => p.group.trim()))).sort(
+    (a, b) => a.localeCompare(b)
+  )
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
@@ -376,7 +380,16 @@ export default function Dashboard({
             </p>
           )}
 
-          <div className="server-grid">{visibleProfiles.map(renderCard)}</div>
+          <div className="server-grid">{ungroupedProfiles.map(renderCard)}</div>
+
+          {groupNames.map((groupName) => (
+            <details className="server-group" key={groupName} open>
+              <summary>{groupName}</summary>
+              <div className="server-grid">
+                {visibleProfiles.filter((p) => p.group.trim() === groupName).map(renderCard)}
+              </div>
+            </details>
+          ))}
 
           {hiddenProfiles.length > 0 && (
             <details className="hidden-servers">

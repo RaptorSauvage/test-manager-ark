@@ -4,6 +4,7 @@ import { getProfile } from '../store'
 import { getStatus, serverEvents } from '../lib/serverProcess'
 import { doStartServer, doStopServer, doRestartServer, doKillServer, doUpdateServer } from '../lib/serverActions'
 import { isValidArkInstall } from '../lib/detect'
+import { getInstalledBuildId } from '../lib/steamcmd'
 
 function requireProfile(profileId: string) {
   const profile = getProfile(profileId)
@@ -35,4 +36,8 @@ export function registerServerProcessHandlers(webContents: WebContents): void {
   })
 
   ipcMain.handle(IPC.serverStatus, (_event, profileId: string) => getStatus(profileId))
+
+  ipcMain.handle(IPC.serverGetInstalledBuildId, (_event, profileId: string) =>
+    getInstalledBuildId(requireProfile(profileId).installDir)
+  )
 }

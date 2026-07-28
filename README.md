@@ -84,7 +84,29 @@ dedicated servers running on the same machine.
   way to declutter the dashboard for a profile you're not actively using right now. Hidden
   profiles collapse into a "Hidden servers (N)" section at the bottom (collapsed by
   default) where they're still fully functional - Start/Stop/RCON/etc. all still work
-  there - so unhiding one is a single click away.
+  there - so unhiding one is a single click away. Separately, a **Dashboard group** field
+  in each server's Settings ("Extra Settings" section) collects every profile sharing the
+  same group name into its own collapsible section (expanded by default) instead of the
+  main grid - handy for a cluster or a set of related test servers. A profile can be
+  hidden and grouped independently; hidden always wins (it goes to the Hidden section
+  regardless of its group).
+- **Analytics tab** — the first tab on every server, read-only:
+  - **Server Status**: PID, uptime (live, ticking every second while running), memory
+    usage (MB and % of total system RAM), and connected players (X / configured max).
+  - **Version**: the SteamCMD-installed build id, read straight from that install's
+    `appmanifest_2430930.acf` (the same file the Update button's "up to date" check
+    already reads) - `null`/"Not installed yet" before the first install.
+  - **Backup Status**: whether the backup schedule (from the Backups tab) is actually
+    active right now, and a live countdown to its next run - computed with `cron-parser`
+    against the profile's own cron expression, not tracked/stored anywhere.
+  - An **Open config folder** button, opening
+    `ShooterGame/Saved/Config/WindowsServer` (where `GameUserSettings.ini`/`Game.ini`
+    live) in the OS file explorer - the app still never edits these files itself.
+- **Open profiles folder** — a button in the app-wide Settings view opens the folder
+  holding this app's own data file (profiles, app settings, which pid belongs to which
+  running server): a single `config.json`, written by `electron-store` at Electron's
+  standard per-OS user-data location. It's already plain JSON, just one shared file for
+  everything rather than one file per profile like an exported profile.
 - **Export / import a profile as a file** — a server's Settings tab has an "Export
   profile..." button that saves its whole config (ports, mods, cluster, extra settings -
   everything except backups/logs) as a JSON file; the dashboard's "Import profile file..."

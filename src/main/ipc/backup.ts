@@ -2,6 +2,7 @@ import { ipcMain, type WebContents } from 'electron'
 import { IPC } from '@shared/types'
 import { getProfile } from '../store'
 import { createBackup, listBackups, deleteBackup, restoreBackup, openBackupFolder, backupEvents } from '../lib/backup'
+import { getBackupScheduleStatus } from '../lib/schedule'
 
 function requireProfile(profileId: string) {
   const profile = getProfile(profileId)
@@ -25,4 +26,8 @@ export function registerBackupHandlers(webContents: WebContents): void {
   )
 
   ipcMain.handle(IPC.backupOpenFolder, (_event, profileId: string) => openBackupFolder(requireProfile(profileId)))
+
+  ipcMain.handle(IPC.backupScheduleStatus, (_event, profileId: string) =>
+    getBackupScheduleStatus(requireProfile(profileId))
+  )
 }

@@ -33,6 +33,7 @@ interface LegacyProfileFields {
  * - `scheduledRestartDestroyWildDinosAfter` was dropped from the restart schedule -
  *   folded into the separate, independent scheduled dino wipe instead
  * - `hidden` is new and defaults to false (shown on the dashboard)
+ * - `group` is new and defaults to '' (no dashboard group)
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -85,6 +86,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     scheduledDinoWipeEnabled: rest.scheduledDinoWipeEnabled ?? false,
     scheduledDinoWipeTime: rest.scheduledDinoWipeTime ?? '00:00',
     scheduledDinoWipeDays: rest.scheduledDinoWipeDays ?? [],
-    hidden: rest.hidden ?? false
+    hidden: rest.hidden ?? false,
+    group: rest.group ?? ''
   }
 }
