@@ -321,7 +321,9 @@ From the dashboard, click **+ Add server**, then open it and fill in the **Setti
 tab:
 
 - **Install directory**: the folder containing `ShooterGame/Binaries/...` for that
-  server instance.
+  server instance - **Browse...** opens a folder picker; pasting a path works too, and a
+  surrounding pair of quotes (e.g. from Windows Explorer's "Copy as path") is stripped
+  automatically so that doesn't silently break detection.
 - **Map**, **game/RCON ports**, and **Server Platform** (PC/ALL). RCON authenticates using
   `ServerAdminPassword` from that install's `GameUserSettings.ini` - set it there, not in
   this app - and must be reachable on `127.0.0.1` (start/stop rely on it to save the world

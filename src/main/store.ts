@@ -2,6 +2,7 @@ import Store from 'electron-store'
 import type { ServerProfile, AppSettings } from '@shared/types'
 import { migrateProfile } from './lib/profileMigration'
 import { reorderProfiles } from './lib/reorder'
+import { stripWrappingQuotes } from './lib/pathSanitize'
 
 interface StoreSchema {
   profiles: ServerProfile[]
@@ -34,10 +35,16 @@ export function getProfile(id: string): ServerProfile | undefined {
 }
 
 export function saveProfile(profile: ServerProfile): ServerProfile[] {
+  const sanitized: ServerProfile = {
+    ...profile,
+    installDir: stripWrappingQuotes(profile.installDir),
+    backupDir: stripWrappingQuotes(profile.backupDir),
+    clusterDirOverride: stripWrappingQuotes(profile.clusterDirOverride)
+  }
   const profiles = listProfiles()
-  const idx = profiles.findIndex((p) => p.id === profile.id)
-  if (idx >= 0) profiles[idx] = profile
-  else profiles.push(profile)
+  const idx = profiles.findIndex((p) => p.id === sanitized.id)
+  if (idx >= 0) profiles[idx] = sanitized
+  else profiles.push(sanitized)
   store.set('profiles', profiles)
   return profiles
 }

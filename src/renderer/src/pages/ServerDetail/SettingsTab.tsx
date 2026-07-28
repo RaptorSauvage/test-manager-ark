@@ -56,6 +56,11 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
     if (dir) update('clusterDirOverride', dir)
   }
 
+  async function browseInstallDir(): Promise<void> {
+    const dir = await window.api.dialog.selectDirectory()
+    if (dir) update('installDir', dir)
+  }
+
   async function save(): Promise<void> {
     const updated = await window.api.profiles.save(form)
     const saved = updated.find((p) => p.id === form.id)
@@ -91,11 +96,16 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
       </label>
       <label>
         Install directory
-        <input
-          value={form.installDir}
-          onChange={(e) => update('installDir', e.target.value)}
-          placeholder="C:\ARK\Server"
-        />
+        <div className="path-input-row">
+          <input
+            value={form.installDir}
+            onChange={(e) => update('installDir', e.target.value)}
+            placeholder="C:\ARK\Server"
+          />
+          <button type="button" onClick={() => void browseInstallDir()}>
+            Browse...
+          </button>
+        </div>
       </label>
       <label>
         Map
