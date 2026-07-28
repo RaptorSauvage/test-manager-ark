@@ -358,7 +358,11 @@ tab:
   fixed by ARK:SA and isn't a configurable field. `.arkrbf` files (ARK's own transient
   rollback data, not useful in a backup) are left out of the zip. Backup directory,
   retention, and scheduling live in the **Backups** tab, not here; you must set a backup
-  directory there before creating a backup.
+  directory there before creating a backup. If that backup directory already has zips
+  from a previous manager tool named `<Map>_<YYYYMMDDHHMMSS>.zip` (e.g.
+  `Genesis_WP_20260720103215.zip`), they show up in the list too - tagged **legacy** - and
+  can be browsed/restored like any other, but are never counted against the backup limit
+  above or auto-deleted by it, so a transition doesn't quietly wipe them out.
 
 ## Web dashboard API (for bots / other tools)
 

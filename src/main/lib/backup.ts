@@ -18,6 +18,21 @@ function backupPrefix(profile: ServerProfile): string {
   return profile.name.replace(/\s+/g, '_')
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Recognizes a previous manager tool's backup naming convention - `<Map>_
+ * <YYYYMMDDHHMMSS>.zip` (e.g. `Genesis_WP_20260720103215.zip`) - so those backups can
+ * still be browsed/restored here during a transition, without this app ever having
+ * written them itself.
+ */
+export function isLegacyBackupFileName(fileName: string, map: string): boolean {
+  if (!map) return false
+  return new RegExp(`^${escapeRegExp(map)}_\\d{14}\\.zip$`).test(fileName)
+}
+
 /** .arkrbf files are ARK's own transient rollback data next to the real saves - not
  *  useful in a backup and just extra weight/noise, so leave them out of the zip. */
 export function isIgnoredBackupFile(relativePath: string): boolean {
@@ -64,17 +79,33 @@ export function createBackup(profile: ServerProfile): Promise<BackupEntry> {
   })
 }
 
-export function listBackups(profile: ServerProfile): BackupEntry[] {
+function statEntry(backupDir: string, fileName: string, legacy: boolean): BackupEntry {
+  const filePath = path.join(backupDir, fileName)
+  const stat = fs.statSync(filePath)
+  return { fileName, filePath, createdAt: stat.mtimeMs, sizeBytes: stat.size, ...(legacy ? { legacy: true } : {}) }
+}
+
+/** This app's own backups only - used for retention/pruning, so a legacy backup (see
+ *  isLegacyBackupFileName) is never counted against maxBackups or auto-deleted. */
+function listOwnBackups(profile: ServerProfile): BackupEntry[] {
   if (!fs.existsSync(profile.backupDir)) return []
   const prefix = `${backupPrefix(profile)}-`
   return fs
     .readdirSync(profile.backupDir)
     .filter((f) => f.startsWith(prefix) && f.endsWith('.zip'))
-    .map((fileName) => {
-      const filePath = path.join(profile.backupDir, fileName)
-      const stat = fs.statSync(filePath)
-      return { fileName, filePath, createdAt: stat.mtimeMs, sizeBytes: stat.size }
-    })
+    .map((fileName) => statEntry(profile.backupDir, fileName, false))
+    .sort((a, b) => b.createdAt - a.createdAt)
+}
+
+/** Every backup for this profile - this app's own plus any recognized legacy ones (from
+ *  a previous manager tool), so both are browsable/restorable during a transition. */
+export function listBackups(profile: ServerProfile): BackupEntry[] {
+  if (!fs.existsSync(profile.backupDir)) return []
+  const prefix = `${backupPrefix(profile)}-`
+  return fs
+    .readdirSync(profile.backupDir)
+    .filter((f) => f.endsWith('.zip') && (f.startsWith(prefix) || isLegacyBackupFileName(f, profile.map)))
+    .map((fileName) => statEntry(profile.backupDir, fileName, !fileName.startsWith(prefix)))
     .sort((a, b) => b.createdAt - a.createdAt)
 }
 
@@ -85,7 +116,7 @@ export function selectBackupsToPrune(entries: BackupEntry[], maxBackups: number)
 }
 
 export function pruneOldBackups(profile: ServerProfile): void {
-  const toDelete = selectBackupsToPrune(listBackups(profile), profile.maxBackups)
+  const toDelete = selectBackupsToPrune(listOwnBackups(profile), profile.maxBackups)
   for (const backup of toDelete) {
     fs.rmSync(backup.filePath, { force: true })
   }
