@@ -13,6 +13,7 @@ const bundledMainDeps = [
   'adm-zip',
   'ini',
   'node-cron',
+  'cron-parser',
   'pidusage',
   'rcon-client',
   'electron-store'
