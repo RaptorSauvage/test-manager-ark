@@ -150,43 +150,27 @@ export function getInstalledBuildId(installDir: string): string | null {
   return readManifestBuildId(fs.readFileSync(manifestPath, 'utf-8'))
 }
 
-export function updateServer(profile: ServerProfile, steamCmdPath: string): Promise<void> {
-  if (isRunning(profile.id)) {
-    return Promise.reject(new Error('Stop the server before updating it.'))
-  }
-  if (isUpdating(profile.id)) {
-    return Promise.reject(new Error('An update is already running for this server.'))
-  }
-  if (!steamCmdPath.trim()) {
-    return Promise.reject(new Error('Set the SteamCMD path in Settings before updating.'))
-  }
-  if (!fs.existsSync(steamCmdPath)) {
-    return Promise.reject(
-      new Error(
-        `SteamCMD not found at ${steamCmdPath} - it may have been removed (e.g. by ` +
-          'reinstalling or updating the Manager itself). Reinstall it via the SteamCMD menu.'
-      )
-    )
-  }
+/** A stale/freshly-installed SteamCMD's very first run in a while often has to
+ *  self-update before it can do anything else, which tends to fail once (e.g. exit code 7)
+ *  before succeeding right after - so a single failure isn't necessarily the real,
+ *  final outcome. Retried up to this many attempts before actually surfacing an error. */
+const MAX_UPDATE_ATTEMPTS = 3
 
+/** Runs a single SteamCMD update attempt, piping its output into the already-open
+ *  `logStream` (left open across retries so the full log shows every attempt). */
+function runUpdateAttempt(profile: ServerProfile, steamCmdPath: string, logStream: fs.WriteStream): Promise<void> {
   return new Promise((resolve, reject) => {
     clearStuckManifest(profile.installDir)
 
     const args = buildUpdateArgs(profile.installDir)
-
-    setUpdating(profile.id, true)
-
-    const logPath = getUpdateLogPath(profile.id)
-    fs.mkdirSync(path.dirname(logPath), { recursive: true })
-    const logStream = fs.createWriteStream(logPath)
     const previousContentLogSize = contentLogSize(steamCmdPath)
 
     // Pipe stdout/stderr into a log file instead of 'ignore' - SteamCMD's own console
     // output wasn't surfaced anywhere, making failures undiagnosable beyond the raw exit
     // code. Piping into an actively-draining stream avoids the OS pipe buffer filling up
     // and stalling the process the way leaving it unread would. { end: false } because two
-    // sources (stdout and stderr) write into the same destination - only finish() below
-    // should close it, once both are done.
+    // sources (stdout and stderr) write into the same destination, and the stream is
+    // shared across retries - only the caller closes it once every attempt is done.
     //
     // windowsHide: true - Windows still allocates a console for a console-subsystem child
     // like steamcmd.exe even from a windowless Electron parent; this just keeps it from
@@ -214,11 +198,9 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
       if (newContentLog.trim()) {
         logStream.write('\n--- SteamCMD content_log.txt (new since this run) ---\n' + newContentLog)
       }
-      logStream.end()
     }
 
     child.on('error', (err) => {
-      setUpdating(profile.id, false)
       finish()
       reject(err)
     })
@@ -227,7 +209,6 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
     // their data, so the piped output is fully written before we append the content_log
     // footer and settle the promise.
     child.on('close', (code) => {
-      setUpdating(profile.id, false)
       finish()
       if (code === 0 || checkInstallUpToDate(profile.installDir)) {
         resolve()
@@ -236,4 +217,46 @@ export function updateServer(profile: ServerProfile, steamCmdPath: string): Prom
       }
     })
   })
+}
+
+export async function updateServer(profile: ServerProfile, steamCmdPath: string): Promise<void> {
+  if (isRunning(profile.id)) {
+    throw new Error('Stop the server before updating it.')
+  }
+  if (isUpdating(profile.id)) {
+    throw new Error('An update is already running for this server.')
+  }
+  if (!steamCmdPath.trim()) {
+    throw new Error('Set the SteamCMD path in Settings before updating.')
+  }
+  if (!fs.existsSync(steamCmdPath)) {
+    throw new Error(
+      `SteamCMD not found at ${steamCmdPath} - it may have been removed (e.g. by ` +
+        'reinstalling or updating the Manager itself). Reinstall it via the SteamCMD menu.'
+    )
+  }
+
+  setUpdating(profile.id, true)
+  const logPath = getUpdateLogPath(profile.id)
+  fs.mkdirSync(path.dirname(logPath), { recursive: true })
+  const logStream = fs.createWriteStream(logPath)
+
+  try {
+    let lastError: Error = new Error('SteamCMD update failed.')
+    for (let attempt = 1; attempt <= MAX_UPDATE_ATTEMPTS; attempt++) {
+      if (attempt > 1) {
+        logStream.write(`\n--- Retrying (attempt ${attempt}/${MAX_UPDATE_ATTEMPTS}) ---\n`)
+      }
+      try {
+        await runUpdateAttempt(profile, steamCmdPath, logStream)
+        return
+      } catch (err) {
+        lastError = err as Error
+      }
+    }
+    throw new Error(`SteamCMD failed after ${MAX_UPDATE_ATTEMPTS} attempts: ${lastError.message}`)
+  } finally {
+    setUpdating(profile.id, false)
+    logStream.end()
+  }
 }
