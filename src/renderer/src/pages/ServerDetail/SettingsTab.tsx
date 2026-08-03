@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MapDefinition, ServerProfile } from '@shared/types'
 
 interface SettingsTabProps {
@@ -14,6 +14,8 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   const [refreshingMaps, setRefreshingMaps] = useState(false)
   const [customMaps, setCustomMaps] = useState<MapDefinition[]>([])
   const [refreshingCustomMaps, setRefreshingCustomMaps] = useState(false)
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>()
+  const mounted = useRef(false)
 
   useEffect(() => {
     void refreshMaps()
@@ -54,12 +56,28 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   }
 
   async function save(): Promise<void> {
+    clearTimeout(autoSaveTimer.current)
     const updated = await window.api.profiles.save(form)
     const saved = updated.find((p) => p.id === form.id)
     if (saved) onProfileChange(saved)
     setStatus('Saved')
     setTimeout(() => setStatus(''), 2000)
   }
+
+  // Auto-saves shortly after the last edit, so switching tabs or closing the app never
+  // loses a change - no need to remember to click Save. Debounced (rather than saving on
+  // every keystroke) since a save re-applies the backup/restart/dino-wipe schedules and
+  // the player-backup watcher, which would be wasteful to redo on every character typed.
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true
+      return
+    }
+    clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(() => void save(), 800)
+    return () => clearTimeout(autoSaveTimer.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form])
 
   async function exportProfile(): Promise<void> {
     setExportError('')
@@ -305,8 +323,9 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         <input value={form.extraArgs} onChange={(e) => update('extraArgs', e.target.value)} />
       </label>
       {exportError && <p className="error-message">{exportError}</p>}
+      <p className="empty-state">Changes save automatically a moment after you make them - no need to click Save.</p>
       <div className="form-actions">
-        <button type="submit">Save settings</button>
+        <button type="submit">Save now</button>
         <button type="button" onClick={() => void exportProfile()}>
           Export profile...
         </button>

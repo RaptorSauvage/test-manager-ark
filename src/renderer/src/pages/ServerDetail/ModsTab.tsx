@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ServerProfile, ServerMod } from '@shared/types'
 
 interface ModsTabProps {
@@ -11,6 +11,8 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   const [newModId, setNewModId] = useState('')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>()
+  const mounted = useRef(false)
 
   function addMod(): void {
     const id = newModId.trim()
@@ -57,6 +59,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   }
 
   async function save(): Promise<void> {
+    clearTimeout(autoSaveTimer.current)
     setError('')
     try {
       const updated = await window.api.mods.save(profile.id, mods)
@@ -67,6 +70,20 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
       setError((err as Error).message)
     }
   }
+
+  // Auto-saves shortly after the last edit, so switching tabs or closing the app never
+  // loses a change - no need to remember to click Save. Debounced rather than saving on
+  // every keystroke (e.g. typing a mod's display name).
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true
+      return
+    }
+    clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(() => void save(), 800)
+    return () => clearTimeout(autoSaveTimer.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mods])
 
   async function exportMods(): Promise<void> {
     setError('')
@@ -88,7 +105,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
       if (!filePath) return
       const imported = await window.api.mods.importFromFile(filePath)
       setMods(imported)
-      setStatus('Mod list imported - click Save mods to apply.')
+      setStatus('Mod list imported.')
       setTimeout(() => setStatus(''), 3000)
     } catch (err) {
       setError((err as Error).message)
@@ -212,8 +229,9 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
         </tbody>
       </table>
       {error && <p className="error-message">{error}</p>}
+      <p className="empty-state">Changes save automatically a moment after you make them - no need to click Save.</p>
       <div className="form-actions">
-        <button onClick={() => void save()}>Save mods</button>
+        <button onClick={() => void save()}>Save now</button>
         <button type="button" onClick={() => void exportMods()}>
           Export mod list...
         </button>
