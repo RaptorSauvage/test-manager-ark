@@ -18,11 +18,11 @@ interface ServerDetailProps {
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'analytics', label: 'Analytics' },
+  { key: 'settings', label: 'Settings' },
   { key: 'mods', label: 'Mods' },
   { key: 'backups', label: 'Backups' },
   { key: 'management', label: 'Server Management' },
-  { key: 'mapManagement', label: 'Map Management' },
-  { key: 'settings', label: 'Settings' }
+  { key: 'mapManagement', label: 'Map Management' }
 ]
 
 export default function ServerDetail({ profile, initialTab, onBack, onProfileChange }: ServerDetailProps): JSX.Element {
