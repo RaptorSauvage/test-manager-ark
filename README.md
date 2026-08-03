@@ -30,7 +30,11 @@ dedicated servers running on the same machine.
   Stop/Restart still use RCON internally (`SaveWorld` before `DoExit`), and the RCON/admin
   password still isn't a field anywhere in this app - it's read live from the server's own
   `GameUserSettings.ini` (`ServerAdminPassword`) every time it's needed, since ARK:SA
-  doesn't have a separate concept of an "RCON password".
+  doesn't have a separate concept of an "RCON password". Reading that file strips a
+  leading UTF-8 BOM first if present - a BOM (common after the file's been saved/re-saved
+  by Notepad or some server panels on Windows) otherwise breaks the ini parser's section
+  handling, silently making `ServerAdminPassword` unreadable even though it's right there
+  in the file.
 - **Mod manager** — a table (Enable/Passive/Dev checkboxes, Mod Name, Mod ID, plus
   reorder/remove) instead of a plain list. Enable/disable/reorder mod IDs and toggle a Dev
   flag per mod (appends `-dev` to load that mod's in-development build); enabled mods are
