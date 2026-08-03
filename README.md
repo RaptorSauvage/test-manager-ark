@@ -73,7 +73,11 @@ dedicated servers running on the same machine.
   when a scheduled/cron backup completes in the background (the main process pushes a
   `backup:created` event for the tab to pick up, so you don't have to click Refresh to see
   it) and right after saving a changed backup directory in this tab, so switching folders
-  immediately shows that folder's contents instead of the previous one's.
+  immediately shows that folder's contents instead of the previous one's. A **Backup
+  Process Log** panel alongside it traces every backup's SaveGame → 30s settle → zip
+  sequence as it happens - both what's sent/confirmed and any cancellation/error - live,
+  so a scheduled backup nobody's watching happen isn't a black box; kept in memory only
+  (cleared on Manager restart), last 200 entries per profile.
 - **Per-player profile backups** — tails the server's own `ShooterGame.log` for join/leave
   lines (e.g. `LeRaptorSauvage [UniqueNetId:0002dbe9... Platform:None] joined this ARK!`)
   rather than polling RCON, and zips up that player's `<UniqueNetId>.profilebak` file from

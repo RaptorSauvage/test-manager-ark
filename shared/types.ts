@@ -160,6 +160,15 @@ export interface BackupEntry {
   legacy?: boolean
 }
 
+/** One step of a backup's SaveGame -> settle -> zip sequence, for the Backups tab's
+ *  process log - so a scheduled/automatic backup (which nobody's watching happen) can
+ *  still be monitored/debugged after the fact instead of being a black box. */
+export interface BackupLogEntry {
+  timestamp: number
+  level: 'info' | 'error'
+  message: string
+}
+
 /** For the Analytics tab's "Backup Status" panel. */
 export interface BackupScheduleStatus {
   /** Whether the schedule is actually running right now (enabled, valid cron, applied). */
@@ -243,6 +252,8 @@ export const IPC = {
   backupOpenFolder: 'backup:open-folder',
   backupCreated: 'backup:created',
   backupScheduleStatus: 'backup:schedule-status',
+  backupLogGet: 'backup:log-get',
+  backupLogChanged: 'backup:log-changed',
 
   playerBackupFoldersList: 'player-backup:folders-list',
   playerBackupList: 'player-backup:list',
@@ -362,6 +373,8 @@ export interface Api {
     openFolder: (profileId: string) => Promise<void>
     onCreated: (callback: (profileId: string) => void) => () => void
     getScheduleStatus: (profileId: string) => Promise<BackupScheduleStatus>
+    getLog: (profileId: string) => Promise<BackupLogEntry[]>
+    onLogChanged: (callback: (profileId: string, entry: BackupLogEntry) => void) => () => void
   }
   playerBackup: {
     listFolders: (profileId: string) => Promise<PlayerBackupFolder[]>

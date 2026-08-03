@@ -9,6 +9,7 @@ vi.mock('../src/main/lib/rcon', () => ({ sendRconCommand: vi.fn(async () => ({ o
 
 import {
   createBackup,
+  getBackupLog,
   isIgnoredBackupFile,
   isLegacyBackupFileName,
   listBackups,
@@ -230,6 +231,30 @@ describe('createBackup', () => {
     expect(Date.now() - start).toBeGreaterThanOrEqual(45)
   })
 
+  it('logs each step of a successful backup', async () => {
+    const profile = makeProfile({ id: 'log-success', installDir, backupDir })
+
+    await createBackup(profile, 0)
+
+    const messages = getBackupLog(profile.id).map((entry) => entry.message)
+    expect(messages.some((m) => m.includes('Sending SaveGame'))).toBe(true)
+    expect(messages.some((m) => m.includes('SaveGame confirmed'))).toBe(true)
+    expect(messages.some((m) => m.includes('Zipping'))).toBe(true)
+    expect(messages.some((m) => m.includes('Backup created'))).toBe(true)
+    expect(getBackupLog(profile.id).every((entry) => entry.level === 'info')).toBe(true)
+  })
+
+  it('logs an error entry when the backup is cancelled', async () => {
+    vi.mocked(mockIsRunning).mockReturnValue(false)
+    const profile = makeProfile({ id: 'log-cancelled', installDir, backupDir })
+
+    await expect(createBackup(profile, 0)).rejects.toThrow()
+
+    const log = getBackupLog(profile.id)
+    expect(log).toHaveLength(1)
+    expect(log[0].level).toBe('error')
+    expect(log[0].message).toContain('Start the server')
+  })
 })
 
 describe('restoreBackup', () => {

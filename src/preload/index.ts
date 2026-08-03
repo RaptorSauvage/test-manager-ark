@@ -6,7 +6,8 @@ import {
   type ServerStatus,
   type ServerMod,
   type AppSettings,
-  type AppUpdateStatus
+  type AppUpdateStatus,
+  type BackupLogEntry
 } from '@shared/types'
 
 const api: Api = {
@@ -62,7 +63,14 @@ const api: Api = {
       ipcRenderer.on(IPC.backupCreated, listener)
       return () => ipcRenderer.removeListener(IPC.backupCreated, listener)
     },
-    getScheduleStatus: (profileId: string) => ipcRenderer.invoke(IPC.backupScheduleStatus, profileId)
+    getScheduleStatus: (profileId: string) => ipcRenderer.invoke(IPC.backupScheduleStatus, profileId),
+    getLog: (profileId: string) => ipcRenderer.invoke(IPC.backupLogGet, profileId),
+    onLogChanged: (callback: (profileId: string, entry: BackupLogEntry) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, profileId: string, entry: BackupLogEntry): void =>
+        callback(profileId, entry)
+      ipcRenderer.on(IPC.backupLogChanged, listener)
+      return () => ipcRenderer.removeListener(IPC.backupLogChanged, listener)
+    }
   },
   playerBackup: {
     listFolders: (profileId: string) => ipcRenderer.invoke(IPC.playerBackupFoldersList, profileId),

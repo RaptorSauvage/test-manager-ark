@@ -1,7 +1,15 @@
 import { ipcMain, type WebContents } from 'electron'
-import { IPC } from '@shared/types'
+import { IPC, type BackupLogEntry } from '@shared/types'
 import { getProfile } from '../store'
-import { createBackup, listBackups, deleteBackup, restoreBackup, openBackupFolder, backupEvents } from '../lib/backup'
+import {
+  createBackup,
+  listBackups,
+  deleteBackup,
+  restoreBackup,
+  openBackupFolder,
+  backupEvents,
+  getBackupLog
+} from '../lib/backup'
 import { getBackupScheduleStatus } from '../lib/schedule'
 
 function requireProfile(profileId: string) {
@@ -13,6 +21,10 @@ function requireProfile(profileId: string) {
 export function registerBackupHandlers(webContents: WebContents): void {
   backupEvents.on('created', (profileId: string) => {
     if (!webContents.isDestroyed()) webContents.send(IPC.backupCreated, profileId)
+  })
+
+  backupEvents.on('log', (profileId: string, entry: BackupLogEntry) => {
+    if (!webContents.isDestroyed()) webContents.send(IPC.backupLogChanged, profileId, entry)
   })
 
   ipcMain.handle(IPC.backupCreate, (_event, profileId: string) => createBackup(requireProfile(profileId)))
@@ -30,4 +42,6 @@ export function registerBackupHandlers(webContents: WebContents): void {
   ipcMain.handle(IPC.backupScheduleStatus, (_event, profileId: string) =>
     getBackupScheduleStatus(requireProfile(profileId))
   )
+
+  ipcMain.handle(IPC.backupLogGet, (_event, profileId: string) => getBackupLog(profileId))
 }

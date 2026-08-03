@@ -4,14 +4,35 @@ import { EventEmitter } from 'node:events'
 import { shell } from 'electron'
 import archiver from 'archiver'
 import AdmZip from 'adm-zip'
-import type { ServerProfile, BackupEntry } from '@shared/types'
+import type { ServerProfile, BackupEntry, BackupLogEntry } from '@shared/types'
 import { sendRconCommand } from './rcon'
 import { isRunning } from './serverProcess'
 import { delay } from './delay'
 
 /** Emits 'created' with a profileId whenever a backup finishes - manual or scheduled -
- *  so the renderer can reload its backup list without polling. */
+ *  so the renderer can reload its backup list without polling. Also emits 'log' with
+ *  (profileId, BackupLogEntry) at each step of a backup's SaveGame -> settle -> zip
+ *  sequence, so the Backups tab can show a live process log for monitoring/debugging -
+ *  useful in particular for a scheduled backup nobody's watching happen in real time. */
 export const backupEvents = new EventEmitter()
+
+/** How many recent log entries to keep in memory per profile - old enough entries just
+ *  roll off, there's no need to persist this across app restarts. */
+const MAX_LOG_ENTRIES = 200
+const backupLogs = new Map<string, BackupLogEntry[]>()
+
+function logBackup(profileId: string, message: string, level: BackupLogEntry['level'] = 'info'): void {
+  const entry: BackupLogEntry = { timestamp: Date.now(), level, message }
+  const entries = backupLogs.get(profileId) ?? []
+  entries.push(entry)
+  if (entries.length > MAX_LOG_ENTRIES) entries.shift()
+  backupLogs.set(profileId, entries)
+  backupEvents.emit('log', profileId, entry)
+}
+
+export function getBackupLog(profileId: string): BackupLogEntry[] {
+  return backupLogs.get(profileId) ?? []
+}
 
 function savedArksDir(profile: ServerProfile): string {
   return path.join(profile.installDir, 'ShooterGame', 'Saved', 'SavedArks', profile.map)
@@ -60,21 +81,31 @@ const SAVE_SETTLE_MS = 30_000
  */
 export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_SETTLE_MS): Promise<BackupEntry> {
   if (!profile.backupDir.trim()) {
-    throw new Error('Set a backup directory in the Backups tab first.')
+    const message = 'Set a backup directory in the Backups tab first.'
+    logBackup(profile.id, message, 'error')
+    throw new Error(message)
   }
   if (!isRunning(profile.id)) {
-    throw new Error('Start the server before creating a backup - a confirmed SaveGame is required first.')
+    const message = 'Start the server before creating a backup - a confirmed SaveGame is required first.'
+    logBackup(profile.id, message, 'error')
+    throw new Error(message)
   }
 
+  logBackup(profile.id, 'Sending SaveGame (RCON SaveWorld)...')
   const saveResult = await sendRconCommand(profile, 'SaveWorld')
   if (!saveResult.ok) {
-    throw new Error(`SaveGame did not confirm, backup cancelled: ${saveResult.error ?? 'no response from RCON'}`)
+    const message = `SaveGame did not confirm, backup cancelled: ${saveResult.error ?? 'no response from RCON'}`
+    logBackup(profile.id, message, 'error')
+    throw new Error(message)
   }
+  logBackup(profile.id, `SaveGame confirmed - waiting ${Math.round(saveSettleMs / 1000)}s for the save to settle...`)
   await delay(saveSettleMs)
 
   const sourceDir = savedArksDir(profile)
   if (!fs.existsSync(sourceDir)) {
-    throw new Error(`SavedArks folder not found: ${sourceDir}`)
+    const message = `SavedArks folder not found: ${sourceDir} - backup cancelled.`
+    logBackup(profile.id, message, 'error')
+    throw new Error(message)
   }
   const files = fs
     .readdirSync(sourceDir, { withFileTypes: true })
@@ -86,6 +117,7 @@ export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_S
   const fileName = `${backupPrefix(profile)}-${timestamp}.zip`
   const filePath = path.join(profile.backupDir, fileName)
 
+  logBackup(profile.id, `Zipping ${files.length} file(s) from SavedArks/${profile.map} into ${fileName}...`)
   const output = fs.createWriteStream(filePath)
   const archive = archiver('zip', { zlib: { level: 9 } })
 
@@ -97,11 +129,15 @@ export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_S
         createdAt: Date.now(),
         sizeBytes: archive.pointer()
       }
+      logBackup(profile.id, `Backup created: ${fileName} (${(entry.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`)
       pruneOldBackups(profile)
       backupEvents.emit('created', profile.id)
       resolve(entry)
     })
-    archive.on('error', reject)
+    archive.on('error', (err) => {
+      logBackup(profile.id, `Backup failed while zipping: ${err.message}`, 'error')
+      reject(err)
+    })
 
     archive.pipe(output)
     for (const file of files) {

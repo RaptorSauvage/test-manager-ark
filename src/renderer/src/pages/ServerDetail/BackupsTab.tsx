@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { BackupEntry, ServerProfile } from '@shared/types'
 import PlayerBackupsSection from './PlayerBackupsSection'
+import BackupLogPanel from './BackupLogPanel'
 import { useServerStatuses } from '../../lib/useServerStatuses'
 
 interface BackupsTabProps {
@@ -365,6 +366,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
         </section>
 
         <PlayerBackupsSection profile={profile} />
+        <BackupLogPanel profileId={profile.id} />
       </div>
     </div>
   )

@@ -731,3 +731,39 @@ label.checkbox {
   width: 1%;
   white-space: nowrap;
 }
+
+.backup-log-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backup-log-panel h3 {
+  margin: 0;
+}
+
+.backup-log-list {
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.backup-log-line {
+  margin: 0 0 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.backup-log-time {
+  color: var(--muted);
+  margin-right: 6px;
+}
