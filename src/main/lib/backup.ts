@@ -7,6 +7,7 @@ import AdmZip from 'adm-zip'
 import type { ServerProfile, BackupEntry } from '@shared/types'
 import { sendRconCommand } from './rcon'
 import { isRunning } from './serverProcess'
+import { delay } from './delay'
 
 /** Emits 'created' with a profileId whenever a backup finishes - manual or scheduled -
  *  so the renderer can reload its backup list without polling. */
@@ -39,10 +40,6 @@ export function isLegacyBackupFileName(fileName: string, map: string): boolean {
  *  useful in a backup and just extra weight/noise, so leave them out of the zip. */
 export function isIgnoredBackupFile(relativePath: string): boolean {
   return relativePath.toLowerCase().endsWith('.arkrbf')
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /** How long to wait after RCON confirms SaveGame before actually reading the save files -

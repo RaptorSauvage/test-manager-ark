@@ -7,8 +7,12 @@ dedicated servers running on the same machine.
 
 - **Start / stop / restart / kill** one or more server profiles (each profile is an
   independent ARK:SA server install/instance). Stop and restart send RCON `SaveWorld`,
-  wait for its confirmation, then `DoExit`; Kill force-terminates the process immediately
-  with no save, for when a server is stuck. The status badge tracks the OS process
+  wait for its confirmation, then wait another 30s for the save to actually finish being
+  written to disk (RCON confirming the command only means ARK accepted it, not that every
+  file is done being flushed - sending `DoExit` too soon risks the server exiting
+  mid-write and corrupting the save it just claimed to have finished) before finally
+  sending `DoExit`; Kill force-terminates the process immediately with no save, for when a
+  server is stuck. The status badge tracks the OS process
   (`starting`), the server actually finishing loading - detected by polling its own log
   file (`ShooterGame/Saved/Logs/ShooterGame.log`) for the
   `Server has completed startup and is now advertising for join` line, since ARK's

@@ -7,6 +7,14 @@ import type { ServerMod, ServerProfile, ServerStatus } from '@shared/types'
 import { sendRconCommand } from './rcon'
 import { readAdminPassword } from './config'
 import { setRunningPid, setRunningStartedAt } from '../store'
+import { delay } from './delay'
+
+/** How long to wait after RCON confirms SaveWorld before sending DoExit - the RCON
+ *  response only means ARK accepted the command, not that every file under SavedArks has
+ *  finished being written. Sending DoExit (or killing the process) too soon risks the
+ *  server exiting mid-write, corrupting the save it just claimed to have finished. Same
+ *  margin (and same reasoning) as the settle delay before zipping a backup. */
+const SAVE_SETTLE_MS = 30_000
 
 /** ARK writes this once the world has actually finished loading and is ready for players. */
 const STARTUP_COMPLETE_MARKER = 'Server has completed startup and is now advertising for join'
@@ -389,14 +397,16 @@ export interface StopPhases {
 
 /**
  * Graceful shutdown, split into two independently-awaitable phases: SaveWorld, wait for
- * its RCON confirmation, then DoExit. DoExit is only sent once SaveWorld is confirmed -
- * if RCON is unreachable or the save fails, there is no safe orderly path, so we skip
- * straight to the grace-period/kill fallback instead of exiting on an unconfirmed save.
+ * its RCON confirmation, wait saveSettleMs for the save to actually finish writing to
+ * disk, then DoExit. DoExit is only sent once SaveWorld is confirmed - if RCON is
+ * unreachable or the save fails, there is no safe orderly path, so we skip straight to
+ * the grace-period/kill fallback instead of exiting (or waiting) on an unconfirmed save.
  */
 export function stopServerPhased(
   profile: ServerProfile,
   graceMs = 15000,
-  transientState: 'stopping' | 'restarting' = 'stopping'
+  transientState: 'stopping' | 'restarting' = 'stopping',
+  saveSettleMs = SAVE_SETTLE_MS
 ): StopPhases {
   const entry = running.get(profile.id)
   if (!entry) {
@@ -417,6 +427,7 @@ export function stopServerPhased(
     const saveResult = await sendRconCommand(profile, 'SaveWorld')
     resolveSaved(saveResult.ok)
     if (saveResult.ok) {
+      await delay(saveSettleMs)
       await sendRconCommand(profile, 'DoExit')
     }
     await waitForExitOrKill(entry, profile.id, graceMs)
@@ -429,22 +440,23 @@ export function stopServerPhased(
 export async function stopServer(
   profile: ServerProfile,
   graceMs = 15000,
-  transientState: 'stopping' | 'restarting' = 'stopping'
+  transientState: 'stopping' | 'restarting' = 'stopping',
+  saveSettleMs = SAVE_SETTLE_MS
 ): Promise<ServerStatus> {
-  return stopServerPhased(profile, graceMs, transientState).finished
+  return stopServerPhased(profile, graceMs, transientState, saveSettleMs).finished
 }
 
 /** Same restart, split the same way as stopServerPhased - `saved` resolves once the
  *  shutdown's SaveWorld is confirmed, `finished` once the new process has actually
  *  spawned back up. */
-export function restartServerPhased(profile: ServerProfile): StopPhases {
-  const { saved, finished: stopFinished } = stopServerPhased(profile, 15000, 'restarting')
+export function restartServerPhased(profile: ServerProfile, saveSettleMs = SAVE_SETTLE_MS): StopPhases {
+  const { saved, finished: stopFinished } = stopServerPhased(profile, 15000, 'restarting', saveSettleMs)
   const finished = stopFinished.then(() => startServer(profile))
   return { saved, finished }
 }
 
-export async function restartServer(profile: ServerProfile): Promise<ServerStatus> {
-  return restartServerPhased(profile).finished
+export async function restartServer(profile: ServerProfile, saveSettleMs = SAVE_SETTLE_MS): Promise<ServerStatus> {
+  return restartServerPhased(profile, saveSettleMs).finished
 }
 
 /** Immediately force-kills the process with no SaveWorld/DoExit - current world state since the last save is lost. */
