@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { MapFolderEntry, ServerProfile } from '@shared/types'
 
-interface MapManagementSectionProps {
+interface MapManagementTabProps {
   profile: ServerProfile
 }
 
-export default function MapManagementSection({ profile }: MapManagementSectionProps): JSX.Element {
+export default function MapManagementTab({ profile }: MapManagementTabProps): JSX.Element {
   const [folders, setFolders] = useState<MapFolderEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
