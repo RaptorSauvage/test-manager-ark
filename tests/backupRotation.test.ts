@@ -13,6 +13,7 @@ import {
   isLegacyBackupFileName,
   listBackups,
   pruneOldBackups,
+  restoreBackup,
   selectBackupsToPrune
 } from '../src/main/lib/backup'
 import { isRunning as mockIsRunning } from '../src/main/lib/serverProcess'
@@ -241,5 +242,50 @@ describe('createBackup', () => {
     await createBackup(profile, 50)
 
     expect(Date.now() - start).toBeLessThan(45)
+  })
+
+})
+
+describe('restoreBackup', () => {
+  let tmpDir: string
+  let installDir: string
+  let backupDir: string
+  let savedArksDir: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ark-restore-test-'))
+    installDir = path.join(tmpDir, 'install')
+    backupDir = path.join(tmpDir, 'backups')
+    savedArksDir = path.join(installDir, 'ShooterGame', 'Saved', 'SavedArks', 'TheIsland_WP')
+    fs.mkdirSync(savedArksDir, { recursive: true })
+    fs.mkdirSync(backupDir, { recursive: true })
+    fs.writeFileSync(path.join(savedArksDir, 'TheIsland.ark'), 'world-save')
+    vi.mocked(mockIsRunning).mockReset().mockReturnValue(false)
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('refuses to restore while the server is running', () => {
+    vi.mocked(mockIsRunning).mockReturnValue(true)
+    const backupZip = path.join(backupDir, 'fixture.zip')
+    new AdmZip().writeZip(backupZip)
+    const profile = makeProfile({ installDir, backupDir })
+
+    expect(() => restoreBackup(profile, backupZip)).toThrow('Stop the server')
+    expect(fs.existsSync(path.join(savedArksDir, 'TheIsland.ark'))).toBe(true)
+  })
+
+  it('restores into SavedArks when the server is stopped', () => {
+    const backupZip = path.join(backupDir, 'fixture.zip')
+    const zip = new AdmZip()
+    zip.addFile('Restored.ark', Buffer.from('restored-save'))
+    zip.writeZip(backupZip)
+    const profile = makeProfile({ installDir, backupDir })
+
+    restoreBackup(profile, backupZip)
+
+    expect(fs.readFileSync(path.join(savedArksDir, 'Restored.ark'), 'utf-8')).toBe('restored-save')
   })
 })

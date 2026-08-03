@@ -62,7 +62,11 @@ dedicated servers running on the same machine.
   file explorer), Restore selected backup, Delete selected backup(s) - instead of a
   Restore/Delete button pair per row. Multiple backups can be checked at once to delete
   them together; Restore only enables when exactly one is checked, since restoring more
-  than one at a time isn't meaningful. The list also reloads itself automatically - both
+  than one at a time isn't meaningful. Restore also requires the server to be stopped
+  first (same rule as Profile Copy/Move) - extracting a backup straight into a live
+  `SavedArks` overwrites save files the server may have open or be mid-write to, which
+  only surfaces as a crash on the next restart rather than an error at restore time. The
+  list also reloads itself automatically - both
   when a scheduled/cron backup completes in the background (the main process pushes a
   `backup:created` event for the tab to pick up, so you don't have to click Refresh to see
   it) and right after saving a changed backup directory in this tab, so switching folders

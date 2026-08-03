@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { BackupEntry, ServerProfile } from '@shared/types'
 import PlayerBackupsSection from './PlayerBackupsSection'
+import { useServerStatuses } from '../../lib/useServerStatuses'
 
 interface BackupsTabProps {
   profile: ServerProfile
@@ -19,6 +20,10 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   const [error, setError] = useState('')
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [reloadToken, setReloadToken] = useState(0)
+
+  const statuses = useServerStatuses([profile.id])
+  const status = statuses[profile.id]
+  const canRestore = !status || status.state === 'stopped'
 
   const [form, setForm] = useState<ServerProfile>(profile)
   const [settingsStatus, setSettingsStatus] = useState('')
@@ -261,6 +266,12 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
       <div className="backup-sections">
         <section className="backup-management">
           <h3>World Backups</h3>
+          {!canRestore && (
+            <p className="empty-state">
+              Stop the server to restore a backup - extracting one into a live save while the server is running can
+              corrupt it (only surfacing as a crash on the next restart).
+            </p>
+          )}
           <div className="backup-management-actions">
             <button className="btn-refresh-backups" onClick={reload} disabled={loading}>
               {loading ? 'Refreshing...' : 'Refresh backup file list'}
@@ -274,8 +285,14 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
             </button>
             <button
               className="btn-restore-backup"
-              disabled={!singleSelected || busy}
-              title={selectedPaths.size > 1 ? 'Select just one backup to restore' : undefined}
+              disabled={!singleSelected || busy || !canRestore}
+              title={
+                !canRestore
+                  ? 'Stop the server before restoring a backup'
+                  : selectedPaths.size > 1
+                    ? 'Select just one backup to restore'
+                    : undefined
+              }
               onClick={() => singleSelected && void handleRestore(singleSelected)}
             >
               Restore selected backup
