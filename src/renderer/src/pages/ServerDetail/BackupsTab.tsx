@@ -341,18 +341,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
                       onClick={(e) => e.stopPropagation()}
                     />
                   </td>
-                  <td>
-                    {backup.fileName}
-                    {backup.legacy && (
-                      <span
-                        className="badge"
-                        title="Recognized from a previous manager's naming convention - not counted against the backup limit above"
-                      >
-                        {' '}
-                        legacy
-                      </span>
-                    )}
-                  </td>
+                  <td>{backup.fileName}</td>
                   <td>{new Date(backup.createdAt).toLocaleString()}</td>
                 </tr>
               ))}

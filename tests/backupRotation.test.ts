@@ -11,7 +11,6 @@ import {
   createBackup,
   getBackupLog,
   isIgnoredBackupFile,
-  isLegacyBackupFileName,
   listBackups,
   pruneOldBackups,
   restoreBackup,
@@ -99,28 +98,6 @@ describe('isIgnoredBackupFile', () => {
   })
 })
 
-describe('isLegacyBackupFileName', () => {
-  it('recognizes a previous manager tool\'s <Map>_<YYYYMMDDHHMMSS>.zip naming', () => {
-    expect(isLegacyBackupFileName('Genesis_WP_20260720103215.zip', 'Genesis_WP')).toBe(true)
-  })
-
-  it('rejects a file for a different map', () => {
-    expect(isLegacyBackupFileName('TheIsland_WP_20260720103215.zip', 'Genesis_WP')).toBe(false)
-  })
-
-  it('rejects this app\'s own naming convention', () => {
-    expect(isLegacyBackupFileName('My_Server-2026-07-20T10-32-15-123Z.zip', 'Genesis_WP')).toBe(false)
-  })
-
-  it('rejects a timestamp of the wrong length', () => {
-    expect(isLegacyBackupFileName('Genesis_WP_202607201032.zip', 'Genesis_WP')).toBe(false)
-  })
-
-  it('returns false when the profile has no map set', () => {
-    expect(isLegacyBackupFileName('Genesis_WP_20260720103215.zip', '')).toBe(false)
-  })
-})
-
 describe('listBackups', () => {
   let tmpDir: string
   let backupDir: string
@@ -135,32 +112,36 @@ describe('listBackups', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('lists both this app\'s own backups and recognized legacy ones', () => {
+  it('lists every .zip in the backup directory, regardless of naming', () => {
     fs.writeFileSync(path.join(backupDir, 'Genesis_WP-2026-07-20T10-00-00-000Z.zip'), 'x')
     fs.writeFileSync(path.join(backupDir, 'Genesis_WP_20260720103215.zip'), 'x')
     fs.writeFileSync(path.join(backupDir, 'unrelated.zip'), 'x')
+    fs.writeFileSync(path.join(backupDir, 'not-a-zip.txt'), 'x')
 
     const profile = makeProfile({ backupDir, name: 'Test', map: 'Genesis_WP' })
-    const backups = listBackups(profile)
+    const names = listBackups(profile).map((b) => b.fileName).sort()
 
-    const names = backups.map((b) => b.fileName).sort()
-    expect(names).toEqual(['Genesis_WP-2026-07-20T10-00-00-000Z.zip', 'Genesis_WP_20260720103215.zip'])
-    expect(backups.find((b) => b.fileName === 'Genesis_WP_20260720103215.zip')?.legacy).toBe(true)
-    expect(backups.find((b) => b.fileName.startsWith('Genesis_WP-'))?.legacy).toBeUndefined()
+    expect(names).toEqual([
+      'Genesis_WP-2026-07-20T10-00-00-000Z.zip',
+      'Genesis_WP_20260720103215.zip',
+      'unrelated.zip'
+    ])
   })
 
-  it('never prunes a legacy backup, even well past maxBackups', () => {
-    fs.writeFileSync(path.join(backupDir, 'Genesis_WP_20260720103215.zip'), 'x')
-    for (let i = 0; i < 5; i++) {
-      fs.writeFileSync(path.join(backupDir, `Genesis_WP-2026-07-2${i}T10-00-00-000Z.zip`), 'x')
-    }
+  it('prunes down to maxBackups across every zip in the folder, regardless of naming', () => {
+    const fileNames = ['Genesis_WP_20260720103215.zip', 'a.zip', 'b.zip', 'c.zip', 'd.zip']
+    fileNames.forEach((fileName, i) => {
+      const filePath = path.join(backupDir, fileName)
+      fs.writeFileSync(filePath, 'x')
+      const time = new Date(2026, 0, i + 1)
+      fs.utimesSync(filePath, time, time)
+    })
 
     const profile = makeProfile({ backupDir, name: 'Test', map: 'Genesis_WP', maxBackups: 2 })
     pruneOldBackups(profile)
 
-    const remaining = fs.readdirSync(backupDir)
-    expect(remaining).toContain('Genesis_WP_20260720103215.zip')
-    expect(remaining.filter((f) => f.startsWith('Genesis_WP-'))).toHaveLength(2)
+    const remaining = fs.readdirSync(backupDir).sort()
+    expect(remaining).toEqual(['c.zip', 'd.zip'])
   })
 })
 

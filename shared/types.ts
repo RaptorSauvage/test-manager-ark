@@ -154,10 +154,6 @@ export interface BackupEntry {
   filePath: string
   createdAt: number
   sizeBytes: number
-  /** True for a backup recognized by its old naming convention (e.g. a previous manager
-   *  tool's `<Map>_<YYYYMMDDHHMMSS>.zip`) rather than this app's own - shown so it can be
-   *  browsed/restored during a transition, but never counted against maxBackups pruning. */
-  legacy?: boolean
 }
 
 /** One step of a backup's SaveGame -> settle -> zip sequence, for the Backups tab's

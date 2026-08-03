@@ -450,11 +450,13 @@ tab:
   fixed by ARK:SA and isn't a configurable field. `.arkrbf` files (ARK's own transient
   rollback data, not useful in a backup) are left out of the zip. Backup directory,
   retention, and scheduling live in the **Backups** tab, not here; you must set a backup
-  directory there before creating a backup. If that backup directory already has zips
-  from a previous manager tool named `<Map>_<YYYYMMDDHHMMSS>.zip` (e.g.
-  `Genesis_WP_20260720103215.zip`), they show up in the list too - tagged **legacy** - and
-  can be browsed/restored like any other, but are never counted against the backup limit
-  above or auto-deleted by it, so a transition doesn't quietly wipe them out.
+  directory there before creating a backup. The Backups tab's list and the maxBackups
+  retention limit both just take every `.zip` file sitting in that backup directory,
+  whatever its name - including ones from a previous manager tool, or dropped in by hand.
+  There's no separate "own vs. legacy" tracking: everything in that folder counts the
+  same, and once you're past the configured limit the oldest file(s) - by whoever created
+  them - get deleted to make room, so keep a server's backup directory dedicated to that
+  server if you don't want unrelated zips swept up in its retention.
 
 ## Web dashboard API (for bots / other tools)
 
