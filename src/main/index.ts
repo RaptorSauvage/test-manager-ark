@@ -23,11 +23,16 @@ process.on('unhandledRejection', (reason) => {
   console.error('Unhandled promise rejection in main process:', reason)
 })
 
+const iconPath = app.isPackaged
+  ? join(process.resourcesPath, 'icon.png')
+  : join(__dirname, '../../build/icon.png')
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
     show: false,
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
