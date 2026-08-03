@@ -54,18 +54,18 @@ dedicated servers running on the same machine.
   path by hand still needs "Save backup settings"), max backups to keep, and scheduled
   automatic backups (gated behind an explicit enable/disable toggle, not just an
   empty/filled cron field) live here, instead of being split off into Settings. A
-  scheduled backup only actually runs while the server is online - if it's stopped when
-  the cron fires, that run is skipped rather than backing up (or erroring on) a server
-  that isn't running, and that skip shows up in the Backup Process Log below (see next
-  bullet) just like any other cancellation, instead of only being logged to the Manager's
-  own console where nobody would see it. A backup (manual or scheduled) requires a confirmed save: it sends
-  `SaveGame` (RCON `SaveWorld`) and cancels outright - no zip created - if the server
-  isn't running or that command doesn't confirm, rather than backing up a possibly-stale
-  or mid-write state. Once confirmed, it waits 40s before actually reading the save files -
-  RCON confirming the command only means ARK accepted it, not that every file under
+  scheduled backup, just like **Create backup now**, works whether the server is running
+  or stopped. While it's running, a backup (manual or scheduled) requires a confirmed
+  save first: it sends `SaveGame` (RCON `SaveWorld`) and cancels outright - no zip created
+  - if that command doesn't confirm, rather than backing up a possibly-stale or mid-write
+  state. Once confirmed, it waits 40s before actually reading the save files - RCON
+  confirming the command only means ARK accepted it, not that every file under
   `SavedArks` has finished being written, and zipping too soon risks reading a file
   mid-write, which can crash the server (a locked, still-open file) as well as produce a
-  corrupt backup. After that wait, every file directly under `SavedArks/<Map>` is added to
+  corrupt backup. While the server is stopped, none of that applies - nothing is writing
+  to those files, so it zips them as-is immediately, skipping SaveGame and the wait
+  entirely. After that (or immediately, when stopped), every file directly under
+  `SavedArks/<Map>` is added to
   the zip one by one, skipping `.arkrbf` rollback files and ARK's own periodic native
   backups (named like `Extinction_WP_29.07.2026_20.00.01.ark` - a timestamp suffix the
   main save file itself never has, so `<Map>.ark` is always kept regardless) since this

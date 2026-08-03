@@ -64,12 +64,13 @@ export function isIgnoredBackupFile(relativePath: string): boolean {
 const SAVE_SETTLE_MS = 40_000
 
 /**
- * Backs up the active map's SavedArks folder: send SaveGame over RCON, wait for it to be
- * confirmed, wait another saveSettleMs for ARK to finish writing everything to disk, then
- * zip that folder's files (added one by one, skipping .arkrbf) into the configured backup
- * directory. A confirmed SaveGame is required - if the server isn't running or RCON
- * doesn't confirm the save, the backup is cancelled outright rather than zipping a
- * possibly-stale or mid-write state.
+ * Backs up the active map's SavedArks folder. While the server is running, this sends
+ * SaveGame over RCON first, waits for it to be confirmed, then waits another saveSettleMs
+ * for ARK to finish writing everything to disk before zipping - a confirmed SaveGame is
+ * required in that case, and the backup is cancelled outright (no zip) if RCON doesn't
+ * confirm it, rather than zipping a possibly-stale or mid-write state. While the server is
+ * stopped, nothing is writing to those files, so it's already safe to zip as-is - SaveGame
+ * and the settle wait are both skipped entirely.
  */
 export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_SETTLE_MS): Promise<BackupEntry> {
   if (!profile.backupDir.trim()) {
@@ -77,21 +78,20 @@ export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_S
     logBackup(profile.id, message, 'error')
     throw new Error(message)
   }
-  if (!isRunning(profile.id)) {
-    const message = 'Start the server before creating a backup - a confirmed SaveGame is required first.'
-    logBackup(profile.id, message, 'error')
-    throw new Error(message)
-  }
 
-  logBackup(profile.id, 'Sending SaveGame (RCON SaveWorld)...')
-  const saveResult = await sendRconCommand(profile, 'SaveWorld')
-  if (!saveResult.ok) {
-    const message = `SaveGame did not confirm, backup cancelled: ${saveResult.error ?? 'no response from RCON'}`
-    logBackup(profile.id, message, 'error')
-    throw new Error(message)
+  if (isRunning(profile.id)) {
+    logBackup(profile.id, 'Sending SaveGame (RCON SaveWorld)...')
+    const saveResult = await sendRconCommand(profile, 'SaveWorld')
+    if (!saveResult.ok) {
+      const message = `SaveGame did not confirm, backup cancelled: ${saveResult.error ?? 'no response from RCON'}`
+      logBackup(profile.id, message, 'error')
+      throw new Error(message)
+    }
+    logBackup(profile.id, `SaveGame confirmed - waiting ${Math.round(saveSettleMs / 1000)}s for the save to settle...`)
+    await delay(saveSettleMs)
+  } else {
+    logBackup(profile.id, 'Server is not running - backing up the save files as they are on disk.')
   }
-  logBackup(profile.id, `SaveGame confirmed - waiting ${Math.round(saveSettleMs / 1000)}s for the save to settle...`)
-  await delay(saveSettleMs)
 
   const sourceDir = savedArksDir(profile)
   if (!fs.existsSync(sourceDir)) {

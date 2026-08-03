@@ -255,11 +255,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
       </div>
 
       <div className="form-actions">
-        <button
-          onClick={() => void handleCreate()}
-          disabled={busy || status?.state !== 'running'}
-          title={status?.state !== 'running' ? 'Start the server before creating a backup' : undefined}
-        >
+        <button onClick={() => void handleCreate()} disabled={busy}>
           Create backup now
         </button>
         <span>

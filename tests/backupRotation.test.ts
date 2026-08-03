@@ -205,13 +205,14 @@ describe('createBackup', () => {
     expect(mockSendRconCommand).toHaveBeenCalledWith(profile, 'SaveWorld')
   })
 
-  it('cancels the backup when the server is not running', async () => {
+  it('backs up without SaveGame when the server is not running - the files are already static', async () => {
     vi.mocked(mockIsRunning).mockReturnValue(false)
     const profile = makeProfile({ installDir, backupDir })
 
-    await expect(createBackup(profile, 0)).rejects.toThrow('Start the server')
+    const entry = await createBackup(profile, 0)
+
     expect(mockSendRconCommand).not.toHaveBeenCalled()
-    expect(fs.existsSync(backupDir)).toBe(false)
+    expect(fs.existsSync(entry.filePath)).toBe(true)
   })
 
   it('cancels the backup when SaveGame does not confirm', async () => {
@@ -245,15 +246,25 @@ describe('createBackup', () => {
   })
 
   it('logs an error entry when the backup is cancelled', async () => {
-    vi.mocked(mockIsRunning).mockReturnValue(false)
+    vi.mocked(mockSendRconCommand).mockResolvedValue({ ok: false, error: 'RCON unreachable' })
     const profile = makeProfile({ id: 'log-cancelled', installDir, backupDir })
 
     await expect(createBackup(profile, 0)).rejects.toThrow()
 
     const log = getBackupLog(profile.id)
-    expect(log).toHaveLength(1)
-    expect(log[0].level).toBe('error')
-    expect(log[0].message).toContain('Start the server')
+    expect(log.some((entry) => entry.level === 'error')).toBe(true)
+    expect(log.some((entry) => entry.message.includes('SaveGame did not confirm'))).toBe(true)
+  })
+
+  it('logs a note instead of SaveGame when the server is not running', async () => {
+    vi.mocked(mockIsRunning).mockReturnValue(false)
+    const profile = makeProfile({ id: 'log-not-running', installDir, backupDir })
+
+    await createBackup(profile, 0)
+
+    const messages = getBackupLog(profile.id).map((entry) => entry.message)
+    expect(messages.some((m) => m.includes('not running'))).toBe(true)
+    expect(messages.some((m) => m.includes('Sending SaveGame'))).toBe(false)
   })
 })
 
