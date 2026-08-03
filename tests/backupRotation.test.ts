@@ -136,7 +136,7 @@ describe('listBackups', () => {
   })
 
   it('lists both this app\'s own backups and recognized legacy ones', () => {
-    fs.writeFileSync(path.join(backupDir, 'Test-2026-07-20T10-00-00-000Z.zip'), 'x')
+    fs.writeFileSync(path.join(backupDir, 'Genesis_WP-2026-07-20T10-00-00-000Z.zip'), 'x')
     fs.writeFileSync(path.join(backupDir, 'Genesis_WP_20260720103215.zip'), 'x')
     fs.writeFileSync(path.join(backupDir, 'unrelated.zip'), 'x')
 
@@ -144,15 +144,15 @@ describe('listBackups', () => {
     const backups = listBackups(profile)
 
     const names = backups.map((b) => b.fileName).sort()
-    expect(names).toEqual(['Genesis_WP_20260720103215.zip', 'Test-2026-07-20T10-00-00-000Z.zip'])
+    expect(names).toEqual(['Genesis_WP-2026-07-20T10-00-00-000Z.zip', 'Genesis_WP_20260720103215.zip'])
     expect(backups.find((b) => b.fileName === 'Genesis_WP_20260720103215.zip')?.legacy).toBe(true)
-    expect(backups.find((b) => b.fileName.startsWith('Test-'))?.legacy).toBeUndefined()
+    expect(backups.find((b) => b.fileName.startsWith('Genesis_WP-'))?.legacy).toBeUndefined()
   })
 
   it('never prunes a legacy backup, even well past maxBackups', () => {
     fs.writeFileSync(path.join(backupDir, 'Genesis_WP_20260720103215.zip'), 'x')
     for (let i = 0; i < 5; i++) {
-      fs.writeFileSync(path.join(backupDir, `Test-2026-07-2${i}T10-00-00-000Z.zip`), 'x')
+      fs.writeFileSync(path.join(backupDir, `Genesis_WP-2026-07-2${i}T10-00-00-000Z.zip`), 'x')
     }
 
     const profile = makeProfile({ backupDir, name: 'Test', map: 'Genesis_WP', maxBackups: 2 })
@@ -160,7 +160,7 @@ describe('listBackups', () => {
 
     const remaining = fs.readdirSync(backupDir)
     expect(remaining).toContain('Genesis_WP_20260720103215.zip')
-    expect(remaining.filter((f) => f.startsWith('Test-'))).toHaveLength(2)
+    expect(remaining.filter((f) => f.startsWith('Genesis_WP-'))).toHaveLength(2)
   })
 })
 
@@ -195,6 +195,15 @@ describe('createBackup', () => {
     const names = zip.getEntries().map((e) => e.entryName)
     expect(names).toContain('TheIsland.ark')
     expect(names).not.toContain('TheIsland.ark.arkrbf')
+  })
+
+  it('names the zip after the map, not the profile name', async () => {
+    const profile = makeProfile({ installDir, backupDir, name: 'My Cluster Server', map: 'TheIsland_WP' })
+
+    const entry = await createBackup(profile, 0)
+
+    expect(entry.fileName.startsWith('TheIsland_WP-')).toBe(true)
+    expect(entry.fileName).not.toContain('My_Cluster_Server')
   })
 
   it('sends SaveGame over RCON before zipping', async () => {

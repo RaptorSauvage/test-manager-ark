@@ -39,7 +39,7 @@ function savedArksDir(profile: ServerProfile): string {
 }
 
 function backupPrefix(profile: ServerProfile): string {
-  return profile.name.replace(/\s+/g, '_')
+  return profile.map.replace(/\s+/g, '_')
 }
 
 function escapeRegExp(value: string): string {
