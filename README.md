@@ -36,7 +36,9 @@ dedicated servers running on the same machine.
   handling, silently making `ServerAdminPassword` unreadable even though it's right there
   in the file.
 - **Mod manager** — a table (Enable/Passive/Dev checkboxes, Mod Name, Mod ID, plus
-  reorder/remove) instead of a plain list. Enable/disable/reorder mod IDs and toggle a Dev
+  reorder/remove) instead of a plain list. Reordering has a one-step ↑/↓ pair plus a ⤒
+  button that jumps a mod straight to the top of the list, for a long list where nudging
+  one row at a time would take forever. Enable/disable/reorder mod IDs and toggle a Dev
   flag per mod (appends `-dev` to load that mod's in-development build); enabled mods are
   applied via the server's `-mods=` launch flag by default, or `-passivemods=` instead if
   Passive is checked for that mod (ARK:SA's only mod mechanisms - no Steam Workshop, no

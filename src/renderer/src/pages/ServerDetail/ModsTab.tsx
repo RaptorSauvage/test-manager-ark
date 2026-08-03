@@ -46,6 +46,16 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
     })
   }
 
+  function moveToTop(index: number): void {
+    setMods((prev) => {
+      if (index <= 0) return prev
+      const next = [...prev]
+      const [moved] = next.splice(index, 1)
+      next.unshift(moved)
+      return next
+    })
+  }
+
   async function save(): Promise<void> {
     setError('')
     try {
@@ -177,6 +187,9 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
                 {mod.dev ? '-dev' : ''}
               </td>
               <td className="mods-list-actions">
+                <button onClick={() => moveToTop(i)} disabled={i === 0} title="Move to top of list">
+                  ⤒
+                </button>
                 <button onClick={() => move(i, -1)} disabled={i === 0}>
                   ↑
                 </button>
