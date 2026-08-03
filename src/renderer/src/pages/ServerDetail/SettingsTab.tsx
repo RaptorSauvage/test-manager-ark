@@ -14,27 +14,12 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   const [refreshingMaps, setRefreshingMaps] = useState(false)
   const [customMaps, setCustomMaps] = useState<MapDefinition[]>([])
   const [refreshingCustomMaps, setRefreshingCustomMaps] = useState(false)
-  // Which Custom Map preset is picked, independent of Mod Map's own moddedMapId/
-  // moddedMapEnabled fields: picking a preset still writes into those (see
-  // selectCustomMap below), but the reverse never happens - typing directly into Mod Map,
-  // or picking "None" here, never touches the other field. Initialized once customMaps
-  // loads, from whichever preset (if any) matches the profile's current moddedMapId.
-  const [customMapSelection, setCustomMapSelection] = useState('')
 
   useEffect(() => {
     void refreshMaps()
     void refreshCustomMaps()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  useEffect(() => {
-    if (form.moddedMapEnabled && customMaps.some((m) => m.id === form.moddedMapId)) {
-      setCustomMapSelection(form.moddedMapId)
-    }
-    // Only re-run when the presets list itself loads/changes - not on every Mod Map
-    // keystroke, so manually editing Mod Map never fights with this.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customMaps])
 
   async function refreshMaps(): Promise<void> {
     setRefreshingMaps(true)
@@ -51,16 +36,6 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
       setCustomMaps(await window.api.customMaps.list())
     } finally {
       setRefreshingCustomMaps(false)
-    }
-  }
-
-  function selectCustomMap(value: string): void {
-    setCustomMapSelection(value)
-    // Picking "None" only resets this dropdown's own selection - it deliberately never
-    // clears/disables Mod Map, so a manually-typed Mod Map value is never overwritten by
-    // switching this back to None.
-    if (value) {
-      setForm((prev) => ({ ...prev, moddedMapEnabled: true, moddedMapId: value }))
     }
   }
 
@@ -128,51 +103,41 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         Map
         <div className="path-input-row">
           <select value={form.map} onChange={(e) => update('map', e.target.value)}>
-            {form.map && !maps.some((m) => m.id === form.map) && <option value={form.map}>{form.map}</option>}
-            {maps.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.displayName}
-              </option>
-            ))}
+            {form.map && !maps.some((m) => m.id === form.map) && !customMaps.some((m) => m.id === form.map) && (
+              <option value={form.map}>{form.map}</option>
+            )}
+            <optgroup label="Official">
+              {maps.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.displayName}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Custom">
+              {customMaps.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.displayName}
+                </option>
+              ))}
+            </optgroup>
           </select>
           <button
             type="button"
-            onClick={() => void refreshMaps()}
-            disabled={refreshingMaps}
-            title="Reload maps.json"
+            onClick={() => {
+              void refreshMaps()
+              void refreshCustomMaps()
+            }}
+            disabled={refreshingMaps || refreshingCustomMaps}
+            title="Reload maps.json and customMaps.json"
           >
-            {refreshingMaps ? 'Refreshing...' : 'Refresh'}
+            {refreshingMaps || refreshingCustomMaps ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
         <p className="empty-state">
-          Edit <code>maps.json</code> (in your Documents folder, under "ARK Server Manager") to add more maps
-          without an app update.
-        </p>
-      </label>
-      <label>
-        Custom Map
-        <div className="path-input-row">
-          <select value={customMapSelection} onChange={(e) => selectCustomMap(e.target.value)}>
-            {customMaps.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.displayName}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => void refreshCustomMaps()}
-            disabled={refreshingCustomMaps}
-            title="Reload customMaps.json"
-          >
-            {refreshingCustomMaps ? 'Refreshing...' : 'Refresh'}
-          </button>
-        </div>
-        <p className="empty-state">
-          A quick-fill shortcut for Mod Map below, picked from <code>customMaps.json</code> - selecting one fills in
-          its id and turns Mod Map on. Picking None only resets this dropdown itself; it never clears or disables
-          Mod Map, so a manually-typed Mod Map value is safe from this. Edit that file to add your own modded maps -
-          it starts with only the None entry.
+          Official maps come from <code>maps.json</code>, custom/modded maps from <code>customMaps.json</code> (both
+          in your Documents folder, under "ARK Server Manager") - edit either to add more without an app update.
+          Either group just sets this server's map like normal; if a custom map also needs a Workshop mod id passed
+          alongside it, set that separately below in Mod Map.
         </p>
       </label>
       <label>

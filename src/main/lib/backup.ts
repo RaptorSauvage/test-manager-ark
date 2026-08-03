@@ -67,9 +67,8 @@ export function isIgnoredBackupFile(relativePath: string): boolean {
  *  the RCON response only means ARK accepted the command, not that every file under
  *  SavedArks has finished being written. Zipping too soon risks reading a file mid-write,
  *  which can crash the server (Windows locks a file that's still open for writing) as well
- *  as produce a corrupt backup. 30s is the same margin community backup scripts for ARK
- *  use for this exact reason. */
-const SAVE_SETTLE_MS = 30_000
+ *  as produce a corrupt backup. */
+const SAVE_SETTLE_MS = 40_000
 
 /**
  * Backs up the active map's SavedArks folder: send SaveGame over RCON, wait for it to be

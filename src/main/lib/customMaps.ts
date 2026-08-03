@@ -10,11 +10,12 @@ export function getCustomMapsFilePath(): string {
 
 /**
  * Custom/modded maps are user-specific (tied to whatever Workshop mods they use), so unlike
- * maps.json there's no real seed list - just a "None" entry (empty id, disables Mod Map)
- * so the dropdown always has a way to opt out, followed by whatever the user adds.
+ * maps.json there's no real seed list to start from - each entry's `id` is a real map
+ * identifier (exactly like an official map's), shown in the Map selector's "Custom" group
+ * alongside maps.json's "Official" one.
  */
 export function getDefaultCustomMaps(): MapDefinition[] {
-  return [{ id: '', displayName: 'None' }]
+  return []
 }
 
 /** Parses and validates customMaps.json content, throwing a clear error if it's malformed. */

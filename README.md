@@ -59,7 +59,7 @@ dedicated servers running on the same machine.
   own console where nobody would see it. A backup (manual or scheduled) requires a confirmed save: it sends
   `SaveGame` (RCON `SaveWorld`) and cancels outright - no zip created - if the server
   isn't running or that command doesn't confirm, rather than backing up a possibly-stale
-  or mid-write state. Once confirmed, it waits 30s before actually reading the save files -
+  or mid-write state. Once confirmed, it waits 40s before actually reading the save files -
   RCON confirming the command only means ARK accepted it, not that every file under
   `SavedArks` has finished being written, and zipping too soon risks reading a file
   mid-write, which can crash the server (a locked, still-open file) as well as produce a
@@ -80,7 +80,7 @@ dedicated servers running on the same machine.
   `backup:created` event for the tab to pick up, so you don't have to click Refresh to see
   it) and right after saving a changed backup directory in this tab, so switching folders
   immediately shows that folder's contents instead of the previous one's. A **Backup
-  Process Log** panel alongside it traces every backup's SaveGame → 30s settle → zip
+  Process Log** panel alongside it traces every backup's SaveGame → 40s settle → zip
   sequence as it happens - both what's sent/confirmed and any cancellation/error - live,
   so a scheduled backup nobody's watching happen isn't a black box; kept in memory only
   (cleared on Manager restart), last 200 entries per profile.
@@ -409,29 +409,24 @@ tab:
 - **Map**, **game/RCON ports**, and **Server Platform** (PC/ALL). RCON authenticates using
   `ServerAdminPassword` from that install's `GameUserSettings.ini` - set it there, not in
   this app - and must be reachable on `127.0.0.1` (start/stop rely on it to save the world
-  before shutting down). The Map dropdown is populated from `maps.json` (Documents/ARK
-  Server Manager by default - not next to the Manager executable, since electron-builder's
-  NSIS installer wipes that folder's contents on every update; Documents is untouched by
-  that and by swapping the portable exe) - a seed list of the official maps is created
-  there on first run, and a line can be added to that file for any DLC or modded map not
-  already listed, no app update needed. A profile's current map is always shown even if it
-  isn't (or isn't yet) in that file. A "Refresh" button next to the dropdown reloads the
-  file on demand.
-- **Custom Map** - a dropdown, right above Mod Map, backed by `customMaps.json` (same
-  folder and shape as `maps.json`; the `None` entry - empty id - is part of the file
-  itself, seeded on first run, so it's just another editable row rather than a hardcoded
-  special case; everything else is added by you, since custom/modded maps are specific to
-  whatever Workshop mods you use). It's a one-way quick-fill shortcut for Mod Map below,
-  not a mirror of it: picking an entry sets Mod Map to that entry's id and turns it on,
-  but the reverse never happens - typing a Mod Map id by hand, or switching Custom Map
-  back to **None**, never clears or disables Mod Map. The two can disagree (e.g. after
-  hand-editing Mod Map to something Custom Map doesn't know about) - that's expected,
-  since only Mod Map's own value/toggle actually feeds the launch args.
-- **Mod Map** - a separate "Enable Modded Map" toggle below Custom Map for Workshop-based
-  custom maps: paste the mod's Workshop id (or pick one via Custom Map above) and, while
-  enabled, it's passed as `-MapModID=<id>` alongside the regular Map value - which is also
-  what actually happens in ARK:SA itself once that flag is set, since it takes over
-  regardless of the base Map value.
+  before shutting down). The Map dropdown has two groups, **Official** (from `maps.json`)
+  and **Custom** (from `customMaps.json`) - same folder (Documents/ARK Server Manager by
+  default - not next to the Manager executable, since electron-builder's NSIS installer
+  wipes that folder's contents on every update; Documents is untouched by that and by
+  swapping the portable exe) and shape for both files, just two separate lists. A seed
+  list of the official maps is created in `maps.json` on first run; `customMaps.json`
+  starts empty since custom/modded maps are specific to whatever Workshop mods you use -
+  add a line for each (its real map identifier, exactly like an official map's, plus a
+  display name) with no app update needed. Either group is a plain, direct pick: selecting
+  one just sets this server's map, same as picking an official one always did - there's no
+  more indirection through Mod Map below. A profile's current map is always shown even if
+  it isn't (or isn't yet) in either file. A single "Refresh" button reloads both files on
+  demand.
+- **Mod Map** - a separate "Enable Modded Map" toggle for Workshop-based custom maps that
+  also need their mod id passed explicitly: paste the mod's Workshop id and, while enabled,
+  it's passed as `-MapModID=<id>` alongside the Map value above. Fully manual and
+  independent from Map - nothing else in this app ever reads, writes, or clears it besides
+  you typing into it and toggling the checkbox.
 - Backups always read/write `ShooterGame/Saved/SavedArks/<map>` under the install
   directory - only the profile's own map subfolder, not the whole `SavedArks` folder (it
   can hold other maps' saves too, e.g. on a shared cluster install). This location is
