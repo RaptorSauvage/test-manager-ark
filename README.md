@@ -427,6 +427,15 @@ tab:
   it's passed as `-MapModID=<id>` alongside the Map value above. Fully manual and
   independent from Map - nothing else in this app ever reads, writes, or clears it besides
   you typing into it and toggling the checkbox.
+- **Map Management** - below Mod Map: type a folder name and a `.ark` file name (e.g.
+  `Svartalfheim` / `Svartalfheim_WP.ark`) and click **Add map** to create
+  `SavedArks/<folder>/<file>` - an empty placeholder, just enough for a custom map to
+  exist before its mod is actually installed (add that mod in the Mods tab afterwards -
+  that's what downloads the real map and keeps it up to date). Below that, every subfolder
+  already under `SavedArks` is listed (name + creation date, click a row to select it) with
+  **Open map folder** and **Delete selected map** acting on whichever one is selected.
+  Folder/file names are limited to a plain name - no path separators or `..` - since
+  they're used to build a path on disk.
 - Backups always read/write `ShooterGame/Saved/SavedArks/<map>` under the install
   directory - only the profile's own map subfolder, not the whole `SavedArks` folder (it
   can hold other maps' saves too, e.g. on a shared cluster install). This location is

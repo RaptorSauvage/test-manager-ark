@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { MapDefinition, ServerProfile } from '@shared/types'
+import MapManagementSection from './MapManagementSection'
 
 interface SettingsTabProps {
   profile: ServerProfile
@@ -159,6 +160,7 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         </div>
         <p className="empty-state">Passed as -MapModID=&lt;id&gt; when enabled, alongside the Map above.</p>
       </label>
+      <MapManagementSection profile={profile} />
       <div className="settings-grid">
         <label>
           Game port

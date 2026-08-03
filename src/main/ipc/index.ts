@@ -13,6 +13,7 @@ import { registerDataDirHandlers } from './dataDir'
 import { registerOfficialServerStatusHandlers } from './officialServerStatus'
 import { registerSystemHandlers } from './system'
 import { registerAppUpdateHandlers } from './appUpdate'
+import { registerMapManagementHandlers } from './mapManagement'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers()
@@ -29,4 +30,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerOfficialServerStatusHandlers()
   registerSystemHandlers()
   registerAppUpdateHandlers(mainWindow.webContents)
+  registerMapManagementHandlers()
 }

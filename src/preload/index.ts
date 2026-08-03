@@ -109,6 +109,14 @@ const api: Api = {
     openProfilesFolder: () => ipcRenderer.invoke(IPC.appOpenProfilesFolder),
     openServerConfigFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenConfigFolder, profileId)
   },
+  mapManagement: {
+    list: (profileId: string) => ipcRenderer.invoke(IPC.mapManagementList, profileId),
+    create: (profileId: string, folderName: string, fileName: string) =>
+      ipcRenderer.invoke(IPC.mapManagementCreate, profileId, folderName, fileName),
+    delete: (profileId: string, folderName: string) => ipcRenderer.invoke(IPC.mapManagementDelete, profileId, folderName),
+    openFolder: (profileId: string, folderName: string) =>
+      ipcRenderer.invoke(IPC.mapManagementOpenFolder, profileId, folderName)
+  },
   appUpdate: {
     getVersion: () => ipcRenderer.invoke(IPC.appUpdateGetVersion),
     check: () => ipcRenderer.invoke(IPC.appUpdateCheck),

@@ -169,6 +169,14 @@ export interface BackupLogEntry {
   message: string
 }
 
+/** One subfolder directly under SavedArks - for the Settings tab's Map Management section,
+ *  which browses/creates/deletes them (e.g. to pre-create a custom map's empty save folder
+ *  before its mod is installed). */
+export interface MapFolderEntry {
+  name: string
+  createdAt: number
+}
+
 /** For the Analytics tab's "Backup Status" panel. */
 export interface BackupScheduleStatus {
   /** Whether the schedule is actually running right now (enabled, valid cron, applied). */
@@ -279,6 +287,11 @@ export const IPC = {
 
   appOpenProfilesFolder: 'app:open-profiles-folder',
   serverOpenConfigFolder: 'server:open-config-folder',
+
+  mapManagementList: 'map-management:list',
+  mapManagementCreate: 'map-management:create',
+  mapManagementDelete: 'map-management:delete',
+  mapManagementOpenFolder: 'map-management:open-folder',
 
   appUpdateGetVersion: 'app-update:get-version',
   appUpdateCheck: 'app-update:check',
@@ -411,6 +424,12 @@ export interface Api {
   system: {
     openProfilesFolder: () => Promise<void>
     openServerConfigFolder: (profileId: string) => Promise<void>
+  }
+  mapManagement: {
+    list: (profileId: string) => Promise<MapFolderEntry[]>
+    create: (profileId: string, folderName: string, fileName: string) => Promise<void>
+    delete: (profileId: string, folderName: string) => Promise<void>
+    openFolder: (profileId: string, folderName: string) => Promise<void>
   }
   appUpdate: {
     getVersion: () => Promise<string>
