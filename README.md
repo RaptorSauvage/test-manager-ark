@@ -50,7 +50,9 @@ dedicated servers running on the same machine.
   empty/filled cron field) live here, instead of being split off into Settings. A
   scheduled backup only actually runs while the server is online - if it's stopped when
   the cron fires, that run is skipped rather than backing up (or erroring on) a server
-  that isn't running. A backup (manual or scheduled) requires a confirmed save: it sends
+  that isn't running, and that skip shows up in the Backup Process Log below (see next
+  bullet) just like any other cancellation, instead of only being logged to the Manager's
+  own console where nobody would see it. A backup (manual or scheduled) requires a confirmed save: it sends
   `SaveGame` (RCON `SaveWorld`) and cancels outright - no zip created - if the server
   isn't running or that command doesn't confirm, rather than backing up a possibly-stale
   or mid-write state. Once confirmed, it waits 30s before actually reading the save files -

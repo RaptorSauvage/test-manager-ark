@@ -2,7 +2,6 @@ import cron, { type ScheduledTask } from 'node-cron'
 import { CronExpressionParser } from 'cron-parser'
 import type { BackupScheduleStatus, ServerProfile } from '@shared/types'
 import { createBackup } from './backup'
-import { isRunning } from './serverProcess'
 
 const scheduledTasks = new Map<string, ScheduledTask>()
 
@@ -15,11 +14,10 @@ export function applyBackupSchedule(profile: ServerProfile): void {
 
   if (!profile.backupScheduleEnabled || !profile.backupSchedule || !cron.validate(profile.backupSchedule)) return
 
+  // createBackup() already checks isRunning itself and logs why it cancelled (visible in
+  // the Backups tab's process log) - a separate pre-check here used to just console.log
+  // and return, which meant a skipped run left no trace anywhere in the app itself.
   const task = cron.schedule(profile.backupSchedule, () => {
-    if (!isRunning(profile.id)) {
-      console.log(`Skipping scheduled backup for ${profile.name}: server is not running.`)
-      return
-    }
     createBackup(profile).catch((err: Error) => {
       console.error(`Scheduled backup failed for ${profile.name}:`, err.message)
     })
