@@ -21,8 +21,8 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'settings', label: 'Settings' },
   { key: 'mods', label: 'Mods' },
   { key: 'backups', label: 'Backups' },
-  { key: 'management', label: 'Server Management' },
-  { key: 'mapManagement', label: 'Map Management' }
+  { key: 'mapManagement', label: 'Map Management' },
+  { key: 'management', label: 'Server Management' }
 ]
 
 export default function ServerDetail({ profile, initialTab, onBack, onProfileChange }: ServerDetailProps): JSX.Element {
