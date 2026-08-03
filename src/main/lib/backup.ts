@@ -103,7 +103,10 @@ export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_S
 
   logBackup(profile.id, `Zipping ${files.length} file(s) from SavedArks/${profile.map} into ${fileName}...`)
   const output = fs.createWriteStream(filePath)
-  const archive = archiver('zip', { zlib: { level: 9 } })
+  // Level 9 (max) barely shrinks already-dense ARK save data further than a mid level,
+  // but costs far more CPU - a real contributor to the whole app appearing to hang while
+  // a big backup zips, on top of the threadpool contention fixed in main/index.ts.
+  const archive = archiver('zip', { zlib: { level: 6 } })
 
   return new Promise((resolve, reject) => {
     output.on('close', () => {

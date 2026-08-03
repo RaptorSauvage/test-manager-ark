@@ -1,3 +1,10 @@
+// Must be set before anything queues zlib/fs work on libuv's threadpool. The default
+// size (4) is easily saturated by a backup's zip compression alone, which then queues
+// up every other async fs/zlib call behind it - including unrelated IPC handlers just
+// reading a small JSON file - making the whole app appear frozen ("Not Responding")
+// for as long as the backup's zipping takes.
+process.env.UV_THREADPOOL_SIZE = '8'
+
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'

@@ -66,7 +66,10 @@ dedicated servers running on the same machine.
   `SavedArks` has finished being written, and zipping too soon risks reading a file
   mid-write, which can crash the server (a locked, still-open file) as well as produce a
   corrupt backup. After that wait, every file directly under `SavedArks/<Map>` is added to
-  the zip one by one (skipping `.arkrbf` rollback files). The backup file
+  the zip one by one (skipping `.arkrbf` rollback files) at a moderate compression level
+  (not maximum) - large save files barely compress any smaller at max effort, but cost
+  much more CPU getting there, and that CPU spike was making the whole Manager appear
+  frozen ("Not Responding") while a big backup zipped. The backup file
   list is a checkbox-select table (File Name/Creation
   Time, with a header checkbox to select/deselect all) with a toolbar above it - Refresh
   backup file list, Open backup folder (opens the configured backup directory in the OS
