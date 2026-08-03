@@ -21,7 +21,7 @@ export const backupEvents = new EventEmitter()
 const MAX_LOG_ENTRIES = 200
 const backupLogs = new Map<string, BackupLogEntry[]>()
 
-function logBackup(profileId: string, message: string, level: BackupLogEntry['level'] = 'info'): void {
+export function logBackup(profileId: string, message: string, level: BackupLogEntry['level'] = 'info'): void {
   const entry: BackupLogEntry = { timestamp: Date.now(), level, message }
   const entries = backupLogs.get(profileId) ?? []
   entries.push(entry)
