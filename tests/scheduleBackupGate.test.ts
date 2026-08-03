@@ -1,25 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import type { ServerProfile } from '../shared/types'
-
-const { getScheduledCallback, setScheduledCallback } = vi.hoisted(() => {
-  let cb: (() => void) | null = null
-  return {
-    getScheduledCallback: (): (() => void) | null => cb,
-    setScheduledCallback: (fn: () => void) => {
-      cb = fn
-    }
-  }
-})
-
-vi.mock('node-cron', () => ({
-  default: {
-    validate: () => true,
-    schedule: (_expr: string, fn: () => void) => {
-      setScheduledCallback(fn)
-      return { stop: vi.fn() }
-    }
-  }
-}))
 
 vi.mock('../src/main/lib/backup', () => ({
   createBackup: vi.fn(async () => ({ fileName: 'x.zip', filePath: '/x.zip', createdAt: 0, sizeBytes: 0 })),
@@ -30,7 +10,7 @@ vi.mock('../src/main/lib/serverProcess', () => ({
   isRunning: vi.fn(() => false)
 }))
 
-import { applyBackupSchedule, clearBackupSchedule } from '../src/main/lib/schedule'
+import { applyBackupSchedule, clearBackupSchedule, getBackupScheduleStatus } from '../src/main/lib/schedule'
 import { createBackup as mockCreateBackup, logBackup as mockLogBackup } from '../src/main/lib/backup'
 import { isRunning as mockIsRunning } from '../src/main/lib/serverProcess'
 
@@ -80,16 +60,22 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
 
 describe('scheduled backup - only runs while the server is online', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T10:15:00Z'))
     vi.mocked(mockCreateBackup).mockClear()
     vi.mocked(mockLogBackup).mockClear()
     vi.mocked(mockIsRunning).mockReset().mockReturnValue(false)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('skips (and logs why) without calling createBackup when the server is not running', () => {
     const profile = makeProfile()
     applyBackupSchedule(profile)
 
-    getScheduledCallback()?.()
+    vi.advanceTimersToNextTimer()
 
     expect(mockCreateBackup).not.toHaveBeenCalled()
     expect(mockLogBackup).toHaveBeenCalledWith(profile.id, expect.stringContaining('not running'))
@@ -102,9 +88,27 @@ describe('scheduled backup - only runs while the server is online', () => {
     const profile = makeProfile()
     applyBackupSchedule(profile)
 
-    getScheduledCallback()?.()
+    vi.advanceTimersToNextTimer()
 
     expect(mockCreateBackup).toHaveBeenCalledWith(profile)
+
+    clearBackupSchedule(profile.id)
+  })
+
+  it('re-arms for the next tick after firing, instead of dying after one run', () => {
+    const profile = makeProfile()
+    applyBackupSchedule(profile)
+
+    const firstStatus = getBackupScheduleStatus(profile)
+    expect(firstStatus.active).toBe(true)
+    expect(firstStatus.nextRunAt).not.toBeNull()
+
+    vi.advanceTimersToNextTimer()
+
+    const secondStatus = getBackupScheduleStatus(profile)
+    expect(secondStatus.active).toBe(true)
+    expect(secondStatus.nextRunAt).not.toBeNull()
+    expect(secondStatus.nextRunAt!).toBeGreaterThan(firstStatus.nextRunAt!)
 
     clearBackupSchedule(profile.id)
   })

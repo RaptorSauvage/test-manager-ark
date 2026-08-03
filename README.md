@@ -148,8 +148,10 @@ dedicated servers running on the same machine.
     Cloudflare-protected page with no supported API, fragile to rely on for a background
     poll. SteamCMD needs to be configured in Settings for this to resolve to anything.
   - **Backup Status**: whether the backup schedule (from the Backups tab) is actually
-    active right now, and a live countdown to its next run - computed with `cron-parser`
-    against the profile's own cron expression, not tracked/stored anywhere.
+    active right now, and a live countdown to its next run - read directly off the same
+    timer that will actually fire it (a single self-armed `setTimeout` recomputed via
+    `cron-parser` after every run, rather than a background library polling every second),
+    so this can never show "active" while nothing is really scheduled to fire.
   - An **Open config folder** button, opening
     `ShooterGame/Saved/Config/WindowsServer` (where `GameUserSettings.ini`/`Game.ini`
     live) in the OS file explorer - the app still never edits these files itself.
