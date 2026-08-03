@@ -96,6 +96,16 @@ describe('isIgnoredBackupFile', () => {
     expect(isIgnoredBackupFile('TheIsland.ark')).toBe(false)
     expect(isIgnoredBackupFile('0002dbe9ab20413e9b8e7e1562b76868.arkprofile')).toBe(false)
   })
+
+  it('ignores ARK\'s own native periodic backups', () => {
+    expect(isIgnoredBackupFile('Extinction_WP_29.07.2026_20.00.01.ark')).toBe(true)
+    expect(isIgnoredBackupFile('TheIsland_15.01.2026_03.30.00.ark')).toBe(true)
+  })
+
+  it('keeps the main map save file even when the map name has an underscore', () => {
+    expect(isIgnoredBackupFile('Extinction_WP.ark')).toBe(false)
+    expect(isIgnoredBackupFile('TheIsland_WP.ark')).toBe(false)
+  })
 })
 
 describe('listBackups', () => {

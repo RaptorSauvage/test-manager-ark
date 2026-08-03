@@ -66,9 +66,12 @@ dedicated servers running on the same machine.
   `SavedArks` has finished being written, and zipping too soon risks reading a file
   mid-write, which can crash the server (a locked, still-open file) as well as produce a
   corrupt backup. After that wait, every file directly under `SavedArks/<Map>` is added to
-  the zip one by one (skipping `.arkrbf` rollback files) at a moderate compression level
-  (not maximum) - large save files barely compress any smaller at max effort, but cost
-  much more CPU getting there, and that CPU spike was making the whole Manager appear
+  the zip one by one, skipping `.arkrbf` rollback files and ARK's own periodic native
+  backups (named like `Extinction_WP_29.07.2026_20.00.01.ark` - a timestamp suffix the
+  main save file itself never has, so `<Map>.ark` is always kept regardless) since this
+  app's own backups already cover that. Compression uses a moderate level (not maximum)
+  - large save files barely compress any smaller at max effort, but cost much more CPU
+  getting there, and that CPU spike was making the whole Manager appear
   frozen ("Not Responding") while a big backup zipped. The backup file
   list is a checkbox-select table (File Name/Creation
   Time, with a header checkbox to select/deselect all) with a toolbar above it - Refresh

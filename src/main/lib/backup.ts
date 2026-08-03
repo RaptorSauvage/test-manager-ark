@@ -42,10 +42,18 @@ function backupPrefix(profile: ServerProfile): string {
   return profile.map.replace(/\s+/g, '_')
 }
 
+/** Matches ARK's own periodic native backups next to the real save, e.g.
+ *  `Extinction_WP_29.07.2026_20.00.01.ark` - a timestamp suffix before the extension that
+ *  the main save file (`Extinction_WP.ark`) never has. Redundant with this app's own
+ *  backups and just extra weight in the zip, so leave them out - the plain `<map>.ark`
+ *  file itself never matches this and is always kept. */
+const NATIVE_ARK_BACKUP_SUFFIX = /_\d{2}\.\d{2}\.\d{4}_\d{2}\.\d{2}\.\d{2}\.ark$/i
+
 /** .arkrbf files are ARK's own transient rollback data next to the real saves - not
  *  useful in a backup and just extra weight/noise, so leave them out of the zip. */
 export function isIgnoredBackupFile(relativePath: string): boolean {
-  return relativePath.toLowerCase().endsWith('.arkrbf')
+  const lower = relativePath.toLowerCase()
+  return lower.endsWith('.arkrbf') || NATIVE_ARK_BACKUP_SUFFIX.test(relativePath)
 }
 
 /** How long to wait after RCON confirms SaveGame before actually reading the save files -
