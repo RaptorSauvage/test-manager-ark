@@ -176,7 +176,7 @@ describe('createBackup', () => {
     savedArksDir = path.join(installDir, 'ShooterGame', 'Saved', 'SavedArks', 'TheIsland_WP')
     fs.mkdirSync(savedArksDir, { recursive: true })
     fs.writeFileSync(path.join(savedArksDir, 'TheIsland.ark'), 'world-save')
-    vi.mocked(mockIsRunning).mockReset().mockReturnValue(false)
+    vi.mocked(mockIsRunning).mockReset().mockReturnValue(true)
     vi.mocked(mockSendRconCommand).mockReset().mockResolvedValue({ ok: true, response: 'World Saved' })
   })
 
@@ -184,11 +184,11 @@ describe('createBackup', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('zips SavedArks but leaves .arkrbf files out', async () => {
+  it('zips SavedArks (adding files one by one) but leaves .arkrbf files out', async () => {
     fs.writeFileSync(path.join(savedArksDir, 'TheIsland.ark.arkrbf'), 'rollback-data')
 
     const profile = makeProfile({ installDir, backupDir })
-    const entry = await createBackup(profile)
+    const entry = await createBackup(profile, 0)
 
     const zip = new AdmZip(entry.filePath)
     const names = zip.getEntries().map((e) => e.entryName)
@@ -196,8 +196,7 @@ describe('createBackup', () => {
     expect(names).not.toContain('TheIsland.ark.arkrbf')
   })
 
-  it('sends SaveWorld over RCON first when the server is currently running', async () => {
-    vi.mocked(mockIsRunning).mockReturnValue(true)
+  it('sends SaveGame over RCON before zipping', async () => {
     const profile = makeProfile({ installDir, backupDir })
 
     await createBackup(profile, 0)
@@ -205,43 +204,30 @@ describe('createBackup', () => {
     expect(mockSendRconCommand).toHaveBeenCalledWith(profile, 'SaveWorld')
   })
 
-  it('does not attempt a SaveWorld when the server is not running', async () => {
+  it('cancels the backup when the server is not running', async () => {
+    vi.mocked(mockIsRunning).mockReturnValue(false)
     const profile = makeProfile({ installDir, backupDir })
 
-    await createBackup(profile, 0)
-
+    await expect(createBackup(profile, 0)).rejects.toThrow('Start the server')
     expect(mockSendRconCommand).not.toHaveBeenCalled()
+    expect(fs.existsSync(backupDir)).toBe(false)
   })
 
-  it('still backs up whatever is on disk even if the SaveWorld RCON call fails', async () => {
-    vi.mocked(mockIsRunning).mockReturnValue(true)
+  it('cancels the backup when SaveGame does not confirm', async () => {
     vi.mocked(mockSendRconCommand).mockResolvedValue({ ok: false, error: 'RCON unreachable' })
     const profile = makeProfile({ installDir, backupDir })
 
-    const entry = await createBackup(profile, 0)
-
-    expect(fs.existsSync(entry.filePath)).toBe(true)
+    await expect(createBackup(profile, 0)).rejects.toThrow('SaveGame did not confirm')
+    expect(fs.existsSync(backupDir)).toBe(false)
   })
 
-  it('waits saveSettleMs after a confirmed SaveWorld before zipping, to let the save settle', async () => {
-    vi.mocked(mockIsRunning).mockReturnValue(true)
+  it('waits saveSettleMs after a confirmed SaveGame before zipping, to let the save settle', async () => {
     const profile = makeProfile({ installDir, backupDir })
 
     const start = Date.now()
     await createBackup(profile, 50)
 
     expect(Date.now() - start).toBeGreaterThanOrEqual(45)
-  })
-
-  it('skips the settle delay when SaveWorld failed - there is nothing to wait for', async () => {
-    vi.mocked(mockIsRunning).mockReturnValue(true)
-    vi.mocked(mockSendRconCommand).mockResolvedValue({ ok: false, error: 'RCON unreachable' })
-    const profile = makeProfile({ installDir, backupDir })
-
-    const start = Date.now()
-    await createBackup(profile, 50)
-
-    expect(Date.now() - start).toBeLessThan(45)
   })
 
 })

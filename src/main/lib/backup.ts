@@ -45,7 +45,7 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/** How long to wait after RCON confirms SaveWorld before actually reading the save files -
+/** How long to wait after RCON confirms SaveGame before actually reading the save files -
  *  the RCON response only means ARK accepted the command, not that every file under
  *  SavedArks has finished being written. Zipping too soon risks reading a file mid-write,
  *  which can crash the server (Windows locks a file that's still open for writing) as well
@@ -53,36 +53,46 @@ function delay(ms: number): Promise<void> {
  *  use for this exact reason. */
 const SAVE_SETTLE_MS = 30_000
 
+/**
+ * Backs up the active map's SavedArks folder: send SaveGame over RCON, wait for it to be
+ * confirmed, wait another saveSettleMs for ARK to finish writing everything to disk, then
+ * zip that folder's files (added one by one, skipping .arkrbf) into the configured backup
+ * directory. A confirmed SaveGame is required - if the server isn't running or RCON
+ * doesn't confirm the save, the backup is cancelled outright rather than zipping a
+ * possibly-stale or mid-write state.
+ */
 export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_SETTLE_MS): Promise<BackupEntry> {
   if (!profile.backupDir.trim()) {
     throw new Error('Set a backup directory in the Backups tab first.')
   }
-
-  if (isRunning(profile.id)) {
-    // Best-effort: SaveWorld flushes the server's in-memory state to the SavedArks files
-    // this zips up, so a manual or scheduled backup taken between ARK's own autosaves
-    // still reflects the latest world state. If RCON is unreachable, still take the
-    // backup off whatever's already on disk rather than skip it entirely - and skip the
-    // settle delay too, since there's no save actually in flight to wait for.
-    const saveResult = await sendRconCommand(profile, 'SaveWorld')
-    if (saveResult.ok) await delay(saveSettleMs)
+  if (!isRunning(profile.id)) {
+    throw new Error('Start the server before creating a backup - a confirmed SaveGame is required first.')
   }
 
+  const saveResult = await sendRconCommand(profile, 'SaveWorld')
+  if (!saveResult.ok) {
+    throw new Error(`SaveGame did not confirm, backup cancelled: ${saveResult.error ?? 'no response from RCON'}`)
+  }
+  await delay(saveSettleMs)
+
+  const sourceDir = savedArksDir(profile)
+  if (!fs.existsSync(sourceDir)) {
+    throw new Error(`SavedArks folder not found: ${sourceDir}`)
+  }
+  const files = fs
+    .readdirSync(sourceDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && !isIgnoredBackupFile(entry.name))
+    .map((entry) => entry.name)
+
+  fs.mkdirSync(profile.backupDir, { recursive: true })
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const fileName = `${backupPrefix(profile)}-${timestamp}.zip`
+  const filePath = path.join(profile.backupDir, fileName)
+
+  const output = fs.createWriteStream(filePath)
+  const archive = archiver('zip', { zlib: { level: 9 } })
+
   return new Promise((resolve, reject) => {
-    const sourceDir = savedArksDir(profile)
-    if (!fs.existsSync(sourceDir)) {
-      reject(new Error(`SavedArks folder not found: ${sourceDir}`))
-      return
-    }
-
-    fs.mkdirSync(profile.backupDir, { recursive: true })
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-    const fileName = `${backupPrefix(profile)}-${timestamp}.zip`
-    const filePath = path.join(profile.backupDir, fileName)
-
-    const output = fs.createWriteStream(filePath)
-    const archive = archiver('zip', { zlib: { level: 9 } })
-
     output.on('close', () => {
       const entry: BackupEntry = {
         fileName,
@@ -97,7 +107,9 @@ export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_S
     archive.on('error', reject)
 
     archive.pipe(output)
-    archive.directory(sourceDir, false, (data) => (isIgnoredBackupFile(data.name) ? false : data))
+    for (const file of files) {
+      archive.file(path.join(sourceDir, file), { name: file })
+    }
     void archive.finalize()
   })
 }

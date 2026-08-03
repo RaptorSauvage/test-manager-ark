@@ -46,16 +46,15 @@ dedicated servers running on the same machine.
   empty/filled cron field) live here, instead of being split off into Settings. A
   scheduled backup only actually runs while the server is online - if it's stopped when
   the cron fires, that run is skipped rather than backing up (or erroring on) a server
-  that isn't running. When it is running, a backup (manual or scheduled) first sends
-  `SaveWorld` over RCON and waits for it before zipping - best-effort, so a backup still
-  happens off whatever's already on disk even if RCON is unreachable - so it reflects the
-  latest world state instead of whatever ARK's own autosave last wrote. RCON confirming
-  `SaveWorld` only means ARK accepted the command, not that every file under `SavedArks`
-  has finished being written, so a confirmed save is followed by a 30s settle delay before
-  the zip actually starts reading those files - zipping too soon risks reading a file
+  that isn't running. A backup (manual or scheduled) requires a confirmed save: it sends
+  `SaveGame` (RCON `SaveWorld`) and cancels outright - no zip created - if the server
+  isn't running or that command doesn't confirm, rather than backing up a possibly-stale
+  or mid-write state. Once confirmed, it waits 30s before actually reading the save files -
+  RCON confirming the command only means ARK accepted it, not that every file under
+  `SavedArks` has finished being written, and zipping too soon risks reading a file
   mid-write, which can crash the server (a locked, still-open file) as well as produce a
-  corrupt backup. No delay when SaveWorld failed or the server wasn't running, since
-  there's nothing to wait for. The backup file
+  corrupt backup. After that wait, every file directly under `SavedArks/<Map>` is added to
+  the zip one by one (skipping `.arkrbf` rollback files). The backup file
   list is a checkbox-select table (File Name/Creation
   Time, with a header checkbox to select/deselect all) with a toolbar above it - Refresh
   backup file list, Open backup folder (opens the configured backup directory in the OS
