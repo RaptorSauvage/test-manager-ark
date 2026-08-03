@@ -322,6 +322,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
                   />
                 </th>
                 <th>File Name</th>
+                <th>Size</th>
                 <th>Creation Time</th>
               </tr>
             </thead>
@@ -331,7 +332,6 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
                   key={backup.filePath}
                   className={selectedPaths.has(backup.filePath) ? 'selected' : ''}
                   onClick={() => toggleSelected(backup.filePath)}
-                  title={formatSize(backup.sizeBytes)}
                 >
                   <td className="backups-select-col">
                     <input
@@ -342,12 +342,13 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
                     />
                   </td>
                   <td>{backup.fileName}</td>
+                  <td>{formatSize(backup.sizeBytes)}</td>
                   <td>{new Date(backup.createdAt).toLocaleString()}</td>
                 </tr>
               ))}
               {!loading && backups.length === 0 && (
                 <tr>
-                  <td colSpan={3}>No backups yet.</td>
+                  <td colSpan={4}>No backups yet.</td>
                 </tr>
               )}
             </tbody>
