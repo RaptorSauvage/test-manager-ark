@@ -199,7 +199,7 @@ describe('createBackup', () => {
     vi.mocked(mockIsRunning).mockReturnValue(true)
     const profile = makeProfile({ installDir, backupDir })
 
-    await createBackup(profile)
+    await createBackup(profile, 0)
 
     expect(mockSendRconCommand).toHaveBeenCalledWith(profile, 'SaveWorld')
   })
@@ -207,7 +207,7 @@ describe('createBackup', () => {
   it('does not attempt a SaveWorld when the server is not running', async () => {
     const profile = makeProfile({ installDir, backupDir })
 
-    await createBackup(profile)
+    await createBackup(profile, 0)
 
     expect(mockSendRconCommand).not.toHaveBeenCalled()
   })
@@ -217,8 +217,29 @@ describe('createBackup', () => {
     vi.mocked(mockSendRconCommand).mockResolvedValue({ ok: false, error: 'RCON unreachable' })
     const profile = makeProfile({ installDir, backupDir })
 
-    const entry = await createBackup(profile)
+    const entry = await createBackup(profile, 0)
 
     expect(fs.existsSync(entry.filePath)).toBe(true)
+  })
+
+  it('waits saveSettleMs after a confirmed SaveWorld before zipping, to let the save settle', async () => {
+    vi.mocked(mockIsRunning).mockReturnValue(true)
+    const profile = makeProfile({ installDir, backupDir })
+
+    const start = Date.now()
+    await createBackup(profile, 50)
+
+    expect(Date.now() - start).toBeGreaterThanOrEqual(45)
+  })
+
+  it('skips the settle delay when SaveWorld failed - there is nothing to wait for', async () => {
+    vi.mocked(mockIsRunning).mockReturnValue(true)
+    vi.mocked(mockSendRconCommand).mockResolvedValue({ ok: false, error: 'RCON unreachable' })
+    const profile = makeProfile({ installDir, backupDir })
+
+    const start = Date.now()
+    await createBackup(profile, 50)
+
+    expect(Date.now() - start).toBeLessThan(45)
   })
 })

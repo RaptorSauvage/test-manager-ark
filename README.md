@@ -49,7 +49,13 @@ dedicated servers running on the same machine.
   that isn't running. When it is running, a backup (manual or scheduled) first sends
   `SaveWorld` over RCON and waits for it before zipping - best-effort, so a backup still
   happens off whatever's already on disk even if RCON is unreachable - so it reflects the
-  latest world state instead of whatever ARK's own autosave last wrote. The backup file
+  latest world state instead of whatever ARK's own autosave last wrote. RCON confirming
+  `SaveWorld` only means ARK accepted the command, not that every file under `SavedArks`
+  has finished being written, so a confirmed save is followed by a 30s settle delay before
+  the zip actually starts reading those files - zipping too soon risks reading a file
+  mid-write, which can crash the server (a locked, still-open file) as well as produce a
+  corrupt backup. No delay when SaveWorld failed or the server wasn't running, since
+  there's nothing to wait for. The backup file
   list is a checkbox-select table (File Name/Creation
   Time, with a header checkbox to select/deselect all) with a toolbar above it - Refresh
   backup file list, Open backup folder (opens the configured backup directory in the OS

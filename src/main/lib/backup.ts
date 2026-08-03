@@ -41,7 +41,19 @@ export function isIgnoredBackupFile(relativePath: string): boolean {
   return relativePath.toLowerCase().endsWith('.arkrbf')
 }
 
-export async function createBackup(profile: ServerProfile): Promise<BackupEntry> {
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** How long to wait after RCON confirms SaveWorld before actually reading the save files -
+ *  the RCON response only means ARK accepted the command, not that every file under
+ *  SavedArks has finished being written. Zipping too soon risks reading a file mid-write,
+ *  which can crash the server (Windows locks a file that's still open for writing) as well
+ *  as produce a corrupt backup. 30s is the same margin community backup scripts for ARK
+ *  use for this exact reason. */
+const SAVE_SETTLE_MS = 30_000
+
+export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_SETTLE_MS): Promise<BackupEntry> {
   if (!profile.backupDir.trim()) {
     throw new Error('Set a backup directory in the Backups tab first.')
   }
@@ -50,8 +62,10 @@ export async function createBackup(profile: ServerProfile): Promise<BackupEntry>
     // Best-effort: SaveWorld flushes the server's in-memory state to the SavedArks files
     // this zips up, so a manual or scheduled backup taken between ARK's own autosaves
     // still reflects the latest world state. If RCON is unreachable, still take the
-    // backup off whatever's already on disk rather than skip it entirely.
-    await sendRconCommand(profile, 'SaveWorld')
+    // backup off whatever's already on disk rather than skip it entirely - and skip the
+    // settle delay too, since there's no save actually in flight to wait for.
+    const saveResult = await sendRconCommand(profile, 'SaveWorld')
+    if (saveResult.ok) await delay(saveSettleMs)
   }
 
   return new Promise((resolve, reject) => {
