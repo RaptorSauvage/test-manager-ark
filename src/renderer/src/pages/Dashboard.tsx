@@ -43,14 +43,17 @@ export default function Dashboard({
     window.api.maps.list().then(setMaps)
   }, [])
 
+  // Refetches the open update log as soon as it actually changes (pushed from main),
+  // instead of polling on a fixed timer - so it reads live rather than catching up every
+  // couple seconds.
   useEffect(() => {
     if (!logProfileId) return
-    const interval = setInterval(() => {
+    return window.api.steamcmd.onUpdateLogChanged((changedProfileId) => {
+      if (changedProfileId !== logProfileId) return
       void window.api.steamcmd
         .getUpdateLog(logProfileId)
         .then((log) => setLogContent(log ?? 'No update log yet - run Update at least once.'))
-    }, 2000)
-    return () => clearInterval(interval)
+    })
   }, [logProfileId])
 
   function mapDisplayName(mapId: string): string {

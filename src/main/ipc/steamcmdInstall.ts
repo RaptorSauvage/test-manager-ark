@@ -1,12 +1,16 @@
-import { ipcMain } from 'electron'
+import { ipcMain, type WebContents } from 'electron'
 import { IPC } from '@shared/types'
 import { getSettings, saveSettings } from '../store'
 import { installManagedSteamCmd, getManagedSteamCmdStatus } from '../lib/steamcmdInstaller'
-import { readUpdateLog } from '../lib/steamcmd'
+import { readUpdateLog, steamcmdUpdateEvents } from '../lib/steamcmd'
 import { addFirewallRulesForSteamCmd } from '../lib/firewall'
 import { getLatestBuildIdCache } from '../lib/updateCheck'
 
-export function registerSteamcmdInstallHandlers(): void {
+export function registerSteamcmdInstallHandlers(webContents: WebContents): void {
+  steamcmdUpdateEvents.on('log', (profileId: string) => {
+    if (!webContents.isDestroyed()) webContents.send(IPC.steamcmdUpdateLogChanged, profileId)
+  })
+
   ipcMain.handle(IPC.steamcmdManagedStatus, () => getManagedSteamCmdStatus())
 
   ipcMain.handle(IPC.steamcmdInstall, async () => {

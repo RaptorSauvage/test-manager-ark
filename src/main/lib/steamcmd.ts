@@ -1,9 +1,15 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import type { ServerProfile } from '@shared/types'
 import { setUpdating, isRunning, isUpdating, computeTailReadStart } from './serverProcess'
 import { getDataDir } from './dataDir'
+
+/** Emits 'log' with a profileId whenever its update log file gets new content, so the
+ *  Dashboard's "View update log" panel can refresh itself as soon as there's something
+ *  new to show instead of only finding out on its next poll. */
+export const steamcmdUpdateEvents = new EventEmitter()
 
 /** Steam App ID for the ARK: Survival Ascended dedicated server (free, public - anonymous login works). */
 const ARK_ASA_DEDICATED_SERVER_APP_ID = '2430930'
@@ -189,6 +195,8 @@ function runUpdateAttempt(profile: ServerProfile, steamCmdPath: string, logStrea
     })
     child.stdout?.pipe(logStream, { end: false })
     child.stderr?.pipe(logStream, { end: false })
+    child.stdout?.on('data', () => steamcmdUpdateEvents.emit('log', profile.id))
+    child.stderr?.on('data', () => steamcmdUpdateEvents.emit('log', profile.id))
 
     // SteamCMD's piped console output is known to be unreliable on Windows and often
     // carries little to nothing useful - append whatever it wrote to its own persistent
@@ -198,6 +206,7 @@ function runUpdateAttempt(profile: ServerProfile, steamCmdPath: string, logStrea
       if (newContentLog.trim()) {
         logStream.write('\n--- SteamCMD content_log.txt (new since this run) ---\n' + newContentLog)
       }
+      steamcmdUpdateEvents.emit('log', profile.id)
     }
 
     child.on('error', (err) => {
@@ -246,6 +255,7 @@ export async function updateServer(profile: ServerProfile, steamCmdPath: string)
     for (let attempt = 1; attempt <= MAX_UPDATE_ATTEMPTS; attempt++) {
       if (attempt > 1) {
         logStream.write(`\n--- Retrying (attempt ${attempt}/${MAX_UPDATE_ATTEMPTS}) ---\n`)
+        steamcmdUpdateEvents.emit('log', profile.id)
       }
       try {
         await runUpdateAttempt(profile, steamCmdPath, logStream)
@@ -254,7 +264,10 @@ export async function updateServer(profile: ServerProfile, steamCmdPath: string)
         lastError = err as Error
       }
     }
-    throw new Error(`SteamCMD failed after ${MAX_UPDATE_ATTEMPTS} attempts: ${lastError.message}`)
+    const finalError = new Error(`SteamCMD failed after ${MAX_UPDATE_ATTEMPTS} attempts: ${lastError.message}`)
+    logStream.write(`\n--- ${finalError.message} ---\n`)
+    steamcmdUpdateEvents.emit('log', profile.id)
+    throw finalError
   } finally {
     setUpdating(profile.id, false)
     logStream.end()

@@ -342,12 +342,14 @@ dedicated servers running on the same machine.
   the packaged app's executable: electron-builder's NSIS installer wipes the install
   folder's contents on every update/rebuild, which was silently deleting a managed
   SteamCMD copy kept there while the saved SteamCMD path setting kept pointing at the
-  now-gone location. "View update log" polls every 2 seconds while open, so a
-  scheduled update's outcome shows up without having to close and reopen it. A failed
-  attempt is retried automatically, up to 3 attempts total, before actually reporting an
-  error - a stale/freshly-installed SteamCMD's very first run in a while often has to
-  self-update itself first, which tends to fail once (exit code 7) before succeeding right
-  after, so a single failure isn't necessarily the final outcome. The update log shows
+  now-gone location. "View update log" refreshes itself live - the main process pushes an
+  event the moment new output is written, rather than the panel polling on a timer, so a
+  scheduled update's outcome shows up as it happens without having to close and reopen it.
+  A failed attempt is retried automatically, up to 3 attempts total, before actually
+  reporting an error - a stale/freshly-installed SteamCMD's very first run in a while often
+  has to self-update itself first, which tends to fail once (exit code 7) before succeeding
+  right after, so a single failure isn't necessarily the final outcome. A successful
+  attempt - including the very first one - never triggers a retry. The update log shows
   every attempt, marked with a "Retrying" line in between.
 - **Map Management tab** — type a folder name and a `.ark` file name (e.g. `Svartalfheim` /
   `Svartalfheim_WP.ark`) and click **Add map** to create `SavedArks/<folder>/<file>` under

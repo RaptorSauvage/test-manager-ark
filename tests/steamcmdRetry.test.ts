@@ -48,7 +48,7 @@ vi.mock('node:child_process', () => ({
   })
 }))
 
-import { updateServer } from '../src/main/lib/steamcmd'
+import { updateServer, steamcmdUpdateEvents } from '../src/main/lib/steamcmd'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
   return {
@@ -130,5 +130,24 @@ describe('updateServer retry', () => {
 
     await expect(updateServer(profile, steamCmdPath)).rejects.toThrow('SteamCMD failed after 3 attempts')
     expect(spawnCallCount()).toBe(3)
+  })
+
+  it('emits a live log event for the retrying profile so the UI can refresh without polling', async () => {
+    queueExitCodes([1, 0])
+    const profile = makeProfile({ id: 'retry-live-events' })
+    const seenProfileIds: string[] = []
+    const onLog = (profileId: string): void => {
+      seenProfileIds.push(profileId)
+    }
+    steamcmdUpdateEvents.on('log', onLog)
+
+    try {
+      await updateServer(profile, steamCmdPath)
+    } finally {
+      steamcmdUpdateEvents.off('log', onLog)
+    }
+
+    expect(seenProfileIds.length).toBeGreaterThan(0)
+    expect(seenProfileIds.every((id) => id === profile.id)).toBe(true)
   })
 })

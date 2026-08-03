@@ -23,7 +23,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerPlayerBackupHandlers()
   registerDialogHandlers(mainWindow)
   registerSettingsHandlers()
-  registerSteamcmdInstallHandlers()
+  registerSteamcmdInstallHandlers(mainWindow.webContents)
   registerMapsHandlers()
   registerCustomMapsHandlers()
   registerDataDirHandlers()

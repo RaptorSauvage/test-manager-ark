@@ -86,6 +86,11 @@ const api: Api = {
     install: () => ipcRenderer.invoke(IPC.steamcmdInstall),
     managedStatus: () => ipcRenderer.invoke(IPC.steamcmdManagedStatus),
     getUpdateLog: (profileId: string) => ipcRenderer.invoke(IPC.steamcmdUpdateLog, profileId),
+    onUpdateLogChanged: (callback: (profileId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, profileId: string): void => callback(profileId)
+      ipcRenderer.on(IPC.steamcmdUpdateLogChanged, listener)
+      return () => ipcRenderer.removeListener(IPC.steamcmdUpdateLogChanged, listener)
+    },
     addFirewallRule: (steamCmdPath: string) => ipcRenderer.invoke(IPC.steamcmdAddFirewallRule, steamCmdPath),
     getLatestBuildId: () => ipcRenderer.invoke(IPC.steamcmdLatestBuildId)
   },
