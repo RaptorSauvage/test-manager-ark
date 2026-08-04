@@ -126,7 +126,9 @@ const running = new Map<string, RunningServer>()
 
 export const serverEvents = new EventEmitter()
 
-function emitStatus(status: ServerStatus): void {
+/** Persists a status update (so a later getStatus() call sees it too, not just whoever's
+ *  listening for the 'status' event right now) and broadcasts it. */
+export function emitStatus(status: ServerStatus): void {
   const entry = running.get(status.profileId)
   if (entry) entry.status = status
   serverEvents.emit('status', status)

@@ -1,7 +1,7 @@
 import os from 'node:os'
 import pidusage from 'pidusage'
 import type { ServerProfile } from '@shared/types'
-import { getStatus, serverEvents, markProcessExited } from './serverProcess'
+import { getStatus, emitStatus, markProcessExited } from './serverProcess'
 import { listPlayers } from './rcon'
 
 const timers = new Map<string, NodeJS.Timeout>()
@@ -39,7 +39,7 @@ async function tick(profile: ServerProfile): Promise<void> {
   if (current.state !== 'running') return
 
   const memoryMB = Math.round(stats.memory / 1024 / 1024)
-  serverEvents.emit('status', {
+  emitStatus({
     ...current,
     cpu: Math.round(stats.cpu * 10) / 10,
     memoryMB,
