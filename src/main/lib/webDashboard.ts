@@ -511,8 +511,7 @@ const DASHBOARD_HTML = `<!doctype html>
   .view { display: none; flex: 1; min-height: 0; }
   .view.active { display: flex; flex-direction: column; }
   #view-cluster.active { display: block; overflow-y: auto; padding: 16px; }
-  #cluster-cards { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px; }
-  .cluster-section { flex: 1 1 340px; min-width: 300px; }
+  #cluster-cards { display: flex; flex-direction: column; gap: 24px; }
   .cluster-group summary { cursor: pointer; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
   .cluster-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; }
   .cluster-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; cursor: pointer; }
@@ -599,7 +598,8 @@ const DASHBOARD_HTML = `<!doctype html>
   #backup-table th { color: var(--muted); font-weight: 600; }
   #backup-table .backup-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
   #backup-table .backup-row-actions button { font-size: 0.78rem; padding: 4px 8px; }
-  .backup-log-panel { flex: 1.6; min-width: 320px; }
+  .backup-table-panel { flex: 0 1 60%; }
+  .backup-log-panel { flex: 0 1 40%; min-width: 220px; }
   #backup-log { flex: 1; overflow-y: auto; font-size: 0.85rem; }
   .backup-log-line { padding: 3px 0; color: var(--muted); }
   .backup-log-line.error { color: var(--danger); }
@@ -619,8 +619,6 @@ const DASHBOARD_HTML = `<!doctype html>
     .players-panel { flex: none; max-height: 160px; }
     #players-list { display: flex; flex-direction: row; flex-wrap: wrap; overflow-y: hidden; gap: 6px; }
     .player-row { flex: 0 0 auto; background: var(--bg); border: 1px solid var(--border); }
-    #cluster-cards { flex-direction: column; }
-    .cluster-section { flex-basis: auto; min-width: 0; }
     .cluster-cards { grid-template-columns: 1fr; gap: 10px; }
     .cluster-card { padding: 14px; }
   }
@@ -692,7 +690,7 @@ const DASHBOARD_HTML = `<!doctype html>
           <button id="btn-backup-refresh" type="button">Refresh</button>
         </div>
         <div class="content-row">
-          <section class="panel">
+          <section class="panel backup-table-panel">
             <table id="backup-table">
               <thead>
                 <tr><th>File Name</th><th>Size</th><th>Creation Time</th><th></th></tr>
@@ -949,16 +947,11 @@ const DASHBOARD_HTML = `<!doctype html>
       if (s.group && groupNames.indexOf(s.group) === -1) groupNames.push(s.group);
     });
 
-    if (ungrouped.length) {
-      var ungroupedSection = document.createElement('div');
-      ungroupedSection.className = 'cluster-section';
-      ungroupedSection.appendChild(buildClusterGrid(ungrouped));
-      clusterCardsEl.appendChild(ungroupedSection);
-    }
+    if (ungrouped.length) clusterCardsEl.appendChild(buildClusterGrid(ungrouped));
 
     groupNames.forEach(function (groupName) {
       var details = document.createElement('details');
-      details.className = 'cluster-section cluster-group';
+      details.className = 'cluster-group';
       details.open = true;
       var summary = document.createElement('summary');
       summary.textContent = groupName;

@@ -250,10 +250,10 @@ dedicated servers running on the same machine.
     health rather than controlling anything. Cards are split into collapsible groups
     matching the Manager's own profile groups - ungrouped servers first, then each named
     group alphabetically, same ordering as everywhere else in the app - and, like every
-    other server list in this page, **Hidden** profiles never appear here either. Groups
-    sit side by side (each its own column, wrapping onto a new row once they no longer fit
-    the window width) rather than stacked one below another, so several small clusters fit
-    on screen at once; each group's own cards still wrap normally within its column. Click a
+    other server list in this page, **Hidden** profiles never appear here either. Each
+    group is one below another, full width, with its own cards wrapping into as many
+    columns as fit that width - same shape as the desktop dashboard's grouped server list.
+    Click a
     card to jump straight into that server's Dashboard view (below) with it already
     selected. Same `/api/servers` poll as the Dashboard view, just rendered for every
     server instead of only the selected one. This - and the player count/CPU/RAM shown for
@@ -336,9 +336,10 @@ dedicated servers running on the same machine.
     configuration, only to act on it. A **Create backup now** button and **Refresh**
     button sit above a table of existing backups (file name, size, creation time) each
     with **Restore** and **Delete** actions (both confirm before acting), and a **Backup
-    Process Log** panel alongside it - given more width than the table since log lines run
-    longer than file names - polling every 5s while this view is active - all backed by the
-    same `backup.ts`/`schedule.ts` functions the desktop Backups tab uses, reused directly
+    Process Log** panel alongside it - taking 40% of that row's width to the table's 60%,
+    since log lines run longer than file names - polling every 5s while this view is
+    active - all backed by the same `backup.ts`/`schedule.ts` functions the desktop
+    Backups tab uses, reused directly
     since the web dashboard runs in the same process.
   - The active view (Cluster Dashboard, Dashboard, or Backup) is remembered across page
     reloads, same as the selected server.
