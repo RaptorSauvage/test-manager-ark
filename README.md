@@ -241,7 +241,24 @@ dedicated servers running on the same machine.
   existing files to the new folder for you. This is also where the **web dashboard** is
   enabled - the only place in this app for a live console feed and RCON, on purpose (the
   desktop app itself has no console/RCON tab). It's a plain HTTP server built into the
-  Manager (no separate process), serving a page with, one server at a time:
+  Manager (no separate process), serving a page with a sidebar switching between two
+  views:
+  - **Cluster Dashboard** - a read-only monitoring overview, one card per server (state,
+    player count, CPU%, RAM) - like the desktop app's own dashboard cards, minus the
+    Start/Stop/Restart buttons, since this view is for glancing at the whole cluster's
+    health rather than controlling anything. Same `/api/servers` poll as the Dashboard
+    view below, just rendered for every server instead of only the selected one. This -
+    and the player count/CPU/RAM shown for the selected server in the Dashboard view's
+    status line - depends on the Manager's own CPU/RAM/player-count monitor, which polls
+    every 5s while a server is running; a past bug had that monitor's updates only reach
+    live listeners (the desktop app's own UI) without ever being saved anywhere else, so
+    anything that asked for a server's status afterwards - this page's `/api/servers`
+    poll included - got stuck reading `cpu: null, memoryMB: null, players: []` forever
+    even for a server that had been running for hours. Fixed by having the monitor persist
+    through the same internal update path everything else uses, instead of only
+    broadcasting a live event.
+  - **Dashboard** - the per-server console/RCON view (what this page originally was, and
+    still the default on first visit):
   - A server picker at the top, listing profiles in the same order as the desktop
     dashboard (ungrouped profiles first in their reordered position, then each group
     alphabetically) and leaving out anything marked **Hidden** there - it mirrors what
@@ -274,20 +291,6 @@ dedicated servers running on the same machine.
     a secure context, e.g. reached via a LAN IP over plain http, since `navigator.clipboard`
     isn't available there) or **Kick** (red, asks to confirm, then sends RCON
     `KickPlayer <id>`).
-  - A collapsible **Cluster** table above the console, one row per server (state, player
-    count, CPU%, RAM) - the whole cluster's live status at a glance, without switching the
-    dropdown away from whichever server's console/RCON you're actually working in. Same
-    poll, same data as everything else here (`/api/servers`), just rendered for every
-    server instead of only the selected one; collapsed/expanded state remembered like the
-    Events row. This - and the player count/CPU/RAM shown for the selected server in the
-    status line - depends on the Manager's own CPU/RAM/player-count monitor, which polls
-    every 5s while a server is running; a past bug had that monitor's updates only reach
-    live listeners (the desktop app's own UI) without ever being saved anywhere else, so
-    anything that asked for a server's status afterwards - this page's `/api/servers`
-    poll included - got stuck reading `cpu: null, memoryMB: null, players: []` forever
-    even for a server that had been running for hours. Fixed by having the monitor persist
-    through the same internal update path everything else uses, instead of only
-    broadcasting a live event.
   - **Start / Stop / Restart / Stop+Update+Restart** buttons in the header, for the
     currently selected server - the same actions as the desktop app's own per-profile
     buttons and bulk "…All" actions, reusing the exact same underlying logic (both call
@@ -308,10 +311,13 @@ dedicated servers running on the same machine.
   - The selected server is remembered across page reloads (via `localStorage`), so
     reopening or refreshing the dashboard reselects the same server instead of always
     falling back to the first one in the list.
-  - Responsive layout below 700px wide (phones/small tablets): the console and online
+  - Responsive layout below 700px wide (phones/small tablets): the sidebar becomes a
+    horizontal bar across the top instead of a left column, and the console and online
     players panels stack vertically instead of side by side, with the console on top and
     the player list below it as a horizontally wrapping row of names instead of a tall
     vertical list.
+  - The active view (Cluster Dashboard or Dashboard) is remembered across page reloads,
+    same as the selected server.
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
     reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one
     specific local IP makes it reachable from other devices on your local network, which

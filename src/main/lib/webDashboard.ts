@@ -412,8 +412,29 @@ const DASHBOARD_HTML = `<!doctype html>
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    display: flex; flex-direction: column; height: 100vh;
+    display: flex; height: 100vh; overflow: hidden;
   }
+  #sidebar { width: 190px; flex-shrink: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 16px 10px; gap: 4px; overflow-y: auto; }
+  #sidebar h1 { font-size: 0.95rem; margin: 0 6px 12px; }
+  .nav-btn { text-align: left; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 9px 10px; font-size: 0.88rem; }
+  .nav-btn:hover { border-color: var(--border); }
+  .nav-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .nav-btn.active:hover { border-color: var(--accent); }
+  #main-area { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .view { display: none; flex: 1; min-height: 0; }
+  .view.active { display: flex; flex-direction: column; }
+  #view-cluster.active { display: block; overflow-y: auto; padding: 16px; }
+  .cluster-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .cluster-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .cluster-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .cluster-card-header h3 { margin: 0; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cluster-card-state { flex-shrink: 0; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
+  .cluster-card-state.state-running { color: var(--ok); }
+  .cluster-card-state.state-stopped { color: var(--muted); }
+  .cluster-card-state.state-starting, .cluster-card-state.state-stopping,
+  .cluster-card-state.state-restarting, .cluster-card-state.state-updating { color: var(--warn); }
+  .cluster-card-stats { display: flex; flex-direction: column; gap: 5px; font-size: 0.85rem; color: var(--muted); }
+  .cluster-card-stats strong { color: var(--text); font-weight: 600; }
   header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   header h1 { font-size: 1rem; margin: 0; }
   select, input, button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 0.9rem; }
@@ -462,16 +483,6 @@ const DASHBOARD_HTML = `<!doctype html>
   #filters-bar.collapsed #filters { display: none; }
   #filters label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
   #filters input { padding: 0; width: auto; }
-  #cluster-bar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
-  #btn-toggle-cluster { font-size: 0.8rem; padding: 4px 8px; flex-shrink: 0; }
-  #cluster-table { border-collapse: collapse; font-size: 0.82rem; }
-  #cluster-bar.collapsed #cluster-table { display: none; }
-  #cluster-table th, #cluster-table td { padding: 3px 10px 3px 0; text-align: left; white-space: nowrap; }
-  #cluster-table th { color: var(--muted); font-weight: 600; }
-  #cluster-table tr.state-running td:nth-child(2) { color: var(--ok); }
-  #cluster-table tr.state-stopped td:nth-child(2) { color: var(--muted); }
-  #cluster-table tr.state-updating td:nth-child(2), #cluster-table tr.state-starting td:nth-child(2),
-  #cluster-table tr.state-stopping td:nth-child(2), #cluster-table tr.state-restarting td:nth-child(2) { color: var(--warn); }
   .content-row { flex: 1; display: flex; gap: 12px; min-height: 0; }
   .console-panel { flex: 3; }
   .players-panel { flex: 1; min-width: 220px; max-width: 300px; }
@@ -487,6 +498,10 @@ const DASHBOARD_HTML = `<!doctype html>
   .context-menu button.danger { color: var(--danger); }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); z-index: 1100; }
   @media (max-width: 700px) {
+    body { flex-direction: column; }
+    #sidebar { width: auto; flex-direction: row; border-right: none; border-bottom: 1px solid var(--border); padding: 8px 10px; overflow-x: auto; }
+    #sidebar h1 { display: none; }
+    .nav-btn { flex-shrink: 0; }
     header { padding: 10px 12px; gap: 8px; }
     main { padding: 8px 10px; }
     select, #server-actions button { flex: 1 1 auto; }
@@ -495,52 +510,55 @@ const DASHBOARD_HTML = `<!doctype html>
     .players-panel { flex: none; width: 100%; max-width: none; max-height: 160px; }
     #players-list { display: flex; flex-direction: row; flex-wrap: wrap; overflow-y: hidden; gap: 6px; }
     .player-row { flex: 0 0 auto; background: var(--bg); border: 1px solid var(--border); }
-    #cluster-bar { width: 100%; }
-    #cluster-table { display: block; overflow-x: auto; max-width: 100%; }
   }
 </style>
 </head>
 <body>
-<header>
-  <h1>ARK Server Manager</h1>
-  <select id="server-select"></select>
-  <div id="server-actions">
-    <button id="btn-start" class="ok">Start</button>
-    <button id="btn-stop" class="danger">Stop</button>
-    <button id="btn-restart" class="warn">Restart</button>
-    <button id="btn-stop-update-restart" class="info">Update Restart</button>
-  </div>
-  <span id="status"></span>
-</header>
-<main>
-  <div id="cluster-bar">
-    <button id="btn-toggle-cluster" type="button">Cluster ▾</button>
-    <table id="cluster-table">
-      <thead><tr><th>Server</th><th>State</th><th>Players</th><th>CPU</th><th>RAM</th></tr></thead>
-      <tbody id="cluster-table-body"></tbody>
-    </table>
-  </div>
-  <div id="filters-bar">
-    <button id="btn-toggle-filters" type="button">Events ▾</button>
-    <div id="filters"></div>
-  </div>
-  <div class="content-row">
-    <section class="panel console-panel">
-      <div id="console"></div>
-      <form id="rcon-form">
-        <input id="rcon-input" placeholder="e.g. Broadcast Hello world" autocomplete="off" />
-        <button type="submit">Send</button>
-      </form>
-    </section>
-    <aside class="panel players-panel">
-      <div class="players-header">
-        <h3>Online players</h3>
-        <span class="players-count" id="players-count">0</span>
+<nav id="sidebar">
+  <h1>ARK Manager</h1>
+  <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
+  <button id="nav-console" class="nav-btn" type="button">Dashboard</button>
+</nav>
+<div id="main-area">
+  <section id="view-cluster" class="view">
+    <div id="cluster-cards" class="cluster-cards"></div>
+  </section>
+  <section id="view-console" class="view">
+    <header>
+      <h1>ARK Server Manager</h1>
+      <select id="server-select"></select>
+      <div id="server-actions">
+        <button id="btn-start" class="ok">Start</button>
+        <button id="btn-stop" class="danger">Stop</button>
+        <button id="btn-restart" class="warn">Restart</button>
+        <button id="btn-stop-update-restart" class="info">Update Restart</button>
       </div>
-      <div id="players-list"></div>
-    </aside>
-  </div>
-</main>
+      <span id="status"></span>
+    </header>
+    <main>
+      <div id="filters-bar">
+        <button id="btn-toggle-filters" type="button">Events ▾</button>
+        <div id="filters"></div>
+      </div>
+      <div class="content-row">
+        <section class="panel console-panel">
+          <div id="console"></div>
+          <form id="rcon-form">
+            <input id="rcon-input" placeholder="e.g. Broadcast Hello world" autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
+        </section>
+        <aside class="panel players-panel">
+          <div class="players-header">
+            <h3>Online players</h3>
+            <span class="players-count" id="players-count">0</span>
+          </div>
+          <div id="players-list"></div>
+        </aside>
+      </div>
+    </main>
+  </section>
+</div>
 <script>
 (function () {
   var currentId = null;
@@ -685,46 +703,74 @@ const DASHBOARD_HTML = `<!doctype html>
     applyFiltersCollapsed();
   });
 
-  var clusterBarEl = document.getElementById('cluster-bar');
-  var toggleClusterBtn = document.getElementById('btn-toggle-cluster');
-  var clusterTableBody = document.getElementById('cluster-table-body');
+  var navClusterBtn = document.getElementById('nav-cluster');
+  var navConsoleBtn = document.getElementById('nav-console');
+  var viewClusterEl = document.getElementById('view-cluster');
+  var viewConsoleEl = document.getElementById('view-console');
+  var clusterCardsEl = document.getElementById('cluster-cards');
 
-  var CLUSTER_COLLAPSED_KEY = 'ark-dashboard-cluster-collapsed';
-  var clusterCollapsed = false;
-  try { clusterCollapsed = localStorage.getItem(CLUSTER_COLLAPSED_KEY) === '1'; } catch (err) { /* storage unavailable - not fatal */ }
+  var ACTIVE_VIEW_KEY = 'ark-dashboard-active-view';
+  var activeView = 'console';
+  try { activeView = localStorage.getItem(ACTIVE_VIEW_KEY) || 'console'; } catch (err) { /* storage unavailable - not fatal */ }
 
-  function applyClusterCollapsed() {
-    clusterBarEl.classList.toggle('collapsed', clusterCollapsed);
-    toggleClusterBtn.textContent = clusterCollapsed ? 'Cluster ▸' : 'Cluster ▾';
+  function applyActiveView() {
+    var cluster = activeView === 'cluster';
+    navClusterBtn.classList.toggle('active', cluster);
+    navConsoleBtn.classList.toggle('active', !cluster);
+    viewClusterEl.classList.toggle('active', cluster);
+    viewConsoleEl.classList.toggle('active', !cluster);
   }
-  applyClusterCollapsed();
+  applyActiveView();
 
-  toggleClusterBtn.addEventListener('click', function () {
-    clusterCollapsed = !clusterCollapsed;
-    try { localStorage.setItem(CLUSTER_COLLAPSED_KEY, clusterCollapsed ? '1' : '0'); } catch (err) { /* storage unavailable - not fatal */ }
-    applyClusterCollapsed();
-  });
+  function selectView(view) {
+    activeView = view;
+    try { localStorage.setItem(ACTIVE_VIEW_KEY, view); } catch (err) { /* storage unavailable - not fatal */ }
+    applyActiveView();
+  }
+  navClusterBtn.addEventListener('click', function () { selectView('cluster'); });
+  navConsoleBtn.addEventListener('click', function () { selectView('console'); });
 
-  // Renders every server's live state/players/CPU/RAM at once, from the same /api/servers
-  // response loadServers() already fetches every poll - no separate request needed.
-  function renderClusterTable(servers) {
-    clusterTableBody.innerHTML = '';
+  // Renders every server as a read-only monitoring card (state/players/CPU/RAM) - like
+  // the desktop app's own dashboard cards, minus the Start/Stop/Restart buttons, since
+  // this view is meant for at-a-glance monitoring rather than control. Built from the
+  // same /api/servers response loadServers() already fetches every poll, no separate
+  // request needed.
+  function renderClusterCards(servers) {
+    clusterCardsEl.innerHTML = '';
     servers.forEach(function (s) {
-      var row = document.createElement('tr');
-      row.className = 'state-' + s.state;
-      var cells = [
-        s.name,
-        s.state,
-        s.players ? String(s.players.length) : '-',
-        s.cpu != null ? s.cpu + '%' : '-',
-        s.memoryMB != null ? s.memoryMB + ' MB' : '-'
+      var card = document.createElement('div');
+      card.className = 'cluster-card';
+
+      var header = document.createElement('div');
+      header.className = 'cluster-card-header';
+      var name = document.createElement('h3');
+      name.textContent = s.name;
+      var state = document.createElement('span');
+      state.className = 'cluster-card-state state-' + s.state;
+      state.textContent = s.state;
+      header.appendChild(name);
+      header.appendChild(state);
+
+      var stats = document.createElement('div');
+      stats.className = 'cluster-card-stats';
+      var playerCount = s.players ? s.players.length : 0;
+      var lines = [
+        ['Players', String(playerCount) + (playerCount ? ': ' + s.players.join(', ') : '')],
+        ['CPU', s.cpu != null ? s.cpu + '%' : '-'],
+        ['RAM', s.memoryMB != null ? s.memoryMB + ' MB' : '-']
       ];
-      cells.forEach(function (text) {
-        var td = document.createElement('td');
-        td.textContent = text;
-        row.appendChild(td);
+      lines.forEach(function (pair) {
+        var line = document.createElement('div');
+        var strong = document.createElement('strong');
+        strong.textContent = pair[0] + ': ';
+        line.appendChild(strong);
+        line.appendChild(document.createTextNode(pair[1]));
+        stats.appendChild(line);
       });
-      clusterTableBody.appendChild(row);
+
+      card.appendChild(header);
+      card.appendChild(stats);
+      clusterCardsEl.appendChild(card);
     });
   }
 
@@ -870,7 +916,7 @@ const DASHBOARD_HTML = `<!doctype html>
         selectServer(toSelect);
       }
       renderStatus(servers.find(function (s) { return s.id === select.value; }));
-      renderClusterTable(servers);
+      renderClusterCards(servers);
     });
   }
 
