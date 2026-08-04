@@ -348,7 +348,10 @@ dedicated servers running on the same machine.
     including the part that fetches the server list in the first place. Fixed by running
     that first render pass after everything it depends on is set up.
   - The active view (Cluster Dashboard, Dashboard, or Backup) is remembered across page
-    reloads, same as the selected server.
+    reloads, same as the selected server - except Dashboard and Backup both need a
+    selected server to show anything, so whenever there isn't one (no servers exist yet,
+    or the one that was selected got deleted or hidden out from under the page), the page
+    falls back to Cluster Dashboard instead of reloading into an empty or stuck view.
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
     reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one
     specific local IP makes it reachable from other devices on your local network, which

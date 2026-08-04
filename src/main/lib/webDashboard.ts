@@ -1272,6 +1272,11 @@ const DASHBOARD_HTML = `<!doctype html>
       if (previousValue && servers.some(function (s) { return s.id === previousValue; })) {
         select.value = previousValue;
       }
+      // A server that was selected can vanish out from under us (profile deleted, or
+      // filtered out by Hidden) - treat that the same as never having selected one.
+      if (currentId && !servers.some(function (s) { return s.id === currentId; })) {
+        currentId = null;
+      }
       if (!currentId && servers.length > 0) {
         var remembered = null;
         try { remembered = localStorage.getItem(SELECTED_SERVER_KEY); } catch (err) { /* storage unavailable - not fatal */ }
@@ -1279,6 +1284,9 @@ const DASHBOARD_HTML = `<!doctype html>
         select.value = toSelect;
         selectServer(toSelect);
       }
+      // Dashboard and Backup both need a selected server to show anything useful - with
+      // none available, default to Cluster Dashboard instead of an empty/stuck view.
+      if (!currentId && activeView !== 'cluster') selectView('cluster');
       renderStatus(servers.find(function (s) { return s.id === select.value; }));
       renderClusterCards(servers);
     });
