@@ -246,17 +246,18 @@ dedicated servers running on the same machine.
   - **Cluster Dashboard** - a read-only monitoring overview, one card per server (state,
     player count, CPU%, RAM) - like the desktop app's own dashboard cards, minus the
     Start/Stop/Restart buttons, since this view is for glancing at the whole cluster's
-    health rather than controlling anything. Same `/api/servers` poll as the Dashboard
-    view below, just rendered for every server instead of only the selected one. This -
-    and the player count/CPU/RAM shown for the selected server in the Dashboard view's
-    status line - depends on the Manager's own CPU/RAM/player-count monitor, which polls
-    every 5s while a server is running; a past bug had that monitor's updates only reach
-    live listeners (the desktop app's own UI) without ever being saved anywhere else, so
-    anything that asked for a server's status afterwards - this page's `/api/servers`
-    poll included - got stuck reading `cpu: null, memoryMB: null, players: []` forever
-    even for a server that had been running for hours. Fixed by having the monitor persist
-    through the same internal update path everything else uses, instead of only
-    broadcasting a live event.
+    health rather than controlling anything. Click a card to jump straight into that
+    server's Dashboard view (below) with it already selected. Same `/api/servers` poll as
+    the Dashboard view, just rendered for every server instead of only the selected one.
+    This - and the player count/CPU/RAM shown for the selected server in the Dashboard
+    view's own Status box - depends on the Manager's own CPU/RAM/player-count monitor,
+    which polls every 5s while a server is running; a past bug had that monitor's updates
+    only reach live listeners (the desktop app's own UI) without ever being saved anywhere
+    else, so anything that asked for a server's status afterwards - this page's
+    `/api/servers` poll included - got stuck reading `cpu: null, memoryMB: null,
+    players: []` forever even for a server that had been running for hours. Fixed by
+    having the monitor persist through the same internal update path everything else
+    uses, instead of only broadcasting a live event.
   - **Dashboard** - the per-server console/RCON view (what this page originally was, and
     still the default on first visit):
   - A server picker at the top, listing profiles in the same order as the desktop
@@ -285,7 +286,10 @@ dedicated servers running on the same machine.
     fast restart can't be missed).
   - An RCON command box right below the feed - commands sent and their responses appear
     as entries in that same feed, in order.
-  - An **online players** panel to the right, refreshed every few seconds via RCON
+  - A small **Status** box in the right-hand column, above the online players panel -
+    state, player count, CPU%, and RAM for the selected server, each on its own line
+    instead of one long line squeezed into the header (that's what it used to be).
+  - An **online players** panel below that, refreshed every few seconds via RCON
     `ListPlayers`. Right-click a player for **Copy ID** (their EOS unique id, to the
     clipboard - falls back to a `document.execCommand`-based copy when the page isn't in
     a secure context, e.g. reached via a LAN IP over plain http, since `navigator.clipboard`
@@ -302,7 +306,7 @@ dedicated servers running on the same machine.
     seconds) - a toast warns if that couldn't be confirmed - then the rest keeps running
     in the background; Stop+Update+Restart responds immediately once kicked off without
     waiting for any of it, since a SteamCMD update alone can take minutes. Either way the
-    button doesn't hang; the status line and player panel simply update on their next
+    button doesn't hang; the Status box and player panel simply update on their next
     poll as the state actually changes (stopping → updating → starting → running). There's also
     a standalone update endpoint (`POST /api/servers/:id/update`, no button on the page
     itself - Stop+Update+Restart already covers the interactive case) meant for external

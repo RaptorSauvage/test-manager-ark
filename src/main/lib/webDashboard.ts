@@ -424,16 +424,17 @@ const DASHBOARD_HTML = `<!doctype html>
   .view { display: none; flex: 1; min-height: 0; }
   .view.active { display: flex; flex-direction: column; }
   #view-cluster.active { display: block; overflow-y: auto; padding: 16px; }
-  .cluster-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
-  .cluster-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
-  .cluster-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-  .cluster-card-header h3 { margin: 0; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cluster-card-state { flex-shrink: 0; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
+  .cluster-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; }
+  .cluster-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; cursor: pointer; }
+  .cluster-card:hover { border-color: var(--accent); }
+  .cluster-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+  .cluster-card-header h3 { margin: 0; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cluster-card-state { flex-shrink: 0; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
   .cluster-card-state.state-running { color: var(--ok); }
   .cluster-card-state.state-stopped { color: var(--muted); }
   .cluster-card-state.state-starting, .cluster-card-state.state-stopping,
   .cluster-card-state.state-restarting, .cluster-card-state.state-updating { color: var(--warn); }
-  .cluster-card-stats { display: flex; flex-direction: column; gap: 5px; font-size: 0.85rem; color: var(--muted); }
+  .cluster-card-stats { display: flex; flex-direction: column; gap: 6px; font-size: 0.92rem; color: var(--muted); }
   .cluster-card-stats strong { color: var(--text); font-weight: 600; }
   header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   header h1 { font-size: 1rem; margin: 0; }
@@ -442,7 +443,6 @@ const DASHBOARD_HTML = `<!doctype html>
   button:hover { border-color: var(--accent); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   button:disabled:hover { border-color: var(--border); }
-  #status { color: var(--muted); font-size: 0.85rem; }
   #server-actions { display: flex; gap: 6px; }
   #server-actions button.ok { border-color: var(--ok); color: var(--ok); }
   #server-actions button.ok:hover:not(:disabled) { background: var(--ok); color: #14161a; }
@@ -485,7 +485,12 @@ const DASHBOARD_HTML = `<!doctype html>
   #filters input { padding: 0; width: auto; }
   .content-row { flex: 1; display: flex; gap: 12px; min-height: 0; }
   .console-panel { flex: 3; }
-  .players-panel { flex: 1; min-width: 220px; max-width: 300px; }
+  .side-col { display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 220px; max-width: 300px; }
+  .status-panel { flex: 0 0 auto; }
+  .status-panel h3 { margin: 0 0 10px; font-size: 0.95rem; }
+  .status-lines { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; color: var(--muted); }
+  .status-lines strong { color: var(--text); font-weight: 600; }
+  .players-panel { flex: 1; min-height: 0; }
   .players-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
   .players-header h3 { margin: 0; font-size: 0.95rem; }
   .players-count { background: var(--accent); color: #fff; border-radius: 999px; padding: 1px 9px; font-size: 0.75rem; }
@@ -507,9 +512,12 @@ const DASHBOARD_HTML = `<!doctype html>
     select, #server-actions button { flex: 1 1 auto; }
     .content-row { flex-direction: column; }
     .console-panel { flex: 2; min-height: 260px; }
-    .players-panel { flex: none; width: 100%; max-width: none; max-height: 160px; }
+    .side-col { flex: none; width: 100%; max-width: none; }
+    .players-panel { flex: none; max-height: 160px; }
     #players-list { display: flex; flex-direction: row; flex-wrap: wrap; overflow-y: hidden; gap: 6px; }
     .player-row { flex: 0 0 auto; background: var(--bg); border: 1px solid var(--border); }
+    .cluster-cards { grid-template-columns: 1fr; gap: 10px; }
+    .cluster-card { padding: 14px; }
   }
 </style>
 </head>
@@ -533,7 +541,6 @@ const DASHBOARD_HTML = `<!doctype html>
         <button id="btn-restart" class="warn">Restart</button>
         <button id="btn-stop-update-restart" class="info">Update Restart</button>
       </div>
-      <span id="status"></span>
     </header>
     <main>
       <div id="filters-bar">
@@ -548,13 +555,19 @@ const DASHBOARD_HTML = `<!doctype html>
             <button type="submit">Send</button>
           </form>
         </section>
-        <aside class="panel players-panel">
-          <div class="players-header">
-            <h3>Online players</h3>
-            <span class="players-count" id="players-count">0</span>
-          </div>
-          <div id="players-list"></div>
-        </aside>
+        <div class="side-col">
+          <aside class="panel status-panel">
+            <h3>Status</h3>
+            <div id="status"></div>
+          </aside>
+          <aside class="panel players-panel">
+            <div class="players-header">
+              <h3>Online players</h3>
+              <span class="players-count" id="players-count">0</span>
+            </div>
+            <div id="players-list"></div>
+          </aside>
+        </div>
       </div>
     </main>
   </section>
@@ -770,6 +783,11 @@ const DASHBOARD_HTML = `<!doctype html>
 
       card.appendChild(header);
       card.appendChild(stats);
+      card.addEventListener('click', function () {
+        select.value = s.id;
+        selectServer(s.id);
+        selectView('console');
+      });
       clusterCardsEl.appendChild(card);
     });
   }
@@ -838,16 +856,29 @@ const DASHBOARD_HTML = `<!doctype html>
   }
 
   function renderStatus(s) {
+    statusEl.innerHTML = '';
     if (!s) {
-      statusEl.textContent = '';
       startBtn.disabled = true; stopBtn.disabled = true; restartBtn.disabled = true; stopUpdateRestartBtn.disabled = true;
       return;
     }
-    var parts = [s.state];
-    if (s.players) parts.push(s.players.length + ' player(s)' + (s.players.length ? ': ' + s.players.join(', ') : ''));
-    if (s.cpu != null) parts.push('CPU ' + s.cpu + '%');
-    if (s.memoryMB != null) parts.push('RAM ' + s.memoryMB + ' MB');
-    statusEl.textContent = parts.join(' — ');
+    var lines = document.createElement('div');
+    lines.className = 'status-lines';
+    var playerCount = s.players ? s.players.length : 0;
+    var pairs = [
+      ['State', s.state],
+      ['Players', String(playerCount) + (playerCount ? ': ' + s.players.join(', ') : '')],
+      ['CPU', s.cpu != null ? s.cpu + '%' : '-'],
+      ['RAM', s.memoryMB != null ? s.memoryMB + ' MB' : '-']
+    ];
+    pairs.forEach(function (pair) {
+      var line = document.createElement('div');
+      var strong = document.createElement('strong');
+      strong.textContent = pair[0] + ': ';
+      line.appendChild(strong);
+      line.appendChild(document.createTextNode(pair[1]));
+      lines.appendChild(line);
+    });
+    statusEl.appendChild(lines);
     startBtn.disabled = s.state !== 'stopped';
     stopBtn.disabled = s.state !== 'running';
     restartBtn.disabled = s.state !== 'running';
