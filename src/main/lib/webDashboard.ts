@@ -872,7 +872,6 @@ const DASHBOARD_HTML = `<!doctype html>
     viewBackupEl.classList.toggle('active', activeView === 'backup');
     if (activeView === 'backup') loadBackupView();
   }
-  applyActiveView();
 
   function selectView(view) {
     activeView = view;
@@ -1309,6 +1308,11 @@ const DASHBOARD_HTML = `<!doctype html>
       });
   });
 
+  // Runs after every element/function this (and loadBackupView, if we reload straight
+  // into the Backup view) touches has been declared above - calling it any earlier throws
+  // on the not-yet-assigned backup-view elements and aborts the rest of this script,
+  // including loadServers() below, leaving the page stuck on "no server selected" forever.
+  applyActiveView();
   loadServers();
   loadLabelSettings();
   setInterval(loadServers, 5000);

@@ -340,7 +340,13 @@ dedicated servers running on the same machine.
     since log lines run longer than file names - polling every 5s while this view is
     active - all backed by the same `backup.ts`/`schedule.ts` functions the desktop
     Backups tab uses, reused directly
-    since the web dashboard runs in the same process.
+    since the web dashboard runs in the same process. Reloading the page while it was on
+    this view (the active view is remembered, see above) used to leave it stuck showing
+    "Select a server in the Dashboard view first." forever, even once the server list had
+    loaded: the very first render pass ran before the Backup view's own DOM elements were
+    looked up, so it threw and silently aborted the rest of the page's startup script -
+    including the part that fetches the server list in the first place. Fixed by running
+    that first render pass after everything it depends on is set up.
   - The active view (Cluster Dashboard, Dashboard, or Backup) is remembered across page
     reloads, same as the selected server.
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
