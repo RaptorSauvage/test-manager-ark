@@ -21,8 +21,28 @@ let mockSettings = {
 
 vi.mock('../src/main/store', () => ({
   listProfiles: () => [
-    { id: 'p1', name: 'Test Server', installDir: EMPTY_INSTALL_DIR, hidden: false, group: '' },
-    { id: 'p2', name: 'Logged Server', installDir: LOGGED_INSTALL_DIR, hidden: false, group: '' }
+    {
+      id: 'p1',
+      name: 'Test Server',
+      installDir: EMPTY_INSTALL_DIR,
+      hidden: false,
+      group: '',
+      backupDir: '',
+      maxBackups: 10,
+      backupScheduleEnabled: false,
+      backupSchedule: ''
+    },
+    {
+      id: 'p2',
+      name: 'Logged Server',
+      installDir: LOGGED_INSTALL_DIR,
+      hidden: false,
+      group: '',
+      backupDir: '',
+      maxBackups: 10,
+      backupScheduleEnabled: false,
+      backupSchedule: ''
+    }
   ],
   getSettings: () => mockSettings,
   saveSettings: (settings: typeof mockSettings) => {
@@ -173,8 +193,8 @@ describe('web dashboard HTTP server', () => {
     const res = await request('/api/servers')
     expect(res.status).toBe(200)
     expect(JSON.parse(res.body)).toEqual([
-      { id: 'p1', name: 'Test Server', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 },
-      { id: 'p2', name: 'Logged Server', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 }
+      { id: 'p1', name: 'Test Server', group: '', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 },
+      { id: 'p2', name: 'Logged Server', group: '', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 }
     ])
   })
 
@@ -300,6 +320,42 @@ describe('web dashboard HTTP server', () => {
 
   it('404s an unknown route', async () => {
     const res = await request('/nope')
+    expect(res.status).toBe(404)
+  })
+
+  it('reports backup status for a server with no backup directory configured', async () => {
+    const res = await request('/api/servers/p1/backups/status')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({
+      backupDir: '',
+      maxBackups: 10,
+      scheduleEnabled: false,
+      scheduleCron: '',
+      scheduleActive: false,
+      nextRunAt: null
+    })
+  })
+
+  it('lists no backups when no backup directory is configured', async () => {
+    const res = await request('/api/servers/p1/backups')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([])
+  })
+
+  it('returns an empty backup process log by default', async () => {
+    const res = await request('/api/servers/p1/backups/log')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([])
+  })
+
+  it('refuses to create a backup with no backup directory configured', async () => {
+    const res = await request('/api/servers/p1/backups', { method: 'POST' })
+    expect(res.status).toBe(400)
+    expect(JSON.parse(res.body)).toEqual({ ok: false, error: 'Set a backup directory in the Backups tab first.' })
+  })
+
+  it('404s backup status for an unknown server', async () => {
+    const res = await request('/api/servers/nope/backups/status')
     expect(res.status).toBe(404)
   })
 

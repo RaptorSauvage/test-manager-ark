@@ -241,23 +241,27 @@ dedicated servers running on the same machine.
   existing files to the new folder for you. This is also where the **web dashboard** is
   enabled - the only place in this app for a live console feed and RCON, on purpose (the
   desktop app itself has no console/RCON tab). It's a plain HTTP server built into the
-  Manager (no separate process), serving a page with a sidebar switching between two
-  views:
+  Manager (no separate process), serving a page with a sidebar switching between three
+  views - **Cluster Dashboard**, then a separator line, then **Dashboard** and **Backup**
+  (grouped together since Backup always follows whatever server is selected in Dashboard):
   - **Cluster Dashboard** - a read-only monitoring overview, one card per server (state,
     player count, CPU%, RAM) - like the desktop app's own dashboard cards, minus the
     Start/Stop/Restart buttons, since this view is for glancing at the whole cluster's
-    health rather than controlling anything. Click a card to jump straight into that
-    server's Dashboard view (below) with it already selected. Same `/api/servers` poll as
-    the Dashboard view, just rendered for every server instead of only the selected one.
-    This - and the player count/CPU/RAM shown for the selected server in the Dashboard
-    view's own Status box - depends on the Manager's own CPU/RAM/player-count monitor,
-    which polls every 5s while a server is running; a past bug had that monitor's updates
-    only reach live listeners (the desktop app's own UI) without ever being saved anywhere
-    else, so anything that asked for a server's status afterwards - this page's
-    `/api/servers` poll included - got stuck reading `cpu: null, memoryMB: null,
-    players: []` forever even for a server that had been running for hours. Fixed by
-    having the monitor persist through the same internal update path everything else
-    uses, instead of only broadcasting a live event.
+    health rather than controlling anything. Cards are split into collapsible groups
+    matching the Manager's own profile groups - ungrouped servers first, then each named
+    group alphabetically, same ordering as everywhere else in the app - and, like every
+    other server list in this page, **Hidden** profiles never appear here either. Click a
+    card to jump straight into that server's Dashboard view (below) with it already
+    selected. Same `/api/servers` poll as the Dashboard view, just rendered for every
+    server instead of only the selected one. This - and the player count/CPU/RAM shown for
+    the selected server in the Dashboard view's own Status box - depends on the Manager's
+    own CPU/RAM/player-count monitor, which polls every 5s while a server is running; a
+    past bug had that monitor's updates only reach live listeners (the desktop app's own
+    UI) without ever being saved anywhere else, so anything that asked for a server's
+    status afterwards - this page's `/api/servers` poll included - got stuck reading
+    `cpu: null, memoryMB: null, players: []` forever even for a server that had been
+    running for hours. Fixed by having the monitor persist through the same internal
+    update path everything else uses, instead of only broadcasting a live event.
   - **Dashboard** - the per-server console/RCON view (what this page originally was, and
     still the default on first visit):
   - A server picker at the top, listing profiles in the same order as the desktop
@@ -320,8 +324,20 @@ dedicated servers running on the same machine.
     players panels stack vertically instead of side by side, with the console on top and
     the player list below it as a horizontally wrapping row of names instead of a tall
     vertical list.
-  - The active view (Cluster Dashboard or Dashboard) is remembered across page reloads,
-    same as the selected server.
+  - **Backup** - a read-only-settings backup menu similar to the desktop app's Backups
+    tab, always showing the server currently selected in Dashboard (no picker of its own -
+    switching servers in Dashboard, including via a Cluster Dashboard card click, updates
+    this view too). Shows the configured backup directory, retention count, and schedule
+    (cron + next run) as plain info text - editing those stays a desktop-only setting, so
+    this page's unauthenticated HTTP API doesn't grow a way to change profile
+    configuration, only to act on it. A **Create backup now** button and **Refresh**
+    button sit above a table of existing backups (file name, size, creation time) each
+    with **Restore** and **Delete** actions (both confirm before acting), and a **Backup
+    Process Log** panel alongside it, polling every 5s while this view is active - all
+    backed by the same `backup.ts`/`schedule.ts` functions the desktop Backups tab uses,
+    reused directly since the web dashboard runs in the same process.
+  - The active view (Cluster Dashboard, Dashboard, or Backup) is remembered across page
+    reloads, same as the selected server.
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
     reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one
     specific local IP makes it reachable from other devices on your local network, which
@@ -512,7 +528,7 @@ appropriate for `127.0.0.1` or a trusted LAN, never the open internet.
 
 | Method | Path | Body | Response | Notes |
 | --- | --- | --- | --- | --- |
-| GET | `/api/servers` | — | `[{ id, name, state, players, cpu, memoryMB }]` | `id` is what every other endpoint below expects |
+| GET | `/api/servers` | — | `[{ id, name, group, state, players, cpu, memoryMB }]` | `id` is what every other endpoint below expects; `group` is the Manager's dashboard group name (empty string when ungrouped) |
 | POST | `/api/servers/:id/start` | — | `{ ok, error? }` | 400 with `error` if it can't start right now (e.g. an update is running) |
 | POST | `/api/servers/:id/stop` | — | `{ ok: true, saved: boolean }` | Waits for SaveWorld's RCON outcome (`saved`) before responding, then returns - the rest of the shutdown keeps running in the background; state changes (`stopping` → `stopped`) show up in the next `GET /api/servers` poll. `saved: false` means RCON was unreachable or the save failed, so it skipped straight to the grace-period/force-kill fallback |
 | POST | `/api/servers/:id/restart` | — | `{ ok: true, saved: boolean }` | Same as stop above, for the shutdown half - responds once `saved` is known, then the restart (including starting back up) continues in the background |
@@ -520,6 +536,12 @@ appropriate for `127.0.0.1` or a trusted LAN, never the open internet.
 | POST | `/api/servers/:id/stop-update-restart` | — | `{ ok: true }` | Stops if running, updates, starts back up - the single-server "do everything" action |
 | POST | `/api/servers/:id/rcon` | `{ "command": "Broadcast hello" }` | `{ ok, response? , error? }` | Same RCON connection the page's own console box uses |
 | GET | `/api/servers/:id/players` | — | `[{ name, id }]` | Fresh `ListPlayers` call every time, not cached |
+| GET | `/api/servers/:id/backups/status` | — | `{ backupDir, maxBackups, scheduleEnabled, scheduleCron, scheduleActive, nextRunAt }` | Read-only - mirrors the Backups tab's settings, doesn't let you change them |
+| GET | `/api/servers/:id/backups` | — | `[{ fileName, filePath, sizeBytes, createdAt }]` | Same list the Backups tab shows |
+| POST | `/api/servers/:id/backups` | — | `{ ok, entry? , error? }` | Creates a backup now (sends RCON SaveWorld first, same as the desktop app); 400 if no backup directory is set |
+| POST | `/api/servers/:id/backups/restore` | `{ "filePath": "..." }` | `{ ok, error? }` | Same restore-blocked-while-running guard as the desktop app |
+| POST | `/api/servers/:id/backups/delete` | `{ "filePath": "..." }` | `{ ok, error? }` | Deletes one backup file |
+| GET | `/api/servers/:id/backups/log` | — | `[{ timestamp, level, message }]` | The same Backup Process Log shown in the Backups tab / web Backup view |
 
 A minimal example from a Node.js bot (works the same from Python, or any HTTP client):
 

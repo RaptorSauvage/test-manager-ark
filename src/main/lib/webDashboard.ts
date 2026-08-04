@@ -13,6 +13,8 @@ import {
   doUpdateServer,
   doStopUpdateRestart
 } from './serverActions'
+import { createBackup, listBackups, deleteBackup, restoreBackup, getBackupLog } from './backup'
+import { getBackupScheduleStatus } from './schedule'
 
 let server: http.Server | null = null
 let lastError: string | null = null
@@ -132,6 +134,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return {
         id: profile.id,
         name: profile.name,
+        group: profile.group.trim(),
         state: status.state,
         players: status.players ?? [],
         cpu: status.cpu ?? null,
@@ -347,6 +350,89 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  const backupStatusMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/status$/)
+  if (req.method === 'GET' && backupStatusMatch) {
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupStatusMatch[1]))
+    if (!profile) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    const schedule = getBackupScheduleStatus(profile)
+    sendJson(res, 200, {
+      backupDir: profile.backupDir,
+      maxBackups: profile.maxBackups,
+      scheduleEnabled: profile.backupScheduleEnabled,
+      scheduleCron: profile.backupSchedule ?? '',
+      scheduleActive: schedule.active,
+      nextRunAt: schedule.nextRunAt
+    })
+    return
+  }
+
+  const backupLogMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/log$/)
+  if (req.method === 'GET' && backupLogMatch) {
+    sendJson(res, 200, getBackupLog(decodeURIComponent(backupLogMatch[1])))
+    return
+  }
+
+  const backupRestoreMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/restore$/)
+  if (req.method === 'POST' && backupRestoreMatch) {
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupRestoreMatch[1]))
+    if (!profile) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const filePath = typeof body.filePath === 'string' ? body.filePath : ''
+        if (!filePath) {
+          sendJson(res, 400, { ok: false, error: 'Missing filePath' })
+          return
+        }
+        restoreBackup(profile, filePath)
+        sendJson(res, 200, { ok: true })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const backupDeleteMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/delete$/)
+  if (req.method === 'POST' && backupDeleteMatch) {
+    readJsonBody(req)
+      .then((body) => {
+        const filePath = typeof body.filePath === 'string' ? body.filePath : ''
+        if (!filePath) {
+          sendJson(res, 400, { ok: false, error: 'Missing filePath' })
+          return
+        }
+        deleteBackup(filePath)
+        sendJson(res, 200, { ok: true })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const backupsMatch = path.match(/^\/api\/servers\/([^/]+)\/backups$/)
+  if (req.method === 'GET' && backupsMatch) {
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupsMatch[1]))
+    sendJson(res, 200, profile ? listBackups(profile) : [])
+    return
+  }
+  if (req.method === 'POST' && backupsMatch) {
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupsMatch[1]))
+    if (!profile) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    try {
+      const entry = await createBackup(profile)
+      sendJson(res, 200, { ok: true, entry })
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: (err as Error).message })
+    }
+    return
+  }
+
   res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
   res.end('Not found')
 }
@@ -420,10 +506,13 @@ const DASHBOARD_HTML = `<!doctype html>
   .nav-btn:hover { border-color: var(--border); }
   .nav-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   .nav-btn.active:hover { border-color: var(--accent); }
+  .nav-sep { width: 100%; border: none; border-top: 1px solid var(--border); margin: 6px 0; }
   #main-area { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .view { display: none; flex: 1; min-height: 0; }
   .view.active { display: flex; flex-direction: column; }
   #view-cluster.active { display: block; overflow-y: auto; padding: 16px; }
+  .cluster-group { margin-top: 20px; }
+  .cluster-group summary { cursor: pointer; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
   .cluster-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; }
   .cluster-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; cursor: pointer; }
   .cluster-card:hover { border-color: var(--accent); }
@@ -501,6 +590,18 @@ const DASHBOARD_HTML = `<!doctype html>
   .context-menu button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 7px 10px; border-radius: 4px; font-size: 0.85rem; }
   .context-menu button:hover { background: var(--bg); }
   .context-menu button.danger { color: var(--danger); }
+  #backup-content { display: none; flex: 1; flex-direction: column; min-height: 0; }
+  #backup-content.active { display: flex; }
+  .form-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  #backup-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  #backup-table th, #backup-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+  #backup-table th { color: var(--muted); font-weight: 600; }
+  #backup-table .backup-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+  #backup-table .backup-row-actions button { font-size: 0.78rem; padding: 4px 8px; }
+  #backup-log { flex: 1; overflow-y: auto; font-size: 0.8rem; }
+  .backup-log-line { padding: 2px 0; color: var(--muted); }
+  .backup-log-line.error { color: var(--danger); }
+  .backup-log-time { color: var(--muted); margin-right: 6px; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); z-index: 1100; }
   @media (max-width: 700px) {
     body { flex-direction: column; }
@@ -525,7 +626,9 @@ const DASHBOARD_HTML = `<!doctype html>
 <nav id="sidebar">
   <h1>ARK Manager</h1>
   <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
+  <hr class="nav-sep" />
   <button id="nav-console" class="nav-btn" type="button">Dashboard</button>
+  <button id="nav-backup" class="nav-btn" type="button">Backup</button>
 </nav>
 <div id="main-area">
   <section id="view-cluster" class="view">
@@ -566,6 +669,36 @@ const DASHBOARD_HTML = `<!doctype html>
               <span class="players-count" id="players-count">0</span>
             </div>
             <div id="players-list"></div>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </section>
+  <section id="view-backup" class="view">
+    <header>
+      <h1>Backup</h1>
+      <span id="backup-server-name"></span>
+    </header>
+    <main>
+      <p id="backup-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <div id="backup-content">
+        <p id="backup-info" class="empty-state"></p>
+        <div class="form-actions">
+          <button id="btn-backup-create">Create backup now</button>
+          <button id="btn-backup-refresh" type="button">Refresh</button>
+        </div>
+        <div class="content-row">
+          <section class="panel">
+            <table id="backup-table">
+              <thead>
+                <tr><th>File Name</th><th>Size</th><th>Creation Time</th><th></th></tr>
+              </thead>
+              <tbody id="backup-table-body"></tbody>
+            </table>
+          </section>
+          <aside class="panel status-panel">
+            <h3>Backup Process Log</h3>
+            <div id="backup-log"></div>
           </aside>
         </div>
       </div>
@@ -718,8 +851,10 @@ const DASHBOARD_HTML = `<!doctype html>
 
   var navClusterBtn = document.getElementById('nav-cluster');
   var navConsoleBtn = document.getElementById('nav-console');
+  var navBackupBtn = document.getElementById('nav-backup');
   var viewClusterEl = document.getElementById('view-cluster');
   var viewConsoleEl = document.getElementById('view-console');
+  var viewBackupEl = document.getElementById('view-backup');
   var clusterCardsEl = document.getElementById('cluster-cards');
 
   var ACTIVE_VIEW_KEY = 'ark-dashboard-active-view';
@@ -727,11 +862,13 @@ const DASHBOARD_HTML = `<!doctype html>
   try { activeView = localStorage.getItem(ACTIVE_VIEW_KEY) || 'console'; } catch (err) { /* storage unavailable - not fatal */ }
 
   function applyActiveView() {
-    var cluster = activeView === 'cluster';
-    navClusterBtn.classList.toggle('active', cluster);
-    navConsoleBtn.classList.toggle('active', !cluster);
-    viewClusterEl.classList.toggle('active', cluster);
-    viewConsoleEl.classList.toggle('active', !cluster);
+    navClusterBtn.classList.toggle('active', activeView === 'cluster');
+    navConsoleBtn.classList.toggle('active', activeView === 'console');
+    navBackupBtn.classList.toggle('active', activeView === 'backup');
+    viewClusterEl.classList.toggle('active', activeView === 'cluster');
+    viewConsoleEl.classList.toggle('active', activeView === 'console');
+    viewBackupEl.classList.toggle('active', activeView === 'backup');
+    if (activeView === 'backup') loadBackupView();
   }
   applyActiveView();
 
@@ -742,55 +879,249 @@ const DASHBOARD_HTML = `<!doctype html>
   }
   navClusterBtn.addEventListener('click', function () { selectView('cluster'); });
   navConsoleBtn.addEventListener('click', function () { selectView('console'); });
+  navBackupBtn.addEventListener('click', function () { selectView('backup'); });
 
   // Renders every server as a read-only monitoring card (state/players/CPU/RAM) - like
   // the desktop app's own dashboard cards, minus the Start/Stop/Restart buttons, since
   // this view is meant for at-a-glance monitoring rather than control. Built from the
   // same /api/servers response loadServers() already fetches every poll, no separate
   // request needed.
+  function buildClusterCard(s) {
+    var card = document.createElement('div');
+    card.className = 'cluster-card';
+
+    var header = document.createElement('div');
+    header.className = 'cluster-card-header';
+    var name = document.createElement('h3');
+    name.textContent = s.name;
+    var state = document.createElement('span');
+    state.className = 'cluster-card-state state-' + s.state;
+    state.textContent = s.state;
+    header.appendChild(name);
+    header.appendChild(state);
+
+    var stats = document.createElement('div');
+    stats.className = 'cluster-card-stats';
+    var playerCount = s.players ? s.players.length : 0;
+    var lines = [
+      ['Players', String(playerCount) + (playerCount ? ': ' + s.players.join(', ') : '')],
+      ['CPU', s.cpu != null ? s.cpu + '%' : '-'],
+      ['RAM', s.memoryMB != null ? s.memoryMB + ' MB' : '-']
+    ];
+    lines.forEach(function (pair) {
+      var line = document.createElement('div');
+      var strong = document.createElement('strong');
+      strong.textContent = pair[0] + ': ';
+      line.appendChild(strong);
+      line.appendChild(document.createTextNode(pair[1]));
+      stats.appendChild(line);
+    });
+
+    card.appendChild(header);
+    card.appendChild(stats);
+    card.addEventListener('click', function () {
+      select.value = s.id;
+      selectServer(s.id);
+      selectView('console');
+    });
+    return card;
+  }
+
+  function buildClusterGrid(servers) {
+    var grid = document.createElement('div');
+    grid.className = 'cluster-cards';
+    servers.forEach(function (s) { grid.appendChild(buildClusterCard(s)); });
+    return grid;
+  }
+
+  // Same grouping as the desktop dashboard: ungrouped servers first in a plain grid, then
+  // each named group (in the order the already-sorted /api/servers response puts them -
+  // alphabetical) in its own collapsible section, open by default.
   function renderClusterCards(servers) {
     clusterCardsEl.innerHTML = '';
+    var ungrouped = servers.filter(function (s) { return !s.group; });
+    var groupNames = [];
     servers.forEach(function (s) {
-      var card = document.createElement('div');
-      card.className = 'cluster-card';
+      if (s.group && groupNames.indexOf(s.group) === -1) groupNames.push(s.group);
+    });
 
-      var header = document.createElement('div');
-      header.className = 'cluster-card-header';
-      var name = document.createElement('h3');
-      name.textContent = s.name;
-      var state = document.createElement('span');
-      state.className = 'cluster-card-state state-' + s.state;
-      state.textContent = s.state;
-      header.appendChild(name);
-      header.appendChild(state);
+    if (ungrouped.length) clusterCardsEl.appendChild(buildClusterGrid(ungrouped));
 
-      var stats = document.createElement('div');
-      stats.className = 'cluster-card-stats';
-      var playerCount = s.players ? s.players.length : 0;
-      var lines = [
-        ['Players', String(playerCount) + (playerCount ? ': ' + s.players.join(', ') : '')],
-        ['CPU', s.cpu != null ? s.cpu + '%' : '-'],
-        ['RAM', s.memoryMB != null ? s.memoryMB + ' MB' : '-']
-      ];
-      lines.forEach(function (pair) {
-        var line = document.createElement('div');
-        var strong = document.createElement('strong');
-        strong.textContent = pair[0] + ': ';
-        line.appendChild(strong);
-        line.appendChild(document.createTextNode(pair[1]));
-        stats.appendChild(line);
-      });
-
-      card.appendChild(header);
-      card.appendChild(stats);
-      card.addEventListener('click', function () {
-        select.value = s.id;
-        selectServer(s.id);
-        selectView('console');
-      });
-      clusterCardsEl.appendChild(card);
+    groupNames.forEach(function (groupName) {
+      var details = document.createElement('details');
+      details.className = 'cluster-group';
+      details.open = true;
+      var summary = document.createElement('summary');
+      summary.textContent = groupName;
+      details.appendChild(summary);
+      details.appendChild(buildClusterGrid(servers.filter(function (s) { return s.group === groupName; })));
+      clusterCardsEl.appendChild(details);
     });
   }
+
+  var backupServerNameEl = document.getElementById('backup-server-name');
+  var backupNoServerEl = document.getElementById('backup-no-server');
+  var backupContentEl = document.getElementById('backup-content');
+  var backupInfoEl = document.getElementById('backup-info');
+  var backupTableBody = document.getElementById('backup-table-body');
+  var backupLogEl = document.getElementById('backup-log');
+  var createBackupBtn = document.getElementById('btn-backup-create');
+  var refreshBackupBtn = document.getElementById('btn-backup-refresh');
+
+  function formatBackupSize(bytes) {
+    var mb = bytes / (1024 * 1024);
+    return mb >= 1 ? mb.toFixed(1) + ' MB' : (bytes / 1024).toFixed(0) + ' KB';
+  }
+
+  function backupAction(path, filePath) {
+    return fetch('/api/servers/' + encodeURIComponent(currentId) + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath: filePath })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showToast('Error: ' + result.error); return; }
+        loadBackupView();
+      })
+      .catch(function () { showToast('Request failed'); });
+  }
+
+  function renderBackupTable(backups) {
+    backupTableBody.innerHTML = '';
+    if (backups.length === 0) {
+      var emptyRow = document.createElement('tr');
+      var emptyCell = document.createElement('td');
+      emptyCell.colSpan = 4;
+      emptyCell.className = 'empty-state';
+      emptyCell.textContent = 'No backups yet.';
+      emptyRow.appendChild(emptyCell);
+      backupTableBody.appendChild(emptyRow);
+      return;
+    }
+    backups.forEach(function (b) {
+      var row = document.createElement('tr');
+      var nameCell = document.createElement('td');
+      nameCell.textContent = b.fileName;
+      var sizeCell = document.createElement('td');
+      sizeCell.textContent = formatBackupSize(b.sizeBytes);
+      var timeCell = document.createElement('td');
+      timeCell.textContent = new Date(b.createdAt).toLocaleString();
+
+      var actionsCell = document.createElement('td');
+      actionsCell.className = 'backup-row-actions';
+      var restoreBtn = document.createElement('button');
+      restoreBtn.type = 'button';
+      restoreBtn.textContent = 'Restore';
+      restoreBtn.addEventListener('click', function () {
+        if (!confirm('Restore ' + b.fileName + '? This overwrites the current save.')) return;
+        void backupAction('/backups/restore', b.filePath);
+      });
+      var deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.addEventListener('click', function () {
+        if (!confirm('Delete ' + b.fileName + '?')) return;
+        void backupAction('/backups/delete', b.filePath);
+      });
+      actionsCell.appendChild(restoreBtn);
+      actionsCell.appendChild(deleteBtn);
+
+      row.appendChild(nameCell);
+      row.appendChild(sizeCell);
+      row.appendChild(timeCell);
+      row.appendChild(actionsCell);
+      backupTableBody.appendChild(row);
+    });
+  }
+
+  function renderBackupLog(entries) {
+    backupLogEl.innerHTML = '';
+    if (entries.length === 0) {
+      var empty = document.createElement('p');
+      empty.className = 'empty-state';
+      empty.textContent = 'No backup activity yet.';
+      backupLogEl.appendChild(empty);
+      return;
+    }
+    entries.forEach(function (entry) {
+      var line = document.createElement('div');
+      line.className = 'backup-log-line' + (entry.level === 'error' ? ' error' : '');
+      var time = document.createElement('span');
+      time.className = 'backup-log-time';
+      time.textContent = new Date(entry.timestamp).toLocaleTimeString();
+      line.appendChild(time);
+      line.appendChild(document.createTextNode(entry.message));
+      backupLogEl.appendChild(line);
+    });
+    backupLogEl.scrollTop = backupLogEl.scrollHeight;
+  }
+
+  // The Backup view has no server picker of its own - it always follows whichever server
+  // is selected in the Dashboard view (currentId).
+  function loadBackupView() {
+    var id = currentId;
+    if (!id) {
+      backupServerNameEl.textContent = '';
+      backupNoServerEl.style.display = '';
+      backupContentEl.classList.remove('active');
+      return;
+    }
+    backupNoServerEl.style.display = 'none';
+    backupContentEl.classList.add('active');
+    backupServerNameEl.textContent = select.options[select.selectedIndex] ? select.options[select.selectedIndex].textContent : '';
+
+    fetch('/api/servers/' + encodeURIComponent(id) + '/backups/status')
+      .then(function (r) { return r.json(); })
+      .then(function (status) {
+        if (id !== currentId) return;
+        if (!status.backupDir) {
+          backupInfoEl.textContent = "No backup directory set - configure it in the Manager's Backups tab first.";
+          return;
+        }
+        var scheduleText = !status.scheduleEnabled
+          ? 'no schedule'
+          : status.scheduleActive
+            ? 'scheduled (' + status.scheduleCron + ')'
+            : 'scheduled but not currently armed';
+        backupInfoEl.textContent = 'Directory: ' + status.backupDir + ' - keeping last ' + status.maxBackups + ' - ' + scheduleText;
+      });
+    fetch('/api/servers/' + encodeURIComponent(id) + '/backups')
+      .then(function (r) { return r.json(); })
+      .then(function (backups) { if (id === currentId) renderBackupTable(backups); });
+    fetch('/api/servers/' + encodeURIComponent(id) + '/backups/log')
+      .then(function (r) { return r.json(); })
+      .then(function (entries) { if (id === currentId) renderBackupLog(entries); });
+  }
+
+  createBackupBtn.addEventListener('click', function () {
+    if (!currentId) return;
+    createBackupBtn.disabled = true;
+    createBackupBtn.textContent = 'Creating...';
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/backups', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) showToast('Error: ' + result.error);
+        loadBackupView();
+      })
+      .catch(function () { showToast('Request failed'); })
+      .finally(function () {
+        createBackupBtn.disabled = false;
+        createBackupBtn.textContent = 'Create backup now';
+      });
+  });
+
+  refreshBackupBtn.addEventListener('click', function () { loadBackupView(); });
+
+  // Keeps the process log live while this view is open, same cadence as everything else
+  // here - the table/status info only need refreshing after an action or a view switch.
+  setInterval(function () {
+    if (activeView !== 'backup' || !currentId) return;
+    var id = currentId;
+    fetch('/api/servers/' + encodeURIComponent(id) + '/backups/log')
+      .then(function (r) { return r.json(); })
+      .then(function (entries) { if (id === currentId) renderBackupLog(entries); });
+  }, 5000);
 
   function loadLabelSettings() {
     fetch('/api/labelsettings').then(function (r) { return r.json(); }).then(function (settings) {
@@ -914,6 +1245,7 @@ const DASHBOARD_HTML = `<!doctype html>
     if (id === currentId) return;
     currentId = id;
     try { localStorage.setItem(SELECTED_SERVER_KEY, id); } catch (err) { /* storage unavailable - not fatal */ }
+    if (activeView === 'backup') loadBackupView();
     consoleEl.innerHTML = '';
     if (es) { es.close(); es = null; }
     loadPlayers();
