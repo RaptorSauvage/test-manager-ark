@@ -274,6 +274,20 @@ dedicated servers running on the same machine.
     a secure context, e.g. reached via a LAN IP over plain http, since `navigator.clipboard`
     isn't available there) or **Kick** (red, asks to confirm, then sends RCON
     `KickPlayer <id>`).
+  - A collapsible **Cluster** table above the console, one row per server (state, player
+    count, CPU%, RAM) - the whole cluster's live status at a glance, without switching the
+    dropdown away from whichever server's console/RCON you're actually working in. Same
+    poll, same data as everything else here (`/api/servers`), just rendered for every
+    server instead of only the selected one; collapsed/expanded state remembered like the
+    Events row. This - and the player count/CPU/RAM shown for the selected server in the
+    status line - depends on the Manager's own CPU/RAM/player-count monitor, which polls
+    every 5s while a server is running; a past bug had that monitor's updates only reach
+    live listeners (the desktop app's own UI) without ever being saved anywhere else, so
+    anything that asked for a server's status afterwards - this page's `/api/servers`
+    poll included - got stuck reading `cpu: null, memoryMB: null, players: []` forever
+    even for a server that had been running for hours. Fixed by having the monitor persist
+    through the same internal update path everything else uses, instead of only
+    broadcasting a live event.
   - **Start / Stop / Restart / Stop+Update+Restart** buttons in the header, for the
     currently selected server - the same actions as the desktop app's own per-profile
     buttons and bulk "…All" actions, reusing the exact same underlying logic (both call

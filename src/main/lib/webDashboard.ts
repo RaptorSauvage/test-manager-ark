@@ -462,6 +462,16 @@ const DASHBOARD_HTML = `<!doctype html>
   #filters-bar.collapsed #filters { display: none; }
   #filters label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
   #filters input { padding: 0; width: auto; }
+  #cluster-bar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+  #btn-toggle-cluster { font-size: 0.8rem; padding: 4px 8px; flex-shrink: 0; }
+  #cluster-table { border-collapse: collapse; font-size: 0.82rem; }
+  #cluster-bar.collapsed #cluster-table { display: none; }
+  #cluster-table th, #cluster-table td { padding: 3px 10px 3px 0; text-align: left; white-space: nowrap; }
+  #cluster-table th { color: var(--muted); font-weight: 600; }
+  #cluster-table tr.state-running td:nth-child(2) { color: var(--ok); }
+  #cluster-table tr.state-stopped td:nth-child(2) { color: var(--muted); }
+  #cluster-table tr.state-updating td:nth-child(2), #cluster-table tr.state-starting td:nth-child(2),
+  #cluster-table tr.state-stopping td:nth-child(2), #cluster-table tr.state-restarting td:nth-child(2) { color: var(--warn); }
   .content-row { flex: 1; display: flex; gap: 12px; min-height: 0; }
   .console-panel { flex: 3; }
   .players-panel { flex: 1; min-width: 220px; max-width: 300px; }
@@ -485,6 +495,8 @@ const DASHBOARD_HTML = `<!doctype html>
     .players-panel { flex: none; width: 100%; max-width: none; max-height: 160px; }
     #players-list { display: flex; flex-direction: row; flex-wrap: wrap; overflow-y: hidden; gap: 6px; }
     .player-row { flex: 0 0 auto; background: var(--bg); border: 1px solid var(--border); }
+    #cluster-bar { width: 100%; }
+    #cluster-table { display: block; overflow-x: auto; max-width: 100%; }
   }
 </style>
 </head>
@@ -501,6 +513,13 @@ const DASHBOARD_HTML = `<!doctype html>
   <span id="status"></span>
 </header>
 <main>
+  <div id="cluster-bar">
+    <button id="btn-toggle-cluster" type="button">Cluster ▾</button>
+    <table id="cluster-table">
+      <thead><tr><th>Server</th><th>State</th><th>Players</th><th>CPU</th><th>RAM</th></tr></thead>
+      <tbody id="cluster-table-body"></tbody>
+    </table>
+  </div>
   <div id="filters-bar">
     <button id="btn-toggle-filters" type="button">Events ▾</button>
     <div id="filters"></div>
@@ -666,6 +685,49 @@ const DASHBOARD_HTML = `<!doctype html>
     applyFiltersCollapsed();
   });
 
+  var clusterBarEl = document.getElementById('cluster-bar');
+  var toggleClusterBtn = document.getElementById('btn-toggle-cluster');
+  var clusterTableBody = document.getElementById('cluster-table-body');
+
+  var CLUSTER_COLLAPSED_KEY = 'ark-dashboard-cluster-collapsed';
+  var clusterCollapsed = false;
+  try { clusterCollapsed = localStorage.getItem(CLUSTER_COLLAPSED_KEY) === '1'; } catch (err) { /* storage unavailable - not fatal */ }
+
+  function applyClusterCollapsed() {
+    clusterBarEl.classList.toggle('collapsed', clusterCollapsed);
+    toggleClusterBtn.textContent = clusterCollapsed ? 'Cluster ▸' : 'Cluster ▾';
+  }
+  applyClusterCollapsed();
+
+  toggleClusterBtn.addEventListener('click', function () {
+    clusterCollapsed = !clusterCollapsed;
+    try { localStorage.setItem(CLUSTER_COLLAPSED_KEY, clusterCollapsed ? '1' : '0'); } catch (err) { /* storage unavailable - not fatal */ }
+    applyClusterCollapsed();
+  });
+
+  // Renders every server's live state/players/CPU/RAM at once, from the same /api/servers
+  // response loadServers() already fetches every poll - no separate request needed.
+  function renderClusterTable(servers) {
+    clusterTableBody.innerHTML = '';
+    servers.forEach(function (s) {
+      var row = document.createElement('tr');
+      row.className = 'state-' + s.state;
+      var cells = [
+        s.name,
+        s.state,
+        s.players ? String(s.players.length) : '-',
+        s.cpu != null ? s.cpu + '%' : '-',
+        s.memoryMB != null ? s.memoryMB + ' MB' : '-'
+      ];
+      cells.forEach(function (text) {
+        var td = document.createElement('td');
+        td.textContent = text;
+        row.appendChild(td);
+      });
+      clusterTableBody.appendChild(row);
+    });
+  }
+
   function loadLabelSettings() {
     fetch('/api/labelsettings').then(function (r) { return r.json(); }).then(function (settings) {
       filtersEl.innerHTML = '';
@@ -808,6 +870,7 @@ const DASHBOARD_HTML = `<!doctype html>
         selectServer(toSelect);
       }
       renderStatus(servers.find(function (s) { return s.id === select.value; }));
+      renderClusterTable(servers);
     });
   }
 
