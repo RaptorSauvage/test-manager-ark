@@ -1,88 +1,72 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import {
-  parseGameVersionFromTitle,
-  getWindowTitle,
-  findAnyArkServerWindowTitle,
+  parseArkVersionFromLog,
   getGameVersion,
   getCachedGameVersion,
   setCachedGameVersion,
   clearCachedGameVersion
 } from '../src/main/lib/serverVersion'
 
-describe('parseGameVersionFromTitle', () => {
-  it('extracts the version from a real ARK:SA console title', () => {
-    const title =
-      'ASA 92.28 | [Aberration] Culte de Bober | Aberration_WP | PvP | Process 125696 | Players: 0/70 | Mem: 7.7 GB'
-    expect(parseGameVersionFromTitle(title)).toBe('92.28')
+describe('parseArkVersionFromLog', () => {
+  it('extracts the version from a real "ARK Version:" log line', () => {
+    const content = 'Some earlier line\nARK Version: 92.28\nSome later line\n'
+    expect(parseArkVersionFromLog(content)).toBe('92.28')
   })
 
   it('handles a version with more than two segments', () => {
-    expect(parseGameVersionFromTitle('ASA 1.2.3 | Session')).toBe('1.2.3')
+    expect(parseArkVersionFromLog('ARK Version: 1.2.3')).toBe('1.2.3')
   })
 
-  it('tolerates leading/trailing whitespace', () => {
-    expect(parseGameVersionFromTitle('  ASA 92.28 | Session  ')).toBe('92.28')
+  it('tolerates extra whitespace around the colon', () => {
+    expect(parseArkVersionFromLog('ARK Version:    92.28')).toBe('92.28')
   })
 
-  it('returns null for a title that does not start with "ASA <version>"', () => {
-    expect(parseGameVersionFromTitle('Some Other Window')).toBeNull()
-    expect(parseGameVersionFromTitle('')).toBeNull()
-  })
-})
-
-describe('getWindowTitle', () => {
-  it('resolves to null on non-Windows platforms without spawning anything', async () => {
-    if (process.platform === 'win32') return
-    expect(await getWindowTitle(1234)).toBeNull()
-  })
-
-  it('resolves to null for a non-positive or non-integer pid', async () => {
-    expect(await getWindowTitle(0)).toBeNull()
-    expect(await getWindowTitle(-1)).toBeNull()
-    expect(await getWindowTitle(1.5)).toBeNull()
-  })
-})
-
-describe('findAnyArkServerWindowTitle', () => {
-  it('resolves to null on non-Windows platforms without spawning anything', async () => {
-    if (process.platform === 'win32') return
-    expect(await findAnyArkServerWindowTitle()).toBeNull()
+  it('returns null when the log has no such line', () => {
+    expect(parseArkVersionFromLog('nothing relevant here')).toBeNull()
+    expect(parseArkVersionFromLog('')).toBeNull()
   })
 })
 
 describe('getGameVersion', () => {
-  it('resolves to null when there is no window title to parse (e.g. non-Windows)', async () => {
-    if (process.platform === 'win32') return
-    expect(await getGameVersion(1234)).toBeNull()
+  let tmpDir: string
+  let installDir: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ark-version-test-'))
+    installDir = path.join(tmpDir, 'install')
   })
 
-  it('uses the direct pid lookup when it resolves to a valid title', async () => {
-    const fetchWindowTitle = vi.fn().mockResolvedValue('ASA 92.28 | Session | TheIsland_WP | PvP | Process 1234')
-    const fetchFallbackTitle = vi.fn()
-    const version = await getGameVersion(1234, fetchWindowTitle, fetchFallbackTitle)
-    expect(version).toBe('92.28')
-    expect(fetchFallbackTitle).not.toHaveBeenCalled()
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('falls back to scanning all windows when the direct pid lookup finds nothing', async () => {
-    const fetchWindowTitle = vi.fn().mockResolvedValue(null)
-    const fetchFallbackTitle = vi.fn().mockResolvedValue('ASA 92.28 | Session | TheIsland_WP | PvP | Process 9999')
-    const version = await getGameVersion(1234, fetchWindowTitle, fetchFallbackTitle)
-    expect(version).toBe('92.28')
-    expect(fetchFallbackTitle).toHaveBeenCalledTimes(1)
+  function writeLog(content: string): void {
+    const logDir = path.join(installDir, 'ShooterGame', 'Saved', 'Logs')
+    fs.mkdirSync(logDir, { recursive: true })
+    fs.writeFileSync(path.join(logDir, 'ShooterGame.log'), content, 'utf-8')
+  }
+
+  it('reads the version straight out of ShooterGame.log', async () => {
+    writeLog('Initialize Primal Game Data.\nARK Version: 92.28\nServer has started.\n')
+    expect(await getGameVersion(installDir)).toBe('92.28')
   })
 
-  it('falls back when the direct title exists but does not parse as a version', async () => {
-    const fetchWindowTitle = vi.fn().mockResolvedValue('Some Unrelated Window')
-    const fetchFallbackTitle = vi.fn().mockResolvedValue('ASA 92.28 | Session | TheIsland_WP')
-    const version = await getGameVersion(1234, fetchWindowTitle, fetchFallbackTitle)
-    expect(version).toBe('92.28')
+  it('resolves to null when the log file does not exist yet', async () => {
+    expect(await getGameVersion(installDir)).toBeNull()
   })
 
-  it('resolves to null when both the direct lookup and the fallback find nothing', async () => {
-    const fetchWindowTitle = vi.fn().mockResolvedValue(null)
-    const fetchFallbackTitle = vi.fn().mockResolvedValue(null)
-    expect(await getGameVersion(1234, fetchWindowTitle, fetchFallbackTitle)).toBeNull()
+  it('resolves to null when the log exists but has no version line yet', async () => {
+    writeLog('Server is still booting...\n')
+    expect(await getGameVersion(installDir)).toBeNull()
+  })
+
+  it('works for a log file that has been sitting there since a previous Manager session', async () => {
+    // Same code path as an adopted server - nothing session-specific about reading a file.
+    writeLog('ARK Version: 92.28\n' + 'JOIN: SomePlayer\n'.repeat(200))
+    expect(await getGameVersion(installDir)).toBe('92.28')
   })
 })
 

@@ -140,19 +140,16 @@ dedicated servers running on the same machine.
       install's `appmanifest_2430930.acf` (the same file the Update button's "up to date"
       check already reads) - `null`/"Not installed yet" before the first install. This is
       SteamCMD's own opaque build number, not the human-readable version ARK itself shows.
-    - **Game Version** (e.g. "92.28"): the human-readable version ARK prints in its own
-      console window title while running (Windows only - ARK's dedicated server allocates
-      its own console rather than writing through stdout, so this is read via PowerShell's
-      `Get-Process -Id <pid> | ... MainWindowTitle`). That title isn't set immediately, so
-      this is polled every 5s starting from "Detecting..." - as soon as it resolves to an
-      actual version, polling stops (it can't change again for that run) and the value
-      just stays displayed. If the tracked pid doesn't resolve to a title - which can
-      happen for a server that was already running before the Manager itself restarted
-      (e.g. after installing a Manager update), even though its telemetry above keeps
-      working fine since that only needs the pid to be alive - it falls back to scanning
-      every process for any window whose title looks like ARK's own; the version number is
-      the same shared game build across every server on the machine, so any match is
-      exactly as correct as matching the exact pid. Once found, it's cached in memory for
+    - **Game Version** (e.g. "92.28"): the human-readable version ARK itself prints,
+      read straight from the "ARK Version: 92.28" line it writes to `ShooterGame.log`
+      near the start of boot. (An earlier version of this feature tried to read it back
+      from the server's own console window title via PowerShell/Win32 APIs instead - that
+      turned out to be unreliable for a server adopted after a Manager restart, even
+      though its telemetry above kept working fine since that only needs the pid to still
+      be alive; reading the log line directly sidesteps all of that.) That line isn't
+      written immediately, so this is polled every 5s starting from "Detecting..." - as
+      soon as it resolves to an actual version, polling stops (it can't change again for
+      that run) and the value just stays displayed. Once found, it's cached in memory for
       that profile - reopening the Analytics tab, or stopping/restarting the server, won't
       trigger detection again. The cache is only cleared when an actual Update is run
       against that profile (manual, scheduled, or via the web dashboard), since that's the

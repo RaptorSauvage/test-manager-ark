@@ -43,13 +43,11 @@ export function registerServerProcessHandlers(webContents: WebContents): void {
   )
 
   ipcMain.handle(IPC.serverGetGameVersion, async (_event, profileId: string) => {
-    requireProfile(profileId)
+    const profile = requireProfile(profileId)
     const cached = getCachedGameVersion(profileId)
     if (cached) return cached
 
-    const status = getStatus(profileId)
-    if (!status.pid) return null
-    const version = await getGameVersion(status.pid)
+    const version = await getGameVersion(profile.installDir)
     if (version) setCachedGameVersion(profileId, version)
     return version
   })

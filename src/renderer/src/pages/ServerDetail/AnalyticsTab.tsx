@@ -51,7 +51,7 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
         if (cancelled) return
         if (v) {
           // Found it - it won't change again for this run, so stop polling instead of
-          // spawning PowerShell every 5s for no reason.
+          // re-reading the log file every 5s for no reason.
           setGameVersion(v)
           clearInterval(interval)
         }
@@ -144,9 +144,8 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
           </p>
         )}
         <p className="empty-state">
-          <strong>Game Version</strong> (e.g. "92.28") is read live from the running server's own console window
-          title on Windows - it takes a few seconds after start to appear, and stays empty on other platforms or
-          if the server was launched some other way.
+          <strong>Game Version</strong> (e.g. "92.28") is read straight from the &quot;ARK Version:&quot; line ARK
+          itself writes to its log near the start of boot - it takes a few seconds after start to appear.
         </p>
       </section>
 
