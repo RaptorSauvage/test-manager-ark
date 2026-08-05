@@ -691,6 +691,8 @@ const DASHBOARD_HTML = `<!doctype html>
     color-scheme: dark;
     --bg: #14161a; --panel: #1d2027; --border: #2c303a; --text: #e6e8ec; --muted: #9aa0ab;
     --accent: #4f8cff; --danger: #e0555b; --ok: #3fbf6f; --warn: #e0a63f;
+    --status-running: #1f8a4c; --status-starting: #7ee6a0; --status-updating: #6fa8ff;
+    --status-stopping: #f2878b; --status-stopped: #a83239; --status-restarting: #e0a63f;
   }
   * { box-sizing: border-box; }
   body {
@@ -718,10 +720,13 @@ const DASHBOARD_HTML = `<!doctype html>
   .cluster-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
   .cluster-card-header h3 { margin: 0; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cluster-card-state { flex-shrink: 0; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
-  .cluster-card-state.state-running { color: var(--ok); }
-  .cluster-card-state.state-stopped { color: var(--muted); }
-  .cluster-card-state.state-starting, .cluster-card-state.state-stopping,
-  .cluster-card-state.state-restarting, .cluster-card-state.state-updating { color: var(--warn); }
+  .cluster-card-state.state-running { color: var(--status-running); }
+  .cluster-card-state.state-starting { color: var(--status-starting); }
+  .cluster-card-state.state-updating { color: var(--status-updating); }
+  .cluster-card-state.state-stopping { color: var(--status-stopping); }
+  .cluster-card-state.state-stopped { color: var(--status-stopped); }
+  .cluster-card-state.state-restarting { color: var(--status-restarting); }
+  .cluster-card-state.state-error { color: var(--danger); }
   .cluster-card-stats { display: flex; flex-direction: column; gap: 6px; font-size: 0.92rem; color: var(--muted); }
   .cluster-card-stats strong { color: var(--text); font-weight: 600; }
   header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
