@@ -82,6 +82,12 @@ export interface ServerProfile {
   scheduledDinoWipeTime: string
   /** Days it fires on, 0=Sunday..6=Saturday */
   scheduledDinoWipeDays: number[]
+  /** When true, this server is started automatically when the Manager application itself
+   *  launches (not to be confused with AppSettings.launchOnStartup, which is about the
+   *  Manager launching at OS login). Staggered against other auto-start profiles by
+   *  AppSettings.serverAutoStartStaggerSeconds. Skipped if the server is already running
+   *  (re-adopted from a previous Manager session). */
+  startOnManagerLaunch: boolean
   /** When true, hidden from the main dashboard grid (and bulk "...All" actions) without
    *  deleting it or touching whatever server process is actually running - just a way to
    *  declutter the main list for a profile you're not actively using right now. */
@@ -139,6 +145,10 @@ export interface AppSettings {
    *  to HTTPS with a self-signed certificate - meant for exposing it outside the LAN.
    *  When false (default), it behaves exactly as before: no auth, plain HTTP. */
   webDashboardAuthEnabled: boolean
+  /** Delay, in seconds, between two servers auto-starting at Manager launch (see
+   *  ServerProfile.startOnManagerLaunch). Only affects profiles that opt in - the first one
+   *  starts immediately, each subsequent one waits this long after the previous one. */
+  serverAutoStartStaggerSeconds: number
 }
 
 export type WebDashboardRole = 'admin' | 'operator' | 'readonly'

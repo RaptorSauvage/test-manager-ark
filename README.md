@@ -165,6 +165,11 @@ dedicated servers running on the same machine.
   save Settings and again at every app launch, so it stays in sync even if the OS-level
   registration was changed outside the app. Opens the normal window on login (no
   minimized/background mode yet).
+- **Delay between auto-started servers** — a number input (seconds, default 10) in the
+  app-wide Settings view. Only matters for profiles with "Start this server when the
+  Manager starts" enabled (Server Management tab): the first such profile starts as soon as
+  the Manager launches, and each subsequent one waits this long after the previous one
+  instead of every enabled server starting at the exact same instant.
 - **Manager updates** — a "Check for updates" button in the app-wide Settings view, next
   to the current version. Built on `electron-updater` against this repo's GitHub
   Releases, with live status (checking / downloading with a percentage / up to date /
@@ -422,7 +427,14 @@ dedicated servers running on the same machine.
   Sound (`-nosound`). This section also shows an always-on, non-interactive "RCON Enabled"
   indicator - RCON can't actually be turned off since the Manager depends on it for
   Stop/Restart and the web dashboard.
-- **Server Management tab** — two independent time/day-of-week schedules, each with a
+- **Server Management tab** — a "Start this server when the Manager starts" checkbox
+  (not to be confused with "Start Manager when you log into Windows" in Settings, which is
+  about the Manager application itself): when enabled, this server is started automatically
+  every time the Manager app launches - skipped if it's already running (e.g. re-adopted
+  from a previous Manager session that never actually stopped it). When several profiles
+  have this enabled, they start one after another rather than all at once, waited apart by
+  the "Delay between auto-started servers" setting in Settings (default 10s, the first one
+  starts immediately). Also home to two independent time/day-of-week schedules, each with a
   live "next occurrence" countdown (`DD:HH:MM:SS`):
   - **Scheduled restart** ("Shutdown server at:" + Sun-Sat day checkboxes) gracefully
     stops the server (SaveWorld confirmed, then DoExit - the same path as the manual Stop

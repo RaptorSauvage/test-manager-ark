@@ -39,6 +39,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     scheduledDinoWipeEnabled: false,
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],
+    startOnManagerLaunch: false,
     hidden: false,
     group: '',
     ...overrides

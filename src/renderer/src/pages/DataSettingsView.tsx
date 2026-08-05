@@ -34,7 +34,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     webDashboardHost: '127.0.0.1',
     webDashboardDisabledLabels: [],
     launchOnStartup: false,
-    webDashboardAuthEnabled: false
+    webDashboardAuthEnabled: false,
+    serverAutoStartStaggerSeconds: 10
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
   const [status, setStatus] = useState('')
@@ -118,6 +119,21 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
         <p className="empty-state">
           Registers this app to launch automatically at login (minimized to the background isn&apos;t supported yet
           - it opens its normal window). Save this form to apply the change immediately.
+        </p>
+
+        <label>
+          Delay between auto-started servers (seconds)
+          <input
+            type="number"
+            min={0}
+            value={settings.serverAutoStartStaggerSeconds}
+            onChange={(e) => setSettings({ ...settings, serverAutoStartStaggerSeconds: Number(e.target.value) })}
+          />
+        </label>
+        <p className="empty-state">
+          When several servers have &quot;Start this server when the Manager starts&quot; enabled (Server
+          Management tab), they start one after another with this delay in between instead of all at once - the
+          first one starts immediately.
         </p>
 
         <label>

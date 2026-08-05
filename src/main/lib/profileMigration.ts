@@ -34,6 +34,7 @@ interface LegacyProfileFields {
  *   folded into the separate, independent scheduled dino wipe instead
  * - `hidden` is new and defaults to false (shown on the dashboard)
  * - `group` is new and defaults to '' (no dashboard group)
+ * - `startOnManagerLaunch` is new and defaults to false
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -86,6 +87,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     scheduledDinoWipeEnabled: rest.scheduledDinoWipeEnabled ?? false,
     scheduledDinoWipeTime: rest.scheduledDinoWipeTime ?? '00:00',
     scheduledDinoWipeDays: rest.scheduledDinoWipeDays ?? [],
+    startOnManagerLaunch: rest.startOnManagerLaunch ?? false,
     hidden: rest.hidden ?? false,
     group: rest.group ?? ''
   }

@@ -31,6 +31,24 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
   return (
     <div className="server-management-tab">
       <section className="schedule-section">
+        <h3>Manager Startup</h3>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.startOnManagerLaunch}
+            onChange={(e) => update('startOnManagerLaunch', e.target.checked)}
+          />
+          Start this server when the Manager starts
+        </label>
+        <p className="empty-state">
+          Applies when the Manager application itself launches - not when Windows starts (see the &quot;Start
+          Manager when you log into Windows&quot; option in Settings for that). Skipped if the server is already
+          running (e.g. re-adopted from a previous Manager session). If several servers have this enabled, they
+          start one after another with a delay in between, configurable in Settings.
+        </p>
+      </section>
+
+      <section className="schedule-section">
         <h3>Advanced Schedule: Server Shutdown, Update, and Startup</h3>
         <ScheduleDaysPicker
           label="Shutdown server at:"

@@ -17,6 +17,8 @@ import { startMonitoring } from './lib/monitor'
 import { registerPlayerBackupWatch, startPlayerBackupWatch } from './lib/playerBackupWatch'
 import { startUpdateCheckPolling } from './lib/updateCheck'
 import { applyLaunchOnStartup } from './lib/launchOnStartup'
+import { doStartServer } from './lib/serverActions'
+import { runAutoStart } from './lib/autoStart'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -83,6 +85,8 @@ app.whenReady().then(() => {
       startPlayerBackupWatch(profile)
     }
   }
+
+  runAutoStart(profiles, getSettings().serverAutoStartStaggerSeconds, isRunning, doStartServer)
 
   createWindow()
 

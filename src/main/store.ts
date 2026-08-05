@@ -28,7 +28,8 @@ const store = new Store<StoreSchema>({
       webDashboardHost: '127.0.0.1',
       webDashboardDisabledLabels: [],
       launchOnStartup: false,
-      webDashboardAuthEnabled: false
+      webDashboardAuthEnabled: false,
+      serverAutoStartStaggerSeconds: 10
     },
     runningPids: {},
     runningStartedAt: {},
@@ -86,6 +87,7 @@ export function getSettings(): AppSettings {
     webDashboardDisabledLabels: [],
     launchOnStartup: false,
     webDashboardAuthEnabled: false,
+    serverAutoStartStaggerSeconds: 10,
     ...settings
   }
 }

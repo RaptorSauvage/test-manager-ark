@@ -101,6 +101,7 @@ export function registerProfileHandlers(): void {
       scheduledDinoWipeEnabled: false,
       scheduledDinoWipeTime: '00:00',
       scheduledDinoWipeDays: [],
+      startOnManagerLaunch: false,
       hidden: false,
       group: ''
     }
