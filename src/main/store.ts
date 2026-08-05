@@ -1,5 +1,5 @@
 import Store from 'electron-store'
-import type { ServerProfile, AppSettings, WebDashboardAccount } from '@shared/types'
+import type { ServerProfile, AppSettings, WebDashboardAccount, WebDashboardApiKey } from '@shared/types'
 import { migrateProfile } from './lib/profileMigration'
 import { reorderProfiles } from './lib/reorder'
 import { stripWrappingQuotes } from './lib/pathSanitize'
@@ -15,6 +15,8 @@ interface StoreSchema {
   runningStartedAt: Record<string, number>
   /** Web dashboard login accounts - only touched from the Manager's own Settings screen. */
   webDashboardAccounts: WebDashboardAccount[]
+  /** Web dashboard API keys - only touched from the Manager's own Settings screen. */
+  webDashboardApiKeys: WebDashboardApiKey[]
 }
 
 const store = new Store<StoreSchema>({
@@ -33,7 +35,8 @@ const store = new Store<StoreSchema>({
     },
     runningPids: {},
     runningStartedAt: {},
-    webDashboardAccounts: []
+    webDashboardAccounts: [],
+    webDashboardApiKeys: []
   }
 })
 
@@ -114,6 +117,25 @@ export function deleteWebDashboardAccount(id: string): WebDashboardAccount[] {
   const accounts = listWebDashboardAccounts().filter((a) => a.id !== id)
   store.set('webDashboardAccounts', accounts)
   return accounts
+}
+
+export function listWebDashboardApiKeys(): WebDashboardApiKey[] {
+  return store.get('webDashboardApiKeys') ?? []
+}
+
+export function saveWebDashboardApiKey(key: WebDashboardApiKey): WebDashboardApiKey[] {
+  const keys = listWebDashboardApiKeys()
+  const idx = keys.findIndex((k) => k.id === key.id)
+  if (idx >= 0) keys[idx] = key
+  else keys.push(key)
+  store.set('webDashboardApiKeys', keys)
+  return keys
+}
+
+export function deleteWebDashboardApiKey(id: string): WebDashboardApiKey[] {
+  const keys = listWebDashboardApiKeys().filter((k) => k.id !== id)
+  store.set('webDashboardApiKeys', keys)
+  return keys
 }
 
 export function getRunningPids(): Record<string, number> {

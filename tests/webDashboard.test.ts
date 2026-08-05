@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE } from '../src/main/lib/logEvents'
-import type { WebDashboardAccount } from '../shared/types'
+import type { WebDashboardAccount, WebDashboardApiKey } from '../shared/types'
 
 const EMPTY_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-empty-${process.pid}`)
 const LOGGED_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-logged-${process.pid}`)
@@ -23,6 +23,7 @@ let mockSettings = {
 }
 
 let mockAccounts: WebDashboardAccount[] = []
+let mockApiKeys: WebDashboardApiKey[] = []
 
 vi.mock('../src/main/store', () => ({
   listProfiles: () => [
@@ -66,6 +67,17 @@ vi.mock('../src/main/store', () => ({
   deleteWebDashboardAccount: (id: string) => {
     mockAccounts = mockAccounts.filter((a) => a.id !== id)
     return mockAccounts
+  },
+  listWebDashboardApiKeys: () => mockApiKeys,
+  saveWebDashboardApiKey: (key: WebDashboardApiKey) => {
+    const idx = mockApiKeys.findIndex((k) => k.id === key.id)
+    if (idx >= 0) mockApiKeys[idx] = key
+    else mockApiKeys.push(key)
+    return mockApiKeys
+  },
+  deleteWebDashboardApiKey: (id: string) => {
+    mockApiKeys = mockApiKeys.filter((k) => k.id !== id)
+    return mockApiKeys
   }
 }))
 vi.mock('../src/main/lib/serverProcess', async (importOriginal) => {
@@ -101,7 +113,7 @@ import { startWebDashboard, stopWebDashboard, getWebDashboardStatus, sortProfile
 import type { ServerProfile } from '../shared/types'
 import * as serverActions from '../src/main/lib/serverActions'
 import { serverEvents } from '../src/main/lib/serverProcess'
-import { hashPassword } from '../src/main/lib/auth'
+import { hashPassword, generateApiKeyId, generateApiKeySecret, buildApiKey } from '../src/main/lib/auth'
 
 const PORT = 47091
 
@@ -494,6 +506,8 @@ describe('web dashboard HTTP server, auth enabled', () => {
   let adminCookie = ''
   let operatorCookie = ''
   let readonlyCookie = ''
+  let readonlyApiKey = ''
+  let operatorApiKey = ''
 
   async function login(username: string, password: string): Promise<{ status: number; cookie: string }> {
     const res = await authRequest('/api/login', {
@@ -511,6 +525,28 @@ describe('web dashboard HTTP server, auth enabled', () => {
       { id: 'a2', username: 'operator', passwordHash: await hashPassword('operatorpass'), role: 'operator' },
       { id: 'a3', username: 'viewer', passwordHash: await hashPassword('viewerpass'), role: 'readonly' }
     ]
+    const readonlyKeyId = generateApiKeyId()
+    const readonlyKeySecret = generateApiKeySecret()
+    const operatorKeyId = generateApiKeyId()
+    const operatorKeySecret = generateApiKeySecret()
+    mockApiKeys = [
+      {
+        id: readonlyKeyId,
+        label: 'Test readonly bot',
+        secretHash: await hashPassword(readonlyKeySecret),
+        role: 'readonly',
+        createdAt: Date.now()
+      },
+      {
+        id: operatorKeyId,
+        label: 'Test operator bot',
+        secretHash: await hashPassword(operatorKeySecret),
+        role: 'operator',
+        createdAt: Date.now()
+      }
+    ]
+    readonlyApiKey = buildApiKey(readonlyKeyId, readonlyKeySecret)
+    operatorApiKey = buildApiKey(operatorKeyId, operatorKeySecret)
     // getOrCreateCert() resolves its cert folder off settings.dataDir - point it at a real
     // tmp dir instead of the default (Documents/ARK Server Manager via Electron's `app`,
     // which isn't available outside a real Electron process).
@@ -525,6 +561,7 @@ describe('web dashboard HTTP server, auth enabled', () => {
     stopWebDashboard()
     mockSettings = { ...mockSettings, webDashboardAuthEnabled: false, dataDir: '' }
     mockAccounts = []
+    mockApiKeys = []
     fs.rmSync(CERTS_DIR, { recursive: true, force: true })
   })
 
@@ -590,6 +627,37 @@ describe('web dashboard HTTP server, auth enabled', () => {
 
   it('401s the SSE stream with no session', async () => {
     const res = await authRequest('/api/servers/p1/events/stream')
+    expect(res.status).toBe(401)
+  })
+
+  it('allows a readonly API key to read /api/servers via Authorization: Bearer', async () => {
+    const res = await authRequest('/api/servers', { headers: { Authorization: `Bearer ${readonlyApiKey}` } })
+    expect(res.status).toBe(200)
+  })
+
+  it('blocks a readonly API key from starting a server', async () => {
+    const res = await authRequest('/api/servers/p1/start', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${readonlyApiKey}` }
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('allows an operator API key to start a server', async () => {
+    const res = await authRequest('/api/servers/p1/start', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${operatorApiKey}` }
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('401s a made-up API key', async () => {
+    const res = await authRequest('/api/servers', { headers: { Authorization: 'Bearer ark_deadbeef_deadbeef' } })
+    expect(res.status).toBe(401)
+  })
+
+  it('401s a malformed Authorization header', async () => {
+    const res = await authRequest('/api/servers', { headers: { Authorization: 'not-a-bearer-token' } })
     expect(res.status).toBe(401)
   })
 

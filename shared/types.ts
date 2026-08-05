@@ -168,6 +168,27 @@ export interface WebDashboardAccount {
 /** WebDashboardAccount with the password hash stripped out, for the renderer/Settings UI. */
 export type WebDashboardAccountSummary = Omit<WebDashboardAccount, 'passwordHash'>
 
+/**
+ * A programmatic credential for the web dashboard's HTTP API - meant for scripts/bots
+ * that can't drive a login form/session cookie the way a browser does. Presented as
+ * `Authorization: Bearer ark_<id>_<secret>`; `id` is looked up directly (not scanned) and
+ * `secret` is checked against `secretHash` the same way an account's password is. Like
+ * accounts, managed only from the Manager's own Settings screen - never exposed over the
+ * dashboard's own HTTP API.
+ */
+export interface WebDashboardApiKey {
+  id: string
+  /** Free-form label so more than one key stays identifiable (e.g. "Discord bot"). */
+  label: string
+  /** Never sent to the renderer - see WebDashboardApiKeySummary for what it gets instead. */
+  secretHash: string
+  role: WebDashboardRole
+  createdAt: number
+}
+
+/** WebDashboardApiKey with the secret hash stripped out, for the renderer/Settings UI. */
+export type WebDashboardApiKeySummary = Omit<WebDashboardApiKey, 'secretHash'>
+
 export interface ServerStatus {
   profileId: string
   state: ServerRunState
@@ -320,6 +341,10 @@ export const IPC = {
   webDashboardAccountsResetPassword: 'web-dashboard-accounts:reset-password',
   webDashboardAccountsDelete: 'web-dashboard-accounts:delete',
 
+  webDashboardApiKeysList: 'web-dashboard-api-keys:list',
+  webDashboardApiKeysCreate: 'web-dashboard-api-keys:create',
+  webDashboardApiKeysDelete: 'web-dashboard-api-keys:delete',
+
   appOpenProfilesFolder: 'app:open-profiles-folder',
   serverOpenConfigFolder: 'server:open-config-folder',
 
@@ -467,6 +492,13 @@ export interface Api {
     setRole: (id: string, role: WebDashboardRole) => Promise<WebDashboardAccountSummary[]>
     resetPassword: (id: string, newPassword: string) => Promise<WebDashboardAccountSummary[]>
     delete: (id: string) => Promise<WebDashboardAccountSummary[]>
+  }
+  webDashboardApiKeys: {
+    list: () => Promise<WebDashboardApiKeySummary[]>
+    /** Resolves with the full plaintext key, shown to the user exactly once - only its
+     *  hash is ever stored, so it can't be retrieved again after this. */
+    create: (label: string, role: WebDashboardRole) => Promise<{ key: string; keys: WebDashboardApiKeySummary[] }>
+    delete: (id: string) => Promise<WebDashboardApiKeySummary[]>
   }
   system: {
     openProfilesFolder: () => Promise<void>

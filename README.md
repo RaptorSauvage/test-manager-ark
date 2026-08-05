@@ -440,6 +440,15 @@ dedicated servers running on the same machine.
       and back on - everyone has to log in again after that. Repeated failed logins from
       the same address are temporarily locked out (8 attempts / 15 minutes) as a basic
       brute-force guard now that the dashboard may be reachable from the internet.
+    - **API keys** (also managed only from this Settings screen) are the same idea as
+      accounts, but for scripts/bots that call the dashboard's HTTP API directly and can't
+      drive a login form - e.g. a Discord bot posting server status. Each key has a label
+      (just for telling keys apart), a role (same three as accounts), and is sent as
+      `Authorization: Bearer <key>` instead of logging in - either that header or a valid
+      session satisfies a route's role check, so existing browser sessions keep working
+      unchanged. A key's full value (`ark_<id>_<secret>`) is shown exactly once, right
+      after creating it - only its hash is ever stored, so a lost key can't be recovered,
+      only revoked and replaced with a new one.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), No Transfer From Filtering (`-NoTransferFromFiltering`), and External IP
@@ -629,12 +638,16 @@ on. Base URL is `http://<host>:<port>` using whatever Host/Port you set there (d
 to `http://127.0.0.1:8090`) - or `https://` if **Require login** is also on. With login
 off (the default), there's no authentication at all - the same posture as RCON itself,
 appropriate for `127.0.0.1` or a trusted LAN, never the open internet. With login on,
-every route below except `/api/login` needs a valid session cookie (obtained by `POST`ing
-`{ username, password }` to `/api/login`, which responds with `Set-Cookie` on success) and
-enough role to match the table in the Settings section above - a bot has to log in with
-one of the same accounts a human would use, then send that cookie (`-b`/`--cookie` with
-`curl`, a cookie jar in most HTTP client libraries) on every subsequent request, same as a
-browser would.
+every route below except `/api/login` needs either a valid session cookie or an API key,
+with enough role to match the table in the Settings section above:
+- **API key** (the simpler option for a bot/script) - create one in **Settings → API
+  keys**, then send `Authorization: Bearer <key>` on every request. No login step, no
+  cookie handling, and it keeps working across Manager restarts (unlike a session).
+- **Session cookie** (what the dashboard page itself uses) - `POST` `{ username, password
+  }` to `/api/login`, which responds with `Set-Cookie` on success, then send that cookie
+  (`-b`/`--cookie` with `curl`, a cookie jar in most HTTP client libraries) on every
+  subsequent request. Only really worth it for a bot if it's already reusing one of the
+  human-facing accounts.
 
 | Method | Path | Body | Response | Notes |
 | --- | --- | --- | --- | --- |

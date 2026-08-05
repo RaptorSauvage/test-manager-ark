@@ -141,3 +141,33 @@ export function recordLoginFailure(ip: string): void {
 export function recordLoginSuccess(ip: string): void {
   loginAttempts.delete(ip)
 }
+
+const API_KEY_PREFIX = 'ark'
+
+/** Random id embedded in the key itself so a presented key can be looked up directly (by
+ *  this id) instead of scanning every stored key's hash to find a match. */
+export function generateApiKeyId(): string {
+  return randomBytes(6).toString('hex')
+}
+
+/** The actual secret half - this is what gets hashed and checked, same as a password. */
+export function generateApiKeySecret(): string {
+  return randomBytes(24).toString('hex')
+}
+
+export function buildApiKey(id: string, secret: string): string {
+  return `${API_KEY_PREFIX}_${id}_${secret}`
+}
+
+export function parseApiKey(key: string): { id: string; secret: string } | null {
+  const match = new RegExp(`^${API_KEY_PREFIX}_([0-9a-f]+)_([0-9a-f]+)$`).exec(key.trim())
+  return match ? { id: match[1], secret: match[2] } : null
+}
+
+/** Reads the presented API key from an `Authorization: Bearer <key>` header, if any. */
+export function getApiKeyFromRequest(req: IncomingMessage): string | null {
+  const header = req.headers.authorization
+  if (!header) return null
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim())
+  return match ? match[1] : null
+}

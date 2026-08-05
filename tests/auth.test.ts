@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { IncomingMessage } from 'node:http'
 import {
   hashPassword,
   verifyPassword,
@@ -8,7 +9,12 @@ import {
   roleAtLeast,
   isRateLimited,
   recordLoginFailure,
-  recordLoginSuccess
+  recordLoginSuccess,
+  generateApiKeyId,
+  generateApiKeySecret,
+  buildApiKey,
+  parseApiKey,
+  getApiKeyFromRequest
 } from '../src/main/lib/auth'
 
 describe('hashPassword / verifyPassword', () => {
@@ -62,6 +68,41 @@ describe('roleAtLeast', () => {
     expect(roleAtLeast('operator', 'admin')).toBe(false)
     expect(roleAtLeast('admin', 'operator')).toBe(true)
     expect(roleAtLeast('admin', 'admin')).toBe(true)
+  })
+})
+
+describe('API keys', () => {
+  it('builds a key from an id and secret, and parses it back out', () => {
+    const id = generateApiKeyId()
+    const secret = generateApiKeySecret()
+    const key = buildApiKey(id, secret)
+    expect(parseApiKey(key)).toEqual({ id, secret })
+  })
+
+  it('generates a different id and secret every time', () => {
+    expect(generateApiKeyId()).not.toBe(generateApiKeyId())
+    expect(generateApiKeySecret()).not.toBe(generateApiKeySecret())
+  })
+
+  it('rejects a key that does not match the expected format', () => {
+    expect(parseApiKey('not-a-real-key')).toBeNull()
+    expect(parseApiKey('ark_onlyoneparthere')).toBeNull()
+    expect(parseApiKey('')).toBeNull()
+  })
+
+  it('reads the key out of an Authorization: Bearer header', () => {
+    const req = { headers: { authorization: 'Bearer ark_abc123_def456' } } as unknown as IncomingMessage
+    expect(getApiKeyFromRequest(req)).toBe('ark_abc123_def456')
+  })
+
+  it('returns null when there is no Authorization header', () => {
+    const req = { headers: {} } as unknown as IncomingMessage
+    expect(getApiKeyFromRequest(req)).toBeNull()
+  })
+
+  it('returns null for a non-Bearer Authorization header', () => {
+    const req = { headers: { authorization: 'Basic dXNlcjpwYXNz' } } as unknown as IncomingMessage
+    expect(getApiKeyFromRequest(req)).toBeNull()
   })
 })
 

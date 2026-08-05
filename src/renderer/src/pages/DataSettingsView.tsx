@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AppSettings, AppUpdateStatus } from '@shared/types'
 import AccountsSection from './AccountsSection'
+import ApiKeysSection from './ApiKeysSection'
 
 interface DataSettingsViewProps {
   onBack: () => void
@@ -248,6 +249,7 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
       </form>
 
       <AccountsSection />
+      <ApiKeysSection />
 
       <section className="managed-steamcmd">
         <h3>Manager updates</h3>

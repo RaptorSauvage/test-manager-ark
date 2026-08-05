@@ -121,6 +121,11 @@ const api: Api = {
       ipcRenderer.invoke(IPC.webDashboardAccountsResetPassword, id, newPassword),
     delete: (id: string) => ipcRenderer.invoke(IPC.webDashboardAccountsDelete, id)
   },
+  webDashboardApiKeys: {
+    list: () => ipcRenderer.invoke(IPC.webDashboardApiKeysList),
+    create: (label: string, role: WebDashboardRole) => ipcRenderer.invoke(IPC.webDashboardApiKeysCreate, label, role),
+    delete: (id: string) => ipcRenderer.invoke(IPC.webDashboardApiKeysDelete, id)
+  },
   system: {
     openProfilesFolder: () => ipcRenderer.invoke(IPC.appOpenProfilesFolder),
     openServerConfigFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenConfigFolder, profileId)
