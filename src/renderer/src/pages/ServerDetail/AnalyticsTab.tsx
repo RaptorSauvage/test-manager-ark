@@ -25,8 +25,10 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   const status = statuses[profile.id]
   const [now, setNow] = useState(() => Date.now())
   const [buildId, setBuildId] = useState<string | null>(null)
+  const [gameVersion, setGameVersion] = useState<string | null>(null)
   const [backupStatus, setBackupStatus] = useState<BackupScheduleStatus | null>(null)
   const [configFolderError, setConfigFolderError] = useState('')
+  const isRunning = status?.state === 'running'
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000)
@@ -36,6 +38,25 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   useEffect(() => {
     window.api.server.getInstalledBuildId(profile.id).then(setBuildId)
   }, [profile.id])
+
+  useEffect(() => {
+    if (!isRunning) {
+      setGameVersion(null)
+      return
+    }
+    let cancelled = false
+    function refresh(): void {
+      window.api.server.getGameVersion(profile.id).then((v) => {
+        if (!cancelled && v) setGameVersion(v)
+      })
+    }
+    refresh()
+    const interval = setInterval(refresh, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [profile.id, isRunning])
 
   useEffect(() => {
     let cancelled = false
@@ -61,7 +82,6 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
     }
   }
 
-  const isRunning = status?.state === 'running'
   const uptimeMs = isRunning && status?.startedAt ? now - status.startedAt : null
 
   return (
@@ -99,8 +119,12 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
         <h3>Version</h3>
         <dl className="analytics-grid">
           <div>
-            <dt>Server Version</dt>
+            <dt>Installed Build ID</dt>
             <dd>{buildId ?? 'Not installed yet'}</dd>
+          </div>
+          <div>
+            <dt>Game Version</dt>
+            <dd>{isRunning ? (gameVersion ?? 'Detecting...') : 'Server not running'}</dd>
           </div>
         </dl>
         {!buildId && (
@@ -108,10 +132,15 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
             No <code>appmanifest_2430930.acf</code> found under <code>{profile.installDir}\steamapps</code> -
             SteamCMD writes this the first time it installs/updates this server. If this install folder was set up
             by another tool or copied in manually without ever running an update through SteamCMD here, this stays
-            empty even though the server itself runs fine - it only affects the Version/update-check display, not
+            empty even though the server itself runs fine - it only affects the Build ID/update-check display, not
             Start.
           </p>
         )}
+        <p className="empty-state">
+          <strong>Game Version</strong> (e.g. "92.28") is read live from the running server's own console window
+          title on Windows - it takes a few seconds after start to appear, and stays empty on other platforms or
+          if the server was launched some other way.
+        </p>
       </section>
 
       <UpdateCheckPanel profileIds={[profile.id]} />

@@ -135,9 +135,17 @@ dedicated servers running on the same machine.
     Uptime survives a Manager restart too - the actual start time is persisted alongside
     the pid it already tracks to re-adopt a still-running server, so a re-adopted server
     shows real elapsed uptime instead of losing it.
-  - **Version**: the SteamCMD-installed build id, read straight from that install's
-    `appmanifest_2430930.acf` (the same file the Update button's "up to date" check
-    already reads) - `null`/"Not installed yet" before the first install.
+  - **Version**: two separate numbers, since ARK exposes them differently:
+    - **Installed Build ID**: the SteamCMD-installed build id, read straight from that
+      install's `appmanifest_2430930.acf` (the same file the Update button's "up to date"
+      check already reads) - `null`/"Not installed yet" before the first install. This is
+      SteamCMD's own opaque build number, not the human-readable version ARK itself shows.
+    - **Game Version** (e.g. "92.28"): the human-readable version ARK prints in its own
+      console window title while running (Windows only - ARK's dedicated server allocates
+      its own console rather than writing through stdout, so this is read via PowerShell's
+      `Get-Process -Id <pid> | ... MainWindowTitle`, polled every 5s while the tab is open).
+      Shows "Server not running" while stopped, and "Detecting..." for the first few
+      seconds after it starts - that title isn't set immediately.
   - **New update** panel: "A server update is available" or "No new update available",
     depending on whether that profile's installed build id matches the latest one Steam
     has published (same embed styling as the dashboard's Official Server Status panel).

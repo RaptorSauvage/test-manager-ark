@@ -275,6 +275,7 @@ export const IPC = {
   serverStatus: 'server:status',
   serverStatusChanged: 'server:status-changed',
   serverGetInstalledBuildId: 'server:get-installed-build-id',
+  serverGetGameVersion: 'server:get-game-version',
 
   modsSave: 'mods:save',
   modsExport: 'mods:export',
@@ -406,6 +407,10 @@ export interface Api {
     status: (profileId: string) => Promise<ServerStatus>
     onStatusChanged: (callback: (status: ServerStatus) => void) => () => void
     getInstalledBuildId: (profileId: string) => Promise<string | null>
+    /** The human-readable game version (e.g. "92.28"), read from the running server's own
+     *  console window title - Windows-only, and null until the server is running and that
+     *  title has actually been set (a few seconds into startup). */
+    getGameVersion: (profileId: string) => Promise<string | null>
   }
   mods: {
     save: (profileId: string, mods: ServerMod[]) => Promise<ServerProfile>

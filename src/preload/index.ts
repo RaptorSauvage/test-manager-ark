@@ -46,7 +46,8 @@ const api: Api = {
       ipcRenderer.on(IPC.serverStatusChanged, listener)
       return () => ipcRenderer.removeListener(IPC.serverStatusChanged, listener)
     },
-    getInstalledBuildId: (profileId: string) => ipcRenderer.invoke(IPC.serverGetInstalledBuildId, profileId)
+    getInstalledBuildId: (profileId: string) => ipcRenderer.invoke(IPC.serverGetInstalledBuildId, profileId),
+    getGameVersion: (profileId: string) => ipcRenderer.invoke(IPC.serverGetGameVersion, profileId)
   },
   mods: {
     save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods),
