@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { parseGameVersionFromTitle, getWindowTitle, getGameVersion } from '../src/main/lib/serverVersion'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  parseGameVersionFromTitle,
+  getWindowTitle,
+  findAnyArkServerWindowTitle,
+  getGameVersion
+} from '../src/main/lib/serverVersion'
 
 describe('parseGameVersionFromTitle', () => {
   it('extracts the version from a real ARK:SA console title', () => {
@@ -35,9 +40,45 @@ describe('getWindowTitle', () => {
   })
 })
 
+describe('findAnyArkServerWindowTitle', () => {
+  it('resolves to null on non-Windows platforms without spawning anything', async () => {
+    if (process.platform === 'win32') return
+    expect(await findAnyArkServerWindowTitle()).toBeNull()
+  })
+})
+
 describe('getGameVersion', () => {
   it('resolves to null when there is no window title to parse (e.g. non-Windows)', async () => {
     if (process.platform === 'win32') return
     expect(await getGameVersion(1234)).toBeNull()
+  })
+
+  it('uses the direct pid lookup when it resolves to a valid title', async () => {
+    const fetchWindowTitle = vi.fn().mockResolvedValue('ASA 92.28 | Session | TheIsland_WP | PvP | Process 1234')
+    const fetchFallbackTitle = vi.fn()
+    const version = await getGameVersion(1234, fetchWindowTitle, fetchFallbackTitle)
+    expect(version).toBe('92.28')
+    expect(fetchFallbackTitle).not.toHaveBeenCalled()
+  })
+
+  it('falls back to scanning all windows when the direct pid lookup finds nothing', async () => {
+    const fetchWindowTitle = vi.fn().mockResolvedValue(null)
+    const fetchFallbackTitle = vi.fn().mockResolvedValue('ASA 92.28 | Session | TheIsland_WP | PvP | Process 9999')
+    const version = await getGameVersion(1234, fetchWindowTitle, fetchFallbackTitle)
+    expect(version).toBe('92.28')
+    expect(fetchFallbackTitle).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back when the direct title exists but does not parse as a version', async () => {
+    const fetchWindowTitle = vi.fn().mockResolvedValue('Some Unrelated Window')
+    const fetchFallbackTitle = vi.fn().mockResolvedValue('ASA 92.28 | Session | TheIsland_WP')
+    const version = await getGameVersion(1234, fetchWindowTitle, fetchFallbackTitle)
+    expect(version).toBe('92.28')
+  })
+
+  it('resolves to null when both the direct lookup and the fallback find nothing', async () => {
+    const fetchWindowTitle = vi.fn().mockResolvedValue(null)
+    const fetchFallbackTitle = vi.fn().mockResolvedValue(null)
+    expect(await getGameVersion(1234, fetchWindowTitle, fetchFallbackTitle)).toBeNull()
   })
 })

@@ -146,7 +146,13 @@ dedicated servers running on the same machine.
       `Get-Process -Id <pid> | ... MainWindowTitle`). That title isn't set immediately, so
       this is polled every 5s starting from "Detecting..." - as soon as it resolves to an
       actual version, polling stops (it can't change again for that run) and the value
-      just stays displayed.
+      just stays displayed. If the tracked pid doesn't resolve to a title - which can
+      happen for a server that was already running before the Manager itself restarted
+      (e.g. after installing a Manager update), even though its telemetry above keeps
+      working fine since that only needs the pid to be alive - it falls back to scanning
+      every process for any window whose title looks like ARK's own; the version number is
+      the same shared game build across every server on the machine, so any match is
+      exactly as correct as matching the exact pid.
   - **New update** panel: "A server update is available" or "No new update available",
     depending on whether that profile's installed build id matches the latest one Steam
     has published (same embed styling as the dashboard's Official Server Status panel).
