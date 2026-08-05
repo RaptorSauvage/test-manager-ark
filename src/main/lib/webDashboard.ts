@@ -816,10 +816,14 @@ const DASHBOARD_HTML = `<!doctype html>
     .cluster-card { padding: 14px; }
     .form-actions { flex-wrap: wrap; }
     .form-actions button { flex: 1 1 auto; }
-    .backup-table-panel, .backup-log-panel { flex: none; width: 100%; min-width: 0; }
-    .backup-table-panel { overflow-x: auto; }
+    /* The backup table's natural height (many rows) plus the log's can easily exceed the
+       screen - scroll the pair together as one unit instead of capping each panel's own
+       height, which left content unreachable (the page itself can't scroll, by design -
+       everything scrollable has to be an explicit overflow container somewhere). */
+    #view-backup .content-row { overflow-y: auto; }
+    #view-backup .backup-table-panel, #view-backup .backup-log-panel { flex: none; width: 100%; min-width: 0; }
+    #view-backup .backup-table-panel { overflow-x: auto; }
     #backup-table { font-size: 0.78rem; }
-    .backup-log-panel { max-height: 220px; }
   }
 </style>
 </head>
