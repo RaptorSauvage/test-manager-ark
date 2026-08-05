@@ -827,6 +827,8 @@ const DASHBOARD_HTML = `<!doctype html>
        reliably stays a compact box - and scales with the actual device screen instead of
        being a flat number that's too small on a tall phone. */
     .console-panel { flex: none; height: 55vh; min-height: 280px; }
+    #console { font-size: 0.72rem; }
+    .log-event { padding: 2px 0; line-height: 1.3; }
     .side-col { flex: none; width: 100%; max-width: none; }
     .players-panel { flex: none; max-height: 160px; }
     #players-list { display: flex; flex-direction: row; flex-wrap: wrap; overflow-y: hidden; gap: 6px; }

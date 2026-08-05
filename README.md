@@ -338,7 +338,10 @@ dedicated servers running on the same machine.
     stays a compact, auto-scrolling box instead of growing to fit however many backlog
     lines happen to be loaded - relying on flex-grow to size it dynamically here turned out
     not to reliably bound it on real mobile browsers the way it does on desktop, even
-    though it worked in every headless test; an explicit height sidesteps that.
+    though it worked in every headless test; an explicit height sidesteps that. Its text is
+    also a size smaller there than on desktop, so a long line (a lot of the ARK log's own
+    lines run long) wraps across fewer rows and more of the recent history fits in that
+    fixed-height box at once.
   - **Backup** - a read-only-settings backup menu similar to the desktop app's Backups
     tab, always showing the server currently selected in Dashboard (no picker of its own -
     switching servers in Dashboard, including via a Cluster Dashboard card click, updates
