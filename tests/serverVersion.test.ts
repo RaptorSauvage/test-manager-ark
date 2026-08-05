@@ -3,7 +3,10 @@ import {
   parseGameVersionFromTitle,
   getWindowTitle,
   findAnyArkServerWindowTitle,
-  getGameVersion
+  getGameVersion,
+  getCachedGameVersion,
+  setCachedGameVersion,
+  clearCachedGameVersion
 } from '../src/main/lib/serverVersion'
 
 describe('parseGameVersionFromTitle', () => {
@@ -80,5 +83,35 @@ describe('getGameVersion', () => {
     const fetchWindowTitle = vi.fn().mockResolvedValue(null)
     const fetchFallbackTitle = vi.fn().mockResolvedValue(null)
     expect(await getGameVersion(1234, fetchWindowTitle, fetchFallbackTitle)).toBeNull()
+  })
+})
+
+describe('game version cache', () => {
+  it('returns null for a profile that has never been cached', () => {
+    expect(getCachedGameVersion('never-cached-profile')).toBeNull()
+  })
+
+  it('returns whatever was stored for that profile', () => {
+    setCachedGameVersion('profile-a', '92.28')
+    expect(getCachedGameVersion('profile-a')).toBe('92.28')
+  })
+
+  it('keeps separate profiles independent', () => {
+    setCachedGameVersion('profile-b', '92.28')
+    setCachedGameVersion('profile-c', '93.0')
+    expect(getCachedGameVersion('profile-b')).toBe('92.28')
+    expect(getCachedGameVersion('profile-c')).toBe('93.0')
+  })
+
+  it('clears only the requested profile', () => {
+    setCachedGameVersion('profile-d', '92.28')
+    setCachedGameVersion('profile-e', '92.28')
+    clearCachedGameVersion('profile-d')
+    expect(getCachedGameVersion('profile-d')).toBeNull()
+    expect(getCachedGameVersion('profile-e')).toBe('92.28')
+  })
+
+  it('clearing an uncached profile is a no-op, not an error', () => {
+    expect(() => clearCachedGameVersion('was-never-cached')).not.toThrow()
   })
 })

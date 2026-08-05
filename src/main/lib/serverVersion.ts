@@ -67,3 +67,25 @@ export async function getGameVersion(
   const fallbackTitle = await fetchFallbackTitle()
   return fallbackTitle ? parseGameVersionFromTitle(fallbackTitle) : null
 }
+
+/**
+ * Caches the detected game version per profile, in memory, for the lifetime of the
+ * Manager process - so it's only ever detected once instead of on every Analytics tab
+ * mount, and stays valid across the server simply being stopped/restarted (the installed
+ * build doesn't change just because the process did). Invalidated only when an actual
+ * update is run (see serverActions.ts's doUpdateServer), since that's the one thing that
+ * can actually change which version is installed.
+ */
+const gameVersionCache = new Map<string, string>()
+
+export function getCachedGameVersion(profileId: string): string | null {
+  return gameVersionCache.get(profileId) ?? null
+}
+
+export function setCachedGameVersion(profileId: string, version: string): void {
+  gameVersionCache.set(profileId, version)
+}
+
+export function clearCachedGameVersion(profileId: string): void {
+  gameVersionCache.delete(profileId)
+}

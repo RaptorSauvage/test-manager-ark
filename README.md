@@ -152,7 +152,11 @@ dedicated servers running on the same machine.
       working fine since that only needs the pid to be alive - it falls back to scanning
       every process for any window whose title looks like ARK's own; the version number is
       the same shared game build across every server on the machine, so any match is
-      exactly as correct as matching the exact pid.
+      exactly as correct as matching the exact pid. Once found, it's cached in memory for
+      that profile - reopening the Analytics tab, or stopping/restarting the server, won't
+      trigger detection again. The cache is only cleared when an actual Update is run
+      against that profile (manual, scheduled, or via the web dashboard), since that's the
+      one thing that can actually change which version ends up installed.
   - **New update** panel: "A server update is available" or "No new update available",
     depending on whether that profile's installed build id matches the latest one Steam
     has published (same embed styling as the dashboard's Official Server Status panel).
