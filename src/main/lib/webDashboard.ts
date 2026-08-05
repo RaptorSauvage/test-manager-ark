@@ -798,16 +798,30 @@ const DASHBOARD_HTML = `<!doctype html>
   .backup-log-time { color: var(--muted); margin-right: 6px; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); z-index: 1100; }
   @media (max-width: 700px) {
-    body { flex-direction: column; }
+    /* The desktop layout is a fixed-viewport "app" (body: height:100vh + overflow:hidden)
+       that relies on each panel being its own bounded, individually-scrolling box. That
+       shape keeps breaking on mobile - a panel not explicitly height-capped just grows
+       past the screen, and because the page itself can't scroll, that overflow becomes
+       completely unreachable rather than merely ugly. Simpler and more robust: let the
+       page scroll normally on mobile, like any other web page, and only keep an internal
+       scroll box where one is actually wanted (the live console feed, the online players
+       list) - everything else just flows and the page grows to fit it. */
+    body { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; }
     #sidebar { width: auto; flex-direction: row; border-right: none; border-bottom: 1px solid var(--border); padding: 8px 10px; overflow-x: auto; }
     #sidebar h1 { display: none; }
     .nav-btn { flex-shrink: 0; }
     .nav-logout { margin-top: 0; margin-left: auto; }
+    #main-area { overflow: visible; }
+    .view.active { overflow: visible; }
     header { padding: 10px 12px; gap: 8px; }
-    main { padding: 8px 10px; }
+    main { padding: 8px 10px; overflow: visible; }
     select, #server-actions button { flex: 1 1 auto; }
     .content-row { flex-direction: column; }
-    .console-panel { flex: 2; min-height: 260px; }
+    /* Explicit height (not flex-grow) so #console's own flex:1 has something real to fill
+       and stays a compact, internally-scrolling box instead of growing forever as events
+       arrive - the RCON form right below it stays reachable either way now, but a
+       bottomless live feed would still be an unpleasant page to scroll through. */
+    .console-panel { flex: none; height: 320px; }
     .side-col { flex: none; width: 100%; max-width: none; }
     .players-panel { flex: none; max-height: 160px; }
     #players-list { display: flex; flex-direction: row; flex-wrap: wrap; overflow-y: hidden; gap: 6px; }
@@ -816,13 +830,8 @@ const DASHBOARD_HTML = `<!doctype html>
     .cluster-card { padding: 14px; }
     .form-actions { flex-wrap: wrap; }
     .form-actions button { flex: 1 1 auto; }
-    /* The backup table's natural height (many rows) plus the log's can easily exceed the
-       screen - scroll the pair together as one unit instead of capping each panel's own
-       height, which left content unreachable (the page itself can't scroll, by design -
-       everything scrollable has to be an explicit overflow container somewhere). */
-    #view-backup .content-row { overflow-y: auto; }
-    #view-backup .backup-table-panel, #view-backup .backup-log-panel { flex: none; width: 100%; min-width: 0; }
-    #view-backup .backup-table-panel { overflow-x: auto; }
+    .backup-table-panel, .backup-log-panel { flex: none; width: 100%; min-width: 0; }
+    .backup-table-panel { overflow-x: auto; }
     #backup-table { font-size: 0.78rem; }
   }
 </style>

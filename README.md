@@ -330,7 +330,12 @@ dedicated servers running on the same machine.
     horizontal bar across the top instead of a left column, and the console and online
     players panels stack vertically instead of side by side, with the console on top and
     the player list below it as a horizontally wrapping row of names instead of a tall
-    vertical list.
+    vertical list. The desktop layout is a fixed-viewport "app" (nothing outside a panel
+    scrolls); on mobile the page scrolls normally instead, since a panel that isn't
+    explicitly height-capped kept turning out to grow past the screen with nothing able to
+    reach the overflow - the live console feed stays a compact auto-scrolling box (that one
+    benefits from not growing forever), everything else just flows and the page grows to
+    fit it.
   - **Backup** - a read-only-settings backup menu similar to the desktop app's Backups
     tab, always showing the server currently selected in Dashboard (no picker of its own -
     switching servers in Dashboard, including via a Cluster Dashboard card click, updates
