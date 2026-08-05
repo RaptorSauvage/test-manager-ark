@@ -696,6 +696,7 @@ const DASHBOARD_HTML = `<!doctype html>
   .nav-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   .nav-btn.active:hover { border-color: var(--accent); }
   .nav-sep { width: 100%; border: none; border-top: 1px solid var(--border); margin: 6px 0; }
+  .nav-logout { margin-top: auto; color: var(--muted); }
   #main-area { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .view { display: none; flex: 1; min-height: 0; }
   .view.active { display: flex; flex-direction: column; }
@@ -764,6 +765,8 @@ const DASHBOARD_HTML = `<!doctype html>
   .content-row { flex: 1; display: flex; gap: 12px; min-height: 0; }
   .console-panel { flex: 3; }
   .side-col { display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 220px; max-width: 300px; }
+  .side-col.collapsed { display: none; }
+  #btn-toggle-sidecol { font-size: 0.8rem; padding: 4px 8px; flex-shrink: 0; }
   .status-panel { flex: 0 0 auto; }
   .status-panel h3 { margin: 0 0 10px; font-size: 0.95rem; }
   .status-lines { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; color: var(--muted); }
@@ -799,6 +802,7 @@ const DASHBOARD_HTML = `<!doctype html>
     #sidebar { width: auto; flex-direction: row; border-right: none; border-bottom: 1px solid var(--border); padding: 8px 10px; overflow-x: auto; }
     #sidebar h1 { display: none; }
     .nav-btn { flex-shrink: 0; }
+    .nav-logout { margin-top: 0; margin-left: auto; }
     header { padding: 10px 12px; gap: 8px; }
     main { padding: 8px 10px; }
     select, #server-actions button { flex: 1 1 auto; }
@@ -810,6 +814,12 @@ const DASHBOARD_HTML = `<!doctype html>
     .player-row { flex: 0 0 auto; background: var(--bg); border: 1px solid var(--border); }
     .cluster-cards { grid-template-columns: 1fr; gap: 10px; }
     .cluster-card { padding: 14px; }
+    .form-actions { flex-wrap: wrap; }
+    .form-actions button { flex: 1 1 auto; }
+    .backup-table-panel, .backup-log-panel { flex: none; width: 100%; min-width: 0; }
+    .backup-table-panel { overflow-x: auto; }
+    #backup-table { font-size: 0.78rem; }
+    .backup-log-panel { max-height: 220px; }
   }
 </style>
 </head>
@@ -835,6 +845,7 @@ const DASHBOARD_HTML = `<!doctype html>
         <button id="btn-restart" class="warn">Restart</button>
         <button id="btn-stop-update-restart" class="info">Update Restart</button>
       </div>
+      <button id="btn-toggle-sidecol" type="button">Status ▾</button>
     </header>
     <main>
       <div id="filters-bar">
@@ -849,7 +860,7 @@ const DASHBOARD_HTML = `<!doctype html>
             <button type="submit">Send</button>
           </form>
         </section>
-        <div class="side-col">
+        <div id="side-col" class="side-col">
           <aside class="panel status-panel">
             <h3>Status</h3>
             <div id="status"></div>
@@ -1051,6 +1062,27 @@ const DASHBOARD_HTML = `<!doctype html>
     applyFiltersCollapsed();
   });
 
+  // Lets the Status + Online players column be hidden to give the console more room -
+  // handy on a small screen where it otherwise pushes the console up. The toggle itself
+  // lives in the header rather than inside the column, so it stays reachable once collapsed.
+  var toggleSideColBtn = document.getElementById('btn-toggle-sidecol');
+  var sideColEl = document.getElementById('side-col');
+  var SIDE_COL_COLLAPSED_KEY = 'ark-dashboard-sidecol-collapsed';
+  var sideColCollapsed = false;
+  try { sideColCollapsed = localStorage.getItem(SIDE_COL_COLLAPSED_KEY) === '1'; } catch (err) { /* storage unavailable - not fatal */ }
+
+  function applySideColCollapsed() {
+    sideColEl.classList.toggle('collapsed', sideColCollapsed);
+    toggleSideColBtn.textContent = sideColCollapsed ? 'Status ▸' : 'Status ▾';
+  }
+  applySideColCollapsed();
+
+  toggleSideColBtn.addEventListener('click', function () {
+    sideColCollapsed = !sideColCollapsed;
+    try { localStorage.setItem(SIDE_COL_COLLAPSED_KEY, sideColCollapsed ? '1' : '0'); } catch (err) { /* storage unavailable - not fatal */ }
+    applySideColCollapsed();
+  });
+
   var navClusterBtn = document.getElementById('nav-cluster');
   var navConsoleBtn = document.getElementById('nav-console');
   var navBackupBtn = document.getElementById('nav-backup');
@@ -1070,9 +1102,8 @@ const DASHBOARD_HTML = `<!doctype html>
   if (role) {
     var sidebarEl = document.getElementById('sidebar');
     var logoutBtn = document.createElement('button');
-    logoutBtn.className = 'nav-btn';
+    logoutBtn.className = 'nav-btn nav-logout';
     logoutBtn.type = 'button';
-    logoutBtn.style.marginTop = 'auto';
     logoutBtn.textContent = 'Log out (' + role + ')';
     logoutBtn.addEventListener('click', function () {
       fetch('/api/logout', { method: 'POST' }).then(function () { location.reload(); });

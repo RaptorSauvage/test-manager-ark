@@ -449,7 +449,7 @@ label.checkbox {
 }
 
 .accounts-section {
-  max-width: 520px;
+  max-width: 620px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -478,6 +478,7 @@ label.checkbox {
 .accounts-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .accounts-table th,
@@ -488,9 +489,27 @@ label.checkbox {
   font-size: 0.85rem;
 }
 
+.accounts-table th:first-child,
+.accounts-table td:first-child {
+  width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accounts-table th:nth-child(2),
+.accounts-table td:nth-child(2) {
+  width: 26%;
+}
+
+.accounts-table td:nth-child(2) select {
+  width: 100%;
+}
+
 .accounts-row-actions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
   justify-content: flex-end;
 }
 
