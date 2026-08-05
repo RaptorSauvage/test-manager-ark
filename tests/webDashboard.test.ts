@@ -213,7 +213,8 @@ describe('web dashboard HTTP server', () => {
     fs.mkdirSync(logsDir, { recursive: true })
     fs.writeFileSync(
       path.join(logsDir, 'ShooterGame.log'),
-      '[2026.07.27-21.25.23:191][991]2026.07.27_21.25.23: LeRaptorSauvage ' +
+      'ARK Version: 92.28\n' +
+        '[2026.07.27-21.25.23:191][991]2026.07.27_21.25.23: LeRaptorSauvage ' +
         '[UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] joined this ARK!\n'
     )
     startWebDashboard(PORT, '127.0.0.1')
@@ -235,8 +236,26 @@ describe('web dashboard HTTP server', () => {
     const res = await request('/api/servers')
     expect(res.status).toBe(200)
     expect(JSON.parse(res.body)).toEqual([
-      { id: 'p1', name: 'Test Server', group: '', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 },
-      { id: 'p2', name: 'Logged Server', group: '', state: 'running', players: ['Alice'], cpu: 12.3, memoryMB: 512 }
+      {
+        id: 'p1',
+        name: 'Test Server',
+        group: '',
+        state: 'running',
+        players: ['Alice'],
+        cpu: 12.3,
+        memoryMB: 512,
+        gameVersion: null
+      },
+      {
+        id: 'p2',
+        name: 'Logged Server',
+        group: '',
+        state: 'running',
+        players: ['Alice'],
+        cpu: 12.3,
+        memoryMB: 512,
+        gameVersion: '92.28'
+      }
     ])
   })
 

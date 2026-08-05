@@ -16,6 +16,7 @@ import {
 } from './serverActions'
 import { createBackup, listBackups, deleteBackup, restoreBackup, getBackupLog } from './backup'
 import { getBackupScheduleStatus } from './schedule'
+import { getGameVersion, getCachedGameVersion, setCachedGameVersion } from './serverVersion'
 import { getOrCreateCert } from './tlsCert'
 import {
   verifyPassword,
@@ -209,18 +210,26 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   if (req.method === 'GET' && path === '/api/servers') {
     if (!requireRole(req, res, 'readonly')) return
-    const servers = sortProfilesForDisplay(listProfiles()).map((profile) => {
-      const status = getStatus(profile.id)
-      return {
-        id: profile.id,
-        name: profile.name,
-        group: profile.group.trim(),
-        state: status.state,
-        players: status.players ?? [],
-        cpu: status.cpu ?? null,
-        memoryMB: status.memoryMB ?? null
-      }
-    })
+    const servers = await Promise.all(
+      sortProfilesForDisplay(listProfiles()).map(async (profile) => {
+        const status = getStatus(profile.id)
+        let gameVersion = getCachedGameVersion(profile.id)
+        if (!gameVersion) {
+          gameVersion = await getGameVersion(profile.installDir)
+          if (gameVersion) setCachedGameVersion(profile.id, gameVersion)
+        }
+        return {
+          id: profile.id,
+          name: profile.name,
+          group: profile.group.trim(),
+          state: status.state,
+          players: status.players ?? [],
+          cpu: status.cpu ?? null,
+          memoryMB: status.memoryMB ?? null,
+          gameVersion
+        }
+      })
+    )
     sendJson(res, 200, servers)
     return
   }
@@ -1178,6 +1187,7 @@ const DASHBOARD_HTML = `<!doctype html>
     stats.className = 'cluster-card-stats';
     var playerCount = s.players ? s.players.length : 0;
     var lines = [
+      ['Version', s.gameVersion || '-'],
       ['Players', String(playerCount) + (playerCount ? ': ' + s.players.join(', ') : '')],
       ['CPU', s.cpu != null ? s.cpu + '%' : '-'],
       ['RAM', s.memoryMB != null ? s.memoryMB + ' MB' : '-']
@@ -1498,9 +1508,20 @@ const DASHBOARD_HTML = `<!doctype html>
     }
     var lines = document.createElement('div');
     lines.className = 'status-lines';
+
+    var stateLine = document.createElement('div');
+    var stateStrong = document.createElement('strong');
+    stateStrong.textContent = 'State: ';
+    var stateBadge = document.createElement('span');
+    stateBadge.className = 'cluster-card-state state-' + s.state;
+    stateBadge.textContent = s.state;
+    stateLine.appendChild(stateStrong);
+    stateLine.appendChild(stateBadge);
+    lines.appendChild(stateLine);
+
     var playerCount = s.players ? s.players.length : 0;
     var pairs = [
-      ['State', s.state],
+      ['Version', s.gameVersion || '-'],
       ['Players', String(playerCount) + (playerCount ? ': ' + s.players.join(', ') : '')],
       ['CPU', s.cpu != null ? s.cpu + '%' : '-'],
       ['RAM', s.memoryMB != null ? s.memoryMB + ' MB' : '-']

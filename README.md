@@ -271,9 +271,9 @@ dedicated servers running on the same machine.
   views - **Cluster Dashboard**, then a separator line, then **Dashboard** and **Backup**
   (grouped together since Backup always follows whatever server is selected in Dashboard):
   - **Cluster Dashboard** - a read-only monitoring overview, one card per server (state,
-    player count, CPU%, RAM) - like the desktop app's own dashboard cards, minus the
-    Start/Stop/Restart buttons, since this view is for glancing at the whole cluster's
-    health rather than controlling anything. Cards are split into collapsible groups
+    Game Version, player count, CPU%, RAM) - like the desktop app's own dashboard cards,
+    minus the Start/Stop/Restart buttons, since this view is for glancing at the whole
+    cluster's health rather than controlling anything. Cards are split into collapsible groups
     matching the Manager's own profile groups - ungrouped servers first, then each named
     group alphabetically, same ordering as everywhere else in the app - and, like every
     other server list in this page, **Hidden** profiles never appear here either. Each
@@ -292,7 +292,11 @@ dedicated servers running on the same machine.
     running for hours. Fixed by having the monitor persist through the same internal
     update path everything else uses, instead of only broadcasting a live event.
   - **Dashboard** - the per-server console/RCON view (what this page originally was, and
-    still the default on first visit):
+    still the default on first visit). Its Status box shows **State** as the same colored
+    pill badge as the Cluster Dashboard cards (green for running, muted for stopped,
+    amber for the in-between states) instead of plain text, plus **Version** (the Game
+    Version, e.g. "92.28") alongside Players/CPU/RAM - both boxes pull from the same
+    `/api/servers` response, so they always agree.
   - A server picker at the top, listing profiles in the same order as the desktop
     dashboard (ungrouped profiles first in their reordered position, then each group
     alphabetically) and leaving out anything marked **Hidden** there - it mirrors what
