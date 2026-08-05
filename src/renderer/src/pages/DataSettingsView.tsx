@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AppSettings, AppUpdateStatus } from '@shared/types'
+import AccountsSection from './AccountsSection'
 
 interface DataSettingsViewProps {
   onBack: () => void
@@ -32,7 +33,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     webDashboardPort: 8090,
     webDashboardHost: '127.0.0.1',
     webDashboardDisabledLabels: [],
-    launchOnStartup: false
+    launchOnStartup: false,
+    webDashboardAuthEnabled: false
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
   const [status, setStatus] = useState('')
@@ -164,15 +166,14 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
         <p className="empty-state">
           A browser-accessible page (live console feed + RCON command box, one server at a time) - the same
           content as the Console &amp; RCON tab, reachable from a normal web browser instead of only from inside
-          this app. It has no login of its own, so anything that can reach it has full RCON/admin control of
-          your servers.
+          this app.
         </p>
         <p className="empty-state">
           <strong>Host</strong> controls who can reach it. Leave at <code>127.0.0.1</code> (default) to keep it
           reachable from this machine only. Set it to <code>0.0.0.0</code> to accept connections on every network
           interface, or to one specific local IP below to accept connections on just that one - either way, that
-          means anyone on your local network can reach it, unauthenticated, so only do this on a network you
-          trust.
+          means anyone on your local network can reach it, so only do this on a network you trust unless
+          &quot;Require login&quot; below is also on.
           {localIps.length > 0 && (
             <>
               {' '}
@@ -187,19 +188,38 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
             </>
           )}
         </p>
-        {isLan && (
+        {isLan && !settings.webDashboardAuthEnabled && (
           <p className="error-message">
             Web dashboard host is set to {settings.webDashboardHost} - reachable from other devices on your
             network with no login required.
           </p>
         )}
+
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={settings.webDashboardAuthEnabled}
+            onChange={(e) => setSettings({ ...settings, webDashboardAuthEnabled: e.target.checked })}
+            disabled={!settings.webDashboardEnabled}
+          />
+          Require login (HTTPS)
+        </label>
+        <p className="empty-state">
+          Switches the dashboard to <code>https://</code> with a self-signed certificate (browsers will show a
+          &quot;not trusted&quot; warning the first time - that&apos;s expected, click through or install the
+          certificate from <code>{defaultDataDir || 'the data folder'}/certs/cert.pem</code> if you want to avoid
+          it) and requires logging in with one of the accounts below for every page and action. This is what makes
+          it reasonably safe to expose outside your LAN (e.g. via router port forwarding) - without it, anyone who
+          can reach the address has full unauthenticated control. Sessions don&apos;t survive a Manager restart or
+          the dashboard being turned off and back on - everyone has to log in again.
+        </p>
         <p className="empty-state">Save this form to apply a change immediately, no restart needed.</p>
         {settings.webDashboardEnabled && (
           <p className={webDashboardStatus.error ? 'error-message' : 'empty-state'}>
             {webDashboardStatus.error
               ? `Failed to start: ${webDashboardStatus.error}`
               : webDashboardStatus.running
-                ? `Running at http://${webDashboardStatus.host}:${settings.webDashboardPort}`
+                ? `Running at ${settings.webDashboardAuthEnabled ? 'https' : 'http'}://${webDashboardStatus.host}:${settings.webDashboardPort}`
                 : 'Not running yet - save to start it.'}
           </p>
         )}
@@ -209,6 +229,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
           {status && <span className="status-message">{status}</span>}
         </div>
       </form>
+
+      <AccountsSection />
 
       <section className="managed-steamcmd">
         <h3>Manager updates</h3>

@@ -448,6 +448,52 @@ label.checkbox {
   margin: 0;
 }
 
+.accounts-section {
+  max-width: 520px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.accounts-section h3 {
+  margin: 0;
+}
+
+.accounts-add-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accounts-add-form input {
+  flex: 1;
+  min-width: 120px;
+}
+
+.accounts-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.accounts-table th,
+.accounts-table td {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.accounts-row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .cluster-section {
   background: var(--panel);
   border: 1px solid var(--border);

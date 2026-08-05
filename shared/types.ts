@@ -135,7 +135,28 @@ export interface AppSettings {
   /** Whether the Manager registers itself to launch automatically when you log into
    *  Windows (or the equivalent on macOS/Linux), via Electron's own login-item API. */
   launchOnStartup: boolean
+  /** When true, the web dashboard requires a login (see WebDashboardAccount) and switches
+   *  to HTTPS with a self-signed certificate - meant for exposing it outside the LAN.
+   *  When false (default), it behaves exactly as before: no auth, plain HTTP. */
+  webDashboardAuthEnabled: boolean
 }
+
+export type WebDashboardRole = 'admin' | 'operator' | 'readonly'
+
+/** A web dashboard login account. Managed only from the Manager's own Settings screen -
+ *  the dashboard page itself never creates/edits/deletes accounts, only logs in/out with
+ *  one. Keeping account management desktop-only means it always requires local access to
+ *  the machine running the Manager, never just a web session. */
+export interface WebDashboardAccount {
+  id: string
+  username: string
+  /** Never sent to the renderer - see WebDashboardAccountSummary for what it gets instead. */
+  passwordHash: string
+  role: WebDashboardRole
+}
+
+/** WebDashboardAccount with the password hash stripped out, for the renderer/Settings UI. */
+export type WebDashboardAccountSummary = Omit<WebDashboardAccount, 'passwordHash'>
 
 export interface ServerStatus {
   profileId: string
@@ -282,6 +303,12 @@ export const IPC = {
   webDashboardStatus: 'web-dashboard:status',
   webDashboardLocalIps: 'web-dashboard:local-ips',
 
+  webDashboardAccountsList: 'web-dashboard-accounts:list',
+  webDashboardAccountsCreate: 'web-dashboard-accounts:create',
+  webDashboardAccountsSetRole: 'web-dashboard-accounts:set-role',
+  webDashboardAccountsResetPassword: 'web-dashboard-accounts:reset-password',
+  webDashboardAccountsDelete: 'web-dashboard-accounts:delete',
+
   appOpenProfilesFolder: 'app:open-profiles-folder',
   serverOpenConfigFolder: 'server:open-config-folder',
 
@@ -418,6 +445,13 @@ export interface Api {
   webDashboard: {
     getStatus: () => Promise<{ running: boolean; error: string | null; host: string | null }>
     getLocalIps: () => Promise<string[]>
+  }
+  webDashboardAccounts: {
+    list: () => Promise<WebDashboardAccountSummary[]>
+    create: (username: string, password: string, role: WebDashboardRole) => Promise<WebDashboardAccountSummary[]>
+    setRole: (id: string, role: WebDashboardRole) => Promise<WebDashboardAccountSummary[]>
+    resetPassword: (id: string, newPassword: string) => Promise<WebDashboardAccountSummary[]>
+    delete: (id: string) => Promise<WebDashboardAccountSummary[]>
   }
   system: {
     openProfilesFolder: () => Promise<void>

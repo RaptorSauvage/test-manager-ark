@@ -1,8 +1,9 @@
 import fs from 'node:fs'
 import http from 'node:http'
+import https from 'node:https'
 import os from 'node:os'
-import type { AppSettings, LogEvent, ServerProfile, ServerStatus } from '@shared/types'
-import { listProfiles, getSettings, saveSettings } from '../store'
+import type { AppSettings, LogEvent, ServerProfile, ServerStatus, WebDashboardRole } from '@shared/types'
+import { listProfiles, getSettings, saveSettings, listWebDashboardAccounts } from '../store'
 import { getStatus, getLogFilePath, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches } from './logEvents'
@@ -15,8 +16,22 @@ import {
 } from './serverActions'
 import { createBackup, listBackups, deleteBackup, restoreBackup, getBackupLog } from './backup'
 import { getBackupScheduleStatus } from './schedule'
+import { getOrCreateCert } from './tlsCert'
+import {
+  verifyPassword,
+  createSession,
+  getSession,
+  destroySession,
+  roleAtLeast,
+  getSessionTokenFromRequest,
+  buildSessionCookie,
+  buildExpiredSessionCookie,
+  isRateLimited,
+  recordLoginFailure,
+  recordLoginSuccess
+} from './auth'
 
-let server: http.Server | null = null
+let server: http.Server | https.Server | null = null
 let lastError: string | null = null
 let lastHost: string | null = null
 
@@ -118,17 +133,82 @@ function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown
   })
 }
 
+function getClientIp(req: http.IncomingMessage): string {
+  return req.socket.remoteAddress ?? 'unknown'
+}
+
+/**
+ * Gate for every route below `minRole`. When the web dashboard's login requirement is off
+ * (the default, unchanged from before this feature existed), this always succeeds with a
+ * synthetic full-access session - every route behaves exactly as it did previously. When
+ * login is required, it checks the session cookie and role, sending the 401/403 itself and
+ * returning null on failure - callers must `return` immediately when this returns null.
+ */
+function requireRole(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  minRole: WebDashboardRole
+): { username: string; role: WebDashboardRole } | null {
+  if (!getSettings().webDashboardAuthEnabled) return { username: '', role: 'admin' }
+  const session = getSession(getSessionTokenFromRequest(req))
+  if (!session) {
+    sendJson(res, 401, { error: 'Not authenticated' })
+    return null
+  }
+  if (!roleAtLeast(session.role, minRole)) {
+    sendJson(res, 403, { error: 'Insufficient permissions' })
+    return null
+  }
+  return session
+}
+
 async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://localhost')
   const path = url.pathname
 
   if (req.method === 'GET' && path === '/') {
+    const authEnabled = getSettings().webDashboardAuthEnabled
+    const session = authEnabled ? getSession(getSessionTokenFromRequest(req)) : null
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-    res.end(DASHBOARD_HTML)
+    res.end(authEnabled && !session ? LOGIN_HTML : renderDashboardHtml(session?.role ?? null))
+    return
+  }
+
+  if (req.method === 'POST' && path === '/api/login') {
+    const ip = getClientIp(req)
+    if (isRateLimited(ip)) {
+      sendJson(res, 429, { ok: false, error: 'Too many failed attempts. Try again later.' })
+      return
+    }
+    readJsonBody(req)
+      .then(async (body) => {
+        const username = typeof body.username === 'string' ? body.username.trim() : ''
+        const password = typeof body.password === 'string' ? body.password : ''
+        const account = listWebDashboardAccounts().find((a) => a.username.toLowerCase() === username.toLowerCase())
+        const valid = account ? await verifyPassword(password, account.passwordHash) : false
+        if (!account || !valid) {
+          recordLoginFailure(ip)
+          sendJson(res, 401, { ok: false, error: 'Invalid username or password' })
+          return
+        }
+        recordLoginSuccess(ip)
+        const token = createSession(account.username, account.role)
+        res.setHeader('Set-Cookie', buildSessionCookie(token))
+        sendJson(res, 200, { ok: true, role: account.role })
+      })
+      .catch(() => sendJson(res, 400, { ok: false, error: 'Invalid request body' }))
+    return
+  }
+
+  if (req.method === 'POST' && path === '/api/logout') {
+    destroySession(getSessionTokenFromRequest(req))
+    res.setHeader('Set-Cookie', buildExpiredSessionCookie())
+    sendJson(res, 200, { ok: true })
     return
   }
 
   if (req.method === 'GET' && path === '/api/servers') {
+    if (!requireRole(req, res, 'readonly')) return
     const servers = sortProfilesForDisplay(listProfiles()).map((profile) => {
       const status = getStatus(profile.id)
       return {
@@ -147,6 +227,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const eventsMatch = path.match(/^\/api\/servers\/([^/]+)\/events$/)
   if (req.method === 'GET' && eventsMatch) {
+    if (!requireRole(req, res, 'readonly')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(eventsMatch[1]))
     sendJson(res, 200, profile ? readLogBacklog(profile.installDir) : [])
     return
@@ -154,6 +235,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const streamMatch = path.match(/^\/api\/servers\/([^/]+)\/events\/stream$/)
   if (req.method === 'GET' && streamMatch) {
+    if (!requireRole(req, res, 'readonly')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(streamMatch[1]))
     if (!profile) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
@@ -216,6 +298,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 
   if (req.method === 'GET' && path === '/api/labelsettings') {
+    if (!requireRole(req, res, 'readonly')) return
     const disabled = getDisabledLabels()
     const result: Record<string, boolean> = {}
     for (const label of ALL_EVENT_LABELS) result[label] = !disabled.has(label)
@@ -225,6 +308,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const labelMatch = path.match(/^\/api\/labelsettings\/([^/]+)$/)
   if (req.method === 'POST' && labelMatch) {
+    if (!requireRole(req, res, 'admin')) return
     const label = decodeURIComponent(labelMatch[1])
     if (!ALL_EVENT_LABELS.includes(label)) {
       sendJson(res, 404, { error: 'Unknown event label' })
@@ -242,6 +326,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const playersMatch = path.match(/^\/api\/servers\/([^/]+)\/players$/)
   if (req.method === 'GET' && playersMatch) {
+    if (!requireRole(req, res, 'readonly')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(playersMatch[1]))
     if (!profile) {
       sendJson(res, 200, [])
@@ -255,6 +340,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const startMatch = path.match(/^\/api\/servers\/([^/]+)\/start$/)
   if (req.method === 'POST' && startMatch) {
+    if (!requireRole(req, res, 'operator')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(startMatch[1]))
     if (!profile) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
@@ -280,6 +366,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   // a bare "ok" can't mistake "we started stopping it" for "it actually saved first".
   const stopMatch = path.match(/^\/api\/servers\/([^/]+)\/stop$/)
   if (req.method === 'POST' && stopMatch) {
+    if (!requireRole(req, res, 'operator')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopMatch[1]))
     if (!profile) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
@@ -292,6 +379,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const restartMatch = path.match(/^\/api\/servers\/([^/]+)\/restart$/)
   if (req.method === 'POST' && restartMatch) {
+    if (!requireRole(req, res, 'operator')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(restartMatch[1]))
     if (!profile) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
@@ -304,6 +392,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const updateMatch = path.match(/^\/api\/servers\/([^/]+)\/update$/)
   if (req.method === 'POST' && updateMatch) {
+    if (!requireRole(req, res, 'operator')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(updateMatch[1]))
     if (!profile) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
@@ -316,6 +405,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const stopUpdateRestartMatch = path.match(/^\/api\/servers\/([^/]+)\/stop-update-restart$/)
   if (req.method === 'POST' && stopUpdateRestartMatch) {
+    if (!requireRole(req, res, 'operator')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopUpdateRestartMatch[1]))
     if (!profile) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
@@ -330,6 +420,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const rconMatch = path.match(/^\/api\/servers\/([^/]+)\/rcon$/)
   if (req.method === 'POST' && rconMatch) {
+    if (!requireRole(req, res, 'operator')) return
     const profileId = decodeURIComponent(rconMatch[1])
     const profile = listProfiles().find((p) => p.id === profileId)
     if (!profile) {
@@ -352,6 +443,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const backupStatusMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/status$/)
   if (req.method === 'GET' && backupStatusMatch) {
+    if (!requireRole(req, res, 'readonly')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupStatusMatch[1]))
     if (!profile) {
       sendJson(res, 404, { error: 'Unknown server' })
@@ -371,12 +463,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const backupLogMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/log$/)
   if (req.method === 'GET' && backupLogMatch) {
+    if (!requireRole(req, res, 'readonly')) return
     sendJson(res, 200, getBackupLog(decodeURIComponent(backupLogMatch[1])))
     return
   }
 
   const backupRestoreMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/restore$/)
   if (req.method === 'POST' && backupRestoreMatch) {
+    if (!requireRole(req, res, 'admin')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupRestoreMatch[1]))
     if (!profile) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
@@ -398,6 +492,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const backupDeleteMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/delete$/)
   if (req.method === 'POST' && backupDeleteMatch) {
+    if (!requireRole(req, res, 'admin')) return
     readJsonBody(req)
       .then((body) => {
         const filePath = typeof body.filePath === 'string' ? body.filePath : ''
@@ -414,11 +509,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const backupsMatch = path.match(/^\/api\/servers\/([^/]+)\/backups$/)
   if (req.method === 'GET' && backupsMatch) {
+    if (!requireRole(req, res, 'readonly')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupsMatch[1]))
     sendJson(res, 200, profile ? listBackups(profile) : [])
     return
   }
   if (req.method === 'POST' && backupsMatch) {
+    if (!requireRole(req, res, 'operator')) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupsMatch[1]))
     if (!profile) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
@@ -446,14 +543,26 @@ export function stopWebDashboard(): void {
 
 /** Starts the web dashboard bound to `host` - '127.0.0.1' (default) keeps it reachable
  *  from this machine only; '0.0.0.0' or a specific local IP makes it reachable from other
- *  devices on the LAN. This page has no authentication of its own (same posture as the
- *  standalone Python dashboard it replaces), so widening this is a deliberate choice made
- *  in Settings, never a default. */
+ *  devices on the LAN. By default this page has no authentication of its own (same posture
+ *  as the standalone Python dashboard it replaces), so widening the host is a deliberate
+ *  choice made in Settings, never a default - unless "Require login" is also turned on, in
+ *  which case every route is gated behind a session and the server switches to HTTPS with
+ *  a self-signed certificate, since login credentials shouldn't travel in the clear. */
 export function startWebDashboard(port: number, host: string): void {
   stopWebDashboard()
   lastError = null
   lastHost = host
-  server = http.createServer(handleRequest)
+  const authEnabled = getSettings().webDashboardAuthEnabled
+  if (authEnabled && listWebDashboardAccounts().length === 0) {
+    lastError = 'Add at least one account in Settings before enabling login.'
+    return
+  }
+  if (authEnabled) {
+    const { key, cert } = getOrCreateCert()
+    server = https.createServer({ key, cert }, handleRequest)
+  } else {
+    server = http.createServer(handleRequest)
+  }
   server.on('error', (err) => {
     lastError = (err as Error).message
     server = null
@@ -481,6 +590,86 @@ export function getLocalNetworkIps(): string[] {
   }
   return ips
 }
+
+/** Splices the caller's role into the dashboard page as `window.__role`, so the client JS
+ *  can hide controls it isn't allowed to use (the real boundary is the server-side route
+ *  guards above - this is UX only). `role` is null when login isn't required at all, in
+ *  which case nothing is injected and the page behaves exactly as it did before this
+ *  feature existed - `window.__role` stays undefined. */
+function renderDashboardHtml(role: WebDashboardRole | null): string {
+  if (!role) return DASHBOARD_HTML
+  return DASHBOARD_HTML.replace('<script>', `<script>window.__role = ${JSON.stringify(role)};</script>\n<script>`)
+}
+
+const LOGIN_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARK Server Manager - Login</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #14161a; --panel: #1d2027; --border: #2c303a; --text: #e6e8ec; --muted: #9aa0ab;
+    --accent: #4f8cff; --danger: #e0555b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  form { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 28px; width: 280px; display: flex; flex-direction: column; gap: 12px; }
+  h1 { font-size: 1.05rem; margin: 0 0 4px; }
+  input, button { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font-size: 0.95rem; }
+  button { cursor: pointer; background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  #login-error { color: var(--danger); font-size: 0.85rem; min-height: 1.1em; }
+</style>
+</head>
+<body>
+<form id="login-form">
+  <h1>ARK Server Manager</h1>
+  <input id="login-username" placeholder="Username" autocomplete="username" autofocus />
+  <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" />
+  <div id="login-error"></div>
+  <button type="submit">Log in</button>
+</form>
+<script>
+(function () {
+  var form = document.getElementById('login-form');
+  var usernameEl = document.getElementById('login-username');
+  var passwordEl = document.getElementById('login-password');
+  var errorEl = document.getElementById('login-error');
+  var submitBtn = form.querySelector('button');
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    errorEl.textContent = '';
+    submitBtn.disabled = true;
+    fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: usernameEl.value, password: passwordEl.value })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (result.ok) {
+          location.reload();
+          return;
+        }
+        errorEl.textContent = result.error || 'Login failed';
+        submitBtn.disabled = false;
+      })
+      .catch(function () {
+        errorEl.textContent = 'Request failed';
+        submitBtn.disabled = false;
+      });
+  });
+})();
+</script>
+</body>
+</html>
+`
 
 const DASHBOARD_HTML = `<!doctype html>
 <html lang="en">
@@ -709,6 +898,15 @@ const DASHBOARD_HTML = `<!doctype html>
 </div>
 <script>
 (function () {
+  // Set by the server (see renderDashboardHtml in webDashboard.ts) only when "Require
+  // login" is on; stays undefined otherwise, in which case every role check below is a
+  // no-op and the page behaves exactly as it did before this feature existed. The real
+  // enforcement is server-side (every route checks this same role) - hiding controls here
+  // is just so a role never sees a button that would 401/403 if clicked.
+  var role = typeof window.__role !== 'undefined' ? window.__role : null;
+  var canOperate = role === 'operator' || role === 'admin';
+  var canAdmin = role === 'admin';
+
   var currentId = null;
   var es = null;
   var consoleEl = document.getElementById('console');
@@ -785,19 +983,21 @@ const DASHBOARD_HTML = `<!doctype html>
     });
     menu.appendChild(copyBtn);
 
-    var kickBtn = document.createElement('button');
-    kickBtn.className = 'danger';
-    kickBtn.textContent = 'Kick';
-    kickBtn.addEventListener('click', function () {
-      if (!currentId) return;
-      if (!confirm('Kick ' + player.name + '?')) return;
-      fetch('/api/servers/' + encodeURIComponent(currentId) + '/rcon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: 'KickPlayer ' + player.id })
+    if (!role || canOperate) {
+      var kickBtn = document.createElement('button');
+      kickBtn.className = 'danger';
+      kickBtn.textContent = 'Kick';
+      kickBtn.addEventListener('click', function () {
+        if (!currentId) return;
+        if (!confirm('Kick ' + player.name + '?')) return;
+        fetch('/api/servers/' + encodeURIComponent(currentId) + '/rcon', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: 'KickPlayer ' + player.id })
+        });
       });
-    });
-    menu.appendChild(kickBtn);
+      menu.appendChild(kickBtn);
+    }
 
     document.body.appendChild(menu);
     contextMenuEl = menu;
@@ -858,6 +1058,27 @@ const DASHBOARD_HTML = `<!doctype html>
   var viewConsoleEl = document.getElementById('view-console');
   var viewBackupEl = document.getElementById('view-backup');
   var clusterCardsEl = document.getElementById('cluster-cards');
+
+  if (role === 'readonly') navBackupBtn.style.display = 'none';
+  if (role && !canOperate) {
+    startBtn.style.display = 'none';
+    stopBtn.style.display = 'none';
+    restartBtn.style.display = 'none';
+    stopUpdateRestartBtn.style.display = 'none';
+    rconForm.style.display = 'none';
+  }
+  if (role) {
+    var sidebarEl = document.getElementById('sidebar');
+    var logoutBtn = document.createElement('button');
+    logoutBtn.className = 'nav-btn';
+    logoutBtn.type = 'button';
+    logoutBtn.style.marginTop = 'auto';
+    logoutBtn.textContent = 'Log out (' + role + ')';
+    logoutBtn.addEventListener('click', function () {
+      fetch('/api/logout', { method: 'POST' }).then(function () { location.reload(); });
+    });
+    sidebarEl.appendChild(logoutBtn);
+  }
 
   var ACTIVE_VIEW_KEY = 'ark-dashboard-active-view';
   var activeView = 'console';
@@ -968,6 +1189,7 @@ const DASHBOARD_HTML = `<!doctype html>
   var backupLogEl = document.getElementById('backup-log');
   var createBackupBtn = document.getElementById('btn-backup-create');
   var refreshBackupBtn = document.getElementById('btn-backup-refresh');
+  if (role && !canOperate) createBackupBtn.style.display = 'none';
 
   function formatBackupSize(bytes) {
     var mb = bytes / (1024 * 1024);
@@ -1011,22 +1233,24 @@ const DASHBOARD_HTML = `<!doctype html>
 
       var actionsCell = document.createElement('td');
       actionsCell.className = 'backup-row-actions';
-      var restoreBtn = document.createElement('button');
-      restoreBtn.type = 'button';
-      restoreBtn.textContent = 'Restore';
-      restoreBtn.addEventListener('click', function () {
-        if (!confirm('Restore ' + b.fileName + '? This overwrites the current save.')) return;
-        void backupAction('/backups/restore', b.filePath);
-      });
-      var deleteBtn = document.createElement('button');
-      deleteBtn.type = 'button';
-      deleteBtn.textContent = 'Delete';
-      deleteBtn.addEventListener('click', function () {
-        if (!confirm('Delete ' + b.fileName + '?')) return;
-        void backupAction('/backups/delete', b.filePath);
-      });
-      actionsCell.appendChild(restoreBtn);
-      actionsCell.appendChild(deleteBtn);
+      if (!role || canAdmin) {
+        var restoreBtn = document.createElement('button');
+        restoreBtn.type = 'button';
+        restoreBtn.textContent = 'Restore';
+        restoreBtn.addEventListener('click', function () {
+          if (!confirm('Restore ' + b.fileName + '? This overwrites the current save.')) return;
+          void backupAction('/backups/restore', b.filePath);
+        });
+        var deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.addEventListener('click', function () {
+          if (!confirm('Delete ' + b.fileName + '?')) return;
+          void backupAction('/backups/delete', b.filePath);
+        });
+        actionsCell.appendChild(restoreBtn);
+        actionsCell.appendChild(deleteBtn);
+      }
 
       row.appendChild(nameCell);
       row.appendChild(sizeCell);
@@ -1135,6 +1359,7 @@ const DASHBOARD_HTML = `<!doctype html>
         var cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.checked = settings[label];
+        if (role && !canAdmin) cb.disabled = true;
         cb.addEventListener('change', function () {
           fetch('/api/labelsettings/' + encodeURIComponent(label), {
             method: 'POST',

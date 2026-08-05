@@ -17,7 +17,8 @@ const bundledMainDeps = [
   'pidusage',
   'rcon-client',
   'electron-store',
-  'electron-updater'
+  'electron-updater',
+  'selfsigned'
 ]
 
 export default defineConfig({

@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import http from 'node:http'
+import https from 'node:https'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE } from '../src/main/lib/logEvents'
+import type { WebDashboardAccount } from '../shared/types'
 
 const EMPTY_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-empty-${process.pid}`)
 const LOGGED_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-logged-${process.pid}`)
@@ -16,8 +18,11 @@ let mockSettings = {
   webDashboardPort: 47091,
   webDashboardHost: '127.0.0.1',
   webDashboardDisabledLabels: [] as string[],
-  launchOnStartup: false
+  launchOnStartup: false,
+  webDashboardAuthEnabled: false
 }
+
+let mockAccounts: WebDashboardAccount[] = []
 
 vi.mock('../src/main/store', () => ({
   listProfiles: () => [
@@ -48,6 +53,17 @@ vi.mock('../src/main/store', () => ({
   saveSettings: (settings: typeof mockSettings) => {
     mockSettings = settings
     return mockSettings
+  },
+  listWebDashboardAccounts: () => mockAccounts,
+  saveWebDashboardAccount: (account: WebDashboardAccount) => {
+    const idx = mockAccounts.findIndex((a) => a.id === account.id)
+    if (idx >= 0) mockAccounts[idx] = account
+    else mockAccounts.push(account)
+    return mockAccounts
+  },
+  deleteWebDashboardAccount: (id: string) => {
+    mockAccounts = mockAccounts.filter((a) => a.id !== id)
+    return mockAccounts
   }
 }))
 vi.mock('../src/main/lib/serverProcess', async (importOriginal) => {
@@ -83,6 +99,7 @@ import { startWebDashboard, stopWebDashboard, getWebDashboardStatus, sortProfile
 import type { ServerProfile } from '../shared/types'
 import * as serverActions from '../src/main/lib/serverActions'
 import { serverEvents } from '../src/main/lib/serverProcess'
+import { hashPassword } from '../src/main/lib/auth'
 
 const PORT = 47091
 
@@ -96,6 +113,29 @@ function request(
       res.on('data', (chunk) => (body += chunk))
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body }))
     })
+    req.on('error', reject)
+    req.end(options.body)
+  })
+}
+
+const AUTH_PORT = 47092
+
+/** Same as request(), but over HTTPS against the auth-enabled server's self-signed cert
+ *  (rejectUnauthorized: false, since Node doesn't trust a cert we just generated
+ *  ourselves) - and returns headers too, since tests need to read Set-Cookie. */
+function authRequest(
+  reqPath: string,
+  options: https.RequestOptions & { body?: string } = {}
+): Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }> {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      { host: '127.0.0.1', port: AUTH_PORT, path: reqPath, rejectUnauthorized: false, ...options },
+      (res) => {
+        let body = ''
+        res.on('data', (chunk) => (body += chunk))
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body, headers: res.headers }))
+      }
+    )
     req.on('error', reject)
     req.end(options.body)
   })
@@ -425,5 +465,135 @@ describe('web dashboard HTTP server', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: true })
     })
+  })
+})
+
+describe('web dashboard HTTP server, auth enabled', () => {
+  const CERTS_DIR = path.join(os.tmpdir(), `web-dashboard-test-certs-${process.pid}`)
+  let adminCookie = ''
+  let operatorCookie = ''
+  let readonlyCookie = ''
+
+  async function login(username: string, password: string): Promise<{ status: number; cookie: string }> {
+    const res = await authRequest('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    })
+    const setCookie = res.headers['set-cookie']?.[0] ?? ''
+    return { status: res.status, cookie: setCookie.split(';')[0] }
+  }
+
+  beforeAll(async () => {
+    mockAccounts = [
+      { id: 'a1', username: 'admin', passwordHash: await hashPassword('adminpass'), role: 'admin' },
+      { id: 'a2', username: 'operator', passwordHash: await hashPassword('operatorpass'), role: 'operator' },
+      { id: 'a3', username: 'viewer', passwordHash: await hashPassword('viewerpass'), role: 'readonly' }
+    ]
+    // getOrCreateCert() resolves its cert folder off settings.dataDir - point it at a real
+    // tmp dir instead of the default (Documents/ARK Server Manager via Electron's `app`,
+    // which isn't available outside a real Electron process).
+    mockSettings = { ...mockSettings, webDashboardAuthEnabled: true, dataDir: CERTS_DIR }
+    startWebDashboard(AUTH_PORT, '127.0.0.1')
+    adminCookie = (await login('admin', 'adminpass')).cookie
+    operatorCookie = (await login('operator', 'operatorpass')).cookie
+    readonlyCookie = (await login('viewer', 'viewerpass')).cookie
+  })
+
+  afterAll(() => {
+    stopWebDashboard()
+    mockSettings = { ...mockSettings, webDashboardAuthEnabled: false, dataDir: '' }
+    mockAccounts = []
+    fs.rmSync(CERTS_DIR, { recursive: true, force: true })
+  })
+
+  it('serves the login page when there is no session', async () => {
+    const res = await authRequest('/')
+    expect(res.status).toBe(200)
+    expect(res.body).toContain('<title>ARK Server Manager - Login</title>')
+  })
+
+  it('rejects a wrong password', async () => {
+    const res = await authRequest('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'wrong' })
+    })
+    expect(res.status).toBe(401)
+  })
+
+  it('serves the dashboard page with the role injected once logged in', async () => {
+    const res = await authRequest('/', { headers: { Cookie: adminCookie } })
+    expect(res.status).toBe(200)
+    expect(res.body).toContain('<title>ARK Server Manager - Web Console</title>')
+    expect(res.body).toContain('window.__role = "admin";')
+  })
+
+  it('401s an API route with no session', async () => {
+    const res = await authRequest('/api/servers')
+    expect(res.status).toBe(401)
+  })
+
+  it('allows a readonly session to read /api/servers', async () => {
+    const res = await authRequest('/api/servers', { headers: { Cookie: readonlyCookie } })
+    expect(res.status).toBe(200)
+  })
+
+  it('blocks a readonly session from starting a server', async () => {
+    const res = await authRequest('/api/servers/p1/start', { method: 'POST', headers: { Cookie: readonlyCookie } })
+    expect(res.status).toBe(403)
+  })
+
+  it('allows an operator session to start a server', async () => {
+    const res = await authRequest('/api/servers/p1/start', { method: 'POST', headers: { Cookie: operatorCookie } })
+    expect(res.status).toBe(200)
+  })
+
+  it('blocks an operator session from deleting a backup', async () => {
+    const res = await authRequest('/api/servers/p1/backups/delete', {
+      method: 'POST',
+      headers: { Cookie: operatorCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath: '/tmp/does-not-matter.zip' })
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('allows an admin session to delete a backup', async () => {
+    const res = await authRequest('/api/servers/p1/backups/delete', {
+      method: 'POST',
+      headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath: '/tmp/does-not-matter.zip' })
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('401s the SSE stream with no session', async () => {
+    const res = await authRequest('/api/servers/p1/events/stream')
+    expect(res.status).toBe(401)
+  })
+
+  it('logout clears the session', async () => {
+    const logoutRes = await authRequest('/api/logout', { method: 'POST', headers: { Cookie: readonlyCookie } })
+    expect(logoutRes.status).toBe(200)
+    const afterLogout = await authRequest('/api/servers', { headers: { Cookie: readonlyCookie } })
+    expect(afterLogout.status).toBe(401)
+  })
+
+  // Deliberately last: this poisons the shared per-IP rate limiter for the rest of the
+  // suite (it isn't keyed per-username), so nothing after it can log in fresh.
+  it('locks out after repeated failed logins from the same IP', async () => {
+    for (let i = 0; i < 8; i++) {
+      await authRequest('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'admin', password: `wrong${i}` })
+      })
+    }
+    const res = await authRequest('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'adminpass' })
+    })
+    expect(res.status).toBe(429)
   })
 })

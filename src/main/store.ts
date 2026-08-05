@@ -1,5 +1,5 @@
 import Store from 'electron-store'
-import type { ServerProfile, AppSettings } from '@shared/types'
+import type { ServerProfile, AppSettings, WebDashboardAccount } from '@shared/types'
 import { migrateProfile } from './lib/profileMigration'
 import { reorderProfiles } from './lib/reorder'
 import { stripWrappingQuotes } from './lib/pathSanitize'
@@ -13,6 +13,8 @@ interface StoreSchema {
    *  a re-launched app can still compute an accurate uptime for a server it re-adopts
    *  instead of one that resets to "just started". */
   runningStartedAt: Record<string, number>
+  /** Web dashboard login accounts - only touched from the Manager's own Settings screen. */
+  webDashboardAccounts: WebDashboardAccount[]
 }
 
 const store = new Store<StoreSchema>({
@@ -25,10 +27,12 @@ const store = new Store<StoreSchema>({
       webDashboardPort: 8090,
       webDashboardHost: '127.0.0.1',
       webDashboardDisabledLabels: [],
-      launchOnStartup: false
+      launchOnStartup: false,
+      webDashboardAuthEnabled: false
     },
     runningPids: {},
-    runningStartedAt: {}
+    runningStartedAt: {},
+    webDashboardAccounts: []
   }
 })
 
@@ -81,6 +85,7 @@ export function getSettings(): AppSettings {
     webDashboardHost: '127.0.0.1',
     webDashboardDisabledLabels: [],
     launchOnStartup: false,
+    webDashboardAuthEnabled: false,
     ...settings
   }
 }
@@ -88,6 +93,25 @@ export function getSettings(): AppSettings {
 export function saveSettings(settings: AppSettings): AppSettings {
   store.set('settings', settings)
   return settings
+}
+
+export function listWebDashboardAccounts(): WebDashboardAccount[] {
+  return store.get('webDashboardAccounts') ?? []
+}
+
+export function saveWebDashboardAccount(account: WebDashboardAccount): WebDashboardAccount[] {
+  const accounts = listWebDashboardAccounts()
+  const idx = accounts.findIndex((a) => a.id === account.id)
+  if (idx >= 0) accounts[idx] = account
+  else accounts.push(account)
+  store.set('webDashboardAccounts', accounts)
+  return accounts
+}
+
+export function deleteWebDashboardAccount(id: string): WebDashboardAccount[] {
+  const accounts = listWebDashboardAccounts().filter((a) => a.id !== id)
+  store.set('webDashboardAccounts', accounts)
+  return accounts
 }
 
 export function getRunningPids(): Record<string, number> {

@@ -7,7 +7,8 @@ import {
   type ServerMod,
   type AppSettings,
   type AppUpdateStatus,
-  type BackupLogEntry
+  type BackupLogEntry,
+  type WebDashboardRole
 } from '@shared/types'
 
 const api: Api = {
@@ -109,6 +110,15 @@ const api: Api = {
   webDashboard: {
     getStatus: () => ipcRenderer.invoke(IPC.webDashboardStatus),
     getLocalIps: () => ipcRenderer.invoke(IPC.webDashboardLocalIps)
+  },
+  webDashboardAccounts: {
+    list: () => ipcRenderer.invoke(IPC.webDashboardAccountsList),
+    create: (username: string, password: string, role: WebDashboardRole) =>
+      ipcRenderer.invoke(IPC.webDashboardAccountsCreate, username, password, role),
+    setRole: (id: string, role: WebDashboardRole) => ipcRenderer.invoke(IPC.webDashboardAccountsSetRole, id, role),
+    resetPassword: (id: string, newPassword: string) =>
+      ipcRenderer.invoke(IPC.webDashboardAccountsResetPassword, id, newPassword),
+    delete: (id: string) => ipcRenderer.invoke(IPC.webDashboardAccountsDelete, id)
   },
   system: {
     openProfilesFolder: () => ipcRenderer.invoke(IPC.appOpenProfilesFolder),

@@ -355,11 +355,40 @@ dedicated servers running on the same machine.
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
     reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one
     specific local IP makes it reachable from other devices on your local network, which
-    Settings shows a warning for once set: the page still has no login of its own, so
-    that's full RCON/admin control of your servers available to anyone who can reach that
-    address - only do this on a network you trust. Settings lists this machine's own
-    local IPs as a hint for what to type in. Enabling/disabling, or changing the host or
-    port, takes effect immediately on Save, no restart needed.
+    Settings shows a warning for once set unless **Require login** (below) is also on: by
+    default the page has no login of its own, so that's full RCON/admin control of your
+    servers available to anyone who can reach that address - only do this on a network you
+    trust. Settings lists this machine's own local IPs as a hint for what to type in.
+    Enabling/disabling, or changing the host or port, takes effect immediately on Save, no
+    restart needed.
+  - **Require login (HTTPS)** - a checkbox in Settings, off by default (nothing changes for
+    existing setups unless you turn it on). Turning it on does two things: switches the
+    dashboard from plain HTTP to `https://` using a self-signed certificate the Manager
+    generates and caches itself (`<data folder>/certs/`, regenerated automatically if this
+    machine's local IPs change; browsers will show a "not trusted" warning the first time
+    you visit - that's expected for a self-signed cert, click through, or install
+    `certs/cert.pem` as trusted on a device if you'd rather not see it again), and requires
+    logging in with one of the accounts configured just below the checkbox before the page
+    or any of its API routes respond to anything. This is what makes it reasonable to
+    expose the dashboard outside your LAN (e.g. via router port forwarding) - without it,
+    anyone who can reach the address has full control, login or not.
+    - **Accounts** are managed only from this Settings screen, never from the dashboard
+      page itself - so being able to log in as an admin over the web never grants the
+      ability to create or change accounts, that always requires being at the machine
+      running the Manager. Each account has a username, password, and one of three roles:
+      **Admin** (everything), **Operator** (start/stop/restart/update a server, send RCON
+      commands, create backups - but not restore or delete them, and not the event-label
+      filter checkboxes, which are shared/global rather than per-user), and **Read-only**
+      (Cluster Dashboard plus a server's console feed and online players list, with every
+      action hidden - no Backup section, no Start/Stop/RCON, no Kick, nothing that writes).
+      Role checks happen on the server for every route regardless of what the page shows -
+      the client-side hiding is just so a role never sees a button that would fail if
+      clicked. The last remaining admin account can't be demoted or deleted, so you can't
+      lock yourself out by accident. Logging in sets a cookie-based session (7-day sliding
+      expiry) that doesn't survive the Manager restarting or the dashboard being turned off
+      and back on - everyone has to log in again after that. Repeated failed logins from
+      the same address are temporarily locked out (8 attempts / 15 minutes) as a basic
+      brute-force guard now that the dashboard may be reachable from the internet.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), No Transfer From Filtering (`-NoTransferFromFiltering`), and External IP
@@ -537,11 +566,20 @@ Everything the web dashboard page itself calls is plain JSON over HTTP - nothing
 dashboard-page-specific about it, so any other local process (a Discord bot, a script,
 `curl`) on the same machine can call it too, once **Settings → Enable web dashboard** is
 on. Base URL is `http://<host>:<port>` using whatever Host/Port you set there (defaults
-to `http://127.0.0.1:8090`). There's no authentication - the same posture as RCON itself,
-appropriate for `127.0.0.1` or a trusted LAN, never the open internet.
+to `http://127.0.0.1:8090`) - or `https://` if **Require login** is also on. With login
+off (the default), there's no authentication at all - the same posture as RCON itself,
+appropriate for `127.0.0.1` or a trusted LAN, never the open internet. With login on,
+every route below except `/api/login` needs a valid session cookie (obtained by `POST`ing
+`{ username, password }` to `/api/login`, which responds with `Set-Cookie` on success) and
+enough role to match the table in the Settings section above - a bot has to log in with
+one of the same accounts a human would use, then send that cookie (`-b`/`--cookie` with
+`curl`, a cookie jar in most HTTP client libraries) on every subsequent request, same as a
+browser would.
 
 | Method | Path | Body | Response | Notes |
 | --- | --- | --- | --- | --- |
+| POST | `/api/login` | `{ "username": "...", "password": "..." }` | `{ ok, role? , error? }` | Only meaningful with **Require login** on; sets the session cookie on success. 401 on bad credentials, 429 if this address has failed too many times recently |
+| POST | `/api/logout` | — | `{ ok: true }` | Clears the session cookie |
 | GET | `/api/servers` | — | `[{ id, name, group, state, players, cpu, memoryMB }]` | `id` is what every other endpoint below expects; `group` is the Manager's dashboard group name (empty string when ungrouped) |
 | POST | `/api/servers/:id/start` | — | `{ ok, error? }` | 400 with `error` if it can't start right now (e.g. an update is running) |
 | POST | `/api/servers/:id/stop` | — | `{ ok: true, saved: boolean }` | Waits for SaveWorld's RCON outcome (`saved`) before responding, then returns - the rest of the shutdown keeps running in the background; state changes (`stopping` → `stopped`) show up in the next `GET /api/servers` poll. `saved: false` means RCON was unreachable or the save failed, so it skipped straight to the grace-period/force-kill fallback |

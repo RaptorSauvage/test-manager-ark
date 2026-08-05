@@ -6,6 +6,7 @@ import { registerBackupHandlers } from './backup'
 import { registerPlayerBackupHandlers } from './playerBackup'
 import { registerDialogHandlers } from './dialog'
 import { registerSettingsHandlers } from './settings'
+import { registerWebDashboardAccountsHandlers } from './webDashboardAccounts'
 import { registerSteamcmdInstallHandlers } from './steamcmdInstall'
 import { registerMapsHandlers } from './maps'
 import { registerCustomMapsHandlers } from './customMaps'
@@ -23,6 +24,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerPlayerBackupHandlers()
   registerDialogHandlers(mainWindow)
   registerSettingsHandlers()
+  registerWebDashboardAccountsHandlers()
   registerSteamcmdInstallHandlers(mainWindow.webContents)
   registerMapsHandlers()
   registerCustomMapsHandlers()
