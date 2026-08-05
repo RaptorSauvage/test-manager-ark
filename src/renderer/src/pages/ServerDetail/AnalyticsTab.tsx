@@ -45,13 +45,20 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
       return
     }
     let cancelled = false
+    let interval: ReturnType<typeof setInterval> | undefined
     function refresh(): void {
       window.api.server.getGameVersion(profile.id).then((v) => {
-        if (!cancelled && v) setGameVersion(v)
+        if (cancelled) return
+        if (v) {
+          // Found it - it won't change again for this run, so stop polling instead of
+          // spawning PowerShell every 5s for no reason.
+          setGameVersion(v)
+          clearInterval(interval)
+        }
       })
     }
     refresh()
-    const interval = setInterval(refresh, 5000)
+    interval = setInterval(refresh, 5000)
     return () => {
       cancelled = true
       clearInterval(interval)
