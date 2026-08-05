@@ -817,11 +817,13 @@ const DASHBOARD_HTML = `<!doctype html>
     main { padding: 8px 10px; overflow: visible; }
     select, #server-actions button { flex: 1 1 auto; }
     .content-row { flex-direction: column; }
-    /* Explicit height (not flex-grow) so #console's own flex:1 has something real to fill
-       and stays a compact, internally-scrolling box instead of growing forever as events
-       arrive - the RCON form right below it stays reachable either way now, but a
-       bottomless live feed would still be an unpleasant page to scroll through. */
-    .console-panel { flex: none; height: 320px; }
+    /* flex:1 here (not a fixed height) lets the console fill whatever room is actually
+       available above the fold - body's min-height:100vh (not a hard height cap) means
+       that's always at least a full screen's worth, growing further if .side-col below it
+       needs more. #console itself still can't grow past what this resolves to either way:
+       it has its own overflow-y:auto, so a busy feed scrolls internally instead of pushing
+       the RCON form down regardless of how tall .console-panel ends up being. */
+    .console-panel { flex: 1; min-height: 260px; }
     .side-col { flex: none; width: 100%; max-width: none; }
     .players-panel { flex: none; max-height: 160px; }
     #players-list { display: flex; flex-direction: row; flex-wrap: wrap; overflow-y: hidden; gap: 6px; }
