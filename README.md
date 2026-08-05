@@ -347,8 +347,12 @@ dedicated servers running on the same machine.
     with **Restore** and **Delete** actions (both confirm before acting), and a **Backup
     Process Log** panel alongside it - taking 40% of that row's width to the table's 60%,
     since log lines run longer than file names - polling every 5s while this view is
-    active - all backed by the same `backup.ts`/`schedule.ts` functions the desktop
-    Backups tab uses, reused directly
+    active. On a phone, the backup table only shows the 10 most recent by default (however
+    many the Backups tab's retention setting actually keeps could be a lot more than that,
+    and scrolling through all of them just to reach the log below gets old fast) - a
+    **Show all N backups** button underneath reveals the rest, toggling back to **Show
+    fewer**; desktop always shows the full list, no cap. All of it backed by the same
+    `backup.ts`/`schedule.ts` functions the desktop Backups tab uses, reused directly
     since the web dashboard runs in the same process. Reloading the page while it was on
     this view (the active view is remembered, see above) used to leave it stuck showing
     "Select a server in the Dashboard view first." forever, even once the server list had

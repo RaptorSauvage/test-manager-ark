@@ -790,6 +790,7 @@ const DASHBOARD_HTML = `<!doctype html>
   #backup-table th { color: var(--muted); font-weight: 600; }
   #backup-table .backup-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
   #backup-table .backup-row-actions button { font-size: 0.78rem; padding: 4px 8px; }
+  #btn-backup-show-more { display: none; width: 100%; margin-top: 10px; font-size: 0.8rem; }
   .backup-table-panel { flex: 0 1 60%; }
   .backup-log-panel { flex: 0 1 40%; min-width: 220px; }
   #backup-log { flex: 1; overflow-y: auto; font-size: 0.85rem; }
@@ -912,6 +913,7 @@ const DASHBOARD_HTML = `<!doctype html>
               </thead>
               <tbody id="backup-table-body"></tbody>
             </table>
+            <button id="btn-backup-show-more" type="button"></button>
           </section>
           <aside class="panel backup-log-panel">
             <h3>Backup Process Log</h3>
@@ -1232,10 +1234,20 @@ const DASHBOARD_HTML = `<!doctype html>
   var backupContentEl = document.getElementById('backup-content');
   var backupInfoEl = document.getElementById('backup-info');
   var backupTableBody = document.getElementById('backup-table-body');
+  var backupShowMoreBtn = document.getElementById('btn-backup-show-more');
   var backupLogEl = document.getElementById('backup-log');
   var createBackupBtn = document.getElementById('btn-backup-create');
   var refreshBackupBtn = document.getElementById('btn-backup-refresh');
   if (role && !canOperate) createBackupBtn.style.display = 'none';
+
+  // On a phone, a long backup list (whatever the Backups tab's retention setting keeps -
+  // could be well beyond 10) is a lot of scrolling just to reach the process log below it.
+  // Cap it there by default, with a button to see the rest. Desktop always shows everything.
+  var BACKUP_PAGE_SIZE = 10;
+  var backupShowAll = false;
+  function isMobileWidth() {
+    return window.matchMedia('(max-width: 700px)').matches;
+  }
 
   function formatBackupSize(bytes) {
     var mb = bytes / (1024 * 1024);
@@ -1266,9 +1278,25 @@ const DASHBOARD_HTML = `<!doctype html>
       emptyCell.textContent = 'No backups yet.';
       emptyRow.appendChild(emptyCell);
       backupTableBody.appendChild(emptyRow);
+      backupShowMoreBtn.style.display = 'none';
       return;
     }
-    backups.forEach(function (b) {
+
+    var capped = isMobileWidth() && !backupShowAll && backups.length > BACKUP_PAGE_SIZE;
+    var visibleBackups = capped ? backups.slice(0, BACKUP_PAGE_SIZE) : backups;
+
+    if (isMobileWidth() && backups.length > BACKUP_PAGE_SIZE) {
+      backupShowMoreBtn.style.display = 'block';
+      backupShowMoreBtn.textContent = capped ? 'Show all ' + backups.length + ' backups' : 'Show fewer';
+      backupShowMoreBtn.onclick = function () {
+        backupShowAll = !backupShowAll;
+        renderBackupTable(backups);
+      };
+    } else {
+      backupShowMoreBtn.style.display = 'none';
+    }
+
+    visibleBackups.forEach(function (b) {
       var row = document.createElement('tr');
       var nameCell = document.createElement('td');
       nameCell.textContent = b.fileName;
@@ -1517,6 +1545,7 @@ const DASHBOARD_HTML = `<!doctype html>
     if (id === currentId) return;
     currentId = id;
     try { localStorage.setItem(SELECTED_SERVER_KEY, id); } catch (err) { /* storage unavailable - not fatal */ }
+    backupShowAll = false;
     if (activeView === 'backup') loadBackupView();
     consoleEl.innerHTML = '';
     if (es) { es.close(); es = null; }
