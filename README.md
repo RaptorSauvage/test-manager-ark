@@ -333,9 +333,12 @@ dedicated servers running on the same machine.
     vertical list. The desktop layout is a fixed-viewport "app" (nothing outside a panel
     scrolls); on mobile the page scrolls normally instead, since a panel that isn't
     explicitly height-capped kept turning out to grow past the screen with nothing able to
-    reach the overflow - the live console feed stays a compact auto-scrolling box (that one
-    benefits from not growing forever), everything else just flows and the page grows to
-    fit it.
+    reach the overflow - everything except the console just flows and the page grows to
+    fit it. The live console feed keeps a fixed height (55% of the screen's height) so it
+    stays a compact, auto-scrolling box instead of growing to fit however many backlog
+    lines happen to be loaded - relying on flex-grow to size it dynamically here turned out
+    not to reliably bound it on real mobile browsers the way it does on desktop, even
+    though it worked in every headless test; an explicit height sidesteps that.
   - **Backup** - a read-only-settings backup menu similar to the desktop app's Backups
     tab, always showing the server currently selected in Dashboard (no picker of its own -
     switching servers in Dashboard, including via a Cluster Dashboard card click, updates

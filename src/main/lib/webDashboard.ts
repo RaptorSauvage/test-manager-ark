@@ -818,13 +818,15 @@ const DASHBOARD_HTML = `<!doctype html>
     main { padding: 8px 10px; overflow: visible; }
     select, #server-actions button { flex: 1 1 auto; }
     .content-row { flex-direction: column; }
-    /* flex:1 here (not a fixed height) lets the console fill whatever room is actually
-       available above the fold - body's min-height:100vh (not a hard height cap) means
-       that's always at least a full screen's worth, growing further if .side-col below it
-       needs more. #console itself still can't grow past what this resolves to either way:
-       it has its own overflow-y:auto, so a busy feed scrolls internally instead of pushing
-       the RCON form down regardless of how tall .console-panel ends up being. */
-    .console-panel { flex: 1; min-height: 260px; }
+    /* flex:1 turned out not to reliably bound this on real mobile browsers - a chain of
+       nested flex-grow containers several levels deep (main-area > view > main >
+       content-row > console-panel) apparently doesn't force #console's overflow-y:auto to
+       actually kick in the way it does on desktop (verified: with a busy 60-event backlog,
+       the panel just grew to fit every line instead of scrolling internally). A real vh-
+       based height is a definite value regardless of how that chain resolves, so it
+       reliably stays a compact box - and scales with the actual device screen instead of
+       being a flat number that's too small on a tall phone. */
+    .console-panel { flex: none; height: 55vh; min-height: 280px; }
     .side-col { flex: none; width: 100%; max-width: none; }
     .players-panel { flex: none; max-height: 160px; }
     #players-list { display: flex; flex-direction: row; flex-wrap: wrap; overflow-y: hidden; gap: 6px; }
