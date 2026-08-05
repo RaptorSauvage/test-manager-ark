@@ -131,9 +131,10 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
           />
         </label>
         <p className="empty-state">
-          When several servers have &quot;Start this server when the Manager starts&quot; enabled (Server
-          Management tab), they start one after another with this delay in between instead of all at once - the
-          first one starts immediately.
+          Applies to every profile with &quot;Start this server when the Manager starts&quot; enabled (Server
+          Management tab) - including the first one, so the Manager's own monitoring has time to finish
+          initializing before that server starts and its telemetry is picked up correctly from the start. If
+          several servers have it enabled, each subsequent one waits this same delay after the previous one.
         </p>
 
         <label>

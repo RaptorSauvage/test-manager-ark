@@ -167,9 +167,11 @@ dedicated servers running on the same machine.
   minimized/background mode yet).
 - **Delay between auto-started servers** — a number input (seconds, default 10) in the
   app-wide Settings view. Only matters for profiles with "Start this server when the
-  Manager starts" enabled (Server Management tab): the first such profile starts as soon as
-  the Manager launches, and each subsequent one waits this long after the previous one
-  instead of every enabled server starting at the exact same instant.
+  Manager starts" enabled (Server Management tab): the delay is waited before starting the
+  first such profile too (not just between subsequent ones), giving the Manager's own
+  monitoring time to finish initializing first so that server's telemetry is picked up
+  correctly from the start instead of racing a start triggered the instant the app launches.
+  Each subsequent enabled profile then waits this same delay after the previous one.
 - **Manager updates** — a "Check for updates" button in the app-wide Settings view, next
   to the current version. Built on `electron-updater` against this repo's GitHub
   Releases, with live status (checking / downloading with a percentage / up to date /
@@ -431,11 +433,13 @@ dedicated servers running on the same machine.
   (not to be confused with "Start Manager when you log into Windows" in Settings, which is
   about the Manager application itself): when enabled, this server is started automatically
   every time the Manager app launches - skipped if it's already running (e.g. re-adopted
-  from a previous Manager session that never actually stopped it). When several profiles
-  have this enabled, they start one after another rather than all at once, waited apart by
-  the "Delay between auto-started servers" setting in Settings (default 10s, the first one
-  starts immediately). Also home to two independent time/day-of-week schedules, each with a
-  live "next occurrence" countdown (`DD:HH:MM:SS`):
+  from a previous Manager session that never actually stopped it). Waits for the "Delay
+  between auto-started servers" setting in Settings (default 10s) before starting - even if
+  it's the only enabled profile - so the Manager's own monitoring has time to finish
+  initializing first and picks up this server's telemetry correctly from the start. When
+  several profiles have this enabled, they start one after another, each waiting that same
+  delay after the previous one. Also home to two independent time/day-of-week schedules,
+  each with a live "next occurrence" countdown (`DD:HH:MM:SS`):
   - **Scheduled restart** ("Shutdown server at:" + Sun-Sat day checkboxes) gracefully
     stops the server (SaveWorld confirmed, then DoExit - the same path as the manual Stop
     button) at that time on the selected days, then optionally, in order: **Update server

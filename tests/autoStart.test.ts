@@ -62,16 +62,16 @@ describe('runAutoStart', () => {
     expect(startProfile).not.toHaveBeenCalled()
   })
 
-  it('starts the first eligible profile immediately (zero delay)', () => {
+  it('waits staggerSeconds before starting the first eligible profile too', () => {
     const scheduleTimeout = vi.fn()
     const startProfile = vi.fn()
     const profiles = [makeProfile({ id: 'a', startOnManagerLaunch: true })]
     runAutoStart(profiles, 10, () => false, startProfile, scheduleTimeout)
     expect(scheduleTimeout).toHaveBeenCalledTimes(1)
-    expect(scheduleTimeout.mock.calls[0][1]).toBe(0)
+    expect(scheduleTimeout.mock.calls[0][1]).toBe(10000)
   })
 
-  it('staggers subsequent eligible profiles by staggerSeconds each', () => {
+  it('staggers every eligible profile by staggerSeconds each, including the first', () => {
     const scheduleTimeout = vi.fn()
     const startProfile = vi.fn()
     const profiles = [
@@ -80,7 +80,7 @@ describe('runAutoStart', () => {
       makeProfile({ id: 'c', startOnManagerLaunch: true })
     ]
     runAutoStart(profiles, 10, () => false, startProfile, scheduleTimeout)
-    expect(scheduleTimeout.mock.calls.map((call) => call[1])).toEqual([0, 10000, 20000])
+    expect(scheduleTimeout.mock.calls.map((call) => call[1])).toEqual([10000, 20000, 30000])
   })
 
   it('ignores profiles with startOnManagerLaunch disabled when staggering the rest', () => {
@@ -92,7 +92,7 @@ describe('runAutoStart', () => {
       makeProfile({ id: 'c', startOnManagerLaunch: true })
     ]
     runAutoStart(profiles, 10, () => false, startProfile, scheduleTimeout)
-    expect(scheduleTimeout.mock.calls.map((call) => call[1])).toEqual([0, 10000])
+    expect(scheduleTimeout.mock.calls.map((call) => call[1])).toEqual([10000, 20000])
   })
 
   it('actually invokes startProfile with the right profile once its delay fires', () => {

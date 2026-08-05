@@ -43,8 +43,10 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
         <p className="empty-state">
           Applies when the Manager application itself launches - not when Windows starts (see the &quot;Start
           Manager when you log into Windows&quot; option in Settings for that). Skipped if the server is already
-          running (e.g. re-adopted from a previous Manager session). If several servers have this enabled, they
-          start one after another with a delay in between, configurable in Settings.
+          running (e.g. re-adopted from a previous Manager session). Waits for the delay configured in Settings
+          before starting - even if it's the only one - so the Manager's own monitoring has time to finish
+          initializing first and picks up this server's telemetry correctly from the start. If several servers
+          have this enabled, they start one after another, each waiting that same delay after the previous one.
         </p>
       </section>
 
