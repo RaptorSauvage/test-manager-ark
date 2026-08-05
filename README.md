@@ -296,9 +296,10 @@ dedicated servers running on the same machine.
   - A small **Status** box in the right-hand column, above the online players panel -
     state, player count, CPU%, and RAM for the selected server, each on its own line
     instead of one long line squeezed into the header (that's what it used to be). A
-    **Status ▾** button in the header collapses/expands that whole right-hand column (both
-    boxes together), for more room for the console - handy on a small screen; remembered
-    in `localStorage` like the Events collapse toggle.
+    **Status ▾** button in the header, next to the **Events ▾** filter toggle, collapses/
+    expands that whole right-hand column (both boxes together), for more room for the
+    console - handy on a small screen; remembered in `localStorage` like the Events
+    collapse toggle.
   - An **online players** panel below that, refreshed every few seconds via RCON
     `ListPlayers`. Right-click a player for **Copy ID** (their EOS unique id, to the
     clipboard - falls back to a `document.execCommand`-based copy when the page isn't in

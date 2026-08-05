@@ -849,11 +849,11 @@ const DASHBOARD_HTML = `<!doctype html>
         <button id="btn-restart" class="warn">Restart</button>
         <button id="btn-stop-update-restart" class="info">Update Restart</button>
       </div>
+      <button id="btn-toggle-filters" type="button">Events ▾</button>
       <button id="btn-toggle-sidecol" type="button">Status ▾</button>
     </header>
     <main>
       <div id="filters-bar">
-        <button id="btn-toggle-filters" type="button">Events ▾</button>
         <div id="filters"></div>
       </div>
       <div class="content-row">
