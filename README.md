@@ -128,7 +128,10 @@ dedicated servers running on the same machine.
   same group name into its own collapsible section (expanded by default) instead of the
   main grid - handy for a cluster or a set of related test servers. A profile can be
   hidden and grouped independently; hidden always wins (it goes to the Hidden section
-  regardless of its group).
+  regardless of its group). Each card also shows a **Version** field (the same Game
+  Version as the Analytics tab, e.g. "92.28") - reads whatever's already known when the
+  dashboard loads and shows "-" if nothing's been detected yet for that server (it doesn't
+  actively poll/"Detect" here the way the Analytics tab does).
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: PID, uptime (live, ticking every second while running), memory
     usage (MB and % of total system RAM), and connected players (X / configured max).

@@ -37,6 +37,7 @@ export default function Dashboard({
   const [logProfileId, setLogProfileId] = useState<string | null>(null)
   const [logContent, setLogContent] = useState('')
   const [installedById, setInstalledById] = useState<Record<string, boolean>>({})
+  const [gameVersionById, setGameVersionById] = useState<Record<string, string | null>>({})
   const [maps, setMaps] = useState<MapDefinition[]>([])
 
   useEffect(() => {
@@ -77,6 +78,21 @@ export default function Dashboard({
     const installed = await window.api.server.isInstalled(profileId)
     setInstalledById((prev) => ({ ...prev, [profileId]: installed }))
   }
+
+  // One-shot per profile list change - reads whatever's already cached/known (or reads it
+  // once from the log if not), no polling/"Detecting..." here like the Analytics tab does.
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all(
+      profiles.map(async (p) => [p.id, await window.api.server.getGameVersion(p.id)] as const)
+    ).then((entries) => {
+      if (!cancelled) setGameVersionById(Object.fromEntries(entries))
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles.map((p) => p.id).join(',')])
 
   async function handleCreate(): Promise<void> {
     const profile = createDefaultProfile(`Server ${profiles.length + 1}`)
@@ -239,6 +255,10 @@ export default function Dashboard({
           <div>
             <dt>Port</dt>
             <dd>{profile.gamePort}</dd>
+          </div>
+          <div>
+            <dt>Version</dt>
+            <dd>{gameVersionById[profile.id] ?? '-'}</dd>
           </div>
           {status?.players && (
             <div>
