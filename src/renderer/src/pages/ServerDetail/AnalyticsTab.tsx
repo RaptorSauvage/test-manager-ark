@@ -6,11 +6,23 @@ import { appendSample, type StatSample } from '../../lib/sparkline'
 import UpdateCheckPanel from '../../components/UpdateCheckPanel'
 import ServerStatsChart from './ServerStatsChart'
 
-/** How much history the Server Statistics chart shows. */
-const STATS_HISTORY_WINDOW_MS = 5 * 60 * 1000
+/** How much history the Server Statistics chart collects, regardless of what time scale is
+ *  currently selected for display. */
+const STATS_HISTORY_WINDOW_MS = 60 * 60 * 1000
 /** How often a new point is sampled - independent of whatever cadence status pushes
  *  actually arrive at, so the chart has a steady, predictable rhythm. */
 const STATS_SAMPLE_INTERVAL_MS = 5000
+/** Time scale choices for the Server Statistics chart, matching the collected window (1h max). */
+const STATS_TIME_SCALES: Array<{ label: string; ms: number }> = [
+  { label: '1m', ms: 60 * 1000 },
+  { label: '5m', ms: 5 * 60 * 1000 },
+  { label: '30m', ms: 30 * 60 * 1000 },
+  { label: '1h', ms: 60 * 60 * 1000 }
+]
+
+function statsEnabledKey(profileId: string): string {
+  return `analytics-stats-enabled:${profileId}`
+}
 
 interface AnalyticsTabProps {
   profile: ServerProfile
@@ -37,6 +49,8 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   const [backupStatus, setBackupStatus] = useState<BackupScheduleStatus | null>(null)
   const [configFolderError, setConfigFolderError] = useState('')
   const [history, setHistory] = useState<StatSample[]>([])
+  const [statsEnabled, setStatsEnabled] = useState(true)
+  const [statsScale, setStatsScale] = useState(STATS_TIME_SCALES[1].ms)
   const isRunning = status?.state === 'running'
   const statusRef = useRef<ServerStatus | undefined>(status)
   statusRef.current = status
@@ -48,9 +62,11 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
 
   useEffect(() => {
     setHistory([])
+    setStatsEnabled(localStorage.getItem(statsEnabledKey(profile.id)) !== 'false')
   }, [profile.id])
 
   useEffect(() => {
+    if (!statsEnabled) return
     const interval = setInterval(() => {
       const s = statusRef.current
       if (!s || s.state !== 'running') return
@@ -63,7 +79,13 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
       )
     }, STATS_SAMPLE_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [profile.id])
+  }, [profile.id, statsEnabled])
+
+  function toggleStatsEnabled(): void {
+    const next = !statsEnabled
+    setStatsEnabled(next)
+    localStorage.setItem(statsEnabledKey(profile.id), String(next))
+  }
 
   useEffect(() => {
     window.api.server.getInstalledBuildId(profile.id).then(setBuildId)
@@ -153,9 +175,34 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
       </section>
 
       <section className="cluster-section">
-        <h3>Server Statistics (5 min)</h3>
-        {history.length > 0 ? (
-          <ServerStatsChart history={history} maxPlayers={profile.maxPlayers} />
+        <div className="stats-section-header">
+          <h3>Server Statistics</h3>
+          <div className="stats-controls">
+            <label className="stats-toggle">
+              <input type="checkbox" checked={statsEnabled} onChange={toggleStatsEnabled} />
+              Enable stats
+            </label>
+            {statsEnabled && (
+              <div className="time-scale-selector">
+                <span>Time Scale</span>
+                {STATS_TIME_SCALES.map((scale) => (
+                  <button
+                    key={scale.ms}
+                    type="button"
+                    className={`time-scale-btn${scale.ms === statsScale ? ' active' : ''}`}
+                    onClick={() => setStatsScale(scale.ms)}
+                  >
+                    {scale.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        {!statsEnabled ? (
+          <p className="empty-state">Stats collection is disabled for this server.</p>
+        ) : history.length > 0 ? (
+          <ServerStatsChart history={history} maxPlayers={profile.maxPlayers} windowMs={statsScale} now={now} />
         ) : (
           <p className="empty-state">
             {isRunning ? 'Collecting data...' : "Server isn't running - start it to see live stats."}

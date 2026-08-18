@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appendSample, buildSparklinePoints } from '../src/renderer/src/lib/sparkline'
+import { appendSample, buildTimeSeriesPoints, selectHistoryWindow } from '../src/renderer/src/lib/sparkline'
 
 describe('appendSample', () => {
   it('appends to an empty history', () => {
@@ -31,22 +31,62 @@ describe('appendSample', () => {
   })
 })
 
-describe('buildSparklinePoints', () => {
-  it('returns an empty string for no values', () => {
-    expect(buildSparklinePoints([], 200, 40, 0, 100)).toBe('')
+describe('selectHistoryWindow', () => {
+  const history = [
+    { time: 0, cpu: 1, memoryMB: 1, players: 0 },
+    { time: 30000, cpu: 2, memoryMB: 2, players: 0 },
+    { time: 90000, cpu: 3, memoryMB: 3, players: 0 }
+  ]
+
+  it('keeps only samples within the last windowMs relative to now', () => {
+    const result = selectHistoryWindow(history, 60000, 90000)
+    expect(result).toEqual([history[1], history[2]])
   })
 
-  it('renders a single value as a flat line at the right edge', () => {
-    expect(buildSparklinePoints([50], 200, 40, 0, 100)).toBe('200.0,20.0')
+  it('returns everything when the window covers the whole history', () => {
+    const result = selectHistoryWindow(history, 3600000, 90000)
+    expect(result).toEqual(history)
   })
 
-  it('scales multiple values linearly across the width and height', () => {
-    const points = buildSparklinePoints([0, 50, 100], 200, 40, 0, 100)
+  it('returns an empty array when nothing falls in the window', () => {
+    const result = selectHistoryWindow(history, 1000, 200000)
+    expect(result).toEqual([])
+  })
+})
+
+describe('buildTimeSeriesPoints', () => {
+  it('returns an empty string for no samples', () => {
+    expect(buildTimeSeriesPoints([], 60000, 60000, 200, 40, 0, 100)).toBe('')
+  })
+
+  it('positions a single sample by its actual time within the window, not always at the edge', () => {
+    // now=60000, window=60000 -> window start=0. Sample at t=30000 is halfway through.
+    const points = buildTimeSeriesPoints([{ time: 30000, value: 50 }], 60000, 60000, 200, 40, 0, 100)
+    expect(points).toBe('100.0,20.0')
+  })
+
+  it('places a fresh sample (time close to now) near the right edge', () => {
+    const points = buildTimeSeriesPoints([{ time: 59000, value: 0 }], 60000, 60000, 200, 40, 0, 100)
+    expect(points).toBe('196.7,40.0')
+  })
+
+  it('scales multiple samples across the width and height based on elapsed time', () => {
+    const samples = [
+      { time: 0, value: 0 },
+      { time: 30000, value: 50 },
+      { time: 60000, value: 100 }
+    ]
+    const points = buildTimeSeriesPoints(samples, 60000, 60000, 200, 40, 0, 100)
     expect(points).toBe('0.0,40.0 100.0,20.0 200.0,0.0')
   })
 
+  it('clamps a timestamp older than the window start to x=0', () => {
+    const points = buildTimeSeriesPoints([{ time: -30000, value: 0 }], 60000, 60000, 200, 40, 0, 100)
+    expect(points).toBe('0.0,40.0')
+  })
+
   it('does not divide by zero when min equals max', () => {
-    const points = buildSparklinePoints([5, 5, 5], 200, 40, 5, 5)
-    expect(points).toBe('0.0,40.0 100.0,40.0 200.0,40.0')
+    const points = buildTimeSeriesPoints([{ time: 60000, value: 5 }], 60000, 60000, 200, 40, 5, 5)
+    expect(points).toBe('200.0,40.0')
   })
 })

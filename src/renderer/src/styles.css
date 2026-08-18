@@ -527,16 +527,59 @@ label.checkbox {
   margin: 0;
 }
 
-.stats-charts-grid {
+.stats-section-header {
   display: flex;
   flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
   gap: 12px;
 }
 
+.stats-section-header h3 {
+  margin: 0;
+}
+
+.stats-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.stats-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.time-scale-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85em;
+}
+
+.time-scale-selector span {
+  color: var(--muted);
+}
+
+.time-scale-btn {
+  padding: 3px 10px;
+  font-size: 0.85em;
+}
+
+.stats-charts-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
 .stats-chart {
-  flex: 1 1 160px;
-  min-width: 160px;
-  max-width: 260px;
+  width: 100%;
 }
 
 .stats-chart-header {
@@ -555,7 +598,7 @@ label.checkbox {
 .stats-chart-svg {
   display: block;
   width: 100%;
-  height: 48px;
+  height: 70px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;

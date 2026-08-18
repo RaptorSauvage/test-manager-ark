@@ -138,15 +138,24 @@ dedicated servers running on the same machine.
     Uptime survives a Manager restart too - the actual start time is persisted alongside
     the pid it already tracks to re-adopt a still-running server, so a re-adopted server
     shows real elapsed uptime instead of losing it.
-  - **Server Statistics (5 min)**: three small sparkline charts (CPU %, RAM in MB, connected
-    players) covering the last 5 minutes, sampled every 5 seconds from the same status data
-    the Server Status fields above already use - no extra polling. Deliberately compact
-    (fixed-height inline SVGs, not a full-page chart library) so it stays "a small graph",
-    not the whole page. Sampling and rendering both live entirely inside the Analytics tab
-    component: since `ServerDetail` only ever mounts the currently-selected tab, switching
-    to another tab unmounts Analytics and tears the sampling interval down with it, so
-    nothing keeps running (and nothing keeps redrawing) in the background - it restarts
-    fresh with an empty 5-minute window the next time you come back to Analytics.
+  - **Server Statistics**: three sparkline charts (CPU %, RAM in MB, connected players),
+    stacked full-width, sampled every 5 seconds from the same status data the Server Status
+    fields above already use - no extra polling. Up to 1 hour of history is collected in the
+    background regardless of what's currently displayed, and a **Time Scale** selector
+    (1m/5m/30m/1h) picks how much of that collected history each chart actually shows.
+    Each point is placed by its real timestamp within the selected window rather than spaced
+    evenly by index, so a window that isn't fully populated yet (e.g. a server that just
+    started, viewed at the 1h scale) only draws a line across the portion of the chart that
+    has real data instead of stretching a handful of samples across the whole width. An
+    **Enable stats** checkbox lets you turn the whole feature off per server (persisted in
+    the browser's local storage, not synced to the profile file) if you'd rather not pay even
+    the modest 5s-interval sampling cost. Deliberately hand-rolled inline SVGs, not a
+    full-page chart library, to keep this "a small graph" rather than the whole page.
+    Sampling and rendering both live entirely inside the Analytics tab component: since
+    `ServerDetail` only ever mounts the currently-selected tab, switching to another tab
+    unmounts Analytics and tears the sampling interval down with it, so nothing keeps running
+    (and nothing keeps redrawing) in the background - it restarts fresh the next time you
+    come back to Analytics.
   - **Version**: two separate numbers, since ARK exposes them differently:
     - **Installed Build ID**: the SteamCMD-installed build id, read straight from that
       install's `appmanifest_2430930.acf` (the same file the Update button's "up to date"
