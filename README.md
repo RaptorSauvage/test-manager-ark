@@ -150,15 +150,17 @@ dedicated servers running on the same machine.
       turned out to be unreliable for a server adopted after a Manager restart, even
       though its telemetry above kept working fine since that only needs the pid to still
       be alive; reading the log line directly sidesteps all of that.) Refreshed by
-      `serverVersionWatcher.ts`, which listens for a server's status turning to
-      `running` - a fresh start (once the startup-complete marker fires, by which point
-      that log line has long since been written) or one adopted already-running at
-      Manager launch - and re-reads the log at that moment, edge-triggered so the
-      routine 5s status ticks a running server keeps emitting afterward don't each
-      re-read it. The value then just sits in memory until the next such transition
-      (including after an Update, since installing one always involves a stop/start
-      cycle) - the Analytics tab and dashboard cards just display whatever's currently
-      cached, showing "Detecting..."/"-" until the first one happens.
+      `serverVersionWatcher.ts`, which listens for a server's status changing into
+      `running`, `starting`, `stopping`, `updating`, or `stopped` - i.e. any real step of
+      the start/stop/update lifecycle (not `error`, since nothing about a failed start
+      would have changed what's in the log) - and re-reads the log at that moment.
+      Edge-triggered on the transition itself, so the routine 5s status ticks a running
+      server keeps emitting afterward don't each re-read it - only an actual change does.
+      Every profile is also checked once when the Manager itself starts, regardless of
+      whether it's currently running, since a stopped server's log from its last run may
+      still have a usable version line. The value then just sits in memory until the next
+      transition - the Analytics tab and dashboard cards just display whatever's
+      currently cached, showing "Detecting..."/"-" until the first one happens.
   - **New update** panel: "A server update is available" or "No new update available",
     depending on whether that profile's installed build id matches the latest one Steam
     has published (same embed styling as the dashboard's Official Server Status panel).

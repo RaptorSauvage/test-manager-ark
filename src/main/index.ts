@@ -19,7 +19,7 @@ import { startUpdateCheckPolling } from './lib/updateCheck'
 import { applyLaunchOnStartup } from './lib/launchOnStartup'
 import { doStartServer } from './lib/serverActions'
 import { runAutoStart } from './lib/autoStart'
-import { registerServerVersionWatcher } from './lib/serverVersionWatcher'
+import { registerServerVersionWatcher, checkAllGameVersionsOnStartup } from './lib/serverVersionWatcher'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -76,6 +76,11 @@ app.whenReady().then(() => {
   // Re-attach to servers still running from a previous session (they survive
   // this app crashing/closing by design - see serverProcess.startServer).
   adoptPersistedProcesses(profiles, getRunningPids(), getRunningStartedAt())
+
+  // Every profile, not just running ones - a stopped server's log from its last run may
+  // still have a usable version line, no reason to wait for its next start to show one.
+  checkAllGameVersionsOnStartup(profiles)
+
   registerPlayerBackupWatch()
   applyWebDashboardSettings(getSettings())
   applyLaunchOnStartup(getSettings())
