@@ -138,6 +138,15 @@ dedicated servers running on the same machine.
     Uptime survives a Manager restart too - the actual start time is persisted alongside
     the pid it already tracks to re-adopt a still-running server, so a re-adopted server
     shows real elapsed uptime instead of losing it.
+  - **Server Statistics (5 min)**: three small sparkline charts (CPU %, RAM in MB, connected
+    players) covering the last 5 minutes, sampled every 5 seconds from the same status data
+    the Server Status fields above already use - no extra polling. Deliberately compact
+    (fixed-height inline SVGs, not a full-page chart library) so it stays "a small graph",
+    not the whole page. Sampling and rendering both live entirely inside the Analytics tab
+    component: since `ServerDetail` only ever mounts the currently-selected tab, switching
+    to another tab unmounts Analytics and tears the sampling interval down with it, so
+    nothing keeps running (and nothing keeps redrawing) in the background - it restarts
+    fresh with an empty 5-minute window the next time you come back to Analytics.
   - **Version**: two separate numbers, since ARK exposes them differently:
     - **Installed Build ID**: the SteamCMD-installed build id, read straight from that
       install's `appmanifest_2430930.acf` (the same file the Update button's "up to date"

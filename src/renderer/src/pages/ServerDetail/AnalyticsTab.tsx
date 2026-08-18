@@ -1,8 +1,16 @@
-import { useEffect, useState } from 'react'
-import type { BackupScheduleStatus, ServerProfile } from '@shared/types'
+import { useEffect, useRef, useState } from 'react'
+import type { BackupScheduleStatus, ServerProfile, ServerStatus } from '@shared/types'
 import { formatCountdown } from '@shared/scheduleTime'
 import { useServerStatuses } from '../../lib/useServerStatuses'
+import { appendSample, type StatSample } from '../../lib/sparkline'
 import UpdateCheckPanel from '../../components/UpdateCheckPanel'
+import ServerStatsChart from './ServerStatsChart'
+
+/** How much history the Server Statistics chart shows. */
+const STATS_HISTORY_WINDOW_MS = 5 * 60 * 1000
+/** How often a new point is sampled - independent of whatever cadence status pushes
+ *  actually arrive at, so the chart has a steady, predictable rhythm. */
+const STATS_SAMPLE_INTERVAL_MS = 5000
 
 interface AnalyticsTabProps {
   profile: ServerProfile
@@ -28,12 +36,34 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   const [gameVersion, setGameVersion] = useState<string | null>(null)
   const [backupStatus, setBackupStatus] = useState<BackupScheduleStatus | null>(null)
   const [configFolderError, setConfigFolderError] = useState('')
+  const [history, setHistory] = useState<StatSample[]>([])
   const isRunning = status?.state === 'running'
+  const statusRef = useRef<ServerStatus | undefined>(status)
+  statusRef.current = status
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    setHistory([])
+  }, [profile.id])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const s = statusRef.current
+      if (!s || s.state !== 'running') return
+      setHistory((prev) =>
+        appendSample(
+          prev,
+          { time: Date.now(), cpu: s.cpu ?? 0, memoryMB: s.memoryMB ?? 0, players: s.players?.length ?? 0 },
+          STATS_HISTORY_WINDOW_MS
+        )
+      )
+    }, STATS_SAMPLE_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [profile.id])
 
   useEffect(() => {
     window.api.server.getInstalledBuildId(profile.id).then(setBuildId)
@@ -120,6 +150,17 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
           </div>
         </dl>
         {!isRunning && <p className="empty-state">Server isn&apos;t running - these will fill in once it starts.</p>}
+      </section>
+
+      <section className="cluster-section">
+        <h3>Server Statistics (5 min)</h3>
+        {history.length > 0 ? (
+          <ServerStatsChart history={history} maxPlayers={profile.maxPlayers} />
+        ) : (
+          <p className="empty-state">
+            {isRunning ? 'Collecting data...' : "Server isn't running - start it to see live stats."}
+          </p>
+        )}
       </section>
 
       <section className="cluster-section">
