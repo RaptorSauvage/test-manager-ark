@@ -6,8 +6,7 @@ import {
   parseArkVersionFromLog,
   getGameVersion,
   getCachedGameVersion,
-  setCachedGameVersion,
-  clearCachedGameVersion
+  setCachedGameVersion
 } from '../src/main/lib/serverVersion'
 
 describe('parseArkVersionFromLog', () => {
@@ -87,15 +86,4 @@ describe('game version cache', () => {
     expect(getCachedGameVersion('profile-c')).toBe('93.0')
   })
 
-  it('clears only the requested profile', () => {
-    setCachedGameVersion('profile-d', '92.28')
-    setCachedGameVersion('profile-e', '92.28')
-    clearCachedGameVersion('profile-d')
-    expect(getCachedGameVersion('profile-d')).toBeNull()
-    expect(getCachedGameVersion('profile-e')).toBe('92.28')
-  })
-
-  it('clearing an uncached profile is a no-op, not an error', () => {
-    expect(() => clearCachedGameVersion('was-never-cached')).not.toThrow()
-  })
 })

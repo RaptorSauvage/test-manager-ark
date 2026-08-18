@@ -26,11 +26,12 @@ export async function getGameVersion(installDir: string): Promise<string | null>
 
 /**
  * Caches the detected game version per profile, in memory, for the lifetime of the
- * Manager process - so it's only ever read from the log once instead of on every
- * Analytics tab mount, and stays valid across the server simply being stopped/restarted
- * (the installed build doesn't change just because the process did). Invalidated only
- * when an actual update is run (see serverActions.ts's doUpdateServer), since that's the
- * one thing that can actually change which version is installed.
+ * Manager process. Populated by serverVersionWatcher.ts the moment a server transitions
+ * to 'running' (a fresh start, or one adopted already-running at Manager launch) - reads
+ * on demand (e.g. every Analytics tab mount) just return whatever's here. Nothing else
+ * writes to this cache, so a stale value naturally gets replaced the next time that
+ * server actually starts (including after an update, since that always involves a
+ * stop/start cycle) without needing any separate invalidation logic.
  */
 const gameVersionCache = new Map<string, string>()
 
@@ -40,8 +41,4 @@ export function getCachedGameVersion(profileId: string): string | null {
 
 export function setCachedGameVersion(profileId: string, version: string): void {
   gameVersionCache.set(profileId, version)
-}
-
-export function clearCachedGameVersion(profileId: string): void {
-  gameVersionCache.delete(profileId)
 }

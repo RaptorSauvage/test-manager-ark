@@ -19,6 +19,7 @@ import { startUpdateCheckPolling } from './lib/updateCheck'
 import { applyLaunchOnStartup } from './lib/launchOnStartup'
 import { doStartServer } from './lib/serverActions'
 import { runAutoStart } from './lib/autoStart'
+import { registerServerVersionWatcher } from './lib/serverVersionWatcher'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -67,6 +68,10 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   const profiles = listProfiles()
+
+  // Registered before adoption below, so it catches the running-status broadcast that
+  // emits for an already-running adopted server too, not just a fresh start.
+  registerServerVersionWatcher()
 
   // Re-attach to servers still running from a previous session (they survive
   // this app crashing/closing by design - see serverProcess.startServer).

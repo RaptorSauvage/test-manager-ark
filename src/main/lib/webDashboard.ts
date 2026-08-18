@@ -16,7 +16,7 @@ import {
 } from './serverActions'
 import { createBackup, listBackups, deleteBackup, restoreBackup, getBackupLog } from './backup'
 import { getBackupScheduleStatus } from './schedule'
-import { getGameVersion, getCachedGameVersion, setCachedGameVersion } from './serverVersion'
+import { getCachedGameVersion } from './serverVersion'
 import { getOrCreateCert } from './tlsCert'
 import {
   verifyPassword,
@@ -231,26 +231,19 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   if (req.method === 'GET' && path === '/api/servers') {
     if (!(await requireRole(req, res, 'readonly'))) return
-    const servers = await Promise.all(
-      sortProfilesForDisplay(listProfiles()).map(async (profile) => {
-        const status = getStatus(profile.id)
-        let gameVersion = getCachedGameVersion(profile.id)
-        if (!gameVersion) {
-          gameVersion = await getGameVersion(profile.installDir)
-          if (gameVersion) setCachedGameVersion(profile.id, gameVersion)
-        }
-        return {
-          id: profile.id,
-          name: profile.name,
-          group: profile.group.trim(),
-          state: status.state,
-          players: status.players ?? [],
-          cpu: status.cpu ?? null,
-          memoryMB: status.memoryMB ?? null,
-          gameVersion
-        }
-      })
-    )
+    const servers = sortProfilesForDisplay(listProfiles()).map((profile) => {
+      const status = getStatus(profile.id)
+      return {
+        id: profile.id,
+        name: profile.name,
+        group: profile.group.trim(),
+        state: status.state,
+        players: status.players ?? [],
+        cpu: status.cpu ?? null,
+        memoryMB: status.memoryMB ?? null,
+        gameVersion: getCachedGameVersion(profile.id)
+      }
+    })
     sendJson(res, 200, servers)
     return
   }

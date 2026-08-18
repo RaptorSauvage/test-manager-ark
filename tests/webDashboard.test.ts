@@ -114,6 +114,7 @@ import type { ServerProfile } from '../shared/types'
 import * as serverActions from '../src/main/lib/serverActions'
 import { serverEvents } from '../src/main/lib/serverProcess'
 import { hashPassword, generateApiKeyId, generateApiKeySecret, buildApiKey } from '../src/main/lib/auth'
+import { setCachedGameVersion } from '../src/main/lib/serverVersion'
 
 const PORT = 47091
 
@@ -229,6 +230,10 @@ describe('web dashboard HTTP server', () => {
         '[2026.07.27-21.25.23:191][991]2026.07.27_21.25.23: LeRaptorSauvage ' +
         '[UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] joined this ARK!\n'
     )
+    // The /api/servers endpoint now just reads whatever serverVersionWatcher.ts already
+    // cached (see serverVersionWatcher.test.ts for that part) rather than reading the log
+    // itself on every request - seed the cache directly to simulate that having happened.
+    setCachedGameVersion('p2', '92.28')
     startWebDashboard(PORT, '127.0.0.1')
   })
 

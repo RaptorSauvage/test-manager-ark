@@ -149,14 +149,16 @@ dedicated servers running on the same machine.
       from the server's own console window title via PowerShell/Win32 APIs instead - that
       turned out to be unreliable for a server adopted after a Manager restart, even
       though its telemetry above kept working fine since that only needs the pid to still
-      be alive; reading the log line directly sidesteps all of that.) That line isn't
-      written immediately, so this is polled every 5s starting from "Detecting..." - as
-      soon as it resolves to an actual version, polling stops (it can't change again for
-      that run) and the value just stays displayed. Once found, it's cached in memory for
-      that profile - reopening the Analytics tab, or stopping/restarting the server, won't
-      trigger detection again. The cache is only cleared when an actual Update is run
-      against that profile (manual, scheduled, or via the web dashboard), since that's the
-      one thing that can actually change which version ends up installed.
+      be alive; reading the log line directly sidesteps all of that.) Refreshed by
+      `serverVersionWatcher.ts`, which listens for a server's status turning to
+      `running` - a fresh start (once the startup-complete marker fires, by which point
+      that log line has long since been written) or one adopted already-running at
+      Manager launch - and re-reads the log at that moment, edge-triggered so the
+      routine 5s status ticks a running server keeps emitting afterward don't each
+      re-read it. The value then just sits in memory until the next such transition
+      (including after an Update, since installing one always involves a stop/start
+      cycle) - the Analytics tab and dashboard cards just display whatever's currently
+      cached, showing "Detecting..."/"-" until the first one happens.
   - **New update** panel: "A server update is available" or "No new update available",
     depending on whether that profile's installed build id matches the latest one Steam
     has published (same embed styling as the dashboard's Official Server Status panel).

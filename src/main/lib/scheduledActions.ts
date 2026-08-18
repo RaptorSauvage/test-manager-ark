@@ -8,7 +8,6 @@ import { startMonitoring } from './monitor'
 import { updateServer, getUpdateLogPath } from './steamcmd'
 import { sendRconCommand } from './rcon'
 import { getSettings } from '../store'
-import { clearCachedGameVersion } from './serverVersion'
 
 const restartTasks = new Map<string, ScheduledTask>()
 const dinoWipeTasks = new Map<string, ScheduledTask>()
@@ -30,7 +29,6 @@ async function runScheduledRestart(profile: ServerProfile): Promise<void> {
 
   if (profile.scheduledRestartUpdateAfter) {
     try {
-      clearCachedGameVersion(profile.id)
       await updateServer(profile, getSettings().steamCmdPath)
       logScheduledUpdateOutcome(profile.id, 'Scheduled update (after shutdown) completed successfully.')
     } catch (err) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { isPidAlive, adoptPersistedProcesses, isRunning, getStatus } from '../src/main/lib/serverProcess'
-import type { ServerProfile } from '../shared/types'
+import { isPidAlive, adoptPersistedProcesses, isRunning, getStatus, serverEvents } from '../src/main/lib/serverProcess'
+import type { ServerProfile, ServerStatus } from '../shared/types'
 
 function makeProfile(id: string): ServerProfile {
   return {
@@ -92,5 +92,35 @@ describe('adoptPersistedProcesses', () => {
     adoptPersistedProcesses([profile], { [profile.id]: process.pid }, {})
 
     expect(getStatus(profile.id)).toEqual({ profileId: profile.id, state: 'running', pid: process.pid })
+  })
+
+  it('broadcasts the running status the same way a fresh start does, for anything listening', () => {
+    const profile = makeProfile('adopt-emits')
+    const received: ServerStatus[] = []
+    const onStatus = (status: ServerStatus): void => {
+      if (status.profileId === profile.id) received.push(status)
+    }
+    serverEvents.on('status', onStatus)
+    try {
+      adoptPersistedProcesses([profile], { [profile.id]: process.pid })
+    } finally {
+      serverEvents.off('status', onStatus)
+    }
+    expect(received).toEqual([{ profileId: profile.id, state: 'running', pid: process.pid }])
+  })
+
+  it('does not broadcast anything for a dead pid', () => {
+    const profile = makeProfile('adopt-dead-no-emit')
+    const received: ServerStatus[] = []
+    const onStatus = (status: ServerStatus): void => {
+      if (status.profileId === profile.id) received.push(status)
+    }
+    serverEvents.on('status', onStatus)
+    try {
+      adoptPersistedProcesses([profile], { [profile.id]: 999_999_999 })
+    } finally {
+      serverEvents.off('status', onStatus)
+    }
+    expect(received).toEqual([])
   })
 })

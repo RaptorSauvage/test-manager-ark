@@ -12,7 +12,6 @@ import {
 import { startMonitoring, stopMonitoring } from './monitor'
 import { updateServer } from './steamcmd'
 import { getSettings } from '../store'
-import { clearCachedGameVersion } from './serverVersion'
 
 /** Orchestration shared by the IPC handlers (desktop app) and the web dashboard's server
  *  controls, so both stay in sync on what "start", "stop", etc. actually involve (starting/
@@ -64,7 +63,6 @@ export function doKillServer(profileId: string): ServerStatus {
 }
 
 export async function doUpdateServer(profile: ServerProfile): Promise<void> {
-  clearCachedGameVersion(profile.id)
   await updateServer(profile, getSettings().steamCmdPath)
 }
 

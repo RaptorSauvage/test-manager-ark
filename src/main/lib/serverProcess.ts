@@ -259,16 +259,19 @@ export function adoptPersistedProcesses(
     if (pid === undefined) continue
 
     if (isPidAlive(pid)) {
-      running.set(profile.id, {
-        process: null,
+      const status: ServerStatus = {
+        profileId: profile.id,
+        state: 'running',
         pid,
-        status: {
-          profileId: profile.id,
-          state: 'running',
-          pid,
-          ...(persistedStartedAt[profile.id] !== undefined ? { startedAt: persistedStartedAt[profile.id] } : {})
-        }
-      })
+        ...(persistedStartedAt[profile.id] !== undefined ? { startedAt: persistedStartedAt[profile.id] } : {})
+      }
+      running.set(profile.id, { process: null, pid, status })
+      // Broadcasts the same way a fresh start does, so anything listening for a
+      // running-transition (e.g. serverVersionWatcher.ts) treats an adopted server the
+      // same as one this session actually started - no renderer window exists yet to
+      // receive it at this point in app startup, so this is purely for other main-process
+      // listeners registered before this runs.
+      emitStatus(status)
     } else {
       setRunningPid(profile.id, null)
       setRunningStartedAt(profile.id, null)
