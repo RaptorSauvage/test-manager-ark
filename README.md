@@ -168,12 +168,11 @@ dedicated servers running on the same machine.
       configured in Settings for this to resolve to anything.
 
     To the right of these fields, a **File Shortcuts** column stacks three buttons
-    vertically, no explanatory text: **Open config folder**
+    vertically, no explanatory text: **INI Config**
     (`ShooterGame/Saved/Config/WindowsServer`, where `GameUserSettings.ini`/`Game.ini`
-    live), **Open SavedArks folder** (`ShooterGame/Saved/SavedArks`, the map save data),
-    and **Open SaveGames folder** (`ShooterGame/Saved/SaveGames`, mod-specific persistent
-    data) - all just open the OS file explorer at that path, the app never edits anything
-    in them itself.
+    live), **Save ARKs** (`ShooterGame/Saved/SavedArks`, the map save data), and
+    **Save Game** (`ShooterGame/Saved/SaveGames`, mod-specific persistent data) - all just
+    open the OS file explorer at that path, the app never edits anything in them itself.
   - **Server Statistics**: three sparkline charts (CPU %, RAM in MB, connected players),
     stacked with no gap between them and the metric name on the left of each row rather
     than above it, sampled every 5 seconds from the same status data the Server Status

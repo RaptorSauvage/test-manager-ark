@@ -258,21 +258,21 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
               className="btn-sm"
               onClick={() => void openFolder(window.api.system.openServerConfigFolder)}
             >
-              Open config folder
+              INI Config
             </button>
             <button
               type="button"
               className="btn-sm"
               onClick={() => void openFolder(window.api.system.openServerSavedArksFolder)}
             >
-              Open SavedArks folder
+              Save ARKs
             </button>
             <button
               type="button"
               className="btn-sm"
               onClick={() => void openFolder(window.api.system.openServerSaveGamesFolder)}
             >
-              Open SaveGames folder
+              Save Game
             </button>
             {configFolderError && <p className="error-message">{configFolderError}</p>}
           </div>
