@@ -726,7 +726,8 @@ const DASHBOARD_HTML = `<!doctype html>
   #main-area { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .view { display: none; flex: 1; min-height: 0; }
   .view.active { display: flex; flex-direction: column; }
-  #view-cluster.active { display: block; overflow-y: auto; padding: 16px; }
+  #view-cluster.active { display: flex; flex-direction: column; padding: 16px; min-height: 0; }
+  #cluster-groups { flex: 1; overflow-y: auto; }
   #cluster-cards { display: flex; flex-direction: column; gap: 24px; }
   .cluster-group summary { cursor: pointer; color: var(--muted); font-weight: 600; margin-bottom: 12px; }
   .cluster-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; }
@@ -747,25 +748,33 @@ const DASHBOARD_HTML = `<!doctype html>
   .group-row-online { color: var(--status-running); font-weight: 700; }
   .group-row-online .group-row-offline { color: var(--muted); font-weight: 400; }
   #cluster-groups.hidden { display: none; }
-  #cluster-console { display: none; flex-direction: column; gap: 14px; }
+  #cluster-console { display: none; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
   #cluster-console.active { display: flex; }
-  .cluster-console-header { display: flex; align-items: center; gap: 12px; }
-  .cluster-console-header h2 { margin: 0; font-size: 1.05rem; }
-  .cluster-console-feed { overflow-y: auto; font-size: 0.82rem; font-family: Consolas, Menlo, monospace; height: 45vh; min-height: 220px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .cluster-console-header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .cluster-console-header h2 { margin: 0; font-size: 1.05rem; flex: 1; }
+  .cluster-console-header button { font-size: 0.8rem; padding: 4px 8px; flex-shrink: 0; }
+  /* Reuses the Dashboard view's own .content-row/.panel/.console-panel/.side-col - same
+     two-column-on-desktop, stacked-and-collapsible-on-mobile layout as the single-server
+     console, so the group console gets the same "console takes the room, side info is a
+     collapsible column" shape for free instead of a second bespoke layout. */
+  #cluster-console .content-row { flex: 1; min-height: 0; }
+  .cluster-console-feed { flex: 1; overflow-y: auto; font-size: 0.82rem; font-family: Consolas, Menlo, monospace; min-height: 200px; }
+  .log-event .server-tag { color: #2dd4bf; margin-right: 8px; }
   .log-event-start .label, .log-event-start .text { color: var(--status-running); }
   .log-event-stop .label, .log-event-stop .text { color: var(--status-stopped); }
-  .cluster-console-rcon-form { display: flex; gap: 8px; }
+  .cluster-console-rcon-form { display: flex; gap: 8px; margin-top: 8px; }
   .cluster-console-rcon-form input, .cluster-console-rcon-form button, .cluster-console-rcon-form select { padding: 10px 14px; font-size: 1rem; border-radius: 8px; }
   .cluster-console-rcon-form select { flex: 0 0 auto; max-width: 40%; }
   .cluster-console-rcon-form input { flex: 1; }
-  .cluster-console-rcon-results { font-size: 0.85rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; max-height: 120px; overflow-y: auto; }
+  .cluster-console-rcon-results { font-size: 0.85rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; max-height: 120px; overflow-y: auto; margin-top: 8px; }
   .cluster-console-rcon-results p { margin: 2px 0; }
   .rcon-result-ok { color: var(--ok); }
   .rcon-result-error { color: var(--danger); }
-  .cluster-console-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .cluster-console-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; flex-shrink: 0; }
   .cluster-console-stats div { display: flex; flex-direction: column; gap: 2px; }
   .cluster-console-stats dt { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
   .cluster-console-stats dd { margin: 0; font-size: 1rem; font-weight: 600; }
+  #cluster-console-sidecol { overflow-y: auto; }
   .server-card-mobile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
   .server-card-mobile-header { display: flex; align-items: center; gap: 8px; }
   .server-card-mobile-header h3 { margin: 0; flex: 1; font-size: 0.98rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -824,7 +833,7 @@ const DASHBOARD_HTML = `<!doctype html>
   #filters-bar, #cluster-console-filters-bar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
   #btn-toggle-filters { font-size: 0.8rem; padding: 4px 8px; flex-shrink: 0; }
   #filters, #cluster-console-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--muted); }
-  #filters-bar.collapsed #filters { display: none; }
+  #filters-bar.collapsed #filters, #cluster-console-filters-bar.collapsed #cluster-console-filters { display: none; }
   #filters label, #cluster-console-filters label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
   #filters input, #cluster-console-filters input { padding: 0; width: auto; }
   .content-row { flex: 1; display: flex; gap: 12px; min-height: 0; }
@@ -900,8 +909,10 @@ const DASHBOARD_HTML = `<!doctype html>
     .player-row { flex: 0 0 auto; background: var(--bg); border: 1px solid var(--border); }
     .cluster-cards { grid-template-columns: 1fr; gap: 10px; }
     .cluster-card { padding: 14px; }
-    .cluster-console-feed { height: 40vh; min-height: 200px; font-size: 0.75rem; }
-    .cluster-console-stats { grid-template-columns: repeat(2, 1fr); }
+    .cluster-console-feed { font-size: 0.72rem; }
+    .cluster-console-stats { grid-template-columns: repeat(2, 1fr); gap: 4px 10px; padding: 8px 10px; }
+    .cluster-console-stats dt { font-size: 0.62rem; }
+    .cluster-console-stats dd { font-size: 0.82rem; }
     .cluster-console-rcon-form { flex-wrap: wrap; }
     .cluster-console-rcon-form select, .cluster-console-rcon-form input { flex: 1 1 auto; max-width: none; }
     .form-actions { flex-wrap: wrap; }
@@ -929,19 +940,27 @@ const DASHBOARD_HTML = `<!doctype html>
       <div class="cluster-console-header">
         <button id="btn-cluster-console-back" type="button">&larr; Back</button>
         <h2 id="cluster-console-title"></h2>
+        <button id="btn-cluster-toggle-filters" type="button">Show ▾</button>
+        <button id="btn-cluster-toggle-sidecol" type="button">Servers ▾</button>
       </div>
       <div id="cluster-console-filters-bar">
         <div id="cluster-console-filters"></div>
       </div>
       <dl id="cluster-console-stats" class="cluster-console-stats"></dl>
-      <div id="cluster-console-feed" class="cluster-console-feed"></div>
-      <div id="cluster-console-rcon-results" class="cluster-console-rcon-results" style="display: none"></div>
-      <form id="cluster-console-rcon-form" class="cluster-console-rcon-form">
-        <select id="cluster-console-rcon-target"></select>
-        <input id="cluster-console-rcon-input" placeholder="RCON command..." autocomplete="off" />
-        <button type="submit">Send</button>
-      </form>
-      <div id="cluster-console-cards"></div>
+      <div class="content-row">
+        <section class="panel console-panel">
+          <div id="cluster-console-feed" class="cluster-console-feed"></div>
+          <div id="cluster-console-rcon-results" class="cluster-console-rcon-results" style="display: none"></div>
+          <form id="cluster-console-rcon-form" class="cluster-console-rcon-form">
+            <select id="cluster-console-rcon-target"></select>
+            <input id="cluster-console-rcon-input" placeholder="RCON command..." autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
+        </section>
+        <div id="cluster-console-sidecol" class="side-col">
+          <div id="cluster-console-cards"></div>
+        </div>
+      </div>
     </div>
   </section>
   <section id="view-console" class="view">
@@ -1204,14 +1223,53 @@ const DASHBOARD_HTML = `<!doctype html>
   var clusterConsoleEl = document.getElementById('cluster-console');
   var clusterConsoleBackBtn = document.getElementById('btn-cluster-console-back');
   var clusterConsoleTitleEl = document.getElementById('cluster-console-title');
+  var clusterConsoleFiltersBarEl = document.getElementById('cluster-console-filters-bar');
   var clusterConsoleFiltersEl = document.getElementById('cluster-console-filters');
+  var clusterConsoleToggleFiltersBtn = document.getElementById('btn-cluster-toggle-filters');
   var clusterConsoleStatsEl = document.getElementById('cluster-console-stats');
   var clusterConsoleFeedEl = document.getElementById('cluster-console-feed');
   var clusterConsoleRconResultsEl = document.getElementById('cluster-console-rcon-results');
   var clusterConsoleRconForm = document.getElementById('cluster-console-rcon-form');
   var clusterConsoleRconTargetEl = document.getElementById('cluster-console-rcon-target');
   var clusterConsoleRconInputEl = document.getElementById('cluster-console-rcon-input');
+  var clusterConsoleSidecolEl = document.getElementById('cluster-console-sidecol');
+  var clusterConsoleToggleSidecolBtn = document.getElementById('btn-cluster-toggle-sidecol');
   var clusterConsoleCardsEl = document.getElementById('cluster-console-cards');
+
+  // Same collapse-to-localStorage pattern as the Dashboard view's own Events/Status
+  // toggles above - independent keys, so collapsing one view's filters/side info doesn't
+  // affect the other's.
+  var CLUSTER_FILTERS_COLLAPSED_KEY = 'ark-dashboard-cluster-filters-collapsed';
+  var clusterFiltersCollapsed = false;
+  try { clusterFiltersCollapsed = localStorage.getItem(CLUSTER_FILTERS_COLLAPSED_KEY) === '1'; } catch (err) { /* storage unavailable - not fatal */ }
+
+  function applyClusterFiltersCollapsed() {
+    clusterConsoleFiltersBarEl.classList.toggle('collapsed', clusterFiltersCollapsed);
+    clusterConsoleToggleFiltersBtn.textContent = clusterFiltersCollapsed ? 'Show ▸' : 'Show ▾';
+  }
+  applyClusterFiltersCollapsed();
+
+  clusterConsoleToggleFiltersBtn.addEventListener('click', function () {
+    clusterFiltersCollapsed = !clusterFiltersCollapsed;
+    try { localStorage.setItem(CLUSTER_FILTERS_COLLAPSED_KEY, clusterFiltersCollapsed ? '1' : '0'); } catch (err) { /* storage unavailable - not fatal */ }
+    applyClusterFiltersCollapsed();
+  });
+
+  var CLUSTER_SIDECOL_COLLAPSED_KEY = 'ark-dashboard-cluster-sidecol-collapsed';
+  var clusterSidecolCollapsed = false;
+  try { clusterSidecolCollapsed = localStorage.getItem(CLUSTER_SIDECOL_COLLAPSED_KEY) === '1'; } catch (err) { /* storage unavailable - not fatal */ }
+
+  function applyClusterSidecolCollapsed() {
+    clusterConsoleSidecolEl.classList.toggle('collapsed', clusterSidecolCollapsed);
+    clusterConsoleToggleSidecolBtn.textContent = clusterSidecolCollapsed ? 'Servers ▸' : 'Servers ▾';
+  }
+  applyClusterSidecolCollapsed();
+
+  clusterConsoleToggleSidecolBtn.addEventListener('click', function () {
+    clusterSidecolCollapsed = !clusterSidecolCollapsed;
+    try { localStorage.setItem(CLUSTER_SIDECOL_COLLAPSED_KEY, clusterSidecolCollapsed ? '1' : '0'); } catch (err) { /* storage unavailable - not fatal */ }
+    applyClusterSidecolCollapsed();
+  });
 
   if (role === 'readonly') navBackupBtn.style.display = 'none';
   if (role && !canOperate) {

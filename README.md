@@ -421,20 +421,29 @@ dedicated servers running on the same machine.
     into that group's own **mobile Group Console**, which mirrors the desktop Manager's
     Group Console feature-for-feature:
     - A merged, chronological log feed across every server in the group, each line tagged
-      `[Server Name]`, backed by two new endpoints - `GET /api/groups/:group/events` (the
-      merged backlog, reusing `src/main/lib/groupConsole.ts`'s `getGroupConsoleBacklog`)
-      and `GET /api/groups/:group/events/stream` (the live merged tail, reusing that same
-      file's `watchGroupConsole` - one `watchLogFile` per running server in the group,
-      exactly like the desktop Group Console's own IPC channel, just reached over HTTP/SSE
-      instead). Ungrouped is addressed as the literal path segment `_ungrouped_` (an actual
-      empty segment invites double-slash URL edge cases). Each line shows its date as
-      **DD/MM** next to the timestamp, same as the desktop version, since a merged feed can
-      span more than a day. A "Show:" row of checkboxes (persisted in this device's
-      `localStorage`, independent of the page's own admin-controlled per-label setting)
-      includes two categories no real log line produces - **START** and **STOP** - synthetic
-      lines this page injects itself the moment a group member's live status actually
-      transitions to running/stopped, colored green/red, with no visible label tag (just the
-      colored text) though the label still exists for the filter checkboxes.
+      `[Server Name]` in the same turquoise as the desktop Group Console (with a space
+      before whatever follows it - label or, for the label-less START/STOP lines described
+      below, straight into the text), backed by two new endpoints -
+      `GET /api/groups/:group/events` (the merged backlog, reusing
+      `src/main/lib/groupConsole.ts`'s `getGroupConsoleBacklog`) and
+      `GET /api/groups/:group/events/stream` (the live merged tail, reusing that same file's
+      `watchGroupConsole` - one `watchLogFile` per running server in the group, exactly like
+      the desktop Group Console's own IPC channel, just reached over HTTP/SSE instead).
+      Ungrouped is addressed as the literal path segment `_ungrouped_` (an actual empty
+      segment invites double-slash URL edge cases). Each line shows its date as **DD/MM**
+      next to the timestamp, same as the desktop version, since a merged feed can span more
+      than a day. On a phone, the feed's text drops to the same smaller size the
+      single-server Dashboard view's own console already uses below 700px, so more history
+      fits without either view feeling inconsistent.
+    - A "Show:" row of checkboxes (persisted in this device's `localStorage`, independent of
+      the page's own admin-controlled per-label setting) includes two categories no real log
+      line produces - **START** and **STOP** - synthetic lines this page injects itself the
+      moment a group member's live status actually transitions to running/stopped, colored
+      green/red, with no visible label tag (just the colored text) though the label still
+      exists for the filter checkboxes. A **Show ▾** button next to the group name
+      collapses/expands the whole checkbox row - same collapse-to-`localStorage` pattern as
+      the single-server Dashboard view's own **Events ▾** toggle, independent key so
+      collapsing one doesn't affect the other.
     - Whenever any server's status transitions to running or stopped - not just a member of
       the currently-open group, and not for the in-between
       starting/stopping/updating/restarting states - a toast pops (green "started" / red
@@ -443,9 +452,21 @@ dedicated servers running on the same machine.
       last-seen state is tracked for as long as the tab stays open (not tied to which view
       is active), so a transition that happens while you're looking at a different tab still
       gets caught the moment you look back.
-    - An aggregate stats row at the top of the console (online/offline, players, CPU, RAM -
-      the same numbers as that group's row on the list above) and one card per server below
-      the feed, each with its live status badge, Game Version, players/max, and CPU/RAM.
+    - A compact aggregate stats box below the header (online/offline, players, CPU, RAM -
+      the same numbers as that group's row on the list above); smaller padding and text on a
+      phone, where screen space is tighter, than on desktop.
+    - The feed and RCON bar sit in the same `.panel.console-panel`/`.content-row`/`.side-col`
+      layout the single-server Dashboard view already uses: a wide console column that
+      actually gets the room (flex-grown to fill the available height on desktop, a fixed
+      generous fraction of the screen on mobile, same as that view), next to a **Servers ▾**
+      column of one card per server (live status badge, Game Version, players/max, CPU/RAM)
+      - collapsible on both desktop and mobile via the header button, same
+      collapse-to-`localStorage` mechanism as the filters toggle and the single-server
+      view's own **Status ▾** column toggle, so the console can have the whole width to
+      itself when you don't need the per-server detail. On desktop this reproduces the
+      Manager's own Group Console shape (console on the left, a divider, server info on the
+      right); on mobile the column stacks below the console instead, same responsive
+      behavior the single-server Dashboard view already has for its own side column.
       Tapping a card opens that server's own Dashboard view (same place the row's click used
       to go before this feature); tapping the **⋮** button on a card instead opens a small
       action sheet - **Start**, **Stop**, **Restart**, **Update**, and **Update Restart**,
@@ -458,11 +479,11 @@ dedicated servers running on the same machine.
       opens a menu that's partly or fully unreachable (`position: fixed` doesn't respond to
       page scroll, so an unclamped menu could otherwise land below the visible viewport with
       no way to reach it).
-    - An RCON command bar below the feed: a target dropdown (every server in the group, plus
-      an **ALL** option) and a text field - sending to ALL fans the same command out to
-      every server in the group at once (one `/api/servers/:id/rcon` call per server, same
-      as the desktop version's fan-out), with each server's individual result shown above
-      the bar.
+    - An RCON command bar below the feed, inside the same console column: a target dropdown
+      (every server in the group, plus an **ALL** option) and a text field - sending to ALL
+      fans the same command out to every server in the group at once (one
+      `/api/servers/:id/rcon` call per server, same as the desktop version's fan-out), with
+      each server's individual result shown above the bar.
   - **Dashboard** - the per-server console/RCON view (what this page originally was, and
     still the default on first visit). Its Status box shows **State** as the same colored
     pill badge as the Group Console's own server cards instead of plain text, plus **Version** (the
