@@ -166,6 +166,14 @@ dedicated servers running on the same machine.
       Steam has published, polled every 30 minutes straight from SteamCMD (anonymous
       login, `+app_info_print 2430930`, no download involved). SteamCMD needs to be
       configured in Settings for this to resolve to anything.
+
+    To the right of these fields, a **File Shortcuts** column stacks three buttons
+    vertically, no explanatory text: **Open config folder**
+    (`ShooterGame/Saved/Config/WindowsServer`, where `GameUserSettings.ini`/`Game.ini`
+    live), **Open SavedArks folder** (`ShooterGame/Saved/SavedArks`, the map save data),
+    and **Open SaveGames folder** (`ShooterGame/Saved/SaveGames`, mod-specific persistent
+    data) - all just open the OS file explorer at that path, the app never edits anything
+    in them itself.
   - **Server Statistics**: three sparkline charts (CPU %, RAM in MB, connected players),
     stacked with no gap between them and the metric name on the left of each row rather
     than above it, sampled every 5 seconds from the same status data the Server Status
@@ -188,12 +196,6 @@ dedicated servers running on the same machine.
     component: since `ServerDetail` only ever mounts the currently-selected tab, switching
     to another tab unmounts Analytics and tears the sampling interval down with it, so
     nothing keeps running (and nothing keeps redrawing) in the background.
-  - Three folder-shortcut buttons: **Open config folder**
-    (`ShooterGame/Saved/Config/WindowsServer`, where `GameUserSettings.ini`/`Game.ini`
-    live), **Open SavedArks folder** (`ShooterGame/Saved/SavedArks`, the map save data),
-    and **Open SaveGames folder** (`ShooterGame/Saved/SaveGames`, mod-specific persistent
-    data) - all just open the OS file explorer at that path, the app never edits anything
-    in them itself.
 - **Open profiles folder** — a button in the app-wide Settings view opens the folder
   holding this app's own data file (profiles, app settings, which pid belongs to which
   running server): a single `config.json`, written by `electron-store` at Electron's

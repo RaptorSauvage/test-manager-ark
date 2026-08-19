@@ -190,60 +190,93 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
     <div className="analytics-tab">
       <section className="cluster-section">
         <h3>Server Status</h3>
-        <dl className="analytics-grid">
-          <div>
-            <dt>Server PID</dt>
-            <dd>{status?.pid ?? '-'}</dd>
+        <div className="server-status-layout">
+          <div className="server-status-fields">
+            <dl className="analytics-grid">
+              <div>
+                <dt>Server PID</dt>
+                <dd>{status?.pid ?? '-'}</dd>
+              </div>
+              <div>
+                <dt>Connected players</dt>
+                <dd>
+                  {status?.players?.length ?? 0} / {profile.maxPlayers}
+                </dd>
+              </div>
+              <div>
+                <dt>CPU usage</dt>
+                <dd>{status?.cpu !== undefined ? `${status.cpu}%` : '-'}</dd>
+              </div>
+              <div>
+                <dt>Server Memory</dt>
+                <dd>
+                  {status?.memoryMB !== undefined
+                    ? `${status.memoryMB} MB${status.memoryPercent !== undefined ? ` (${status.memoryPercent}%)` : ''}`
+                    : '-'}
+                </dd>
+              </div>
+              <div>
+                <dt>Game Version</dt>
+                <dd>
+                  {isRunning ? (gameVersion ?? 'Detecting...') : 'Server not running'}
+                  {buildId ? ` (${buildId})` : ''}
+                </dd>
+              </div>
+              {profile.backupScheduleEnabled && backupStatus && (
+                <div>
+                  <dt>Backup task status</dt>
+                  <dd className={backupStatus.active ? 'status-ok' : 'status-warn'}>
+                    {backupStatus.active ? 'Started' : 'Stopped'}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt>Server uptime</dt>
+                <dd>{uptimeMs !== null ? formatUptime(uptimeMs) : '-'}</dd>
+              </div>
+              {profile.backupScheduleEnabled && backupStatus && (
+                <div>
+                  <dt>Next backup in</dt>
+                  <dd>
+                    {backupStatus.nextRunAt !== null ? formatCountdown(backupStatus.nextRunAt - now) : '--:--:--:--'}
+                  </dd>
+                </div>
+              )}
+            </dl>
+            {!isRunning && (
+              <p className="empty-state">Server isn&apos;t running - these will fill in once it starts.</p>
+            )}
+            {!profile.backupScheduleEnabled && (
+              <p className="empty-state">Backup schedule is disabled - enable it in the Backups tab.</p>
+            )}
+            <UpdateCheckPanel profileIds={[profile.id]} compact />
           </div>
-          <div>
-            <dt>Connected players</dt>
-            <dd>
-              {status?.players?.length ?? 0} / {profile.maxPlayers}
-            </dd>
+          <div className="file-shortcuts">
+            <span className="file-shortcuts-label">File Shortcuts</span>
+            <button
+              type="button"
+              className="btn-sm"
+              onClick={() => void openFolder(window.api.system.openServerConfigFolder)}
+            >
+              Open config folder
+            </button>
+            <button
+              type="button"
+              className="btn-sm"
+              onClick={() => void openFolder(window.api.system.openServerSavedArksFolder)}
+            >
+              Open SavedArks folder
+            </button>
+            <button
+              type="button"
+              className="btn-sm"
+              onClick={() => void openFolder(window.api.system.openServerSaveGamesFolder)}
+            >
+              Open SaveGames folder
+            </button>
+            {configFolderError && <p className="error-message">{configFolderError}</p>}
           </div>
-          <div>
-            <dt>CPU usage</dt>
-            <dd>{status?.cpu !== undefined ? `${status.cpu}%` : '-'}</dd>
-          </div>
-          <div>
-            <dt>Server Memory</dt>
-            <dd>
-              {status?.memoryMB !== undefined
-                ? `${status.memoryMB} MB${status.memoryPercent !== undefined ? ` (${status.memoryPercent}%)` : ''}`
-                : '-'}
-            </dd>
-          </div>
-          <div>
-            <dt>Game Version</dt>
-            <dd>
-              {isRunning ? (gameVersion ?? 'Detecting...') : 'Server not running'}
-              {buildId ? ` (${buildId})` : ''}
-            </dd>
-          </div>
-          {profile.backupScheduleEnabled && backupStatus && (
-            <div>
-              <dt>Backup task status</dt>
-              <dd className={backupStatus.active ? 'status-ok' : 'status-warn'}>
-                {backupStatus.active ? 'Started' : 'Stopped'}
-              </dd>
-            </div>
-          )}
-          <div>
-            <dt>Server uptime</dt>
-            <dd>{uptimeMs !== null ? formatUptime(uptimeMs) : '-'}</dd>
-          </div>
-          {profile.backupScheduleEnabled && backupStatus && (
-            <div>
-              <dt>Next backup in</dt>
-              <dd>{backupStatus.nextRunAt !== null ? formatCountdown(backupStatus.nextRunAt - now) : '--:--:--:--'}</dd>
-            </div>
-          )}
-        </dl>
-        {!isRunning && <p className="empty-state">Server isn&apos;t running - these will fill in once it starts.</p>}
-        {!profile.backupScheduleEnabled && (
-          <p className="empty-state">Backup schedule is disabled - enable it in the Backups tab.</p>
-        )}
-        <UpdateCheckPanel profileIds={[profile.id]} compact />
+        </div>
       </section>
 
       <section className="cluster-section">
@@ -280,39 +313,6 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
             {isRunning ? 'Collecting data...' : "Server isn't running - start it to see live stats."}
           </p>
         )}
-      </section>
-
-      <section className="cluster-section">
-        <h3>Config Files</h3>
-        <div className="button-row">
-          <button
-            type="button"
-            className="btn-sm"
-            onClick={() => void openFolder(window.api.system.openServerConfigFolder)}
-          >
-            Open config folder
-          </button>
-          <button
-            type="button"
-            className="btn-sm"
-            onClick={() => void openFolder(window.api.system.openServerSavedArksFolder)}
-          >
-            Open SavedArks folder
-          </button>
-          <button
-            type="button"
-            className="btn-sm"
-            onClick={() => void openFolder(window.api.system.openServerSaveGamesFolder)}
-          >
-            Open SaveGames folder
-          </button>
-        </div>
-        <p className="empty-state">
-          Opens <code>ShooterGame/Saved/Config/WindowsServer</code> - where{' '}
-          <code>GameUserSettings.ini</code>/<code>Game.ini</code> live. The app never edits these itself; open them
-          in a text editor from there.
-        </p>
-        {configFolderError && <p className="error-message">{configFolderError}</p>}
       </section>
     </div>
   )
