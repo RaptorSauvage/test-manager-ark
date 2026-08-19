@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import type { GroupConsoleEvent, RconResult, ServerProfile } from '@shared/types'
 import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE } from '@shared/types'
 import { useServerStatuses } from '../lib/useServerStatuses'
@@ -20,6 +20,8 @@ const MAX_EVENTS = 500
 const VISIBLE_LABELS_KEY = 'group-console-visible-labels'
 
 const RCON_TARGET_ALL = 'ALL'
+
+type ContextAction = 'start' | 'stop' | 'restart' | 'update'
 
 function loadVisibleLabels(): Set<string> {
   try {
@@ -79,7 +81,9 @@ interface RconResultEntry extends RconResult {
  * profile's log while it's actually running AND this page is open, starting/stopping
  * individual tailers live as servers in the group start/stop). Also offers an RCON command
  * bar (send to one server or the whole group) and a sidebar summarizing each server's live
- * status, version, players and resource usage.
+ * status, version, players and resource usage, with a right-click menu on each server card
+ * to start/stop/restart/update it directly - same actions and color coding as the Dashboard's
+ * own per-server and "All" buttons.
  */
 export default function GroupConsoleView({ groupName, profiles, onBack }: GroupConsoleViewProps): JSX.Element {
   const [events, setEvents] = useState<GroupConsoleEvent[]>([])
@@ -89,6 +93,8 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
   const [rconSending, setRconSending] = useState(false)
   const [rconResults, setRconResults] = useState<RconResultEntry[]>([])
   const [gameVersions, setGameVersions] = useState<Record<string, string | null>>({})
+  const [cardErrors, setCardErrors] = useState<Record<string, string>>({})
+  const [contextMenu, setContextMenu] = useState<{ profileId: string; x: number; y: number } | null>(null)
   const feedRef = useRef<HTMLDivElement>(null)
   const profileIdsKey = profiles.map((p) => p.id).join(',')
   const statuses = useServerStatuses(profiles.map((p) => p.id))
@@ -131,6 +137,17 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
     if (el) el.scrollTop = el.scrollHeight
   }, [events])
 
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = (): void => setContextMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('contextmenu', close)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('contextmenu', close)
+    }
+  }, [contextMenu])
+
   function toggleLabel(label: string): void {
     setVisibleLabels((prev) => {
       const next = new Set(prev)
@@ -163,7 +180,38 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
     }
   }
 
+  function openContextMenu(e: MouseEvent, profileId: string): void {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ profileId, x: e.clientX, y: e.clientY })
+  }
+
+  async function runContextAction(profile: ServerProfile, action: ContextAction): Promise<void> {
+    setContextMenu(null)
+    setCardErrors((prev) => ({ ...prev, [profile.id]: '' }))
+    try {
+      if (action === 'update') {
+        const wasRunning = statuses[profile.id]?.state === 'running'
+        if (wasRunning) await window.api.server.stop(profile.id)
+        await window.api.server.update(profile.id)
+        if (wasRunning) await window.api.server.start(profile.id)
+      } else {
+        await window.api.server[action](profile.id)
+      }
+    } catch (err) {
+      setCardErrors((prev) => ({ ...prev, [profile.id]: (err as Error).message }))
+    }
+  }
+
   const filtered = events.filter((e) => visibleLabels.has(e.label))
+  const contextProfile = contextMenu ? profiles.find((p) => p.id === contextMenu.profileId) : undefined
+  const contextState = contextProfile ? (statuses[contextProfile.id]?.state ?? 'stopped') : 'stopped'
+
+  const onlineCount = profiles.filter((p) => statuses[p.id]?.state === 'running').length
+  const offlineCount = profiles.length - onlineCount
+  const totalPlayers = profiles.reduce((sum, p) => sum + (statuses[p.id]?.players?.length ?? 0), 0)
+  const totalCpu = profiles.reduce((sum, p) => sum + (statuses[p.id]?.cpu ?? 0), 0)
+  const totalMemoryMB = profiles.reduce((sum, p) => sum + (statuses[p.id]?.memoryMB ?? 0), 0)
 
   return (
     <div className="group-console-page">
@@ -184,6 +232,29 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
             ))}
           </div>
 
+          <div className="group-console-feed" ref={feedRef}>
+            {filtered.length === 0 && <p className="empty-state">No events yet.</p>}
+            {filtered.map((event, i) => (
+              <div key={`${event.profileId}-${event.date}-${event.ts}-${i}`} className={`log-event log-event-${event.cls}`}>
+                <span className="date">{formatDateDDMM(event.date)}</span>
+                <span className="ts">{event.ts}</span>
+                <span className="server-tag">[{event.profileName}]</span>
+                <span className="label">{event.label}</span>
+                <span className="text">{renderEventText(event.text)}</span>
+              </div>
+            ))}
+          </div>
+
+          {rconResults.length > 0 && (
+            <div className="group-console-rcon-results">
+              {rconResults.map((result) => (
+                <p key={result.profileId} className={result.ok ? 'rcon-result-ok' : 'rcon-result-error'}>
+                  <strong>{result.profileName}:</strong> {result.ok ? result.response || '(no response)' : result.error}
+                </p>
+              ))}
+            </div>
+          )}
+
           <form className="group-console-rcon" onSubmit={(e) => void handleSendRcon(e)}>
             <select value={rconTarget} onChange={(e) => setRconTarget(e.target.value)}>
               <option value={RCON_TARGET_ALL}>ALL</option>
@@ -203,37 +274,41 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
               {rconSending ? 'Sending...' : 'Send'}
             </button>
           </form>
-
-          {rconResults.length > 0 && (
-            <div className="group-console-rcon-results">
-              {rconResults.map((result) => (
-                <p key={result.profileId} className={result.ok ? 'rcon-result-ok' : 'rcon-result-error'}>
-                  <strong>{result.profileName}:</strong> {result.ok ? result.response || '(no response)' : result.error}
-                </p>
-              ))}
-            </div>
-          )}
-
-          <div className="group-console-feed" ref={feedRef}>
-            {filtered.length === 0 && <p className="empty-state">No events yet.</p>}
-            {filtered.map((event, i) => (
-              <div key={`${event.profileId}-${event.date}-${event.ts}-${i}`} className={`log-event log-event-${event.cls}`}>
-                <span className="date">{formatDateDDMM(event.date)}</span>
-                <span className="ts">{event.ts}</span>
-                <span className="server-tag">[{event.profileName}]</span>
-                <span className="label">{event.label}</span>
-                <span className="text">{renderEventText(event.text)}</span>
-              </div>
-            ))}
-          </div>
         </div>
 
+        <div className="group-console-divider" />
+
         <aside className="group-console-sidebar">
+          <dl className="group-console-cluster-stats">
+            <div>
+              <dt>Online</dt>
+              <dd>
+                {onlineCount} <span className="muted">({offlineCount} off)</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Players</dt>
+              <dd>{totalPlayers}</dd>
+            </div>
+            <div>
+              <dt>CPU</dt>
+              <dd>{totalCpu.toFixed(1)}%</dd>
+            </div>
+            <div>
+              <dt>RAM</dt>
+              <dd>{totalMemoryMB} MB</dd>
+            </div>
+          </dl>
+
           {profiles.map((profile) => {
             const status = statuses[profile.id]
             const state = status?.state ?? 'stopped'
             return (
-              <div className="server-summary-card" key={profile.id}>
+              <div
+                className="server-summary-card"
+                key={profile.id}
+                onContextMenu={(e) => openContextMenu(e, profile.id)}
+              >
                 <div className="server-summary-card-header">
                   <h3>{profile.name}</h3>
                   <span className={`badge badge-${state}`}>{state}</span>
@@ -262,11 +337,45 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
                     </div>
                   )}
                 </dl>
+                {cardErrors[profile.id] && <p className="error-message">{cardErrors[profile.id]}</p>}
               </div>
             )
           })}
         </aside>
       </div>
+
+      {contextMenu && contextProfile && (
+        <div className="server-context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
+          <button
+            className="btn-start-all"
+            disabled={contextState !== 'stopped'}
+            onClick={() => void runContextAction(contextProfile, 'start')}
+          >
+            Start
+          </button>
+          <button
+            className="btn-stop-all"
+            disabled={contextState !== 'running'}
+            onClick={() => void runContextAction(contextProfile, 'stop')}
+          >
+            Stop
+          </button>
+          <button
+            className="btn-restart-all"
+            disabled={contextState !== 'running'}
+            onClick={() => void runContextAction(contextProfile, 'restart')}
+          >
+            Restart
+          </button>
+          <button
+            className="btn-super-all"
+            onClick={() => void runContextAction(contextProfile, 'update')}
+            title="Stops the server if running, updates it via SteamCMD, then starts it back up if it was running"
+          >
+            Update
+          </button>
+        </div>
+      )}
     </div>
   )
 }

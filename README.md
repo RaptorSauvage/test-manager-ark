@@ -173,15 +173,25 @@ dedicated servers running on the same machine.
   stops every tailer still active for that group. Each log line also shows its date as
   **DD/MM** next to the HH:MM:SS timestamp (derived from ARK's own "YYYY.MM.DD" log date,
   the same field the merge/sort already relies on), since a merged multi-server feed can
-  span more than one day. The page also has an **RCON command bar**: a target selector
-  listing every server in the group plus an **ALL** option, a text field for the command,
-  and a Send button - sending to ALL fans the same command out to every server in the group
-  at once (one `sendRconCommand` call per server, same non-throwing
+  span more than one day. Below the log feed sits an **RCON command bar**: a target
+  selector listing every server in the group plus an **ALL** option, a text field for the
+  command, and a Send button - sending to ALL fans the same command out to every server in
+  the group at once (one `sendRconCommand` call per server, same non-throwing
   `{ ok, response/error }` result as everywhere else RCON is used in this app) and shows
-  each server's individual result underneath. A right-hand **sidebar** lists every server
-  in the group with its live status badge, Game Version, connected/max players, and
-  CPU%/RAM - the same fields and `badge badge-<state>` styling as the Dashboard's own
-  server cards, fed by the same `useServerStatuses` live-status hook.
+  each server's individual result above the bar.
+
+  A vertical divider separates the log/RCON column from a right-hand **sidebar**. At the
+  top of the sidebar, a cluster summary shows how many of the group's servers are online
+  (with the offline count in parentheses), total connected players, and total CPU%/RAM
+  summed across whichever servers are currently running - the same aggregation the Cluster
+  Data row above already computes for its chart. Below that, one card per server shows its
+  live status badge, Game Version, connected/max players, and CPU%/RAM - the same fields
+  and `badge badge-<state>` styling as the Dashboard's own server cards, fed by the same
+  `useServerStatuses` live-status hook. Right-clicking a server's card opens a small
+  context menu with **Start**, **Stop**, **Restart** and **Update** - colored the same as
+  the Dashboard's "All" bulk-action buttons (green/red/amber/accent). Update mirrors the
+  Dashboard's "Stop+Update+Restart": it stops the server first if it's running, runs the
+  SteamCMD update, then starts it back up if it was running before.
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: one consolidated group with everything at a glance, no explanatory
     text and no sub-headers - just the fields:
