@@ -135,25 +135,25 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   }, [profile.id])
 
   useEffect(() => {
-    if (!isRunning) {
-      setGameVersion(null)
-      return
-    }
     let cancelled = false
     let interval: ReturnType<typeof setInterval> | undefined
     function refresh(): void {
       window.api.server.getGameVersion(profile.id).then((v) => {
         if (cancelled) return
-        if (v) {
+        // Whatever's cached is shown even while stopped - it doesn't change between runs,
+        // so there's no reason to blank it out just because the server isn't up right now.
+        setGameVersion(v)
+        if (v && interval) {
           // Found it - it won't change again for this run, so stop polling instead of
           // re-reading the log file every 5s for no reason.
-          setGameVersion(v)
           clearInterval(interval)
         }
       })
     }
     refresh()
-    interval = setInterval(refresh, 5000)
+    // Only keep polling while running - a stopped server's version won't newly appear on
+    // its own, so a single read of whatever's cached is enough.
+    if (isRunning) interval = setInterval(refresh, 5000)
     return () => {
       cancelled = true
       clearInterval(interval)
@@ -218,7 +218,7 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
               <div>
                 <dt>Game Version</dt>
                 <dd>
-                  {isRunning ? (gameVersion ?? 'Detecting...') : 'Server not running'}
+                  {gameVersion ?? (isRunning ? 'Detecting...' : 'Unknown')}
                   {buildId ? ` (${buildId})` : ''}
                 </dd>
               </div>

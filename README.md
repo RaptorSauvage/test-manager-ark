@@ -154,7 +154,10 @@ dedicated servers running on the same machine.
       transitioning into `running`/`starting`/`stopping`/`updating`/`stopped`, plus once
       for every profile when the Manager itself starts. Installed Build ID is the
       SteamCMD-installed build id, read straight from that install's
-      `appmanifest_2430930.acf` - blank before the first install.
+      `appmanifest_2430930.acf` - blank before the first install. Game Version keeps
+      showing the last value read even while the server is stopped (it doesn't change
+      between runs, so there's no reason to blank it out) - "Detecting..." only appears
+      while running and nothing's been read yet, "Unknown" if it's never been read at all.
     - **Backup task status** always shows one of four states: **Offline** (light red)
       whenever the server itself isn't running, regardless of the schedule - the backup
       task's own "active" flag is about whether its timer is armed, which is unrelated to
@@ -177,6 +180,21 @@ dedicated servers running on the same machine.
     live), **Save ARKs** (`ShooterGame/Saved/SavedArks`, the map save data), and
     **Save Game** (`ShooterGame/Saved/SaveGames`, mod-specific persistent data) - all just
     open the OS file explorer at that path, the app never edits anything in them itself.
+
+  - **Config file lock**: `GameUserSettings.ini`/`Game.ini` are set read-only 5 seconds
+    after a server starts, and set back to writable 5 seconds after it fully stops
+    (`src/main/lib/iniLock.ts`, driven off the same status events described above - the 5s
+    margin on both ends gives the ARK process, and the OS's own file handle cleanup, a
+    moment of slack around the transition instead of racing it). This is an OS-level
+    read-only attribute toggle (`fs.chmod`), so it's respected by Notepad and most editors
+    that overwrite a file in place, but not by editors that save via a temp-file-then-rename
+    (e.g. VS Code) - it's a deterrent against editing a running server's config by accident,
+    not a hard guarantee. Nothing in this app ever writes these files itself, so the lock
+    can never block a legitimate in-app write. A quick restart just re-locks the files once
+    it's running again rather than briefly unlocking them mid-restart. If the Manager
+    crashes or is force-quit while a server was running (and its config was locked), every
+    non-running profile's config gets unlocked once at the next Manager startup as a safety
+    net, so a crash can't leave the files stuck read-only.
   - **Server Statistics**: three sparkline charts (CPU %, RAM in MB, connected players),
     stacked with no gap between them and the metric name on the left of each row rather
     than above it, sampled every 5 seconds from the same status data the Server Status

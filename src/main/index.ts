@@ -20,6 +20,7 @@ import { applyLaunchOnStartup } from './lib/launchOnStartup'
 import { doStartServer } from './lib/serverActions'
 import { runAutoStart } from './lib/autoStart'
 import { registerServerVersionWatcher, checkAllGameVersionsOnStartup } from './lib/serverVersionWatcher'
+import { registerIniLockWatcher, unlockStoppedProfilesOnStartup } from './lib/iniLock'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -72,6 +73,7 @@ app.whenReady().then(() => {
   // Registered before adoption below, so it catches the running-status broadcast that
   // emits for an already-running adopted server too, not just a fresh start.
   registerServerVersionWatcher()
+  registerIniLockWatcher()
 
   // Re-attach to servers still running from a previous session (they survive
   // this app crashing/closing by design - see serverProcess.startServer).
@@ -80,6 +82,10 @@ app.whenReady().then(() => {
   // Every profile, not just running ones - a stopped server's log from its last run may
   // still have a usable version line, no reason to wait for its next start to show one.
   checkAllGameVersionsOnStartup(profiles)
+
+  // Safety net for a previous crash/force-quit that left a running server's config files
+  // locked read-only - anything not currently running gets unlocked once, right away.
+  unlockStoppedProfilesOnStartup(profiles, isRunning)
 
   registerPlayerBackupWatch()
   applyWebDashboardSettings(getSettings())
