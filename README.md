@@ -197,10 +197,14 @@ dedicated servers running on the same machine.
   per-server Update button). Update Restart mirrors the Dashboard's "Stop+Update+Restart":
   it stops the server first if it's running, runs the SteamCMD update, then starts it back
   up if it was running before. Whenever a server in the group actually transitions to
-  running or stopped (not on page load, and not for the in-between
-  starting/stopping/updating/restarting states), a toast pops in the top-right corner -
-  green "&lt;name&gt; started" or red "&lt;name&gt; stopped" - and fades away on its own a
-  few seconds later.
+  running or stopped (not for the in-between starting/stopping/updating/restarting states),
+  a toast pops in the top-right corner - green "&lt;name&gt; started" or red
+  "&lt;name&gt; stopped" - and fades away on its own a few seconds later. Each profile's
+  last-seen status is tracked at module scope rather than tied to this page being mounted,
+  so starting or stopping a server from the Dashboard while the Group Console isn't open
+  still pops its toast the next time you open the console for that group - only each
+  profile's very first status observed this session is treated as a baseline, not a
+  transition.
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: one consolidated group with everything at a glance, no explanatory
     text and no sub-headers - just the fields:

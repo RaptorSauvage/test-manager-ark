@@ -80,6 +80,16 @@ interface StateNotification {
 }
 
 /**
+ * Each profile's last-seen live status, module-scope rather than component state - a page
+ * remount (navigating away to start/stop a server from the Dashboard, then back into the
+ * Group Console) must not look like a fresh baseline, or the transition that already
+ * happened while this page was unmounted would silently never get a toast. Persists for the
+ * renderer's lifetime (cleared only on a full app reload), independent of any one Group
+ * Console instance.
+ */
+const lastKnownStates = new Map<string, string>()
+
+/**
  * Merges the live log feed of every server in a dashboard group into one chronological view,
  * each line tagged with which server it came from - same visual language (checkboxes to
  * show/hide event categories, colored labels) as the standalone web dashboard's console, but
@@ -109,7 +119,6 @@ export default function GroupConsoleView({
   const [contextMenu, setContextMenu] = useState<{ profileId: string; x: number; y: number } | null>(null)
   const [notifications, setNotifications] = useState<StateNotification[]>([])
   const feedRef = useRef<HTMLDivElement>(null)
-  const prevStatesRef = useRef<Record<string, string>>({})
   const profileIdsKey = profiles.map((p) => p.id).join(',')
   const statuses = useServerStatuses(profiles.map((p) => p.id))
 
@@ -147,19 +156,19 @@ export default function GroupConsoleView({
   }, [profileIdsKey])
 
   // Pops a transient toast whenever a server's live status actually transitions into
-  // 'running' or 'stopped' - compares against the previously-seen state per profile so a
-  // profile's first-ever status (on mount, or whenever it happens to resolve) never counts
-  // as a transition, only a real change does.
+  // 'running' or 'stopped' - compares against each profile's last-seen status in the
+  // module-level `lastKnownStates` map (not component state) so a profile's first-ever
+  // status ever observed never counts as a transition, but leaving this page and coming
+  // back after starting/stopping a server from elsewhere (e.g. the Dashboard) still does -
+  // the map remembers what this profile was doing before the page unmounted.
   useEffect(() => {
-    const prevStates = prevStatesRef.current
-    const nextStates: Record<string, string> = { ...prevStates }
     const toNotify: StateNotification[] = []
 
     for (const profile of profiles) {
       const state = statuses[profile.id]?.state
       if (!state) continue
-      const prevState = prevStates[profile.id]
-      nextStates[profile.id] = state
+      const prevState = lastKnownStates.get(profile.id)
+      lastKnownStates.set(profile.id, state)
       if (prevState === undefined || prevState === state) continue
       if (state === 'running') {
         toNotify.push({ id: `${profile.id}-${Date.now()}`, profileName: profile.name, type: 'start' })
@@ -167,7 +176,6 @@ export default function GroupConsoleView({
         toNotify.push({ id: `${profile.id}-${Date.now()}`, profileName: profile.name, type: 'stop' })
       }
     }
-    prevStatesRef.current = nextStates
 
     if (toNotify.length === 0) return
     setNotifications((prev) => [...prev, ...toNotify])
