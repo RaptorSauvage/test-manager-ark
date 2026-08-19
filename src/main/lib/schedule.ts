@@ -1,7 +1,8 @@
 import { CronExpressionParser } from 'cron-parser'
-import type { BackupScheduleStatus, ServerProfile } from '@shared/types'
+import type { BackupScheduleStatus, ServerProfile, ServerRunState, ServerStatus } from '@shared/types'
 import { createBackup, logBackup } from './backup'
-import { isRunning } from './serverProcess'
+import { isRunning, serverEvents } from './serverProcess'
+import { getProfile } from '../store'
 
 interface ArmedBackupSchedule {
   timer: NodeJS.Timeout
@@ -34,19 +35,20 @@ function arm(profile: ServerProfile): void {
   const timer = setTimeout(
     () => {
       if (!isRunning(profile.id)) {
-        // A scheduled run only actually backs up while the server is online -
-        // createBackup() itself will happily zip a stopped server's (possibly long-stale)
-        // files too, which is exactly what you want for a deliberate one-off "Create
-        // backup now" click, but not for an unattended hourly/daily job silently
-        // re-zipping the same unchanged files over and over while the server sits
-        // offline between runs. Logged either way (visible in the Backups tab's process
-        // log) so a skip is never silent.
+        // The schedule is only ever armed while the server is running (see
+        // applyBackupSchedule/handleStatusForBackupSchedule below) - reaching this branch
+        // means it stopped in the narrow race between arming and this exact tick firing,
+        // since a normal stop clears the timer outright. Log it (visible in the Backups
+        // tab's process log, so a skip is never silent) and just drop the armed entry
+        // instead of re-arming - the schedule stays off until the server starts again,
+        // same as if the stop had been noticed a moment earlier.
         logBackup(profile.id, 'Scheduled backup skipped - server is not running.')
-      } else {
-        createBackup(profile).catch((err: Error) => {
-          console.error(`Scheduled backup failed for ${profile.name}:`, err.message)
-        })
+        armedSchedules.delete(profile.id)
+        return
       }
+      createBackup(profile).catch((err: Error) => {
+        console.error(`Scheduled backup failed for ${profile.name}:`, err.message)
+      })
       arm(profile)
     },
     Math.max(0, nextRunAt - Date.now())
@@ -55,9 +57,19 @@ function arm(profile: ServerProfile): void {
   armedSchedules.set(profile.id, { timer, nextRunAt })
 }
 
+/**
+ * Arms the schedule, but only while the server is actually running - a stopped server's
+ * scheduled backup task is itself off, not just skipped when it happens to fire, so the
+ * Analytics tab's "Backup Status" panel never claims a schedule is active for a server
+ * that isn't. Call this on profile save (below) and whenever the server's own status says
+ * it just started (handleStatusForBackupSchedule) - between the two, the schedule tracks
+ * the server's running state directly instead of ticking uselessly in the background the
+ * whole time it's offline.
+ */
 export function applyBackupSchedule(profile: ServerProfile): void {
   clearBackupSchedule(profile.id)
   if (!profile.backupScheduleEnabled || !profile.backupSchedule) return
+  if (!isRunning(profile.id)) return
   arm(profile)
 }
 
@@ -76,4 +88,34 @@ export function getBackupScheduleStatus(profile: ServerProfile): BackupScheduleS
   const existing = armedSchedules.get(profile.id)
   if (!existing) return { active: false, nextRunAt: null }
   return { active: true, nextRunAt: existing.nextRunAt }
+}
+
+const lastKnownState = new Map<string, ServerRunState>()
+
+/**
+ * Arms a profile's backup schedule the moment its status actually transitions to
+ * 'running', and clears it the moment it leaves 'running' - so the task turns on and off
+ * with the server itself instead of sitting armed (and reporting "active") the whole time
+ * it's offline. Edge-triggered (the state actually changed), not level-triggered, so the
+ * routine 5s status ticks monitor.ts emits for an already-running server don't re-arm the
+ * timer on every single one - just once per actual transition.
+ */
+export function handleStatusForBackupSchedule(
+  status: ServerStatus,
+  lookupProfile: (id: string) => ServerProfile | undefined = getProfile
+): void {
+  const previous = lastKnownState.get(status.profileId)
+  lastKnownState.set(status.profileId, status.state)
+  if (status.state === previous) return
+
+  if (status.state === 'running') {
+    const profile = lookupProfile(status.profileId)
+    if (profile) applyBackupSchedule(profile)
+  } else {
+    clearBackupSchedule(status.profileId)
+  }
+}
+
+export function registerBackupScheduleWatcher(): void {
+  serverEvents.on('status', (status: ServerStatus) => handleStatusForBackupSchedule(status))
 }

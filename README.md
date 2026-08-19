@@ -53,12 +53,18 @@ dedicated servers running on the same machine.
   picking a folder, no separate Save click needed for that field specifically - typing a
   path by hand still needs "Save backup settings"), max backups to keep, and scheduled
   automatic backups (gated behind an explicit enable/disable toggle, not just an
-  empty/filled cron field) live here, instead of being split off into Settings. A
-  scheduled backup only actually runs while the server is online - if it's stopped when
-  the cron fires, that run is skipped rather than re-zipping the same unchanged files
-  every time an unattended job happens to fire while the server sits offline, and that
-  skip shows up in the Backup Process Log below (see next bullet) just like any other
-  cancellation. **Create backup now** is different: it's a deliberate one-off click, so it
+  empty/filled cron field) live here, instead of being split off into Settings. The
+  scheduled task itself only actually runs while the server is online - not just skipped
+  at fire time, but off entirely while the server is stopped: enabling the schedule (or
+  saving the profile with it already on) only arms it if the server happens to be running
+  at that moment, and it's armed/disarmed live from then on as the server actually
+  starts/stops, not just at save time - so it never sits ticking away in the background,
+  or shows as **Started** in the Analytics tab's Backup task status, for a server that's
+  offline. This also means a scheduled tick can only ever fire while the server is
+  running, but the fire-time "skip if not running" check (logged to the Backup Process Log
+  below like any other cancellation) stays in place as a defensive fallback for the
+  narrow race of the server stopping in the instant between the schedule arming and that
+  exact tick firing. **Create backup now** is different: it's a deliberate one-off click, so it
   works whether the server is running or stopped. While it's running, a backup (manual or
   scheduled) requires a confirmed save first: it sends `SaveGame` (RCON `SaveWorld`) and
   cancels outright - no zip created - if that command doesn't confirm, rather than backing

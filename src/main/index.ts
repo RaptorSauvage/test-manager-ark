@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
 import { listProfiles, getRunningPids, getRunningStartedAt, getSettings } from './store'
 import { applyWebDashboardSettings } from './lib/webDashboard'
-import { applyBackupSchedule } from './lib/schedule'
+import { applyBackupSchedule, registerBackupScheduleWatcher } from './lib/schedule'
 import { applyScheduledRestart, applyScheduledDinoWipe } from './lib/scheduledActions'
 import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
 import { startMonitoring } from './lib/monitor'
@@ -74,6 +74,7 @@ app.whenReady().then(() => {
   // emits for an already-running adopted server too, not just a fresh start.
   registerServerVersionWatcher()
   registerIniLockWatcher()
+  registerBackupScheduleWatcher()
 
   // Re-attach to servers still running from a previous session (they survive
   // this app crashing/closing by design - see serverProcess.startServer).

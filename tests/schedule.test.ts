@@ -1,5 +1,13 @@
-import { describe, expect, it, afterEach } from 'vitest'
+import { describe, expect, it, afterEach, vi } from 'vitest'
+
+// The schedule only ever arms while the server is running (see scheduleBackupGate.test.ts
+// for that gating behavior in detail) - default it to running here so this file's own
+// tests, which are about the arm/clear/status mechanics rather than run-state, don't all
+// need their own override.
+vi.mock('../src/main/lib/serverProcess', () => ({ isRunning: vi.fn(() => true) }))
+
 import { applyBackupSchedule, clearBackupSchedule, getBackupScheduleStatus } from '../src/main/lib/schedule'
+import { isRunning as mockIsRunning } from '../src/main/lib/serverProcess'
 import type { ServerProfile } from '../shared/types'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
@@ -82,6 +90,14 @@ describe('getBackupScheduleStatus', () => {
 
   it('does not apply (and reports inactive for) a disabled schedule', () => {
     const profile = makeProfile({ backupScheduleEnabled: false, backupSchedule: '0 */6 * * *' })
+    applyBackupSchedule(profile)
+
+    expect(getBackupScheduleStatus(profile)).toEqual({ active: false, nextRunAt: null })
+  })
+
+  it('does not apply (and reports inactive for) a valid, enabled schedule while the server is stopped', () => {
+    vi.mocked(mockIsRunning).mockReturnValueOnce(false)
+    const profile = makeProfile({ backupScheduleEnabled: true, backupSchedule: '0 */6 * * *' })
     applyBackupSchedule(profile)
 
     expect(getBackupScheduleStatus(profile)).toEqual({ active: false, nextRunAt: null })
