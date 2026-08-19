@@ -149,17 +149,28 @@ dedicated servers running on the same machine.
   gap-breaking, same 1h-collected/selectable-scale/persisted-per-group design) fed the
   group's summed CPU/memory/player samples instead of one server's raw ones - a single
   **Time Scale** selector at the top of the page applies to every group's chart at once.
-  Clicking anywhere on a row other than its chart opens that group's **Group Console**: a
-  live log feed merging every server in the group into one chronological view, each line
-  tagged with a turquoise `[Server Name]` prefix - same visual language (checkboxes to
-  show/hide event categories: JOIN/LEFT/CHAT/WARN/KILL/TAME/CMD/SAVE/CRYO/MISSION/READY,
-  colored labels) as the standalone web dashboard's own console, but merging every server
-  in the group instead of showing just one. Its filter checkboxes are independent of the
-  web dashboard's own persisted per-label setting - toggling one here doesn't affect the
-  other. The main process only tails the group's servers' logs while a Group Console page
-  is actually open (`src/main/lib/groupConsole.ts`, one `watchLogFile` per server in the
-  group, the same primitive every other log-following feature in this app already uses
-  concurrently) - navigating back stops every one of those tailers.
+  The chart (and its sampling) only exists while at least one server in the group is
+  actually running - a fully-stopped group shows no chart at all rather than a flat line
+  of zeroes, and nothing gets sampled/persisted for it while it's down.
+
+  Clicking anywhere on a row other than its chart opens that group's **Group Console**,
+  filling the full page: a live log feed merging every server in the group into one
+  chronological view, each line tagged with a turquoise `[Server Name]` prefix - same
+  visual language (checkboxes to show/hide event categories:
+  JOIN/LEFT/CHAT/WARN/KILL/TAME/CMD/SAVE/CRYO/MISSION/READY, colored labels) as the
+  standalone web dashboard's own console, but merging every server in the group instead of
+  showing just one. Its filter checkboxes are independent of the web dashboard's own
+  persisted per-label setting (toggling one here doesn't affect the other) and, unlike that
+  setting, persist across sessions on their own. Events are merged by their actual log date
+  plus time, not time-of-day alone - a single server's backlog can itself span more than a
+  day, so HH:MM:SS by itself isn't enough to correctly order events from multiple servers'
+  backlogs together. Only servers that are actually running get their new events tailed
+  live - the main process starts/stops each server's own tailer in real time as it starts
+  or stops while the console page is open (`src/main/lib/groupConsole.ts`, one
+  `watchLogFile` per running server in the group, the same primitive every other
+  log-following feature in this app already uses concurrently); a stopped server's older
+  history still shows up in the initial backlog, it just stops growing. Navigating back
+  stops every tailer still active for that group.
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: one consolidated group with everything at a glance, no explanatory
     text and no sub-headers - just the fields:

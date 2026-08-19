@@ -211,12 +211,24 @@ label.checkbox {
   width: 100%;
 }
 
+.group-console-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 24px;
+  gap: 12px;
+}
+
+.group-console-page .server-detail-header {
+  flex-shrink: 0;
+}
+
 .group-console-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  flex-shrink: 0;
   color: var(--muted);
   font-size: 0.85em;
 }
@@ -227,11 +239,12 @@ label.checkbox {
 }
 
 .group-console-feed {
+  flex: 1;
+  min-height: 0;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 14px;
-  height: 60vh;
   overflow-y: auto;
   font-family: 'Cascadia Code', 'Consolas', monospace;
   font-size: 0.85rem;

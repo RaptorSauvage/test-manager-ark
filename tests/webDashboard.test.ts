@@ -290,7 +290,8 @@ describe('web dashboard HTTP server', () => {
         label: 'JOIN',
         cls: 'join',
         text: `${PLAYER} joined the server (ID: 0002dbe9ab20413e9b8e7e1562b76868)`,
-        ts: '21:25:23'
+        ts: '21:25:23',
+        date: '2026.07.27'
       }
     ])
   })

@@ -80,6 +80,11 @@ export default function ClusterDataView({ profiles, onOpenGroup }: ClusterDataVi
       setHistoryByGroup((prev) => {
         const next = { ...prev }
         for (const g of currentGroups) {
+          // Nothing running in this group right now - same as the per-server Analytics
+          // tab skipping a sample while its own server is stopped, there's nothing live to
+          // record, and recording a flat 0 would misrepresent the group as merely idle
+          // instead of fully down.
+          if (g.runningCount === 0) continue
           const sample: StatSample = {
             time: Date.now(),
             cpu: g.totalCpu,
@@ -159,7 +164,7 @@ export default function ClusterDataView({ profiles, onOpenGroup }: ClusterDataVi
                     </strong>
                   </div>
                 </div>
-                {history.length > 0 && (
+                {g.runningCount > 0 && history.length > 0 && (
                   <div className="cluster-data-chart" onClick={(e) => e.stopPropagation()}>
                     <ServerStatsChart
                       history={history}

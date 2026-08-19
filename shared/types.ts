@@ -404,6 +404,11 @@ export const PLAYER_NAME_CLOSE = '\u0002'
  *  console, which merges the live feed of every server in a group into one chronological
  *  view. */
 export interface GroupConsoleEvent extends LogEvent {
+  /** The log line's date (ARK's own "YYYY.MM.DD" format). LogEvent.ts alone is HH:MM:SS -
+   *  fine for ordering one server's own feed (it always arrives in order), but not enough
+   *  to correctly merge multiple servers' backlogs, which can individually span more than
+   *  a single day. */
+  date: string
   profileId: string
   profileName: string
 }

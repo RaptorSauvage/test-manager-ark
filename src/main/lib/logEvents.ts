@@ -117,6 +117,35 @@ export function parseLogChunk(chunk: string, caches: LogEventCaches): LogEvent[]
   return events
 }
 
+export type DatedLogEvent = LogEvent & { date: string }
+
+/**
+ * Same as parseLogLine, but also returns the line's date ("YYYY.MM.DD", ARK's own format).
+ * `ts` alone is HH:MM:SS with no date, which is enough to order events within a single
+ * server's own live feed (they arrive in order), but not to correctly merge backlogs from
+ * multiple servers/sessions that can span more than one day - two events can share the same
+ * HH:MM:SS on different days, or even be ordered wrong: "00:15" sorts after "23:50" as plain
+ * strings despite happening later. `parseLogLine` itself is left untouched (own tests,
+ * webDashboard.ts doesn't need this) - this just re-derives the date from the same line with
+ * a second, side-effect-free regex match alongside the one real parse.
+ */
+export function parseLogLineWithDate(rawLine: string, caches: LogEventCaches): DatedLogEvent | null {
+  const m = rawLine.replace(/\r?\n$/, '').match(LOG_LINE_RE)
+  const event = parseLogLine(rawLine, caches)
+  if (!event || !m) return null
+  return { ...event, date: m[1] }
+}
+
+/** Same as parseLogChunk, but keeping each event's date - see parseLogLineWithDate. */
+export function parseLogChunkWithDate(chunk: string, caches: LogEventCaches): DatedLogEvent[] {
+  const events: DatedLogEvent[] = []
+  for (const line of chunk.split(/\r?\n/)) {
+    const event = parseLogLineWithDate(line, caches)
+    if (event) events.push(event)
+  }
+  return events
+}
+
 /** How much of ShooterGame.log to re-read for backlog on a fresh page load/reconnect, and
  *  how many of the parsed events out of that backlog to actually keep - same defaults as
  *  the standalone Python dashboard this behavior was ported from. */
@@ -131,7 +160,7 @@ const BACKLOG_MAX_LINES = 60
  * per-label toggle); omit it for a caller with its own independent filtering, like the
  * Cluster Data group console.
  */
-export function readLogBacklog(installDir: string, disabledLabels?: ReadonlySet<string>): LogEvent[] {
+export function readLogBacklog(installDir: string, disabledLabels?: ReadonlySet<string>): DatedLogEvent[] {
   const logPath = getLogFilePath(installDir)
   if (!fs.existsSync(logPath)) return []
 
@@ -152,7 +181,7 @@ export function readLogBacklog(installDir: string, disabledLabels?: ReadonlySet<
     if (firstNewline >= 0) text = text.slice(firstNewline + 1)
   }
 
-  const events = parseLogChunk(text, createLogEventCaches())
+  const events = parseLogChunkWithDate(text, createLogEventCaches())
   const filtered = disabledLabels ? events.filter((event) => !disabledLabels.has(event.label)) : events
   return filtered.slice(-BACKLOG_MAX_LINES)
 }
