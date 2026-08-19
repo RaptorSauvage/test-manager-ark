@@ -1,7 +1,14 @@
+import { useRef, useState, type MouseEvent } from 'react'
 import { buildTimeSeriesPoints, selectHistoryWindow, type StatSample } from '../../lib/sparkline'
 
 const CHART_WIDTH = 1000
 const CHART_HEIGHT = 60
+
+interface HoverState {
+  xPercent: number
+  time: number
+  value: number
+}
 
 interface SparklineProps {
   label: string
@@ -16,6 +23,19 @@ interface SparklineProps {
 
 function Sparkline({ label, unit, current, samples, windowMs, now, color, max }: SparklineProps): JSX.Element {
   const points = buildTimeSeriesPoints(samples, windowMs, now, CHART_WIDTH, CHART_HEIGHT, 0, max)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [hover, setHover] = useState<HoverState | null>(null)
+
+  function handleMouseMove(e: MouseEvent<HTMLDivElement>): void {
+    const rect = wrapRef.current?.getBoundingClientRect()
+    if (!rect || rect.width === 0 || samples.length === 0) return
+    const fraction = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+    const targetTime = now - windowMs + fraction * windowMs
+    const nearest = samples.reduce((closest, s) =>
+      Math.abs(s.time - targetTime) < Math.abs(closest.time - targetTime) ? s : closest
+    )
+    setHover({ xPercent: fraction * 100, time: nearest.time, value: nearest.value })
+  }
 
   return (
     <div className="stats-chart">
@@ -23,11 +43,22 @@ function Sparkline({ label, unit, current, samples, windowMs, now, color, max }:
         <span>{label}</span>
         <strong>{current !== undefined ? `${Math.round(current)}${unit}` : '-'}</strong>
       </div>
-      <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} preserveAspectRatio="none" className="stats-chart-svg">
-        {points && (
-          <polyline points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+      <div className="stats-chart-svg-wrap" ref={wrapRef} onMouseMove={handleMouseMove} onMouseLeave={() => setHover(null)}>
+        <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} preserveAspectRatio="none" className="stats-chart-svg">
+          {points && (
+            <polyline points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          )}
+        </svg>
+        {hover && (
+          <>
+            <div className="stats-chart-hover-line" style={{ left: `${hover.xPercent}%` }} />
+            <div className="stats-chart-tooltip" style={{ left: `${hover.xPercent}%` }}>
+              {new Date(hover.time).toLocaleTimeString()} · {Math.round(hover.value)}
+              {unit}
+            </div>
+          </>
         )}
-      </svg>
+      </div>
     </div>
   )
 }
@@ -43,10 +74,10 @@ interface ServerStatsChartProps {
  * Three compact sparklines (CPU%, RAM, Players) stacked full-width, each showing samples
  * that fall within the last `windowMs` (the selected time scale) out of the full history the
  * caller collected - deliberately hand-rolled SVG rather than a chart library, kept to a fixed
- * modest height per row rather than a full-page graph. Only ever mounted while the Analytics
- * tab itself is active (see ServerDetail/index.tsx, which unmounts inactive tabs entirely), so
- * sampling and redrawing both stop the moment you navigate away instead of running in the
- * background.
+ * modest height per row rather than a full-page graph. Hovering a row shows the time and value
+ * of the nearest sample under the cursor. Only ever mounted while the Analytics tab itself is
+ * active (see ServerDetail/index.tsx, which unmounts inactive tabs entirely), so sampling and
+ * redrawing both stop the moment you navigate away instead of running in the background.
  */
 export default function ServerStatsChart({ history, maxPlayers, windowMs, now }: ServerStatsChartProps): JSX.Element {
   const windowed = selectHistoryWindow(history, windowMs, now)

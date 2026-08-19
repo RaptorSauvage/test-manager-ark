@@ -167,8 +167,8 @@ dedicated servers running on the same machine.
       login, `+app_info_print 2430930`, no download involved). SteamCMD needs to be
       configured in Settings for this to resolve to anything.
 
-    To the right of these fields, a **File Shortcuts** column stacks three buttons
-    vertically, no explanatory text: **INI Config**
+    To the right of these fields, separated by a vertical divider, a **File Shortcuts**
+    column stacks three buttons vertically, no explanatory text: **INI Config**
     (`ShooterGame/Saved/Config/WindowsServer`, where `GameUserSettings.ini`/`Game.ini`
     live), **Save ARKs** (`ShooterGame/Saved/SavedArks`, the map save data), and
     **Save Game** (`ShooterGame/Saved/SaveGames`, mod-specific persistent data) - all just
@@ -176,7 +176,9 @@ dedicated servers running on the same machine.
   - **Server Statistics**: three sparkline charts (CPU %, RAM in MB, connected players),
     stacked with no gap between them and the metric name on the left of each row rather
     than above it, sampled every 5 seconds from the same status data the Server Status
-    fields above already use - no extra polling. Up to 1 hour of history is collected in
+    fields above already use - no extra polling. Hovering a row shows a vertical guide line
+    plus a small tooltip with the clock time and value of the nearest sample. Up to 1 hour
+    of history is collected in
     the background regardless of what's currently displayed, and a **Time Scale** selector
     (1m/5m/30m/1h) picks how much of that collected history each chart actually shows - the
     chosen scale is remembered per server in local storage too, so it stays on whatever you
