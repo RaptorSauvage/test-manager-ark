@@ -92,6 +92,7 @@ export default function App(): JSX.Element {
         groupName={groupConsoleTarget.groupName}
         profiles={groupProfiles}
         onBack={() => setGroupConsoleTarget(null)}
+        onOpenProfile={handleOpenProfile}
       />
     )
   }
@@ -111,7 +112,7 @@ export default function App(): JSX.Element {
           className={mainPage === 'clusterData' ? 'active' : ''}
           onClick={() => setMainPage('clusterData')}
         >
-          Cluster Data
+          Cluster Dashboard
         </button>
       </nav>
       <div className="app-content">

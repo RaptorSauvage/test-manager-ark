@@ -414,6 +414,11 @@ label.checkbox {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  cursor: pointer;
+}
+
+.server-summary-card:hover {
+  border-color: var(--accent);
 }
 
 .server-summary-card-header {

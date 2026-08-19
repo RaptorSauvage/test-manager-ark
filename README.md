@@ -132,9 +132,10 @@ dedicated servers running on the same machine.
   Version as the Analytics tab, e.g. "92.28") - reads whatever's already known when the
   dashboard loads and shows "-" if nothing's been detected yet for that server (it doesn't
   actively poll/"Detect" here the way the Analytics tab does).
-- **Sidebar / Cluster Data page** — a left sidebar (`src/renderer/src/App.tsx`) with two
-  entries, **Dashboard** (the page described above) and **Cluster Data**, shown whenever
-  you're not inside a server's own tabs or one of the settings screens. Cluster Data shows
+- **Sidebar / Cluster Dashboard page** — a left sidebar (`src/renderer/src/App.tsx`) with
+  two entries, **Dashboard** (the page described above) and **Cluster Dashboard**, shown
+  whenever you're not inside a server's own tabs or one of the settings screens. Cluster
+  Dashboard shows
   one row per **Dashboard group** (same grouping/ordering as the Dashboard's collapsible
   sections, hidden servers excluded, an "Ungrouped" row for anything with no group) with
   that group's servers summed together: how many are running out of the group's total,
@@ -184,10 +185,11 @@ dedicated servers running on the same machine.
   top of the sidebar, a cluster summary shows how many of the group's servers are online
   (with the offline count in parentheses), total connected players, and total CPU%/RAM
   summed across whichever servers are currently running - the same aggregation the Cluster
-  Data row above already computes for its chart. Below that, one card per server shows its
-  live status badge, Game Version, connected/max players, and CPU%/RAM - the same fields
+  Dashboard row above already computes for its chart. Below that, one card per server shows
+  its live status badge, Game Version, connected/max players, and CPU%/RAM - the same fields
   and `badge badge-<state>` styling as the Dashboard's own server cards, fed by the same
-  `useServerStatuses` live-status hook. Right-clicking a server's card opens a small
+  `useServerStatuses` live-status hook. Clicking a card opens that server's own profile (same
+  place the Dashboard's "Manage" button goes); right-clicking it instead opens a small
   context menu with **Start**, **Stop**, **Restart**, **Update** and **Update Restart** -
   colored the same as the Dashboard's "All" bulk-action buttons (green/red/amber/blue),
   except Update Restart which gets its own cyan to stand out from the plain Update.

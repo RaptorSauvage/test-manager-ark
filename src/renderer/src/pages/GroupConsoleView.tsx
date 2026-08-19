@@ -7,6 +7,7 @@ interface GroupConsoleViewProps {
   groupName: string
   profiles: ServerProfile[]
   onBack: () => void
+  onOpenProfile: (id: string) => void
 }
 
 const ALL_EVENT_LABELS = ['JOIN', 'LEFT', 'CHAT', 'WARN', 'KILL', 'TAME', 'CMD', 'SAVE', 'CRYO', 'MISSION', 'READY']
@@ -89,9 +90,14 @@ interface StateNotification {
  * bar (send to one server or the whole group) and a sidebar summarizing each server's live
  * status, version, players and resource usage, with a right-click menu on each server card
  * to start/stop/restart/update it directly - same actions and color coding as the Dashboard's
- * own per-server and "All" buttons.
+ * own per-server and "All" buttons - and a left click to open that server's own profile.
  */
-export default function GroupConsoleView({ groupName, profiles, onBack }: GroupConsoleViewProps): JSX.Element {
+export default function GroupConsoleView({
+  groupName,
+  profiles,
+  onBack,
+  onOpenProfile
+}: GroupConsoleViewProps): JSX.Element {
   const [events, setEvents] = useState<GroupConsoleEvent[]>([])
   const [visibleLabels, setVisibleLabels] = useState<Set<string>>(() => loadVisibleLabels())
   const [rconTarget, setRconTarget] = useState<string>(RCON_TARGET_ALL)
@@ -362,6 +368,7 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
               <div
                 className="server-summary-card"
                 key={profile.id}
+                onClick={() => onOpenProfile(profile.id)}
                 onContextMenu={(e) => openContextMenu(e, profile.id)}
               >
                 <div className="server-summary-card-header">

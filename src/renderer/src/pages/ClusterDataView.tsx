@@ -113,7 +113,7 @@ export default function ClusterDataView({ profiles, onOpenGroup }: ClusterDataVi
   return (
     <div className="dashboard">
       <header className="dashboard-header">
-        <h1>Cluster Data</h1>
+        <h1>Cluster Dashboard</h1>
         {groupStats.length > 0 && (
           <div className="time-scale-selector">
             <span>Time Scale</span>
