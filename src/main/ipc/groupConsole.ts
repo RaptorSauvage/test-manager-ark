@@ -2,6 +2,13 @@ import { ipcMain, type WebContents } from 'electron'
 import { IPC, type ServerProfile } from '@shared/types'
 import { getProfile } from '../store'
 import { getGroupConsoleBacklog, watchGroupConsole } from '../lib/groupConsole'
+import { sendRconCommand } from '../lib/rcon'
+
+function requireProfile(profileId: string): ServerProfile {
+  const profile = getProfile(profileId)
+  if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+  return profile
+}
 
 /** Only one Group Console page is ever open at a time in this single-window app - a new
  *  subscribe call replaces whatever was previously active instead of stacking tailers. */
@@ -23,4 +30,8 @@ export function registerGroupConsoleHandlers(webContents: WebContents): void {
     stopWatching?.()
     stopWatching = null
   })
+
+  ipcMain.handle(IPC.groupConsoleRconSend, (_event, profileId: string, command: string) =>
+    sendRconCommand(requireProfile(profileId), command)
+  )
 }

@@ -170,7 +170,18 @@ dedicated servers running on the same machine.
   `watchLogFile` per running server in the group, the same primitive every other
   log-following feature in this app already uses concurrently); a stopped server's older
   history still shows up in the initial backlog, it just stops growing. Navigating back
-  stops every tailer still active for that group.
+  stops every tailer still active for that group. Each log line also shows its date as
+  **DD/MM** next to the HH:MM:SS timestamp (derived from ARK's own "YYYY.MM.DD" log date,
+  the same field the merge/sort already relies on), since a merged multi-server feed can
+  span more than one day. The page also has an **RCON command bar**: a target selector
+  listing every server in the group plus an **ALL** option, a text field for the command,
+  and a Send button - sending to ALL fans the same command out to every server in the group
+  at once (one `sendRconCommand` call per server, same non-throwing
+  `{ ok, response/error }` result as everywhere else RCON is used in this app) and shows
+  each server's individual result underneath. A right-hand **sidebar** lists every server
+  in the group with its live status badge, Game Version, connected/max players, and
+  CPU%/RAM - the same fields and `badge badge-<state>` styling as the Dashboard's own
+  server cards, fed by the same `useServerStatuses` live-status hook.
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: one consolidated group with everything at a glance, no explanatory
     text and no sub-headers - just the fields:

@@ -368,7 +368,8 @@ export const IPC = {
 
   groupConsoleSubscribe: 'group-console:subscribe',
   groupConsoleUnsubscribe: 'group-console:unsubscribe',
-  groupConsoleEvent: 'group-console:event'
+  groupConsoleEvent: 'group-console:event',
+  groupConsoleRconSend: 'group-console:rcon-send'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -551,5 +552,8 @@ export interface Api {
     /** Stops the active subscription's tailers. Safe to call with nothing subscribed. */
     unsubscribe: () => Promise<void>
     onEvent: (callback: (event: GroupConsoleEvent) => void) => () => void
+    /** Sends an RCON command to one server in the group - never rejects, the result's
+     *  `ok`/`error` says whether it actually succeeded. */
+    sendRcon: (profileId: string, command: string) => Promise<RconResult>
   }
 }

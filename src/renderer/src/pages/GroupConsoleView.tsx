@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
-import type { GroupConsoleEvent, ServerProfile } from '@shared/types'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import type { GroupConsoleEvent, RconResult, ServerProfile } from '@shared/types'
 import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE } from '@shared/types'
+import { useServerStatuses } from '../lib/useServerStatuses'
 
 interface GroupConsoleViewProps {
   groupName: string
@@ -17,6 +18,8 @@ const MAX_EVENTS = 500
 /** Shared across every group's console - the same filter preference persists instead of
  *  resetting to "everything shown" each time you open one. */
 const VISIBLE_LABELS_KEY = 'group-console-visible-labels'
+
+const RCON_TARGET_ALL = 'ALL'
 
 function loadVisibleLabels(): Set<string> {
   try {
@@ -38,6 +41,12 @@ function sortKey(event: GroupConsoleEvent): string {
   return `${event.date} ${event.ts}`
 }
 
+/** Converts ARK's own "YYYY.MM.DD" log date into a short DD/MM display. */
+function formatDateDDMM(date: string): string {
+  const [, mm, dd] = date.split('.')
+  return dd && mm ? `${dd}/${mm}` : date
+}
+
 /** Splits an event's text on the invisible player-name markers, highlighting the player's
  *  name portion - same approach as the web dashboard's own vanilla-JS renderer. */
 function renderEventText(text: string): Array<string | JSX.Element> {
@@ -56,6 +65,11 @@ function renderEventText(text: string): Array<string | JSX.Element> {
   ]
 }
 
+interface RconResultEntry extends RconResult {
+  profileId: string
+  profileName: string
+}
+
 /**
  * Merges the live log feed of every server in a dashboard group into one chronological view,
  * each line tagged with which server it came from - same visual language (checkboxes to
@@ -63,13 +77,21 @@ function renderEventText(text: string): Array<string | JSX.Element> {
  * reading from every server in the group at once instead of just one. Subscribes on mount,
  * unsubscribes on unmount (see src/main/lib/groupConsole.ts - the main process only tails a
  * profile's log while it's actually running AND this page is open, starting/stopping
- * individual tailers live as servers in the group start/stop).
+ * individual tailers live as servers in the group start/stop). Also offers an RCON command
+ * bar (send to one server or the whole group) and a sidebar summarizing each server's live
+ * status, version, players and resource usage.
  */
 export default function GroupConsoleView({ groupName, profiles, onBack }: GroupConsoleViewProps): JSX.Element {
   const [events, setEvents] = useState<GroupConsoleEvent[]>([])
   const [visibleLabels, setVisibleLabels] = useState<Set<string>>(() => loadVisibleLabels())
+  const [rconTarget, setRconTarget] = useState<string>(RCON_TARGET_ALL)
+  const [rconCommand, setRconCommand] = useState('')
+  const [rconSending, setRconSending] = useState(false)
+  const [rconResults, setRconResults] = useState<RconResultEntry[]>([])
+  const [gameVersions, setGameVersions] = useState<Record<string, string | null>>({})
   const feedRef = useRef<HTMLDivElement>(null)
   const profileIdsKey = profiles.map((p) => p.id).join(',')
+  const statuses = useServerStatuses(profiles.map((p) => p.id))
 
   useEffect(() => {
     let cancelled = false
@@ -92,6 +114,19 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
   }, [profileIdsKey])
 
   useEffect(() => {
+    let cancelled = false
+    Promise.all(profiles.map(async (p) => [p.id, await window.api.server.getGameVersion(p.id)] as const)).then(
+      (entries) => {
+        if (!cancelled) setGameVersions(Object.fromEntries(entries))
+      }
+    )
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileIdsKey])
+
+  useEffect(() => {
     const el = feedRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [events])
@@ -106,6 +141,28 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
     })
   }
 
+  async function handleSendRcon(e: FormEvent): Promise<void> {
+    e.preventDefault()
+    const command = rconCommand.trim()
+    if (!command || rconSending) return
+    const targets = rconTarget === RCON_TARGET_ALL ? profiles : profiles.filter((p) => p.id === rconTarget)
+    if (targets.length === 0) return
+
+    setRconSending(true)
+    setRconResults([])
+    try {
+      const results = await Promise.all(
+        targets.map(async (profile) => {
+          const result = await window.api.groupConsole.sendRcon(profile.id, command)
+          return { profileId: profile.id, profileName: profile.name, ...result }
+        })
+      )
+      setRconResults(results)
+    } finally {
+      setRconSending(false)
+    }
+  }
+
   const filtered = events.filter((e) => visibleLabels.has(e.label))
 
   return (
@@ -115,26 +172,100 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
         <h1>{groupName || 'Ungrouped'} — Group Console</h1>
       </header>
 
-      <div className="group-console-filters">
-        <span>Show:</span>
-        {ALL_EVENT_LABELS.map((label) => (
-          <label key={label} className="checkbox">
-            <input type="checkbox" checked={visibleLabels.has(label)} onChange={() => toggleLabel(label)} />
-            {label}
-          </label>
-        ))}
-      </div>
-
-      <div className="group-console-feed" ref={feedRef}>
-        {filtered.length === 0 && <p className="empty-state">No events yet.</p>}
-        {filtered.map((event, i) => (
-          <div key={`${event.profileId}-${event.date}-${event.ts}-${i}`} className={`log-event log-event-${event.cls}`}>
-            <span className="ts">{event.ts}</span>
-            <span className="server-tag">[{event.profileName}]</span>
-            <span className="label">{event.label}</span>
-            <span className="text">{renderEventText(event.text)}</span>
+      <div className="group-console-body">
+        <div className="group-console-main">
+          <div className="group-console-filters">
+            <span>Show:</span>
+            {ALL_EVENT_LABELS.map((label) => (
+              <label key={label} className="checkbox">
+                <input type="checkbox" checked={visibleLabels.has(label)} onChange={() => toggleLabel(label)} />
+                {label}
+              </label>
+            ))}
           </div>
-        ))}
+
+          <form className="group-console-rcon" onSubmit={(e) => void handleSendRcon(e)}>
+            <select value={rconTarget} onChange={(e) => setRconTarget(e.target.value)}>
+              <option value={RCON_TARGET_ALL}>ALL</option>
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              placeholder="RCON command..."
+              value={rconCommand}
+              onChange={(e) => setRconCommand(e.target.value)}
+            />
+            <button type="submit" disabled={rconSending || !rconCommand.trim()}>
+              {rconSending ? 'Sending...' : 'Send'}
+            </button>
+          </form>
+
+          {rconResults.length > 0 && (
+            <div className="group-console-rcon-results">
+              {rconResults.map((result) => (
+                <p key={result.profileId} className={result.ok ? 'rcon-result-ok' : 'rcon-result-error'}>
+                  <strong>{result.profileName}:</strong> {result.ok ? result.response || '(no response)' : result.error}
+                </p>
+              ))}
+            </div>
+          )}
+
+          <div className="group-console-feed" ref={feedRef}>
+            {filtered.length === 0 && <p className="empty-state">No events yet.</p>}
+            {filtered.map((event, i) => (
+              <div key={`${event.profileId}-${event.date}-${event.ts}-${i}`} className={`log-event log-event-${event.cls}`}>
+                <span className="date">{formatDateDDMM(event.date)}</span>
+                <span className="ts">{event.ts}</span>
+                <span className="server-tag">[{event.profileName}]</span>
+                <span className="label">{event.label}</span>
+                <span className="text">{renderEventText(event.text)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <aside className="group-console-sidebar">
+          {profiles.map((profile) => {
+            const status = statuses[profile.id]
+            const state = status?.state ?? 'stopped'
+            return (
+              <div className="server-summary-card" key={profile.id}>
+                <div className="server-summary-card-header">
+                  <h3>{profile.name}</h3>
+                  <span className={`badge badge-${state}`}>{state}</span>
+                </div>
+                <dl className="server-summary-card-info">
+                  <div>
+                    <dt>Version</dt>
+                    <dd>{gameVersions[profile.id] ?? '-'}</dd>
+                  </div>
+                  <div>
+                    <dt>Players</dt>
+                    <dd>
+                      {status?.players?.length ?? 0}/{profile.maxPlayers}
+                    </dd>
+                  </div>
+                  {status?.cpu !== undefined && (
+                    <div>
+                      <dt>CPU</dt>
+                      <dd>{status.cpu}%</dd>
+                    </div>
+                  )}
+                  {status?.memoryMB !== undefined && (
+                    <div>
+                      <dt>RAM</dt>
+                      <dd>{status.memoryMB} MB</dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            )
+          })}
+        </aside>
       </div>
     </div>
   )

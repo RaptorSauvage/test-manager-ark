@@ -9,7 +9,8 @@ import {
   type AppUpdateStatus,
   type BackupLogEntry,
   type WebDashboardRole,
-  type GroupConsoleEvent
+  type GroupConsoleEvent,
+  type RconResult
 } from '@shared/types'
 
 const api: Api = {
@@ -159,7 +160,9 @@ const api: Api = {
       const listener = (_event: Electron.IpcRendererEvent, payload: GroupConsoleEvent): void => callback(payload)
       ipcRenderer.on(IPC.groupConsoleEvent, listener)
       return () => ipcRenderer.removeListener(IPC.groupConsoleEvent, listener)
-    }
+    },
+    sendRcon: (profileId: string, command: string): Promise<RconResult> =>
+      ipcRenderer.invoke(IPC.groupConsoleRconSend, profileId, command)
   }
 }
 
