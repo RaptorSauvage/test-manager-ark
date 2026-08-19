@@ -164,7 +164,10 @@ dedicated servers running on the same machine.
   **STOP**, synthetic lines this page injects itself (not parsed from the log - there's no
   log line for "the Manager noticed this server is now running/stopped") whenever a
   server's live status actually transitions, colored green/red like the toast described
-  below. Its filter checkboxes are independent of the web dashboard's own
+  below - the line has no visible label tag (unlike every other category), it's just the
+  colored "&lt;name&gt; started"/"&lt;name&gt; stopped" text, though the label still exists
+  under the hood for the Show filter checkboxes above. Its filter checkboxes are independent
+  of the web dashboard's own
   persisted per-label setting (toggling one here doesn't affect the other) and, unlike that
   setting, persist across sessions on their own. Events are merged by their actual log date
   plus time, not time-of-day alone - a single server's backlog can itself span more than a

@@ -348,7 +348,7 @@ export default function GroupConsoleView({
                 <span className="date">{formatDateDDMM(event.date)}</span>
                 <span className="ts">{event.ts}</span>
                 <span className="server-tag">[{event.profileName}]</span>
-                <span className="label">{event.label}</span>
+                {event.label !== 'START' && event.label !== 'STOP' && <span className="label">{event.label}</span>}
                 <span className="text">{renderEventText(event.text)}</span>
               </div>
             ))}
