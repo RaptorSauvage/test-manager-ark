@@ -188,10 +188,12 @@ dedicated servers running on the same machine.
   live status badge, Game Version, connected/max players, and CPU%/RAM - the same fields
   and `badge badge-<state>` styling as the Dashboard's own server cards, fed by the same
   `useServerStatuses` live-status hook. Right-clicking a server's card opens a small
-  context menu with **Start**, **Stop**, **Restart** and **Update** - colored the same as
-  the Dashboard's "All" bulk-action buttons (green/red/amber/accent). Update mirrors the
-  Dashboard's "Stop+Update+Restart": it stops the server first if it's running, runs the
-  SteamCMD update, then starts it back up if it was running before.
+  context menu with **Start**, **Stop**, **Restart**, **Update** and **Update Restart** -
+  colored the same as the Dashboard's "All" bulk-action buttons (green/red/amber/blue).
+  Update is the plain SteamCMD install/update (only while stopped, like the Dashboard's own
+  per-server Update button). Update Restart mirrors the Dashboard's "Stop+Update+Restart":
+  it stops the server first if it's running, runs the SteamCMD update, then starts it back
+  up if it was running before.
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: one consolidated group with everything at a glance, no explanatory
     text and no sub-headers - just the fields:

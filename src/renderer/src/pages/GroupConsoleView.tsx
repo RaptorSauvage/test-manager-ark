@@ -21,7 +21,7 @@ const VISIBLE_LABELS_KEY = 'group-console-visible-labels'
 
 const RCON_TARGET_ALL = 'ALL'
 
-type ContextAction = 'start' | 'stop' | 'restart' | 'update'
+type ContextAction = 'start' | 'stop' | 'restart' | 'update' | 'updateRestart'
 
 function loadVisibleLabels(): Set<string> {
   try {
@@ -190,11 +190,13 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
     setContextMenu(null)
     setCardErrors((prev) => ({ ...prev, [profile.id]: '' }))
     try {
-      if (action === 'update') {
+      if (action === 'updateRestart') {
         const wasRunning = statuses[profile.id]?.state === 'running'
         if (wasRunning) await window.api.server.stop(profile.id)
         await window.api.server.update(profile.id)
         if (wasRunning) await window.api.server.start(profile.id)
+      } else if (action === 'update') {
+        await window.api.server.update(profile.id)
       } else {
         await window.api.server[action](profile.id)
       }
@@ -368,11 +370,19 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
             Restart
           </button>
           <button
-            className="btn-super-all"
+            className="btn-update-all"
+            disabled={contextState !== 'stopped'}
             onClick={() => void runContextAction(contextProfile, 'update')}
-            title="Stops the server if running, updates it via SteamCMD, then starts it back up if it was running"
+            title="Install/update the server files via SteamCMD"
           >
             Update
+          </button>
+          <button
+            className="btn-super-all"
+            onClick={() => void runContextAction(contextProfile, 'updateRestart')}
+            title="Stops the server if running, updates it via SteamCMD, then starts it back up if it was running"
+          >
+            Update Restart
           </button>
         </div>
       )}
