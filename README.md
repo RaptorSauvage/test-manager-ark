@@ -133,69 +133,63 @@ dedicated servers running on the same machine.
   dashboard loads and shows "-" if nothing's been detected yet for that server (it doesn't
   actively poll/"Detect" here the way the Analytics tab does).
 - **Analytics tab** — the first tab on every server, read-only:
-  - **Server Status**: PID, uptime (live, ticking every second while running), memory
-    usage (MB and % of total system RAM), and connected players (X / configured max).
-    Uptime survives a Manager restart too - the actual start time is persisted alongside
-    the pid it already tracks to re-adopt a still-running server, so a re-adopted server
-    shows real elapsed uptime instead of losing it.
+  - **Server Status**: one consolidated group with everything at a glance, no explanatory
+    text and no sub-headers - just the fields:
+    - PID, uptime (live, ticking every second while running), memory usage (MB and % of
+      total system RAM), and connected players (X / configured max). Uptime survives a
+      Manager restart too - the actual start time is persisted alongside the pid it
+      already tracks to re-adopt a still-running server, so a re-adopted server shows real
+      elapsed uptime instead of losing it.
+    - **Game Version**, with the **Installed Build ID** shown in parentheses right next to
+      it (e.g. `92.43 (24786897)`). These are two separate numbers under the hood, since
+      ARK exposes them differently: Game Version (e.g. "92.28") is the human-readable
+      version ARK itself prints, read straight from the "ARK Version: 92.28" line it
+      writes to `ShooterGame.log` near the start of boot. (An earlier version of this
+      feature tried to read it back from the server's own console window title via
+      PowerShell/Win32 APIs instead - that turned out to be unreliable for a server
+      adopted after a Manager restart; reading the log line directly sidesteps that.)
+      Refreshed by `serverVersionWatcher.ts`, edge-triggered on the server's status
+      transitioning into `running`/`starting`/`stopping`/`updating`/`stopped`, plus once
+      for every profile when the Manager itself starts. Installed Build ID is the
+      SteamCMD-installed build id, read straight from that install's
+      `appmanifest_2430930.acf` - blank before the first install.
+    - **Backup task status** and **Next backup in** (only shown once the backup schedule
+      is enabled in the Backups tab) - whether the schedule is actually active right now,
+      and a live countdown to its next run, read directly off the same timer that will
+      actually fire it (a single self-armed `setTimeout` recomputed via `cron-parser`
+      after every run, rather than a background library polling every second), so this can
+      never show "active" while nothing is really scheduled to fire.
+    - The update-check status line ("No new update available." / "A server update is
+      available.") - compares this profile's installed build id against the latest one
+      Steam has published, polled every 30 minutes straight from SteamCMD (anonymous
+      login, `+app_info_print 2430930`, no download involved). SteamCMD needs to be
+      configured in Settings for this to resolve to anything.
   - **Server Statistics**: three sparkline charts (CPU %, RAM in MB, connected players),
-    stacked full-width, sampled every 5 seconds from the same status data the Server Status
-    fields above already use - no extra polling. Up to 1 hour of history is collected in the
-    background regardless of what's currently displayed, and a **Time Scale** selector
+    stacked with no gap between them and the metric name on the left of each row rather
+    than above it, sampled every 5 seconds from the same status data the Server Status
+    fields above already use - no extra polling. Up to 1 hour of history is collected in
+    the background regardless of what's currently displayed, and a **Time Scale** selector
     (1m/5m/30m/1h) picks how much of that collected history each chart actually shows.
     Each point is placed by its real timestamp within the selected window rather than spaced
     evenly by index, so a window that isn't fully populated yet (e.g. a server that just
     started, viewed at the 1h scale) only draws a line across the portion of the chart that
-    has real data instead of stretching a handful of samples across the whole width. An
-    **Enable stats** checkbox lets you turn the whole feature off per server (persisted in
-    the browser's local storage, not synced to the profile file) if you'd rather not pay even
-    the modest 5s-interval sampling cost. Deliberately hand-rolled inline SVGs, not a
-    full-page chart library, to keep this "a small graph" rather than the whole page.
-    Sampling and rendering both live entirely inside the Analytics tab component: since
-    `ServerDetail` only ever mounts the currently-selected tab, switching to another tab
-    unmounts Analytics and tears the sampling interval down with it, so nothing keeps running
-    (and nothing keeps redrawing) in the background - it restarts fresh the next time you
-    come back to Analytics.
-  - **Version**: two separate numbers, since ARK exposes them differently:
-    - **Installed Build ID**: the SteamCMD-installed build id, read straight from that
-      install's `appmanifest_2430930.acf` (the same file the Update button's "up to date"
-      check already reads) - `null`/"Not installed yet" before the first install. This is
-      SteamCMD's own opaque build number, not the human-readable version ARK itself shows.
-    - **Game Version** (e.g. "92.28"): the human-readable version ARK itself prints,
-      read straight from the "ARK Version: 92.28" line it writes to `ShooterGame.log`
-      near the start of boot. (An earlier version of this feature tried to read it back
-      from the server's own console window title via PowerShell/Win32 APIs instead - that
-      turned out to be unreliable for a server adopted after a Manager restart, even
-      though its telemetry above kept working fine since that only needs the pid to still
-      be alive; reading the log line directly sidesteps all of that.) Refreshed by
-      `serverVersionWatcher.ts`, which listens for a server's status changing into
-      `running`, `starting`, `stopping`, `updating`, or `stopped` - i.e. any real step of
-      the start/stop/update lifecycle (not `error`, since nothing about a failed start
-      would have changed what's in the log) - and re-reads the log at that moment.
-      Edge-triggered on the transition itself, so the routine 5s status ticks a running
-      server keeps emitting afterward don't each re-read it - only an actual change does.
-      Every profile is also checked once when the Manager itself starts, regardless of
-      whether it's currently running, since a stopped server's log from its last run may
-      still have a usable version line. The value then just sits in memory until the next
-      transition - the Analytics tab and dashboard cards just display whatever's
-      currently cached, showing "Detecting..."/"-" until the first one happens.
-  - **New update** panel: "A server update is available" or "No new update available",
-    depending on whether that profile's installed build id matches the latest one Steam
-    has published (same embed styling as the dashboard's Official Server Status panel).
-    The latest build id behind it is polled every 30 minutes by asking SteamCMD
-    itself (anonymous login, `+app_info_print 2430930`, no download involved) for the
-    current public-branch build id and caching it in memory - deliberately not scraping
-    [SteamDB](https://steamdb.info/app/2430930/depots/), since that's an unofficial,
-    Cloudflare-protected page with no supported API, fragile to rely on for a background
-    poll. SteamCMD needs to be configured in Settings for this to resolve to anything.
-  - **Backup Status**: whether the backup schedule (from the Backups tab) is actually
-    active right now, and a live countdown to its next run - read directly off the same
-    timer that will actually fire it (a single self-armed `setTimeout` recomputed via
-    `cron-parser` after every run, rather than a background library polling every second),
-    so this can never show "active" while nothing is really scheduled to fire.
-  - An **Open config folder** button, opening
-    `ShooterGame/Saved/Config/WindowsServer` (where `GameUserSettings.ini`/`Game.ini`
-    live) in the OS file explorer - the app still never edits these files itself.
+    has real data instead of stretching a handful of samples across the whole width. History
+    is also mirrored to the browser's local storage as it's collected (per server, capped to
+    the same 1h window), so reopening the Analytics tab or reloading the app picks up right
+    where it left off instead of starting from an empty chart. An **Enable stats** checkbox
+    lets you turn the whole feature off per server (also persisted in local storage) if
+    you'd rather not pay even the modest 5s-interval sampling cost. Deliberately hand-rolled
+    inline SVGs, not a full-page chart library, to keep this "a small graph" rather than the
+    whole page. Sampling and rendering both live entirely inside the Analytics tab
+    component: since `ServerDetail` only ever mounts the currently-selected tab, switching
+    to another tab unmounts Analytics and tears the sampling interval down with it, so
+    nothing keeps running (and nothing keeps redrawing) in the background.
+  - Three folder-shortcut buttons: **Open config folder**
+    (`ShooterGame/Saved/Config/WindowsServer`, where `GameUserSettings.ini`/`Game.ini`
+    live), **Open SavedArks folder** (`ShooterGame/Saved/SavedArks`, the map save data),
+    and **Open SaveGames folder** (`ShooterGame/Saved/SaveGames`, mod-specific persistent
+    data) - all just open the OS file explorer at that path, the app never edits anything
+    in them itself.
 - **Open profiles folder** — a button in the app-wide Settings view opens the folder
   holding this app's own data file (profiles, app settings, which pid belongs to which
   running server): a single `config.json`, written by `electron-store` at Electron's

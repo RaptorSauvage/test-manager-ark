@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { BackupScheduleStatus, ServerProfile, ServerStatus } from '@shared/types'
 import { formatCountdown } from '@shared/scheduleTime'
 import { useServerStatuses } from '../../lib/useServerStatuses'
-import { appendSample, type StatSample } from '../../lib/sparkline'
+import { appendSample, selectHistoryWindow, type StatSample } from '../../lib/sparkline'
 import UpdateCheckPanel from '../../components/UpdateCheckPanel'
 import ServerStatsChart from './ServerStatsChart'
 
@@ -22,6 +22,29 @@ const STATS_TIME_SCALES: Array<{ label: string; ms: number }> = [
 
 function statsEnabledKey(profileId: string): string {
   return `analytics-stats-enabled:${profileId}`
+}
+
+function statsHistoryKey(profileId: string): string {
+  return `analytics-stats-history:${profileId}`
+}
+
+/** Reloads whatever history was collected before the tab/page was last torn down, trimmed to
+ *  the current collection window - so reopening Analytics (or reloading the app) picks up
+ *  where it left off instead of starting from an empty chart every time. */
+function loadStoredHistory(profileId: string): StatSample[] {
+  try {
+    const raw = localStorage.getItem(statsHistoryKey(profileId))
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return selectHistoryWindow(parsed as StatSample[], STATS_HISTORY_WINDOW_MS, Date.now())
+  } catch {
+    return []
+  }
+}
+
+function saveStoredHistory(profileId: string, history: StatSample[]): void {
+  localStorage.setItem(statsHistoryKey(profileId), JSON.stringify(history))
 }
 
 interface AnalyticsTabProps {
@@ -48,8 +71,8 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   const [gameVersion, setGameVersion] = useState<string | null>(null)
   const [backupStatus, setBackupStatus] = useState<BackupScheduleStatus | null>(null)
   const [configFolderError, setConfigFolderError] = useState('')
-  const [history, setHistory] = useState<StatSample[]>([])
-  const [statsEnabled, setStatsEnabled] = useState(true)
+  const [history, setHistory] = useState<StatSample[]>(() => loadStoredHistory(profile.id))
+  const [statsEnabled, setStatsEnabled] = useState(() => localStorage.getItem(statsEnabledKey(profile.id)) !== 'false')
   const [statsScale, setStatsScale] = useState(STATS_TIME_SCALES[1].ms)
   const isRunning = status?.state === 'running'
   const statusRef = useRef<ServerStatus | undefined>(status)
@@ -61,7 +84,7 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   }, [])
 
   useEffect(() => {
-    setHistory([])
+    setHistory(loadStoredHistory(profile.id))
     setStatsEnabled(localStorage.getItem(statsEnabledKey(profile.id)) !== 'false')
   }, [profile.id])
 
@@ -70,13 +93,15 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
     const interval = setInterval(() => {
       const s = statusRef.current
       if (!s || s.state !== 'running') return
-      setHistory((prev) =>
-        appendSample(
+      setHistory((prev) => {
+        const next = appendSample(
           prev,
           { time: Date.now(), cpu: s.cpu ?? 0, memoryMB: s.memoryMB ?? 0, players: s.players?.length ?? 0 },
           STATS_HISTORY_WINDOW_MS
         )
-      )
+        saveStoredHistory(profile.id, next)
+        return next
+      })
     }, STATS_SAMPLE_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [profile.id, statsEnabled])
@@ -132,10 +157,10 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
     }
   }, [profile.id])
 
-  async function openConfigFolder(): Promise<void> {
+  async function openFolder(opener: (profileId: string) => Promise<void>): Promise<void> {
     setConfigFolderError('')
     try {
-      await window.api.system.openServerConfigFolder(profile.id)
+      await opener(profile.id)
     } catch (err) {
       setConfigFolderError((err as Error).message)
     }
@@ -170,8 +195,35 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
               {status?.players?.length ?? 0} / {profile.maxPlayers}
             </dd>
           </div>
+          <div>
+            <dt>Game Version</dt>
+            <dd>
+              {isRunning ? (gameVersion ?? 'Detecting...') : 'Server not running'}
+              {buildId ? ` (${buildId})` : ''}
+            </dd>
+          </div>
+          {profile.backupScheduleEnabled && backupStatus && (
+            <>
+              <div>
+                <dt>Backup task status</dt>
+                <dd className={backupStatus.active ? 'status-ok' : 'status-warn'}>
+                  {backupStatus.active ? 'Started' : 'Stopped'}
+                </dd>
+              </div>
+              <div>
+                <dt>Next backup in</dt>
+                <dd>
+                  {backupStatus.nextRunAt !== null ? formatCountdown(backupStatus.nextRunAt - now) : '--:--:--:--'}
+                </dd>
+              </div>
+            </>
+          )}
         </dl>
         {!isRunning && <p className="empty-state">Server isn&apos;t running - these will fill in once it starts.</p>}
+        {!profile.backupScheduleEnabled && (
+          <p className="empty-state">Backup schedule is disabled - enable it in the Backups tab.</p>
+        )}
+        <UpdateCheckPanel profileIds={[profile.id]} compact />
       </section>
 
       <section className="cluster-section">
@@ -211,60 +263,30 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
       </section>
 
       <section className="cluster-section">
-        <h3>Version</h3>
-        <dl className="analytics-grid">
-          <div>
-            <dt>Installed Build ID</dt>
-            <dd>{buildId ?? 'Not installed yet'}</dd>
-          </div>
-          <div>
-            <dt>Game Version</dt>
-            <dd>{isRunning ? (gameVersion ?? 'Detecting...') : 'Server not running'}</dd>
-          </div>
-        </dl>
-        {!buildId && (
-          <p className="empty-state">
-            No <code>appmanifest_2430930.acf</code> found under <code>{profile.installDir}\steamapps</code> -
-            SteamCMD writes this the first time it installs/updates this server. If this install folder was set up
-            by another tool or copied in manually without ever running an update through SteamCMD here, this stays
-            empty even though the server itself runs fine - it only affects the Build ID/update-check display, not
-            Start.
-          </p>
-        )}
-        <p className="empty-state">
-          <strong>Game Version</strong> (e.g. "92.28") is read straight from the &quot;ARK Version:&quot; line ARK
-          itself writes to its log near the start of boot - it takes a few seconds after start to appear.
-        </p>
-      </section>
-
-      <UpdateCheckPanel profileIds={[profile.id]} />
-
-      <section className="cluster-section">
-        <h3>Backup Status</h3>
-        {!profile.backupScheduleEnabled && (
-          <p className="empty-state">Backup schedule is disabled - enable it in the Backups tab.</p>
-        )}
-        {profile.backupScheduleEnabled && backupStatus && (
-          <dl className="analytics-grid">
-            <div>
-              <dt>Backup task status</dt>
-              <dd className={backupStatus.active ? 'status-ok' : 'status-warn'}>
-                {backupStatus.active ? 'Started' : 'Stopped'}
-              </dd>
-            </div>
-            <div>
-              <dt>Next backup in</dt>
-              <dd>{backupStatus.nextRunAt !== null ? formatCountdown(backupStatus.nextRunAt - now) : '--:--:--:--'}</dd>
-            </div>
-          </dl>
-        )}
-      </section>
-
-      <section className="cluster-section">
         <h3>Config Files</h3>
-        <button type="button" onClick={() => void openConfigFolder()}>
-          Open config folder
-        </button>
+        <div className="button-row">
+          <button
+            type="button"
+            className="btn-sm"
+            onClick={() => void openFolder(window.api.system.openServerConfigFolder)}
+          >
+            Open config folder
+          </button>
+          <button
+            type="button"
+            className="btn-sm"
+            onClick={() => void openFolder(window.api.system.openServerSavedArksFolder)}
+          >
+            Open SavedArks folder
+          </button>
+          <button
+            type="button"
+            className="btn-sm"
+            onClick={() => void openFolder(window.api.system.openServerSaveGamesFolder)}
+          >
+            Open SaveGames folder
+          </button>
+        </div>
         <p className="empty-state">
           Opens <code>ShooterGame/Saved/Config/WindowsServer</code> - where{' '}
           <code>GameUserSettings.ini</code>/<code>Game.ini</code> live. The app never edits these itself; open them

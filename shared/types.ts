@@ -347,6 +347,8 @@ export const IPC = {
 
   appOpenProfilesFolder: 'app:open-profiles-folder',
   serverOpenConfigFolder: 'server:open-config-folder',
+  serverOpenSavedArksFolder: 'server:open-savedarks-folder',
+  serverOpenSaveGamesFolder: 'server:open-savegames-folder',
 
   mapManagementList: 'map-management:list',
   mapManagementCreate: 'map-management:create',
@@ -503,6 +505,8 @@ export interface Api {
   system: {
     openProfilesFolder: () => Promise<void>
     openServerConfigFolder: (profileId: string) => Promise<void>
+    openServerSavedArksFolder: (profileId: string) => Promise<void>
+    openServerSaveGamesFolder: (profileId: string) => Promise<void>
   }
   mapManagement: {
     list: (profileId: string) => Promise<MapFolderEntry[]>

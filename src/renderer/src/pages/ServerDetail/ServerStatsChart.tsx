@@ -19,7 +19,7 @@ function Sparkline({ label, unit, current, samples, windowMs, now, color, max }:
 
   return (
     <div className="stats-chart">
-      <div className="stats-chart-header">
+      <div className="stats-chart-label">
         <span>{label}</span>
         <strong>{current !== undefined ? `${Math.round(current)}${unit}` : '-'}</strong>
       </div>
