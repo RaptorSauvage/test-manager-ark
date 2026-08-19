@@ -32,7 +32,10 @@ export function selectHistoryWindow(history: StatSample[], windowMs: number, now
  * started, viewed against a 1h time scale) only draws a line across the portion of the width
  * that has real data instead of stretching a handful of samples across the full width.
  * A zero/negative value range is treated as 1 so a perfectly flat series still renders as a
- * flat line instead of dividing by zero.
+ * flat line instead of dividing by zero. y is clamped to [0, height] so a value outside
+ * [min, max] (the caller's `max` is usually derived from the data itself, but CPU in
+ * particular can exceed 100% on a multi-core process) still draws at the row's edge instead
+ * of overflowing outside it.
  */
 export function buildTimeSeriesPoints(
   samples: Array<{ time: number; value: number }>,
@@ -50,7 +53,7 @@ export function buildTimeSeriesPoints(
   return samples
     .map((s) => {
       const x = Math.max(0, Math.min(width, ((s.time - start) / span) * width))
-      const y = height - ((s.value - min) / range) * height
+      const y = Math.max(0, Math.min(height, height - ((s.value - min) / range) * height))
       return `${x.toFixed(1)},${y.toFixed(1)}`
     })
     .join(' ')

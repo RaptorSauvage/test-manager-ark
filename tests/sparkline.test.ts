@@ -89,4 +89,14 @@ describe('buildTimeSeriesPoints', () => {
     const points = buildTimeSeriesPoints([{ time: 60000, value: 5 }], 60000, 60000, 200, 40, 5, 5)
     expect(points).toBe('200.0,40.0')
   })
+
+  it('clamps a value above max to the top edge (y=0) instead of overflowing above it', () => {
+    const points = buildTimeSeriesPoints([{ time: 60000, value: 166 }], 60000, 60000, 200, 40, 0, 100)
+    expect(points).toBe('200.0,0.0')
+  })
+
+  it('clamps a value below min to the bottom edge (y=height) instead of overflowing below it', () => {
+    const points = buildTimeSeriesPoints([{ time: 60000, value: -10 }], 60000, 60000, 200, 40, 0, 100)
+    expect(points).toBe('200.0,40.0')
+  })
 })
