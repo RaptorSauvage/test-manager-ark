@@ -189,7 +189,8 @@ dedicated servers running on the same machine.
   and `badge badge-<state>` styling as the Dashboard's own server cards, fed by the same
   `useServerStatuses` live-status hook. Right-clicking a server's card opens a small
   context menu with **Start**, **Stop**, **Restart**, **Update** and **Update Restart** -
-  colored the same as the Dashboard's "All" bulk-action buttons (green/red/amber/blue).
+  colored the same as the Dashboard's "All" bulk-action buttons (green/red/amber/blue),
+  except Update Restart which gets its own cyan to stand out from the plain Update.
   Update is the plain SteamCMD install/update (only while stopped, like the Dashboard's own
   per-server Update button). Update Restart mirrors the Dashboard's "Stop+Update+Restart":
   it stops the server first if it's running, runs the SteamCMD update, then starts it back

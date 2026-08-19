@@ -431,7 +431,7 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
             Update
           </button>
           <button
-            className="btn-super-all"
+            className="btn-update-restart"
             onClick={() => void runContextAction(contextProfile, 'updateRestart')}
             title="Stops the server if running, updates it via SteamCMD, then starts it back up if it was running"
           >

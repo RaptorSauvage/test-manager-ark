@@ -9,6 +9,7 @@
   --danger: #e0555b;
   --ok: #3fbf6f;
   --warn: #e0a63f;
+  --cyan: #22d3ee;
   --status-running: #1f8a4c;
   --status-starting: #7ee6a0;
   --status-updating: #6fa8ff;
@@ -663,6 +664,11 @@ label.checkbox {
 .btn-super-all {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+.btn-update-restart {
+  color: var(--cyan);
+  border-color: var(--cyan);
 }
 
 .server-grid {
