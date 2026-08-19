@@ -16,6 +16,7 @@ import { registerOfficialServerStatusHandlers } from './officialServerStatus'
 import { registerSystemHandlers } from './system'
 import { registerAppUpdateHandlers } from './appUpdate'
 import { registerMapManagementHandlers } from './mapManagement'
+import { registerGroupConsoleHandlers } from './groupConsole'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers()
@@ -35,4 +36,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerSystemHandlers()
   registerAppUpdateHandlers(mainWindow.webContents)
   registerMapManagementHandlers()
+  registerGroupConsoleHandlers(mainWindow.webContents)
 }

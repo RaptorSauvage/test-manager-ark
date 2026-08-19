@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, afterEach } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import {
   createLogEventCaches,
   parseLogLine,
   parseLogChunk,
+  readLogBacklog,
   PLAYER_NAME_OPEN,
   PLAYER_NAME_CLOSE
 } from '../src/main/lib/logEvents'
@@ -207,5 +211,54 @@ describe('parseLogChunk', () => {
       },
       { label: 'LEFT', cls: 'leave', text: `${hl('LeRaptorSauvage')} left the server`, ts: '21:25:35' }
     ])
+  })
+})
+
+describe('readLogBacklog', () => {
+  const testDir = path.join(os.tmpdir(), `log-events-test-${process.pid}`)
+  const logDir = path.join(testDir, 'ShooterGame', 'Saved', 'Logs')
+  const logPath = path.join(logDir, 'ShooterGame.log')
+
+  afterEach(() => {
+    fs.rmSync(testDir, { recursive: true, force: true })
+  })
+
+  it('returns an empty array when the log file does not exist yet', () => {
+    expect(readLogBacklog(testDir)).toEqual([])
+  })
+
+  it('reads and parses every classifiable line in the file', () => {
+    fs.mkdirSync(logDir, { recursive: true })
+    fs.writeFileSync(
+      logPath,
+      [
+        '[2026.07.27-21.25.23:191][991]2026.07.27_21.25.23: LeRaptorSauvage [UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] joined this ARK!',
+        '[2026.07.27-21.25.35:084][345]2026.07.27_21.25.35: LeRaptorSauvage [UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] left this ARK!'
+      ].join('\n')
+    )
+    const events = readLogBacklog(testDir)
+    expect(events.map((e) => e.label)).toEqual(['JOIN', 'LEFT'])
+  })
+
+  it('drops events matching a given disabled-labels set', () => {
+    fs.mkdirSync(logDir, { recursive: true })
+    fs.writeFileSync(
+      logPath,
+      [
+        '[2026.07.27-21.25.23:191][991]2026.07.27_21.25.23: LeRaptorSauvage [UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] joined this ARK!',
+        '[2026.07.27-21.25.35:084][345]2026.07.27_21.25.35: LeRaptorSauvage [UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] left this ARK!'
+      ].join('\n')
+    )
+    const events = readLogBacklog(testDir, new Set(['JOIN']))
+    expect(events.map((e) => e.label)).toEqual(['LEFT'])
+  })
+
+  it('keeps every event when no disabled-labels set is given', () => {
+    fs.mkdirSync(logDir, { recursive: true })
+    fs.writeFileSync(
+      logPath,
+      '[2026.07.27-21.25.23:191][991]2026.07.27_21.25.23: LeRaptorSauvage [UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] joined this ARK!'
+    )
+    expect(readLogBacklog(testDir)).toHaveLength(1)
   })
 })

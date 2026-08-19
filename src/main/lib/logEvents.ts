@@ -1,10 +1,13 @@
+import fs from 'node:fs'
 import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE, type LogEvent } from '@shared/types'
+import { getLogFilePath } from './serverProcess'
 
 export { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE }
 
 /** Ported from the standalone Python "ARK Ops Dashboard" the web dashboard's live console
- *  feed replaces - same event categories/regexes. Used only by webDashboard.ts, which
- *  tails each server's log directly per browser connection (see readLogBacklog there). */
+ *  feed replaces - same event categories/regexes. Used by webDashboard.ts and by
+ *  groupConsole.ts (the Cluster Data group console), each tailing servers' logs directly
+ *  and independently of one another. */
 const LOG_LINE_RE = /^\[(\d{4}\.\d{2}\.\d{2})-(\d{2})\.(\d{2})\.(\d{2}):\d+\]\[\s*\d+\]\s?(.*)$/
 const RICHCOLOR_OPEN_RE = /<RichColor[^>]*>/g
 const RICHCOLOR_CLOSE_RE = /<\/>/g
@@ -112,4 +115,44 @@ export function parseLogChunk(chunk: string, caches: LogEventCaches): LogEvent[]
     if (event) events.push(event)
   }
   return events
+}
+
+/** How much of ShooterGame.log to re-read for backlog on a fresh page load/reconnect, and
+ *  how many of the parsed events out of that backlog to actually keep - same defaults as
+ *  the standalone Python dashboard this behavior was ported from. */
+const BACKLOG_BYTES = 300_000
+const BACKLOG_MAX_LINES = 60
+
+/**
+ * Reads a server's recent event history straight from its own ShooterGame.log, independent
+ * of whatever the Manager's own process tracking thinks its state is - so this works even
+ * for a server the Manager didn't itself start/adopt. `disabledLabels`, if given, drops
+ * matching events before the line-count cap is applied (the web dashboard's own persisted
+ * per-label toggle); omit it for a caller with its own independent filtering, like the
+ * Cluster Data group console.
+ */
+export function readLogBacklog(installDir: string, disabledLabels?: ReadonlySet<string>): LogEvent[] {
+  const logPath = getLogFilePath(installDir)
+  if (!fs.existsSync(logPath)) return []
+
+  const size = fs.statSync(logPath).size
+  const readSize = Math.min(size, BACKLOG_BYTES)
+  const buffer = Buffer.alloc(readSize)
+  const fd = fs.openSync(logPath, 'r')
+  try {
+    fs.readSync(fd, buffer, 0, readSize, size - readSize)
+  } finally {
+    fs.closeSync(fd)
+  }
+
+  let text = buffer.toString('utf-8')
+  if (readSize < size) {
+    // Drop a possibly-truncated first line when starting mid-file.
+    const firstNewline = text.indexOf('\n')
+    if (firstNewline >= 0) text = text.slice(firstNewline + 1)
+  }
+
+  const events = parseLogChunk(text, createLogEventCaches())
+  const filtered = disabledLabels ? events.filter((event) => !disabledLabels.has(event.label)) : events
+  return filtered.slice(-BACKLOG_MAX_LINES)
 }

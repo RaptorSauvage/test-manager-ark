@@ -199,6 +199,108 @@ label.checkbox {
   color: var(--muted);
 }
 
+.cluster-data-row.clickable {
+  cursor: pointer;
+}
+
+.cluster-data-row.clickable:hover {
+  border-color: var(--accent);
+}
+
+.cluster-data-chart {
+  width: 100%;
+}
+
+.group-console-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.group-console-filters .checkbox {
+  gap: 4px;
+  color: var(--text);
+}
+
+.group-console-feed {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  height: 60vh;
+  overflow-y: auto;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+}
+
+.log-event {
+  padding: 3px 0;
+  line-height: 1.4;
+}
+
+.log-event .ts {
+  color: var(--muted);
+  margin-right: 8px;
+}
+
+.log-event .server-tag {
+  color: #2dd4bf;
+  margin-right: 8px;
+}
+
+.log-event .label {
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.log-event .text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-event-join .label,
+.log-event-ready .label {
+  color: var(--status-running);
+}
+
+.log-event-leave .label {
+  color: var(--status-stopped);
+}
+
+.log-event-save .label {
+  color: var(--muted);
+}
+
+.log-event-cmd .label,
+.log-event-freeze .label {
+  color: var(--accent);
+}
+
+.log-event-warn .label,
+.log-event-mission .label {
+  color: var(--warn);
+}
+
+.log-event-kill .label {
+  color: var(--danger);
+}
+
+.log-event-tame .label {
+  color: var(--ok);
+}
+
+.log-event-join .player {
+  color: var(--status-running);
+}
+
+.log-event-leave .player {
+  color: var(--status-stopped);
+}
+
 .dashboard {
   padding: 24px;
 }

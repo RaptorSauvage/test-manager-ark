@@ -12,18 +12,17 @@ function running(overrides: Partial<ServerStatus>): ServerStatus {
 
 describe('computeClusterGroupStats', () => {
   it('sums cpu/memory/players across running servers in the same group', () => {
-    const profiles = [
-      profile({ id: 'a', group: 'Island', maxPlayers: 70 }),
-      profile({ id: 'b', group: 'Island', maxPlayers: 70 })
-    ]
+    const a = profile({ id: 'a', group: 'Island', maxPlayers: 70 })
+    const b = profile({ id: 'b', group: 'Island', maxPlayers: 70 })
     const statuses = {
       a: running({ profileId: 'a', cpu: 20, memoryMB: 4000, players: ['x', 'y'] }),
       b: running({ profileId: 'b', cpu: 30, memoryMB: 5000, players: ['z'] })
     }
-    const result = computeClusterGroupStats(profiles, statuses)
+    const result = computeClusterGroupStats([a, b], statuses)
     expect(result).toEqual([
       {
         group: 'Island',
+        profiles: [a, b],
         serverCount: 2,
         runningCount: 2,
         totalCpu: 50,
@@ -35,17 +34,16 @@ describe('computeClusterGroupStats', () => {
   })
 
   it('excludes a stopped server from the numeric totals but keeps it in serverCount', () => {
-    const profiles = [
-      profile({ id: 'a', group: 'Island', maxPlayers: 70 }),
-      profile({ id: 'b', group: 'Island', maxPlayers: 70 })
-    ]
+    const a = profile({ id: 'a', group: 'Island', maxPlayers: 70 })
+    const b = profile({ id: 'b', group: 'Island', maxPlayers: 70 })
     const statuses = {
       a: running({ profileId: 'a', cpu: 20, memoryMB: 4000, players: ['x'] }),
       b: { profileId: 'b', state: 'stopped' } as ServerStatus
     }
-    const result = computeClusterGroupStats(profiles, statuses)
+    const result = computeClusterGroupStats([a, b], statuses)
     expect(result[0]).toEqual({
       group: 'Island',
+      profiles: [a, b],
       serverCount: 2,
       runningCount: 1,
       totalCpu: 20,

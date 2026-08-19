@@ -144,7 +144,22 @@ dedicated servers running on the same machine.
   reflect what's actually running right now rather than what's configured. This reads the
   Manager's own dashboard `group` field - unrelated to ARK's own multiplayer clustering
   (`clusterId`/`clusterEnabled` in a profile's Settings), which is a completely separate,
-  game-level feature.
+  game-level feature. Each row also gets a **Server Statistics** chart identical in
+  behavior to the per-server Analytics tab's (same sparklines, same hover tooltip, same
+  gap-breaking, same 1h-collected/selectable-scale/persisted-per-group design) fed the
+  group's summed CPU/memory/player samples instead of one server's raw ones - a single
+  **Time Scale** selector at the top of the page applies to every group's chart at once.
+  Clicking anywhere on a row other than its chart opens that group's **Group Console**: a
+  live log feed merging every server in the group into one chronological view, each line
+  tagged with a turquoise `[Server Name]` prefix - same visual language (checkboxes to
+  show/hide event categories: JOIN/LEFT/CHAT/WARN/KILL/TAME/CMD/SAVE/CRYO/MISSION/READY,
+  colored labels) as the standalone web dashboard's own console, but merging every server
+  in the group instead of showing just one. Its filter checkboxes are independent of the
+  web dashboard's own persisted per-label setting - toggling one here doesn't affect the
+  other. The main process only tails the group's servers' logs while a Group Console page
+  is actually open (`src/main/lib/groupConsole.ts`, one `watchLogFile` per server in the
+  group, the same primitive every other log-following feature in this app already uses
+  concurrently) - navigating back stops every one of those tailers.
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: one consolidated group with everything at a glance, no explanatory
     text and no sub-headers - just the fields:

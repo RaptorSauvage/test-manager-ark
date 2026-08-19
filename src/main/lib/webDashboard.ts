@@ -1,12 +1,11 @@
-import fs from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
 import os from 'node:os'
-import type { AppSettings, LogEvent, ServerProfile, ServerStatus, WebDashboardRole } from '@shared/types'
+import type { AppSettings, ServerProfile, ServerStatus, WebDashboardRole } from '@shared/types'
 import { listProfiles, getSettings, saveSettings, listWebDashboardAccounts, listWebDashboardApiKeys } from '../store'
-import { getStatus, getLogFilePath, watchLogFile, serverEvents } from './serverProcess'
+import { getStatus, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
-import { parseLogChunk, createLogEventCaches } from './logEvents'
+import { parseLogChunk, createLogEventCaches, readLogBacklog } from './logEvents'
 import {
   doStartServer,
   doStopServerConfirmSave,
@@ -38,12 +37,6 @@ let server: http.Server | https.Server | null = null
 let lastError: string | null = null
 let lastHost: string | null = null
 
-/** How much of ShooterGame.log to re-read for backlog on a fresh page load/reconnect,
- *  and how many of the parsed events out of that backlog to actually keep - same defaults
- *  as the standalone Python dashboard this page replaces. */
-const BACKLOG_BYTES = 300_000
-const BACKLOG_MAX_LINES = 60
-
 /** Event categories that can be individually hidden from the web dashboard's feed. */
 const ALL_EVENT_LABELS = ['JOIN', 'LEFT', 'CHAT', 'WARN', 'KILL', 'TAME', 'CMD', 'SAVE', 'CRYO', 'MISSION', 'READY']
 
@@ -72,40 +65,6 @@ function setLabelEnabled(label: string, enabled: boolean): void {
   if (enabled) disabled.delete(label)
   else disabled.add(label)
   saveSettings({ ...settings, webDashboardDisabledLabels: Array.from(disabled) })
-}
-
-/**
- * Reads a server's live event feed straight from its own ShooterGame.log, independent of
- * whatever the Manager's own process tracking thinks its state is - same approach as the
- * standalone Python dashboard this page replaces (a fresh per-connection file tailer, not
- * tied to any "is this server running" bookkeeping), so the web dashboard keeps working
- * even for a server the Manager didn't itself start/adopt.
- */
-function readLogBacklog(installDir: string): LogEvent[] {
-  const logPath = getLogFilePath(installDir)
-  if (!fs.existsSync(logPath)) return []
-
-  const size = fs.statSync(logPath).size
-  const readSize = Math.min(size, BACKLOG_BYTES)
-  const buffer = Buffer.alloc(readSize)
-  const fd = fs.openSync(logPath, 'r')
-  try {
-    fs.readSync(fd, buffer, 0, readSize, size - readSize)
-  } finally {
-    fs.closeSync(fd)
-  }
-
-  let text = buffer.toString('utf-8')
-  if (readSize < size) {
-    // Drop a possibly-truncated first line when starting mid-file.
-    const firstNewline = text.indexOf('\n')
-    if (firstNewline >= 0) text = text.slice(firstNewline + 1)
-  }
-
-  const disabled = getDisabledLabels()
-  return parseLogChunk(text, createLogEventCaches())
-    .filter((event) => !disabled.has(event.label))
-    .slice(-BACKLOG_MAX_LINES)
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -252,7 +211,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && eventsMatch) {
     if (!(await requireRole(req, res, 'readonly'))) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(eventsMatch[1]))
-    sendJson(res, 200, profile ? readLogBacklog(profile.installDir) : [])
+    sendJson(res, 200, profile ? readLogBacklog(profile.installDir, getDisabledLabels()) : [])
     return
   }
 

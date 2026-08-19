@@ -364,7 +364,11 @@ export const IPC = {
   appUpdateCheck: 'app-update:check',
   appUpdateInstall: 'app-update:install',
   appUpdateStatus: 'app-update:status',
-  appUpdateStatusChanged: 'app-update:status-changed'
+  appUpdateStatusChanged: 'app-update:status-changed',
+
+  groupConsoleSubscribe: 'group-console:subscribe',
+  groupConsoleUnsubscribe: 'group-console:unsubscribe',
+  groupConsoleEvent: 'group-console:event'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -390,11 +394,19 @@ export interface LogEvent {
  * Invisible markers wrapping a player's name inside a JOIN/LEFT LogEvent's `text`, so the
  * UI can color just that portion (the rest of the line stays the default text color)
  * without having to guess where a name starts/ends. Shared between the parser (main) and
- * the renderers (React tab + web dashboard page) that both need to strip them back out
- * while building the DOM. Never rendered as literal characters.
+ * the renderers (the web dashboard page and the Cluster Data group console) that both need
+ * to strip them back out while building the DOM. Never rendered as literal characters.
  */
 export const PLAYER_NAME_OPEN = '\u0001'
 export const PLAYER_NAME_CLOSE = '\u0002'
+
+/** A LogEvent tagged with which server it came from - used by the Cluster Data group
+ *  console, which merges the live feed of every server in a group into one chronological
+ *  view. */
+export interface GroupConsoleEvent extends LogEvent {
+  profileId: string
+  profileName: string
+}
 
 /** Official ARK:SA server status feed, parsed from its "<RichColor>" formatted line. */
 export interface OfficialServerStatus {
@@ -525,5 +537,14 @@ export interface Api {
     install: () => Promise<void>
     getStatus: () => Promise<AppUpdateStatus>
     onStatusChanged: (callback: (status: AppUpdateStatus) => void) => () => void
+  }
+  groupConsole: {
+    /** Starts tailing every given profile's log and resolves with its current backlog
+     *  (merged across all of them, sorted by timestamp) - replaces whatever subscription
+     *  was previously active, if any. */
+    subscribe: (profileIds: string[]) => Promise<GroupConsoleEvent[]>
+    /** Stops the active subscription's tailers. Safe to call with nothing subscribed. */
+    unsubscribe: () => Promise<void>
+    onEvent: (callback: (event: GroupConsoleEvent) => void) => () => void
   }
 }

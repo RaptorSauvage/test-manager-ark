@@ -3,6 +3,10 @@ import type { ServerProfile, ServerStatus } from '@shared/types'
 export interface ClusterGroupStats {
   /** Trimmed ServerProfile.group - empty string for the "Ungrouped" bucket. */
   group: string
+  /** The group's member profiles, in the same order they were given - handed back so a
+   *  caller (e.g. opening a merged group console) doesn't need to re-derive the same
+   *  bucketing a second time. */
+  profiles: ServerProfile[]
   serverCount: number
   runningCount: number
   totalCpu: number
@@ -50,6 +54,7 @@ export function computeClusterGroupStats(
     }
     return {
       group,
+      profiles: groupProfiles,
       serverCount: groupProfiles.length,
       runningCount,
       totalCpu,

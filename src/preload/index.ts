@@ -8,7 +8,8 @@ import {
   type AppSettings,
   type AppUpdateStatus,
   type BackupLogEntry,
-  type WebDashboardRole
+  type WebDashboardRole,
+  type GroupConsoleEvent
 } from '@shared/types'
 
 const api: Api = {
@@ -149,6 +150,15 @@ const api: Api = {
       const listener = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus): void => callback(status)
       ipcRenderer.on(IPC.appUpdateStatusChanged, listener)
       return () => ipcRenderer.removeListener(IPC.appUpdateStatusChanged, listener)
+    }
+  },
+  groupConsole: {
+    subscribe: (profileIds: string[]) => ipcRenderer.invoke(IPC.groupConsoleSubscribe, profileIds),
+    unsubscribe: () => ipcRenderer.invoke(IPC.groupConsoleUnsubscribe),
+    onEvent: (callback: (event: GroupConsoleEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: GroupConsoleEvent): void => callback(payload)
+      ipcRenderer.on(IPC.groupConsoleEvent, listener)
+      return () => ipcRenderer.removeListener(IPC.groupConsoleEvent, listener)
     }
   }
 }
