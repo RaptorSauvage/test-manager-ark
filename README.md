@@ -177,8 +177,12 @@ dedicated servers running on the same machine.
     stacked with no gap between them and the metric name on the left of each row rather
     than above it, sampled every 5 seconds from the same status data the Server Status
     fields above already use - no extra polling. Hovering a row shows a vertical guide line
-    plus a small tooltip with the clock time and value of the nearest sample. Up to 1 hour
-    of history is collected in
+    plus a small tooltip with the clock time and value of the nearest sample. The CPU row's
+    scale adapts to the highest value actually seen in the current window (capped at 100%,
+    with a small floor so a near-idle server's jitter doesn't get blown up to fill the whole
+    row) rather than always spanning the full 0-100% range, so a server that never spikes
+    past e.g. 40% still uses the chart's full height instead of hugging the bottom - RAM
+    already worked this way. Up to 1 hour of history is collected in
     the background regardless of what's currently displayed, and a **Time Scale** selector
     (1m/5m/30m/1h) picks how much of that collected history each chart actually shows - the
     chosen scale is remembered per server in local storage too, so it stays on whatever you

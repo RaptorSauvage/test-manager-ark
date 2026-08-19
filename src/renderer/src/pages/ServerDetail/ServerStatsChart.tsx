@@ -86,6 +86,11 @@ export default function ServerStatsChart({ history, maxPlayers, windowMs, now }:
   const cpuSamples = windowed.map((h) => ({ time: h.time, value: h.cpu }))
   const memorySamples = windowed.map((h) => ({ time: h.time, value: h.memoryMB }))
   const playerSamples = windowed.map((h) => ({ time: h.time, value: h.players }))
+  // Scaled to the highest value actually seen (capped at 100, CPU's real ceiling) rather than
+  // always to 100, so a server that never spikes past e.g. 40% still uses the chart's full
+  // height instead of hugging the bottom - a small floor keeps a near-idle server's jitter
+  // from being blown up to fill the whole row.
+  const cpuMax = Math.min(100, Math.max(10, ...cpuSamples.map((s) => s.value)))
   const memoryMax = Math.max(100, ...memorySamples.map((s) => s.value))
 
   return (
@@ -98,7 +103,7 @@ export default function ServerStatsChart({ history, maxPlayers, windowMs, now }:
         windowMs={windowMs}
         now={now}
         color="var(--accent)"
-        max={100}
+        max={cpuMax}
       />
       <Sparkline
         label="RAM"
