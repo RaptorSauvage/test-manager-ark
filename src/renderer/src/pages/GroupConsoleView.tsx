@@ -72,6 +72,12 @@ interface RconResultEntry extends RconResult {
   profileName: string
 }
 
+interface StateNotification {
+  id: string
+  profileName: string
+  type: 'start' | 'stop'
+}
+
 /**
  * Merges the live log feed of every server in a dashboard group into one chronological view,
  * each line tagged with which server it came from - same visual language (checkboxes to
@@ -95,7 +101,9 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
   const [gameVersions, setGameVersions] = useState<Record<string, string | null>>({})
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({})
   const [contextMenu, setContextMenu] = useState<{ profileId: string; x: number; y: number } | null>(null)
+  const [notifications, setNotifications] = useState<StateNotification[]>([])
   const feedRef = useRef<HTMLDivElement>(null)
+  const prevStatesRef = useRef<Record<string, string>>({})
   const profileIdsKey = profiles.map((p) => p.id).join(',')
   const statuses = useServerStatuses(profiles.map((p) => p.id))
 
@@ -131,6 +139,41 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileIdsKey])
+
+  // Pops a transient toast whenever a server's live status actually transitions into
+  // 'running' or 'stopped' - compares against the previously-seen state per profile so a
+  // profile's first-ever status (on mount, or whenever it happens to resolve) never counts
+  // as a transition, only a real change does.
+  useEffect(() => {
+    const prevStates = prevStatesRef.current
+    const nextStates: Record<string, string> = { ...prevStates }
+    const toNotify: StateNotification[] = []
+
+    for (const profile of profiles) {
+      const state = statuses[profile.id]?.state
+      if (!state) continue
+      const prevState = prevStates[profile.id]
+      nextStates[profile.id] = state
+      if (prevState === undefined || prevState === state) continue
+      if (state === 'running') {
+        toNotify.push({ id: `${profile.id}-${Date.now()}`, profileName: profile.name, type: 'start' })
+      } else if (state === 'stopped') {
+        toNotify.push({ id: `${profile.id}-${Date.now()}`, profileName: profile.name, type: 'stop' })
+      }
+    }
+    prevStatesRef.current = nextStates
+
+    if (toNotify.length === 0) return
+    setNotifications((prev) => [...prev, ...toNotify])
+    for (const notification of toNotify) {
+      setTimeout(() => {
+        setNotifications((prev) => prev.filter((n) => n.id !== notification.id))
+      }, 6000)
+    }
+    // profileIdsKey (via `profiles`) is the stable dependency; `statuses` is a fresh object
+    // on every live status update, which is exactly what should retrigger this diff.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statuses, profileIdsKey])
 
   useEffect(() => {
     const el = feedRef.current
@@ -221,6 +264,16 @@ export default function GroupConsoleView({ groupName, profiles, onBack }: GroupC
         <button onClick={onBack}>&larr; Back</button>
         <h1>{groupName || 'Ungrouped'} — Group Console</h1>
       </header>
+
+      {notifications.length > 0 && (
+        <div className="group-console-notifications">
+          {notifications.map((n) => (
+            <div key={n.id} className={`group-console-notification group-console-notification-${n.type}`}>
+              {n.profileName} {n.type === 'start' ? 'started' : 'stopped'}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="group-console-body">
         <div className="group-console-main">

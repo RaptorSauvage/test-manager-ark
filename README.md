@@ -193,7 +193,11 @@ dedicated servers running on the same machine.
   Update is the plain SteamCMD install/update (only while stopped, like the Dashboard's own
   per-server Update button). Update Restart mirrors the Dashboard's "Stop+Update+Restart":
   it stops the server first if it's running, runs the SteamCMD update, then starts it back
-  up if it was running before.
+  up if it was running before. Whenever a server in the group actually transitions to
+  running or stopped (not on page load, and not for the in-between
+  starting/stopping/updating/restarting states), a toast pops in the top-right corner -
+  green "&lt;name&gt; started" or red "&lt;name&gt; stopped" - and fades away on its own a
+  few seconds later.
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: one consolidated group with everything at a glance, no explanatory
     text and no sub-headers - just the fields:
