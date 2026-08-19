@@ -171,7 +171,9 @@ dedicated servers running on the same machine.
     than above it, sampled every 5 seconds from the same status data the Server Status
     fields above already use - no extra polling. Up to 1 hour of history is collected in
     the background regardless of what's currently displayed, and a **Time Scale** selector
-    (1m/5m/30m/1h) picks how much of that collected history each chart actually shows.
+    (1m/5m/30m/1h) picks how much of that collected history each chart actually shows - the
+    chosen scale is remembered per server in local storage too, so it stays on whatever you
+    last picked instead of resetting to the 5m default the next time you open the tab.
     Each point is placed by its real timestamp within the selected window rather than spaced
     evenly by index, so a window that isn't fully populated yet (e.g. a server that just
     started, viewed at the 1h scale) only draws a line across the portion of the chart that

@@ -28,6 +28,18 @@ function statsHistoryKey(profileId: string): string {
   return `analytics-stats-history:${profileId}`
 }
 
+function statsScaleKey(profileId: string): string {
+  return `analytics-stats-scale:${profileId}`
+}
+
+/** Falls back to the default (5m) scale if nothing's stored yet, or if what's stored no
+ *  longer matches one of the selectable time scales. */
+function loadStoredScale(profileId: string): number {
+  const raw = localStorage.getItem(statsScaleKey(profileId))
+  const parsed = raw !== null ? Number(raw) : NaN
+  return STATS_TIME_SCALES.some((scale) => scale.ms === parsed) ? parsed : STATS_TIME_SCALES[1].ms
+}
+
 /** Reloads whatever history was collected before the tab/page was last torn down, trimmed to
  *  the current collection window - so reopening Analytics (or reloading the app) picks up
  *  where it left off instead of starting from an empty chart every time. */
@@ -73,7 +85,7 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   const [configFolderError, setConfigFolderError] = useState('')
   const [history, setHistory] = useState<StatSample[]>(() => loadStoredHistory(profile.id))
   const [statsEnabled, setStatsEnabled] = useState(() => localStorage.getItem(statsEnabledKey(profile.id)) !== 'false')
-  const [statsScale, setStatsScale] = useState(STATS_TIME_SCALES[1].ms)
+  const [statsScale, setStatsScale] = useState(() => loadStoredScale(profile.id))
   const isRunning = status?.state === 'running'
   const statusRef = useRef<ServerStatus | undefined>(status)
   statusRef.current = status
@@ -86,6 +98,7 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   useEffect(() => {
     setHistory(loadStoredHistory(profile.id))
     setStatsEnabled(localStorage.getItem(statsEnabledKey(profile.id)) !== 'false')
+    setStatsScale(loadStoredScale(profile.id))
   }, [profile.id])
 
   useEffect(() => {
@@ -110,6 +123,11 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
     const next = !statsEnabled
     setStatsEnabled(next)
     localStorage.setItem(statsEnabledKey(profile.id), String(next))
+  }
+
+  function selectStatsScale(ms: number): void {
+    setStatsScale(ms)
+    localStorage.setItem(statsScaleKey(profile.id), String(ms))
   }
 
   useEffect(() => {
@@ -244,7 +262,7 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
                     key={scale.ms}
                     type="button"
                     className={`time-scale-btn${scale.ms === statsScale ? ' active' : ''}`}
-                    onClick={() => setStatsScale(scale.ms)}
+                    onClick={() => selectStatsScale(scale.ms)}
                   >
                     {scale.label}
                   </button>
