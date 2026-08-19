@@ -405,6 +405,10 @@ label.checkbox {
   color: var(--danger);
 }
 
+.status-offline {
+  color: var(--status-stopping);
+}
+
 .server-card-actions {
   display: flex;
   flex-wrap: wrap;

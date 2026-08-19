@@ -155,12 +155,16 @@ dedicated servers running on the same machine.
       for every profile when the Manager itself starts. Installed Build ID is the
       SteamCMD-installed build id, read straight from that install's
       `appmanifest_2430930.acf` - blank before the first install.
-    - **Backup task status** and **Next backup in** (only shown once the backup schedule
-      is enabled in the Backups tab) - whether the schedule is actually active right now,
-      and a live countdown to its next run, read directly off the same timer that will
-      actually fire it (a single self-armed `setTimeout` recomputed via `cron-parser`
-      after every run, rather than a background library polling every second), so this can
-      never show "active" while nothing is really scheduled to fire.
+    - **Backup task status** always shows one of four states: **Offline** (light red)
+      whenever the server itself isn't running, regardless of the schedule - the backup
+      task's own "active" flag is about whether its timer is armed, which is unrelated to
+      whether the ARK process is currently up, so this avoids implying a backup could fire
+      right now when it can't; **Deactivate** (red) when the server is running but the
+      backup schedule is disabled in the Backups tab; otherwise **Started**/**Stopped**
+      read directly off the same timer that will actually fire the next backup (a single
+      self-armed `setTimeout` recomputed via `cron-parser` after every run, rather than a
+      background library polling every second). **Next backup in** (a live countdown) only
+      appears alongside a genuine Started/Stopped reading.
     - The update-check status line ("No new update available." / "A server update is
       available.") - compares this profile's installed build id against the latest one
       Steam has published, polled every 30 minutes straight from SteamCMD (anonymous

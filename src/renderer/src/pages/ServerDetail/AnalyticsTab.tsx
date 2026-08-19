@@ -222,19 +222,33 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
                   {buildId ? ` (${buildId})` : ''}
                 </dd>
               </div>
-              {profile.backupScheduleEnabled && backupStatus && (
-                <div>
-                  <dt>Backup task status</dt>
-                  <dd className={backupStatus.active ? 'status-ok' : 'status-warn'}>
-                    {backupStatus.active ? 'Started' : 'Stopped'}
-                  </dd>
-                </div>
-              )}
+              <div>
+                <dt>Backup task status</dt>
+                <dd
+                  className={
+                    !isRunning
+                      ? 'status-offline'
+                      : !profile.backupScheduleEnabled
+                        ? 'status-warn'
+                        : backupStatus?.active
+                          ? 'status-ok'
+                          : 'status-warn'
+                  }
+                >
+                  {!isRunning
+                    ? 'Offline'
+                    : !profile.backupScheduleEnabled
+                      ? 'Deactivate'
+                      : backupStatus?.active
+                        ? 'Started'
+                        : 'Stopped'}
+                </dd>
+              </div>
               <div>
                 <dt>Server uptime</dt>
                 <dd>{uptimeMs !== null ? formatUptime(uptimeMs) : '-'}</dd>
               </div>
-              {profile.backupScheduleEnabled && backupStatus && (
+              {isRunning && profile.backupScheduleEnabled && backupStatus && (
                 <div>
                   <dt>Next backup in</dt>
                   <dd>
@@ -245,9 +259,6 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
             </dl>
             {!isRunning && (
               <p className="empty-state">Server isn&apos;t running - these will fill in once it starts.</p>
-            )}
-            {!profile.backupScheduleEnabled && (
-              <p className="empty-state">Backup schedule is disabled - enable it in the Backups tab.</p>
             )}
             <UpdateCheckPanel profileIds={[profile.id]} compact />
           </div>
