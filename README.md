@@ -135,10 +135,12 @@ dedicated servers running on the same machine.
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: one consolidated group with everything at a glance, no explanatory
     text and no sub-headers - just the fields:
-    - PID, uptime (live, ticking every second while running), memory usage (MB and % of
-      total system RAM), and connected players (X / configured max). Uptime survives a
-      Manager restart too - the actual start time is persisted alongside the pid it
-      already tracks to re-adopt a still-running server, so a re-adopted server shows real
+    - PID, connected players (X / configured max), CPU usage (%), and Server Memory (MB
+      and % of total system RAM) - laid out PID/Players then CPU/Memory so the two live
+      resource readings sit next to each other. Uptime (live, ticking every second while
+      running) sits further down, next to Next backup in. Uptime survives a Manager
+      restart too - the actual start time is persisted alongside the pid it already
+      tracks to re-adopt a still-running server, so a re-adopted server shows real
       elapsed uptime instead of losing it.
     - **Game Version**, with the **Installed Build ID** shown in parentheses right next to
       it (e.g. `92.43 (24786897)`). These are two separate numbers under the hood, since

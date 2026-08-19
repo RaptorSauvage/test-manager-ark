@@ -178,21 +178,21 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
             <dd>{status?.pid ?? '-'}</dd>
           </div>
           <div>
-            <dt>Server uptime</dt>
-            <dd>{uptimeMs !== null ? formatUptime(uptimeMs) : '-'}</dd>
+            <dt>Connected players</dt>
+            <dd>
+              {status?.players?.length ?? 0} / {profile.maxPlayers}
+            </dd>
           </div>
           <div>
-            <dt>Server memory in use</dt>
+            <dt>CPU usage</dt>
+            <dd>{status?.cpu !== undefined ? `${status.cpu}%` : '-'}</dd>
+          </div>
+          <div>
+            <dt>Server Memory</dt>
             <dd>
               {status?.memoryMB !== undefined
                 ? `${status.memoryMB} MB${status.memoryPercent !== undefined ? ` (${status.memoryPercent}%)` : ''}`
                 : '-'}
-            </dd>
-          </div>
-          <div>
-            <dt>Connected players</dt>
-            <dd>
-              {status?.players?.length ?? 0} / {profile.maxPlayers}
             </dd>
           </div>
           <div>
@@ -203,20 +203,22 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
             </dd>
           </div>
           {profile.backupScheduleEnabled && backupStatus && (
-            <>
-              <div>
-                <dt>Backup task status</dt>
-                <dd className={backupStatus.active ? 'status-ok' : 'status-warn'}>
-                  {backupStatus.active ? 'Started' : 'Stopped'}
-                </dd>
-              </div>
-              <div>
-                <dt>Next backup in</dt>
-                <dd>
-                  {backupStatus.nextRunAt !== null ? formatCountdown(backupStatus.nextRunAt - now) : '--:--:--:--'}
-                </dd>
-              </div>
-            </>
+            <div>
+              <dt>Backup task status</dt>
+              <dd className={backupStatus.active ? 'status-ok' : 'status-warn'}>
+                {backupStatus.active ? 'Started' : 'Stopped'}
+              </dd>
+            </div>
+          )}
+          <div>
+            <dt>Server uptime</dt>
+            <dd>{uptimeMs !== null ? formatUptime(uptimeMs) : '-'}</dd>
+          </div>
+          {profile.backupScheduleEnabled && backupStatus && (
+            <div>
+              <dt>Next backup in</dt>
+              <dd>{backupStatus.nextRunAt !== null ? formatCountdown(backupStatus.nextRunAt - now) : '--:--:--:--'}</dd>
+            </div>
           )}
         </dl>
         {!isRunning && <p className="empty-state">Server isn&apos;t running - these will fill in once it starts.</p>}
