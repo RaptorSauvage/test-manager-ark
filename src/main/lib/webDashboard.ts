@@ -6,6 +6,7 @@ import { listProfiles, getSettings, saveSettings, listWebDashboardAccounts, list
 import { getStatus, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches, readLogBacklog } from './logEvents'
+import { getGroupConsoleBacklog, watchGroupConsole } from './groupConsole'
 import {
   doStartServer,
   doStopServerConfirmSave,
@@ -53,6 +54,15 @@ export function sortProfilesForDisplay(profiles: ServerProfile[]): ServerProfile
   const groupNames = Array.from(new Set(visible.filter((p) => p.group.trim()).map((p) => p.group.trim()))).sort()
   const grouped = groupNames.flatMap((groupName) => visible.filter((p) => p.group.trim() === groupName))
   return [...ungrouped, ...grouped]
+}
+
+/** URL-safe stand-in for the (empty-string) ungrouped "group" - an actual empty path
+ *  segment invites double-slash URL edge cases the client would rather not construct. */
+const UNGROUPED_GROUP_TOKEN = '_ungrouped_'
+
+function resolveGroupProfiles(groupParam: string): ServerProfile[] {
+  const groupName = groupParam === UNGROUPED_GROUP_TOKEN ? '' : groupParam
+  return sortProfilesForDisplay(listProfiles()).filter((p) => p.group.trim() === groupName)
 }
 
 function getDisabledLabels(): Set<string> {
@@ -196,6 +206,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         id: profile.id,
         name: profile.name,
         group: profile.group.trim(),
+        maxPlayers: profile.maxPlayers,
         state: status.state,
         players: status.players ?? [],
         cpu: status.cpu ?? null,
@@ -276,6 +287,37 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       stopWatching()
       serverEvents.off('status', onStatus)
     })
+    return
+  }
+
+  const groupEventsMatch = path.match(/^\/api\/groups\/([^/]+)\/events$/)
+  if (req.method === 'GET' && groupEventsMatch) {
+    if (!(await requireRole(req, res, 'readonly'))) return
+    const profiles = resolveGroupProfiles(decodeURIComponent(groupEventsMatch[1]))
+    const disabled = getDisabledLabels()
+    sendJson(
+      res,
+      200,
+      getGroupConsoleBacklog(profiles).filter((event) => !disabled.has(event.label))
+    )
+    return
+  }
+
+  const groupStreamMatch = path.match(/^\/api\/groups\/([^/]+)\/events\/stream$/)
+  if (req.method === 'GET' && groupStreamMatch) {
+    if (!(await requireRole(req, res, 'readonly'))) return
+    const profiles = resolveGroupProfiles(decodeURIComponent(groupStreamMatch[1]))
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive'
+    })
+    res.write('\n')
+    const stopWatchingGroup = watchGroupConsole(profiles, (event) => {
+      if (getDisabledLabels().has(event.label)) return
+      res.write(`data: ${JSON.stringify(event)}\n\n`)
+    })
+    req.on('close', () => stopWatchingGroup())
     return
   }
 
@@ -663,7 +705,7 @@ const DASHBOARD_HTML = `<!doctype html>
   :root {
     color-scheme: dark;
     --bg: #14161a; --panel: #1d2027; --border: #2c303a; --text: #e6e8ec; --muted: #9aa0ab;
-    --accent: #4f8cff; --danger: #e0555b; --ok: #3fbf6f; --warn: #e0a63f;
+    --accent: #4f8cff; --danger: #e0555b; --ok: #3fbf6f; --warn: #e0a63f; --cyan: #22d3ee;
     --status-running: #1f8a4c; --status-starting: #7ee6a0; --status-updating: #6fa8ff;
     --status-stopping: #f2878b; --status-stopped: #a83239; --status-restarting: #e0a63f;
   }
@@ -702,6 +744,42 @@ const DASHBOARD_HTML = `<!doctype html>
   .cluster-card-state.state-error { color: var(--danger); }
   .cluster-card-stats { display: flex; flex-direction: column; gap: 6px; font-size: 0.92rem; color: var(--muted); }
   .cluster-card-stats strong { color: var(--text); font-weight: 600; }
+  .group-row-online { color: var(--status-running); font-weight: 700; }
+  .group-row-online .group-row-offline { color: var(--muted); font-weight: 400; }
+  #cluster-groups.hidden { display: none; }
+  #cluster-console { display: none; flex-direction: column; gap: 14px; }
+  #cluster-console.active { display: flex; }
+  .cluster-console-header { display: flex; align-items: center; gap: 12px; }
+  .cluster-console-header h2 { margin: 0; font-size: 1.05rem; }
+  .cluster-console-feed { overflow-y: auto; font-size: 0.82rem; font-family: Consolas, Menlo, monospace; height: 45vh; min-height: 220px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .log-event-start .label, .log-event-start .text { color: var(--status-running); }
+  .log-event-stop .label, .log-event-stop .text { color: var(--status-stopped); }
+  .cluster-console-rcon-form { display: flex; gap: 8px; }
+  .cluster-console-rcon-form input, .cluster-console-rcon-form button, .cluster-console-rcon-form select { padding: 10px 14px; font-size: 1rem; border-radius: 8px; }
+  .cluster-console-rcon-form select { flex: 0 0 auto; max-width: 40%; }
+  .cluster-console-rcon-form input { flex: 1; }
+  .cluster-console-rcon-results { font-size: 0.85rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; max-height: 120px; overflow-y: auto; }
+  .cluster-console-rcon-results p { margin: 2px 0; }
+  .rcon-result-ok { color: var(--ok); }
+  .rcon-result-error { color: var(--danger); }
+  .cluster-console-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .cluster-console-stats div { display: flex; flex-direction: column; gap: 2px; }
+  .cluster-console-stats dt { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
+  .cluster-console-stats dd { margin: 0; font-size: 1rem; font-weight: 600; }
+  .server-card-mobile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .server-card-mobile-header { display: flex; align-items: center; gap: 8px; }
+  .server-card-mobile-header h3 { margin: 0; flex: 1; font-size: 0.98rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-card-mobile-menu-btn { flex-shrink: 0; padding: 6px 11px; font-size: 1.1rem; line-height: 1; }
+  .server-card-mobile-stats { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+  .server-card-mobile-stats strong { color: var(--text); font-weight: 600; }
+  .action-sheet { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px; z-index: 1000; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); min-width: 170px; }
+  .action-sheet button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 9px 12px; border-radius: 6px; font-size: 0.9rem; }
+  .action-sheet button:hover:not(:disabled) { background: var(--bg); }
+  .action-sheet button.ok { color: var(--ok); }
+  .action-sheet button.danger { color: var(--danger); }
+  .action-sheet button.warn { color: var(--warn); }
+  .action-sheet button.info { color: var(--accent); }
+  .action-sheet button.cyan { color: var(--cyan); }
   header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   header h1 { font-size: 1rem; margin: 0; }
   select, input, button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 0.9rem; }
@@ -743,12 +821,12 @@ const DASHBOARD_HTML = `<!doctype html>
   #rcon-form input, #rcon-form button { padding: 10px 14px; font-size: 1rem; border-radius: 8px; }
   #rcon-input { flex: 1; }
   .empty-state { color: var(--muted); font-size: 0.85rem; }
-  #filters-bar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+  #filters-bar, #cluster-console-filters-bar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
   #btn-toggle-filters { font-size: 0.8rem; padding: 4px 8px; flex-shrink: 0; }
-  #filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--muted); }
+  #filters, #cluster-console-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--muted); }
   #filters-bar.collapsed #filters { display: none; }
-  #filters label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-  #filters input { padding: 0; width: auto; }
+  #filters label, #cluster-console-filters label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  #filters input, #cluster-console-filters input { padding: 0; width: auto; }
   .content-row { flex: 1; display: flex; gap: 12px; min-height: 0; }
   .console-panel { flex: 3; }
   .side-col { display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 220px; max-width: 300px; }
@@ -822,6 +900,10 @@ const DASHBOARD_HTML = `<!doctype html>
     .player-row { flex: 0 0 auto; background: var(--bg); border: 1px solid var(--border); }
     .cluster-cards { grid-template-columns: 1fr; gap: 10px; }
     .cluster-card { padding: 14px; }
+    .cluster-console-feed { height: 40vh; min-height: 200px; font-size: 0.75rem; }
+    .cluster-console-stats { grid-template-columns: repeat(2, 1fr); }
+    .cluster-console-rcon-form { flex-wrap: wrap; }
+    .cluster-console-rcon-form select, .cluster-console-rcon-form input { flex: 1 1 auto; max-width: none; }
     .form-actions { flex-wrap: wrap; }
     .form-actions button { flex: 1 1 auto; }
     .backup-table-panel, .backup-log-panel { flex: none; width: 100%; min-width: 0; }
@@ -840,7 +922,27 @@ const DASHBOARD_HTML = `<!doctype html>
 </nav>
 <div id="main-area">
   <section id="view-cluster" class="view">
-    <div id="cluster-cards"></div>
+    <div id="cluster-groups">
+      <div id="cluster-cards"></div>
+    </div>
+    <div id="cluster-console">
+      <div class="cluster-console-header">
+        <button id="btn-cluster-console-back" type="button">&larr; Back</button>
+        <h2 id="cluster-console-title"></h2>
+      </div>
+      <div id="cluster-console-filters-bar">
+        <div id="cluster-console-filters"></div>
+      </div>
+      <dl id="cluster-console-stats" class="cluster-console-stats"></dl>
+      <div id="cluster-console-feed" class="cluster-console-feed"></div>
+      <div id="cluster-console-rcon-results" class="cluster-console-rcon-results" style="display: none"></div>
+      <form id="cluster-console-rcon-form" class="cluster-console-rcon-form">
+        <select id="cluster-console-rcon-target"></select>
+        <input id="cluster-console-rcon-input" placeholder="RCON command..." autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+      <div id="cluster-console-cards"></div>
+    </div>
   </section>
   <section id="view-console" class="view">
     <header>
@@ -1098,6 +1200,18 @@ const DASHBOARD_HTML = `<!doctype html>
   var viewConsoleEl = document.getElementById('view-console');
   var viewBackupEl = document.getElementById('view-backup');
   var clusterCardsEl = document.getElementById('cluster-cards');
+  var clusterGroupsEl = document.getElementById('cluster-groups');
+  var clusterConsoleEl = document.getElementById('cluster-console');
+  var clusterConsoleBackBtn = document.getElementById('btn-cluster-console-back');
+  var clusterConsoleTitleEl = document.getElementById('cluster-console-title');
+  var clusterConsoleFiltersEl = document.getElementById('cluster-console-filters');
+  var clusterConsoleStatsEl = document.getElementById('cluster-console-stats');
+  var clusterConsoleFeedEl = document.getElementById('cluster-console-feed');
+  var clusterConsoleRconResultsEl = document.getElementById('cluster-console-rcon-results');
+  var clusterConsoleRconForm = document.getElementById('cluster-console-rcon-form');
+  var clusterConsoleRconTargetEl = document.getElementById('cluster-console-rcon-target');
+  var clusterConsoleRconInputEl = document.getElementById('cluster-console-rcon-input');
+  var clusterConsoleCardsEl = document.getElementById('cluster-console-cards');
 
   if (role === 'readonly') navBackupBtn.style.display = 'none';
   if (role && !canOperate) {
@@ -1106,6 +1220,7 @@ const DASHBOARD_HTML = `<!doctype html>
     restartBtn.style.display = 'none';
     stopUpdateRestartBtn.style.display = 'none';
     rconForm.style.display = 'none';
+    clusterConsoleRconForm.style.display = 'none';
   }
   if (role) {
     var sidebarEl = document.getElementById('sidebar');
@@ -1142,33 +1257,287 @@ const DASHBOARD_HTML = `<!doctype html>
   navConsoleBtn.addEventListener('click', function () { selectView('console'); });
   navBackupBtn.addEventListener('click', function () { selectView('backup'); });
 
-  // Renders every server as a read-only monitoring card (state/players/CPU/RAM) - like
-  // the desktop app's own dashboard cards, minus the Start/Stop/Restart buttons, since
-  // this view is meant for at-a-glance monitoring rather than control. Built from the
-  // same /api/servers response loadServers() already fetches every poll, no separate
-  // request needed.
-  function buildClusterCard(s) {
+  // Renders one summary row per Dashboard group (ungrouped servers get their own
+  // "Ungrouped" row) - like the desktop Manager's own Cluster Dashboard rows: how many of
+  // the group's servers are online (offline count in parens), combined players/max,
+  // combined CPU%, combined RAM. Tapping a row opens that group's mobile Group Console.
+  // Built from the same /api/servers response loadServers() already fetches every poll,
+  // no separate request needed.
+  function buildGroupRow(g) {
     var card = document.createElement('div');
     card.className = 'cluster-card';
 
     var header = document.createElement('div');
     header.className = 'cluster-card-header';
     var name = document.createElement('h3');
-    name.textContent = s.name;
-    var state = document.createElement('span');
-    state.className = 'cluster-card-state state-' + s.state;
-    state.textContent = s.state;
+    name.textContent = g.displayName;
+    var online = document.createElement('span');
+    online.className = 'group-row-online';
+    online.textContent = g.onlineCount + '/' + g.servers.length;
+    var offlineCount = g.servers.length - g.onlineCount;
+    if (offlineCount > 0) {
+      var offline = document.createElement('span');
+      offline.className = 'group-row-offline';
+      offline.textContent = ' (' + offlineCount + ' off)';
+      online.appendChild(offline);
+    }
     header.appendChild(name);
-    header.appendChild(state);
+    header.appendChild(online);
 
     var stats = document.createElement('div');
     stats.className = 'cluster-card-stats';
-    var playerCount = s.players ? s.players.length : 0;
     var lines = [
-      ['Version', s.gameVersion || '-'],
-      ['Players', String(playerCount) + (playerCount ? ': ' + s.players.join(', ') : '')],
-      ['CPU', s.cpu != null ? s.cpu + '%' : '-'],
-      ['RAM', s.memoryMB != null ? s.memoryMB + ' MB' : '-']
+      ['Players', g.totalPlayers + '/' + g.totalMaxPlayers],
+      ['CPU', g.totalCpu.toFixed(1) + '%'],
+      ['RAM', g.totalMemoryMB + ' MB']
+    ];
+    lines.forEach(function (pair) {
+      var line = document.createElement('div');
+      var strong = document.createElement('strong');
+      strong.textContent = pair[0] + ': ';
+      line.appendChild(strong);
+      line.appendChild(document.createTextNode(pair[1]));
+      stats.appendChild(line);
+    });
+
+    card.appendChild(header);
+    card.appendChild(stats);
+    card.addEventListener('click', function () { openGroupConsole(g.groupName); });
+    return card;
+  }
+
+  // Same grouping/ordering as the desktop dashboard: ungrouped servers first, then each
+  // named group alphabetically (the already-sorted /api/servers response puts them in
+  // that order already).
+  function renderClusterCards(servers) {
+    clusterCardsEl.innerHTML = '';
+    var byGroup = {};
+    var order = [];
+    servers.forEach(function (s) {
+      var key = s.group || '';
+      if (!byGroup[key]) { byGroup[key] = []; order.push(key); }
+      byGroup[key].push(s);
+    });
+    order.forEach(function (key) {
+      var list = byGroup[key];
+      clusterCardsEl.appendChild(buildGroupRow({
+        groupName: key,
+        displayName: key || 'Ungrouped',
+        servers: list,
+        onlineCount: list.filter(function (s) { return s.state === 'running'; }).length,
+        totalPlayers: list.reduce(function (sum, s) { return sum + (s.players ? s.players.length : 0); }, 0),
+        totalMaxPlayers: list.reduce(function (sum, s) { return sum + (s.maxPlayers || 0); }, 0),
+        totalCpu: list.reduce(function (sum, s) { return sum + (s.cpu || 0); }, 0),
+        totalMemoryMB: list.reduce(function (sum, s) { return sum + (s.memoryMB || 0); }, 0)
+      }));
+    });
+  }
+
+  // ---- Mobile Group Console (drills down from a group row above) ----------------------
+
+  var UNGROUPED_TOKEN = '_ungrouped_';
+  var CLUSTER_ALL_LABELS = ['JOIN', 'LEFT', 'CHAT', 'WARN', 'KILL', 'TAME', 'CMD', 'SAVE', 'CRYO', 'MISSION', 'READY', 'START', 'STOP'];
+  var CLUSTER_VISIBLE_LABELS_KEY = 'ark-dashboard-cluster-visible-labels';
+  var clusterConsoleGroup = null; // null = showing the group list; otherwise the raw group name ('' for ungrouped)
+  var clusterConsoleServers = [];
+  var clusterEs = null;
+  var latestServers = [];
+  // Tracks every server's last-seen state for as long as this tab stays open (not tied to
+  // the console being open) - mirrors the desktop Manager's module-scope lastKnownStates
+  // map, so a transition that happens while you're on a different tab still gets caught
+  // and reflected next time you look, instead of that server's now-current state quietly
+  // becoming the new unremarked baseline.
+  var clusterLastKnownStates = {};
+
+  function loadClusterVisibleLabels() {
+    var stored = null;
+    try { stored = JSON.parse(localStorage.getItem(CLUSTER_VISIBLE_LABELS_KEY) || 'null'); } catch (err) { /* storage unavailable - not fatal */ }
+    if (!Array.isArray(stored)) return CLUSTER_ALL_LABELS.slice();
+    return stored.filter(function (l) { return CLUSTER_ALL_LABELS.indexOf(l) !== -1; });
+  }
+  var clusterVisibleLabels = loadClusterVisibleLabels();
+  function saveClusterVisibleLabels() {
+    try { localStorage.setItem(CLUSTER_VISIBLE_LABELS_KEY, JSON.stringify(clusterVisibleLabels)); } catch (err) { /* storage unavailable - not fatal */ }
+  }
+
+  function applyClusterEventFilter() {
+    Array.prototype.forEach.call(clusterConsoleFeedEl.children, function (el) {
+      el.style.display = clusterVisibleLabels.indexOf(el.getAttribute('data-label')) !== -1 ? '' : 'none';
+    });
+  }
+
+  function renderClusterConsoleFilters() {
+    clusterConsoleFiltersEl.innerHTML = '';
+    var title = document.createElement('span');
+    title.textContent = 'Show:';
+    clusterConsoleFiltersEl.appendChild(title);
+    CLUSTER_ALL_LABELS.forEach(function (label) {
+      var wrapper = document.createElement('label');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = clusterVisibleLabels.indexOf(label) !== -1;
+      cb.addEventListener('change', function () {
+        var idx = clusterVisibleLabels.indexOf(label);
+        if (cb.checked && idx === -1) clusterVisibleLabels.push(label);
+        if (!cb.checked && idx !== -1) clusterVisibleLabels.splice(idx, 1);
+        saveClusterVisibleLabels();
+        applyClusterEventFilter();
+      });
+      wrapper.appendChild(cb);
+      wrapper.appendChild(document.createTextNode(label));
+      clusterConsoleFiltersEl.appendChild(wrapper);
+    });
+  }
+
+  // "YYYY.MM.DD" (ARK's own log date format, as sent by the merged-backlog/stream) -> "DD/MM".
+  function formatDateDDMM(date) {
+    var parts = date.split('.');
+    return parts.length === 3 ? parts[2] + '/' + parts[1] : date;
+  }
+
+  // Same event line as the single-server console, plus the merged feed's date prefix and
+  // [Server Name] tag, and no visible label tag for the synthetic START/STOP lines (the
+  // label still drives the Show filter above, it's just not printed on the line itself).
+  function addClusterEvent(ev) {
+    var div = document.createElement('div');
+    div.className = 'log-event log-event-' + ev.cls;
+    div.setAttribute('data-label', ev.label);
+    if (clusterVisibleLabels.indexOf(ev.label) === -1) div.style.display = 'none';
+    var ts = document.createElement('span');
+    ts.className = 'ts';
+    ts.textContent = formatDateDDMM(ev.date) + ' ' + ev.ts;
+    var tag = document.createElement('span');
+    tag.className = 'server-tag';
+    tag.textContent = '[' + ev.profileName + ']';
+    div.appendChild(ts);
+    div.appendChild(tag);
+    if (ev.label !== 'START' && ev.label !== 'STOP') {
+      var label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = ev.label;
+      div.appendChild(label);
+    }
+    var text = document.createElement('span');
+    text.className = 'text';
+    renderEventText(text, ev.text);
+    div.appendChild(text);
+    clusterConsoleFeedEl.appendChild(div);
+    clusterConsoleFeedEl.scrollTop = clusterConsoleFeedEl.scrollHeight;
+  }
+
+  function renderClusterConsoleStats(servers) {
+    var onlineCount = servers.filter(function (s) { return s.state === 'running'; }).length;
+    var offlineCount = servers.length - onlineCount;
+    var entries = [
+      ['Online', onlineCount + ' (' + offlineCount + ' off)'],
+      ['Players', String(servers.reduce(function (sum, s) { return sum + (s.players ? s.players.length : 0); }, 0))],
+      ['CPU', servers.reduce(function (sum, s) { return sum + (s.cpu || 0); }, 0).toFixed(1) + '%'],
+      ['RAM', servers.reduce(function (sum, s) { return sum + (s.memoryMB || 0); }, 0) + ' MB']
+    ];
+    clusterConsoleStatsEl.innerHTML = '';
+    entries.forEach(function (pair) {
+      var div = document.createElement('div');
+      var dt = document.createElement('dt');
+      dt.textContent = pair[0];
+      var dd = document.createElement('dd');
+      dd.textContent = pair[1];
+      div.appendChild(dt);
+      div.appendChild(dd);
+      clusterConsoleStatsEl.appendChild(div);
+    });
+  }
+
+  function clusterServerAction(id, action) {
+    return fetch('/api/servers/' + encodeURIComponent(id) + '/' + action, { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) showToast('Error: ' + result.error);
+        loadServers();
+      })
+      .catch(function () { showToast('Request failed'); });
+  }
+
+  // Reuses the same contextMenuEl/closeContextMenu wiring the online-players' right-click
+  // menu already established (document click/scroll listeners dismiss whichever of the two
+  // is open) - just a differently-styled, differently-triggered (tap the card's "..." button
+  // instead of right-click) menu of the same shape. Same five actions and color coding as
+  // the desktop Manager's own Group Console context menu.
+  function openActionSheet(x, y, server) {
+    closeContextMenu();
+    var menu = document.createElement('div');
+    menu.className = 'action-sheet';
+    menu.style.visibility = 'hidden';
+
+    function addAction(label, cls, disabled, onClick) {
+      var btn = document.createElement('button');
+      btn.className = cls;
+      btn.textContent = label;
+      btn.disabled = !!disabled;
+      btn.addEventListener('click', function () {
+        closeContextMenu();
+        onClick();
+      });
+      menu.appendChild(btn);
+    }
+
+    addAction('Start', 'ok', server.state !== 'stopped', function () { clusterServerAction(server.id, 'start'); });
+    addAction('Stop', 'danger', server.state !== 'running', function () { clusterServerAction(server.id, 'stop'); });
+    addAction('Restart', 'warn', server.state !== 'running', function () { clusterServerAction(server.id, 'restart'); });
+    addAction('Update', 'info', server.state !== 'stopped', function () { clusterServerAction(server.id, 'update'); });
+    addAction('Update Restart', 'cyan', false, function () {
+      if (!confirm('Stop this server, update it via SteamCMD, then start it back up?')) return;
+      clusterServerAction(server.id, 'stop-update-restart');
+    });
+
+    document.body.appendChild(menu);
+    contextMenuEl = menu;
+
+    // Anchored from the tapped button's position, but clamped so a card near the bottom
+    // (or edge) of a small phone screen never opens a menu that's partly or fully
+    // unreachable - position:fixed doesn't respond to page scroll, so an overflowing menu
+    // would otherwise be stuck off-screen with no way to reach it.
+    var rect = menu.getBoundingClientRect();
+    var left = Math.min(x, window.innerWidth - rect.width - 8);
+    var top = Math.min(y, window.innerHeight - rect.height - 8);
+    menu.style.left = Math.max(8, left) + 'px';
+    menu.style.top = Math.max(8, top) + 'px';
+    menu.style.visibility = '';
+  }
+
+  function buildServerCardMobile(server) {
+    var card = document.createElement('div');
+    card.className = 'server-card-mobile';
+
+    var header = document.createElement('div');
+    header.className = 'server-card-mobile-header';
+    var name = document.createElement('h3');
+    name.textContent = server.name;
+    var state = document.createElement('span');
+    state.className = 'cluster-card-state state-' + server.state;
+    state.textContent = server.state;
+    header.appendChild(name);
+    header.appendChild(state);
+    if (!role || canOperate) {
+      var menuBtn = document.createElement('button');
+      menuBtn.type = 'button';
+      menuBtn.className = 'server-card-mobile-menu-btn';
+      menuBtn.textContent = '⋮';
+      menuBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var rect = menuBtn.getBoundingClientRect();
+        openActionSheet(rect.right, rect.bottom, server);
+      });
+      header.appendChild(menuBtn);
+    }
+
+    var stats = document.createElement('div');
+    stats.className = 'server-card-mobile-stats';
+    var playerCount = server.players ? server.players.length : 0;
+    var lines = [
+      ['Version', server.gameVersion || '-'],
+      ['Players', playerCount + '/' + server.maxPlayers],
+      ['CPU', server.cpu != null ? server.cpu + '%' : '-'],
+      ['RAM', server.memoryMB != null ? server.memoryMB + ' MB' : '-']
     ];
     lines.forEach(function (pair) {
       var line = document.createElement('div');
@@ -1182,42 +1551,134 @@ const DASHBOARD_HTML = `<!doctype html>
     card.appendChild(header);
     card.appendChild(stats);
     card.addEventListener('click', function () {
-      select.value = s.id;
-      selectServer(s.id);
+      select.value = server.id;
+      selectServer(server.id);
       selectView('console');
     });
     return card;
   }
 
-  function buildClusterGrid(servers) {
-    var grid = document.createElement('div');
-    grid.className = 'cluster-cards';
-    servers.forEach(function (s) { grid.appendChild(buildClusterCard(s)); });
-    return grid;
+  function renderClusterConsoleCards(servers) {
+    clusterConsoleCardsEl.innerHTML = '';
+    servers.forEach(function (server) { clusterConsoleCardsEl.appendChild(buildServerCardMobile(server)); });
   }
 
-  // Same grouping as the desktop dashboard: ungrouped servers first in a plain grid, then
-  // each named group (in the order the already-sorted /api/servers response puts them -
-  // alphabetical) in its own collapsible section, open by default.
-  function renderClusterCards(servers) {
-    clusterCardsEl.innerHTML = '';
-    var ungrouped = servers.filter(function (s) { return !s.group; });
-    var groupNames = [];
+  function renderClusterConsoleRconTargets(servers) {
+    var previous = clusterConsoleRconTargetEl.value;
+    clusterConsoleRconTargetEl.innerHTML = '';
+    var allOpt = document.createElement('option');
+    allOpt.value = 'ALL';
+    allOpt.textContent = 'ALL';
+    clusterConsoleRconTargetEl.appendChild(allOpt);
     servers.forEach(function (s) {
-      if (s.group && groupNames.indexOf(s.group) === -1) groupNames.push(s.group);
+      var opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      clusterConsoleRconTargetEl.appendChild(opt);
     });
+    if (previous && (previous === 'ALL' || servers.some(function (s) { return s.id === previous; }))) {
+      clusterConsoleRconTargetEl.value = previous;
+    }
+  }
 
-    if (ungrouped.length) clusterCardsEl.appendChild(buildClusterGrid(ungrouped));
+  // Refreshed every /api/servers poll while a group's console is open - keeps the stats
+  // row, server cards and RCON target list current without a separate request.
+  function refreshClusterConsoleServers() {
+    if (clusterConsoleGroup === null) return;
+    clusterConsoleServers = latestServers.filter(function (s) { return (s.group || '') === clusterConsoleGroup; });
+    renderClusterConsoleStats(clusterConsoleServers);
+    renderClusterConsoleCards(clusterConsoleServers);
+    renderClusterConsoleRconTargets(clusterConsoleServers);
+  }
 
-    groupNames.forEach(function (groupName) {
-      var details = document.createElement('details');
-      details.className = 'cluster-group';
-      details.open = true;
-      var summary = document.createElement('summary');
-      summary.textContent = groupName;
-      details.appendChild(summary);
-      details.appendChild(buildClusterGrid(servers.filter(function (s) { return s.group === groupName; })));
-      clusterCardsEl.appendChild(details);
+  function openGroupConsole(groupName) {
+    clusterConsoleGroup = groupName;
+    clusterGroupsEl.classList.add('hidden');
+    clusterConsoleEl.classList.add('active');
+    clusterConsoleTitleEl.textContent = (groupName || 'Ungrouped') + ' — Group Console';
+    clusterConsoleFeedEl.innerHTML = '';
+    clusterConsoleRconResultsEl.innerHTML = '';
+    clusterConsoleRconResultsEl.style.display = 'none';
+    renderClusterConsoleFilters();
+    refreshClusterConsoleServers();
+
+    var urlToken = groupName ? encodeURIComponent(groupName) : UNGROUPED_TOKEN;
+    fetch('/api/groups/' + urlToken + '/events')
+      .then(function (r) { return r.json(); })
+      .then(function (events) { events.forEach(addClusterEvent); });
+
+    if (clusterEs) { clusterEs.close(); clusterEs = null; }
+    clusterEs = new EventSource('/api/groups/' + urlToken + '/events/stream');
+    clusterEs.onmessage = function (msg) { addClusterEvent(JSON.parse(msg.data)); };
+  }
+
+  function closeGroupConsole() {
+    clusterConsoleGroup = null;
+    clusterGroupsEl.classList.remove('hidden');
+    clusterConsoleEl.classList.remove('active');
+    if (clusterEs) { clusterEs.close(); clusterEs = null; }
+  }
+
+  clusterConsoleBackBtn.addEventListener('click', closeGroupConsole);
+
+  clusterConsoleRconForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var command = clusterConsoleRconInputEl.value.trim();
+    if (!command || clusterConsoleGroup === null) return;
+    var targetValue = clusterConsoleRconTargetEl.value;
+    var targets = targetValue === 'ALL' ? clusterConsoleServers : clusterConsoleServers.filter(function (s) { return s.id === targetValue; });
+    if (targets.length === 0) return;
+    clusterConsoleRconInputEl.value = '';
+    Promise.all(targets.map(function (s) {
+      return fetch('/api/servers/' + encodeURIComponent(s.id) + '/rcon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: command })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (result) { return { name: s.name, ok: result.ok, response: result.response, error: result.error }; });
+    })).then(function (results) {
+      clusterConsoleRconResultsEl.innerHTML = '';
+      clusterConsoleRconResultsEl.style.display = results.length ? '' : 'none';
+      results.forEach(function (r) {
+        var p = document.createElement('p');
+        p.className = r.ok ? 'rcon-result-ok' : 'rcon-result-error';
+        var strong = document.createElement('strong');
+        strong.textContent = r.name + ': ';
+        p.appendChild(strong);
+        p.appendChild(document.createTextNode(r.ok ? (r.response || '(no response)') : r.error));
+        clusterConsoleRconResultsEl.appendChild(p);
+      });
+    });
+  });
+
+  // Pops a toast for any server's start/stop transition (regardless of which tab is
+  // active), and additionally drops a matching START/STOP line into the currently-open
+  // group's console feed if that server belongs to it - same dual notification (transient
+  // toast + permanent feed line) as the desktop Manager's own Group Console.
+  function checkClusterStateTransitions(servers) {
+    servers.forEach(function (server) {
+      var prevState = clusterLastKnownStates[server.id];
+      clusterLastKnownStates[server.id] = server.state;
+      if (prevState === undefined || prevState === server.state) return;
+      if (server.state !== 'running' && server.state !== 'stopped') return;
+
+      var type = server.state === 'running' ? 'start' : 'stop';
+      showToast(server.name + (type === 'start' ? ' started' : ' stopped'));
+
+      if (clusterConsoleGroup !== null && (server.group || '') === clusterConsoleGroup) {
+        var now = new Date();
+        var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+        addClusterEvent({
+          label: type === 'start' ? 'START' : 'STOP',
+          cls: type,
+          text: server.name + (type === 'start' ? ' started' : ' stopped'),
+          ts: pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()),
+          date: now.getFullYear() + '.' + pad(now.getMonth() + 1) + '.' + pad(now.getDate()),
+          profileId: server.id,
+          profileName: server.name
+        });
+      }
     });
   }
 
@@ -1564,6 +2025,8 @@ const DASHBOARD_HTML = `<!doctype html>
 
   function loadServers() {
     fetch('/api/servers').then(function (r) { return r.json(); }).then(function (servers) {
+      latestServers = servers;
+      checkClusterStateTransitions(servers);
       var previousValue = select.value;
       select.innerHTML = '';
       servers.forEach(function (s) {
@@ -1592,6 +2055,7 @@ const DASHBOARD_HTML = `<!doctype html>
       if (!currentId && activeView !== 'cluster') selectView('cluster');
       renderStatus(servers.find(function (s) { return s.id === select.value; }));
       renderClusterCards(servers);
+      refreshClusterConsoleServers();
     });
   }
 

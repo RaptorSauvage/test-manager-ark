@@ -411,33 +411,61 @@ dedicated servers running on the same machine.
   Manager (no separate process), serving a page with a sidebar switching between three
   views - **Cluster Dashboard**, then a separator line, then **Dashboard** and **Backup**
   (grouped together since Backup always follows whatever server is selected in Dashboard):
-  - **Cluster Dashboard** - a read-only monitoring overview, one card per server (state,
-    Game Version, player count, CPU%, RAM) - like the desktop app's own dashboard cards,
-    minus the Start/Stop/Restart buttons, since this view is for glancing at the whole
-    cluster's health rather than controlling anything. The state pill uses the same six
-    distinct colors as the desktop dashboard's own badges: dark red (stopped), light red
-    (stopping), blue (updating), light green (starting), dark green (running), and orange
-    (restarting). Cards are split into collapsible groups
-    matching the Manager's own profile groups - ungrouped servers first, then each named
-    group alphabetically, same ordering as everywhere else in the app - and, like every
-    other server list in this page, **Hidden** profiles never appear here either. Each
-    group is one below another, full width, with its own cards wrapping into as many
-    columns as fit that width - same shape as the desktop dashboard's grouped server list.
-    Click a
-    card to jump straight into that server's Dashboard view (below) with it already
-    selected. Same `/api/servers` poll as the Dashboard view, just rendered for every
-    server instead of only the selected one. This - and the player count/CPU/RAM shown for
-    the selected server in the Dashboard view's own Status box - depends on the Manager's
-    own CPU/RAM/player-count monitor, which polls every 5s while a server is running; a
-    past bug had that monitor's updates only reach live listeners (the desktop app's own
-    UI) without ever being saved anywhere else, so anything that asked for a server's
-    status afterwards - this page's `/api/servers` poll included - got stuck reading
-    `cpu: null, memoryMB: null, players: []` forever even for a server that had been
-    running for hours. Fixed by having the monitor persist through the same internal
-    update path everything else uses, instead of only broadcasting a live event.
+  - **Cluster Dashboard** - a mobile-adapted version of the desktop Manager's own Cluster
+    Dashboard page, not just a per-server card grid: one summary row per Dashboard group
+    (ungrouped servers get their own "Ungrouped" row), same shape as the desktop version -
+    how many of the group's servers are online (offline count in parens, green), combined
+    players/max, combined CPU%, combined RAM - computed client-side from the same
+    `/api/servers` poll the Dashboard view already uses, no separate request. Hidden
+    profiles never appear here, same as everywhere else in this page. Tapping a row drills
+    into that group's own **mobile Group Console**, which mirrors the desktop Manager's
+    Group Console feature-for-feature:
+    - A merged, chronological log feed across every server in the group, each line tagged
+      `[Server Name]`, backed by two new endpoints - `GET /api/groups/:group/events` (the
+      merged backlog, reusing `src/main/lib/groupConsole.ts`'s `getGroupConsoleBacklog`)
+      and `GET /api/groups/:group/events/stream` (the live merged tail, reusing that same
+      file's `watchGroupConsole` - one `watchLogFile` per running server in the group,
+      exactly like the desktop Group Console's own IPC channel, just reached over HTTP/SSE
+      instead). Ungrouped is addressed as the literal path segment `_ungrouped_` (an actual
+      empty segment invites double-slash URL edge cases). Each line shows its date as
+      **DD/MM** next to the timestamp, same as the desktop version, since a merged feed can
+      span more than a day. A "Show:" row of checkboxes (persisted in this device's
+      `localStorage`, independent of the page's own admin-controlled per-label setting)
+      includes two categories no real log line produces - **START** and **STOP** - synthetic
+      lines this page injects itself the moment a group member's live status actually
+      transitions to running/stopped, colored green/red, with no visible label tag (just the
+      colored text) though the label still exists for the filter checkboxes.
+    - Whenever any server's status transitions to running or stopped - not just a member of
+      the currently-open group, and not for the in-between
+      starting/stopping/updating/restarting states - a toast pops (green "started" / red
+      "stopped"), and if that server belongs to the group whose console is currently open,
+      the matching START/STOP line lands in its feed at the same moment. Each server's
+      last-seen state is tracked for as long as the tab stays open (not tied to which view
+      is active), so a transition that happens while you're looking at a different tab still
+      gets caught the moment you look back.
+    - An aggregate stats row at the top of the console (online/offline, players, CPU, RAM -
+      the same numbers as that group's row on the list above) and one card per server below
+      the feed, each with its live status badge, Game Version, players/max, and CPU/RAM.
+      Tapping a card opens that server's own Dashboard view (same place the row's click used
+      to go before this feature); tapping the **⋮** button on a card instead opens a small
+      action sheet - **Start**, **Stop**, **Restart**, **Update**, and **Update Restart**,
+      the same five actions, enabled/disabled rules, and color coding (green/red/amber/blue/
+      cyan) as the desktop Manager's own Group Console context menu - reusing the exact
+      same `/api/servers/:id/start|stop|restart|update|stop-update-restart` routes the
+      single-server Dashboard view's own buttons already call. There's no right-click on a
+      phone, so a button is the mobile equivalent; the sheet is positioned from wherever
+      that button is, clamped to stay within the screen so a card near the bottom edge never
+      opens a menu that's partly or fully unreachable (`position: fixed` doesn't respond to
+      page scroll, so an unclamped menu could otherwise land below the visible viewport with
+      no way to reach it).
+    - An RCON command bar below the feed: a target dropdown (every server in the group, plus
+      an **ALL** option) and a text field - sending to ALL fans the same command out to
+      every server in the group at once (one `/api/servers/:id/rcon` call per server, same
+      as the desktop version's fan-out), with each server's individual result shown above
+      the bar.
   - **Dashboard** - the per-server console/RCON view (what this page originally was, and
     still the default on first visit). Its Status box shows **State** as the same colored
-    pill badge as the Cluster Dashboard cards instead of plain text, plus **Version** (the
+    pill badge as the Group Console's own server cards instead of plain text, plus **Version** (the
     Game Version, e.g. "92.28") alongside Players/CPU/RAM - both boxes pull from the same
     `/api/servers` response, so they always agree.
   - A server picker at the top, listing profiles in the same order as the desktop
@@ -794,7 +822,9 @@ with enough role to match the table in the Settings section above:
 | --- | --- | --- | --- | --- |
 | POST | `/api/login` | `{ "username": "...", "password": "..." }` | `{ ok, role? , error? }` | Only meaningful with **Require login** on; sets the session cookie on success. 401 on bad credentials, 429 if this address has failed too many times recently |
 | POST | `/api/logout` | — | `{ ok: true }` | Clears the session cookie |
-| GET | `/api/servers` | — | `[{ id, name, group, state, players, cpu, memoryMB }]` | `id` is what every other endpoint below expects; `group` is the Manager's dashboard group name (empty string when ungrouped) |
+| GET | `/api/servers` | — | `[{ id, name, group, maxPlayers, state, players, cpu, memoryMB, gameVersion }]` | `id` is what every other endpoint below expects; `group` is the Manager's dashboard group name (empty string when ungrouped) |
+| GET | `/api/groups/:group/events` | — | Same shape as `/api/servers/:id/events` below, plus `profileId`/`profileName` on each event | Merged, date+time-sorted backlog across every server in the group. `:group` is the group name, or the literal `_ungrouped_` for the ungrouped bucket |
+| GET | `/api/groups/:group/events/stream` | — | `text/event-stream`, one `data:` line per merged event (same shape as the backlog above) | Only tails servers in the group that are actually running, starting/stopping individual tailers live as they start/stop while the connection is open |
 | POST | `/api/servers/:id/start` | — | `{ ok, error? }` | 400 with `error` if it can't start right now (e.g. an update is running) |
 | POST | `/api/servers/:id/stop` | — | `{ ok: true, saved: boolean }` | Waits for SaveWorld's RCON outcome (`saved`) before responding, then returns - the rest of the shutdown keeps running in the background; state changes (`stopping` → `stopped`) show up in the next `GET /api/servers` poll. `saved: false` means RCON was unreachable or the save failed, so it skipped straight to the grace-period/force-kill fallback |
 | POST | `/api/servers/:id/restart` | — | `{ ok: true, saved: boolean }` | Same as stop above, for the shutdown half - responds once `saved` is known, then the restart (including starting back up) continues in the background |

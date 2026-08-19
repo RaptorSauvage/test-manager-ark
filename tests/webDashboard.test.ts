@@ -296,6 +296,49 @@ describe('web dashboard HTTP server', () => {
     ])
   })
 
+  it('merges the backlog across every server in a group (both p1 and p2 are ungrouped)', async () => {
+    const res = await request('/api/groups/_ungrouped_/events')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([
+      expect.objectContaining({ profileId: 'p2', profileName: 'Logged Server', label: 'JOIN' })
+    ])
+  })
+
+  it('returns an empty backlog for a group with no members', async () => {
+    const res = await request('/api/groups/NoSuchGroup/events')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([])
+  })
+
+  it(
+    'streams a live event tagged with its profile once a group member starts and its log grows',
+    async () => {
+      // watchGroupConsole defaults to a 2s poll (unlike groupConsole.test.ts, which injects a
+      // fast interval - this route can't do that in production): the file has to sit still
+      // for one full tick so the tailer captures its baseline size, then the append needs a
+      // second tick to be picked up as new content - budget for both rather than racing them.
+      const stream = await openStream('/api/groups/_ungrouped_/events/stream')
+      serverEvents.emit('status', { profileId: 'p2', state: 'running' })
+      await new Promise((resolve) => setTimeout(resolve, 2100)) // past the first 2s poll tick (baseline captured)
+
+      const logPath = path.join(LOGGED_INSTALL_DIR, 'ShooterGame', 'Saved', 'Logs', 'ShooterGame.log')
+      const original = fs.readFileSync(logPath, 'utf-8')
+      fs.appendFileSync(
+        logPath,
+        '[2026.07.27-21.30.00:000][123]2026.07.27_21.30.00: LeRaptorSauvage ' +
+          '[UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] left this ARK!\n'
+      )
+      try {
+        await stream.waitFor('"profileId":"p2"', 2500) // covers the second poll tick
+      } finally {
+        stream.destroy()
+        serverEvents.emit('status', { profileId: 'p2', state: 'stopped' })
+        fs.writeFileSync(logPath, original) // undo the append so later tests see the original backlog again
+      }
+    },
+    8000
+  )
+
   it('sends an RCON command through and returns its result', async () => {
     const res = await request('/api/servers/p1/rcon', {
       method: 'POST',
