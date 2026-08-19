@@ -31,7 +31,8 @@ const store = new Store<StoreSchema>({
       webDashboardDisabledLabels: [],
       launchOnStartup: false,
       webDashboardAuthEnabled: false,
-      serverAutoStartStaggerSeconds: 10
+      serverAutoStartStaggerSeconds: 10,
+      iniLockEnabled: true
     },
     runningPids: {},
     runningStartedAt: {},
@@ -91,6 +92,7 @@ export function getSettings(): AppSettings {
     launchOnStartup: false,
     webDashboardAuthEnabled: false,
     serverAutoStartStaggerSeconds: 10,
+    iniLockEnabled: true,
     ...settings
   }
 }

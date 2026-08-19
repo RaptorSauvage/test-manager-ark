@@ -20,7 +20,7 @@ import { applyLaunchOnStartup } from './lib/launchOnStartup'
 import { doStartServer } from './lib/serverActions'
 import { runAutoStart } from './lib/autoStart'
 import { registerServerVersionWatcher, checkAllGameVersionsOnStartup } from './lib/serverVersionWatcher'
-import { registerIniLockWatcher, unlockStoppedProfilesOnStartup } from './lib/iniLock'
+import { registerIniLockWatcher, unlockStoppedProfilesOnStartup, applyIniLockSetting } from './lib/iniLock'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -86,6 +86,9 @@ app.whenReady().then(() => {
   // Safety net for a previous crash/force-quit that left a running server's config files
   // locked read-only - anything not currently running gets unlocked once, right away.
   unlockStoppedProfilesOnStartup(profiles, isRunning)
+  // If the feature is currently disabled, also unlock anything still running right now -
+  // covers the setting having been turned off since the Manager last ran.
+  applyIniLockSetting(getSettings().iniLockEnabled, profiles)
 
   registerPlayerBackupWatch()
   applyWebDashboardSettings(getSettings())

@@ -194,7 +194,10 @@ dedicated servers running on the same machine.
     it's running again rather than briefly unlocking them mid-restart. If the Manager
     crashes or is force-quit while a server was running (and its config was locked), every
     non-running profile's config gets unlocked once at the next Manager startup as a safety
-    net, so a crash can't leave the files stuck read-only.
+    net, so a crash can't leave the files stuck read-only. Controlled by **Lock config files
+    while a server is running** in the app-wide Settings view (on by default) - turning it
+    off immediately unlocks every profile's config files, including ones currently running,
+    and locking stays off until it's turned back on.
   - **Server Statistics**: three sparkline charts (CPU %, RAM in MB, connected players),
     stacked with no gap between them and the metric name on the left of each row rather
     than above it, sampled every 5 seconds from the same status data the Server Status
@@ -207,7 +210,11 @@ dedicated servers running on the same machine.
     this way. Not capped at 100%: CPU usage is measured per-process across all cores, so a
     multi-threaded server can legitimately read well above 100%, and every row's points are
     clamped to stay within the chart's own height regardless of scale, so nothing ever draws
-    outside its row. Up to 1 hour of history is collected in
+    outside its row. A gap of a minute or more between two consecutive samples (server
+    stopped for a while, Manager closed, stats disabled and re-enabled, ...) breaks the line
+    into a separate segment instead of connecting them with a straight slope - otherwise the
+    chart would draw a misleading diagonal bridging two readings that aren't actually part of
+    the same continuous run. Up to 1 hour of history is collected in
     the background regardless of what's currently displayed, and a **Time Scale** selector
     (1m/5m/30m/1h) picks how much of that collected history each chart actually shows - the
     chosen scale is remembered per server in local storage too, so it stays on whatever you

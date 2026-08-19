@@ -7,7 +7,8 @@ import {
   setConfigFilesReadOnly,
   scheduleConfigFilesReadOnly,
   handleStatusForIniLock,
-  unlockStoppedProfilesOnStartup
+  unlockStoppedProfilesOnStartup,
+  applyIniLockSetting
 } from '../src/main/lib/iniLock'
 
 const TEST_INSTALL_DIR = path.join(os.tmpdir(), `ini-lock-test-${process.pid}`)
@@ -96,14 +97,14 @@ describe('handleStatusForIniLock', () => {
   it('schedules a lock when the server becomes running', () => {
     const lookupProfile = vi.fn().mockReturnValue({ id: 'profile-1', installDir: '/install/dir' })
     const schedule = vi.fn()
-    handleStatusForIniLock(makeStatus({ state: 'running' }), lookupProfile, schedule)
+    handleStatusForIniLock(makeStatus({ state: 'running' }), lookupProfile, schedule, () => true)
     expect(schedule).toHaveBeenCalledWith('profile-1', '/install/dir', true)
   })
 
   it('schedules an unlock when the server becomes stopped', () => {
     const lookupProfile = vi.fn().mockReturnValue({ id: 'profile-1', installDir: '/install/dir' })
     const schedule = vi.fn()
-    handleStatusForIniLock(makeStatus({ state: 'stopped' }), lookupProfile, schedule)
+    handleStatusForIniLock(makeStatus({ state: 'stopped' }), lookupProfile, schedule, () => true)
     expect(schedule).toHaveBeenCalledWith('profile-1', '/install/dir', false)
   })
 
@@ -111,7 +112,7 @@ describe('handleStatusForIniLock', () => {
     const lookupProfile = vi.fn().mockReturnValue({ id: 'profile-1', installDir: '/install/dir' })
     const schedule = vi.fn()
     for (const state of ['starting', 'stopping', 'updating', 'restarting', 'error'] as const) {
-      handleStatusForIniLock(makeStatus({ state }), lookupProfile, schedule)
+      handleStatusForIniLock(makeStatus({ state }), lookupProfile, schedule, () => true)
     }
     expect(schedule).not.toHaveBeenCalled()
   })
@@ -119,8 +120,16 @@ describe('handleStatusForIniLock', () => {
   it('does nothing for an unknown profile', () => {
     const lookupProfile = vi.fn().mockReturnValue(undefined)
     const schedule = vi.fn()
-    handleStatusForIniLock(makeStatus({ state: 'running' }), lookupProfile, schedule)
+    handleStatusForIniLock(makeStatus({ state: 'running' }), lookupProfile, schedule, () => true)
     expect(schedule).not.toHaveBeenCalled()
+  })
+
+  it('does nothing when the feature is disabled in settings', () => {
+    const lookupProfile = vi.fn().mockReturnValue({ id: 'profile-1', installDir: '/install/dir' })
+    const schedule = vi.fn()
+    handleStatusForIniLock(makeStatus({ state: 'running' }), lookupProfile, schedule, () => false)
+    expect(schedule).not.toHaveBeenCalled()
+    expect(lookupProfile).not.toHaveBeenCalled()
   })
 })
 
@@ -135,5 +144,38 @@ describe('unlockStoppedProfilesOnStartup', () => {
     unlockStoppedProfilesOnStartup(profiles, isRunning, apply)
     expect(apply).toHaveBeenCalledTimes(1)
     expect(apply).toHaveBeenCalledWith('/install/b', false)
+  })
+})
+
+describe('applyIniLockSetting', () => {
+  const profiles = [
+    { id: 'a', installDir: '/install/a' } as ServerProfile,
+    { id: 'b', installDir: '/install/b' } as ServerProfile
+  ]
+
+  it('does nothing when the setting is enabled', () => {
+    const apply = vi.fn().mockResolvedValue(undefined)
+    applyIniLockSetting(true, profiles, apply)
+    expect(apply).not.toHaveBeenCalled()
+  })
+
+  it('unlocks every profile, running or not, when the setting is disabled', () => {
+    const apply = vi.fn().mockResolvedValue(undefined)
+    applyIniLockSetting(false, profiles, apply)
+    expect(apply).toHaveBeenCalledTimes(2)
+    expect(apply).toHaveBeenCalledWith('/install/a', false)
+    expect(apply).toHaveBeenCalledWith('/install/b', false)
+  })
+
+  it('cancels a pending scheduled change for a profile it unlocks', async () => {
+    vi.useFakeTimers()
+    const scheduleApply = vi.fn().mockResolvedValue(undefined)
+    scheduleConfigFilesReadOnly('a', '/install/a', true, scheduleApply, 5000)
+    const unlockApply = vi.fn().mockResolvedValue(undefined)
+    applyIniLockSetting(false, [{ id: 'a', installDir: '/install/a' } as ServerProfile], unlockApply)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(scheduleApply).not.toHaveBeenCalled()
+    expect(unlockApply).toHaveBeenCalledWith('/install/a', false)
+    vi.useRealTimers()
   })
 })

@@ -15,7 +15,8 @@ export default function SteamCmdView({ onBack }: SteamCmdViewProps): JSX.Element
     webDashboardDisabledLabels: [],
     launchOnStartup: false,
     webDashboardAuthEnabled: false,
-    serverAutoStartStaggerSeconds: 10
+    serverAutoStartStaggerSeconds: 10,
+    iniLockEnabled: true
   })
   const [status, setStatus] = useState('')
   const [managedPath, setManagedPath] = useState<string | null>(null)

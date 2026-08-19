@@ -149,6 +149,11 @@ export interface AppSettings {
    *  ServerProfile.startOnManagerLaunch). Only affects profiles that opt in - the first one
    *  starts immediately, each subsequent one waits this long after the previous one. */
   serverAutoStartStaggerSeconds: number
+  /** When true (default), a server's GameUserSettings.ini/Game.ini are set read-only while
+   *  it's running (see src/main/lib/iniLock.ts) - a deterrent against editing a running
+   *  server's config by accident. Turning this off unlocks every profile's config files
+   *  right away, including ones currently running. */
+  iniLockEnabled: boolean
 }
 
 export type WebDashboardRole = 'admin' | 'operator' | 'readonly'

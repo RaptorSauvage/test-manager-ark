@@ -36,7 +36,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     webDashboardDisabledLabels: [],
     launchOnStartup: false,
     webDashboardAuthEnabled: false,
-    serverAutoStartStaggerSeconds: 10
+    serverAutoStartStaggerSeconds: 10,
+    iniLockEnabled: true
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
   const [status, setStatus] = useState('')
@@ -120,6 +121,22 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
         <p className="empty-state">
           Registers this app to launch automatically at login (minimized to the background isn&apos;t supported yet
           - it opens its normal window). Save this form to apply the change immediately.
+        </p>
+
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={settings.iniLockEnabled}
+            onChange={(e) => setSettings({ ...settings, iniLockEnabled: e.target.checked })}
+          />
+          Lock config files while a server is running
+        </label>
+        <p className="empty-state">
+          Sets <code>GameUserSettings.ini</code>/<code>Game.ini</code> read-only a few seconds after a server
+          starts, and writable again a few seconds after it fully stops - a deterrent against editing a running
+          server&apos;s config by accident (see the Analytics tab). Turning this off unlocks every server&apos;s
+          config files right away, including ones currently running. Save this form to apply the change
+          immediately.
         </p>
 
         <label>

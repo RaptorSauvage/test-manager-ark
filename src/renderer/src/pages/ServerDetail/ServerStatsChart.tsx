@@ -1,5 +1,5 @@
 import { useRef, useState, type MouseEvent } from 'react'
-import { buildTimeSeriesPoints, selectHistoryWindow, type StatSample } from '../../lib/sparkline'
+import { buildTimeSeriesPath, selectHistoryWindow, type StatSample } from '../../lib/sparkline'
 
 const CHART_WIDTH = 1000
 const CHART_HEIGHT = 60
@@ -22,7 +22,7 @@ interface SparklineProps {
 }
 
 function Sparkline({ label, unit, current, samples, windowMs, now, color, max }: SparklineProps): JSX.Element {
-  const points = buildTimeSeriesPoints(samples, windowMs, now, CHART_WIDTH, CHART_HEIGHT, 0, max)
+  const pathD = buildTimeSeriesPath(samples, windowMs, now, CHART_WIDTH, CHART_HEIGHT, 0, max)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<HoverState | null>(null)
 
@@ -45,8 +45,15 @@ function Sparkline({ label, unit, current, samples, windowMs, now, color, max }:
       </div>
       <div className="stats-chart-svg-wrap" ref={wrapRef} onMouseMove={handleMouseMove} onMouseLeave={() => setHover(null)}>
         <svg viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} preserveAspectRatio="none" className="stats-chart-svg">
-          {points && (
-            <polyline points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          {pathD && (
+            <path
+              d={pathD}
+              fill="none"
+              stroke={color}
+              strokeWidth="2"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
           )}
         </svg>
         {hover && (
