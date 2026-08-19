@@ -518,11 +518,21 @@ label.checkbox {
 }
 
 .log-event-join .label,
-.log-event-ready .label {
+.log-event-ready .label,
+.log-event-start .label {
   color: var(--status-running);
 }
 
-.log-event-leave .label {
+.log-event-leave .label,
+.log-event-stop .label {
+  color: var(--status-stopped);
+}
+
+.log-event-start .text {
+  color: var(--status-running);
+}
+
+.log-event-stop .text {
   color: var(--status-stopped);
 }
 

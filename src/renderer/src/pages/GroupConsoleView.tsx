@@ -10,7 +10,21 @@ interface GroupConsoleViewProps {
   onOpenProfile: (id: string) => void
 }
 
-const ALL_EVENT_LABELS = ['JOIN', 'LEFT', 'CHAT', 'WARN', 'KILL', 'TAME', 'CMD', 'SAVE', 'CRYO', 'MISSION', 'READY']
+const ALL_EVENT_LABELS = [
+  'JOIN',
+  'LEFT',
+  'CHAT',
+  'WARN',
+  'KILL',
+  'TAME',
+  'CMD',
+  'SAVE',
+  'CRYO',
+  'MISSION',
+  'READY',
+  'START',
+  'STOP'
+]
 
 /** Cap on how many merged events are kept/rendered - this is a live "what's happening right
  *  now across the group" feed, not a full log archive. */
@@ -42,6 +56,18 @@ function saveVisibleLabels(labels: Set<string>): void {
 
 function sortKey(event: GroupConsoleEvent): string {
   return `${event.date} ${event.ts}`
+}
+
+/** The current moment, formatted like a parsed log event's own `date`/`ts` fields, for the
+ *  synthetic START/STOP entries this page injects into the feed itself (there's no actual
+ *  log line to parse those from - they come from live status transitions, not the log). */
+function nowAsLogDateTime(): { date: string; ts: string } {
+  const now = new Date()
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return {
+    date: `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}`,
+    ts: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+  }
 }
 
 /** Converts ARK's own "YYYY.MM.DD" log date into a short DD/MM display. */
@@ -122,16 +148,20 @@ export default function GroupConsoleView({
   const profileIdsKey = profiles.map((p) => p.id).join(',')
   const statuses = useServerStatuses(profiles.map((p) => p.id))
 
+  function appendEvents(newEvents: GroupConsoleEvent[]): void {
+    setEvents((prev) => {
+      const next = [...prev, ...newEvents].sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
+      return next.length > MAX_EVENTS ? next.slice(next.length - MAX_EVENTS) : next
+    })
+  }
+
   useEffect(() => {
     let cancelled = false
     window.api.groupConsole.subscribe(profiles.map((p) => p.id)).then((backlog) => {
       if (!cancelled) setEvents(backlog)
     })
     const unsubscribeEvent = window.api.groupConsole.onEvent((event) => {
-      setEvents((prev) => {
-        const next = [...prev, event].sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
-        return next.length > MAX_EVENTS ? next.slice(next.length - MAX_EVENTS) : next
-      })
+      appendEvents([event])
     })
     return () => {
       cancelled = true
@@ -155,14 +185,16 @@ export default function GroupConsoleView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileIdsKey])
 
-  // Pops a transient toast whenever a server's live status actually transitions into
-  // 'running' or 'stopped' - compares against each profile's last-seen status in the
-  // module-level `lastKnownStates` map (not component state) so a profile's first-ever
-  // status ever observed never counts as a transition, but leaving this page and coming
-  // back after starting/stopping a server from elsewhere (e.g. the Dashboard) still does -
-  // the map remembers what this profile was doing before the page unmounted.
+  // Whenever a server's live status actually transitions into 'running' or 'stopped', pops
+  // a transient toast AND drops a START/STOP line into the log feed itself - compares
+  // against each profile's last-seen status in the module-level `lastKnownStates` map (not
+  // component state) so a profile's first-ever status ever observed never counts as a
+  // transition, but leaving this page and coming back after starting/stopping a server from
+  // elsewhere (e.g. the Dashboard) still does - the map remembers what this profile was
+  // doing before the page unmounted.
   useEffect(() => {
     const toNotify: StateNotification[] = []
+    const logEvents: GroupConsoleEvent[] = []
 
     for (const profile of profiles) {
       const state = statuses[profile.id]?.state
@@ -170,13 +202,21 @@ export default function GroupConsoleView({
       const prevState = lastKnownStates.get(profile.id)
       lastKnownStates.set(profile.id, state)
       if (prevState === undefined || prevState === state) continue
-      if (state === 'running') {
-        toNotify.push({ id: `${profile.id}-${Date.now()}`, profileName: profile.name, type: 'start' })
-      } else if (state === 'stopped') {
-        toNotify.push({ id: `${profile.id}-${Date.now()}`, profileName: profile.name, type: 'stop' })
-      }
+      if (state !== 'running' && state !== 'stopped') continue
+
+      const type = state === 'running' ? 'start' : 'stop'
+      toNotify.push({ id: `${profile.id}-${Date.now()}`, profileName: profile.name, type })
+      logEvents.push({
+        ...nowAsLogDateTime(),
+        label: type === 'start' ? 'START' : 'STOP',
+        cls: type,
+        text: `${profile.name} ${type === 'start' ? 'started' : 'stopped'}`,
+        profileId: profile.id,
+        profileName: profile.name
+      })
     }
 
+    if (logEvents.length > 0) appendEvents(logEvents)
     if (toNotify.length === 0) return
     setNotifications((prev) => [...prev, ...toNotify])
     for (const notification of toNotify) {

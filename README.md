@@ -160,7 +160,11 @@ dedicated servers running on the same machine.
   visual language (checkboxes to show/hide event categories:
   JOIN/LEFT/CHAT/WARN/KILL/TAME/CMD/SAVE/CRYO/MISSION/READY, colored labels) as the
   standalone web dashboard's own console, but merging every server in the group instead of
-  showing just one. Its filter checkboxes are independent of the web dashboard's own
+  showing just one, plus two categories the web dashboard doesn't have: **START** and
+  **STOP**, synthetic lines this page injects itself (not parsed from the log - there's no
+  log line for "the Manager noticed this server is now running/stopped") whenever a
+  server's live status actually transitions, colored green/red like the toast described
+  below. Its filter checkboxes are independent of the web dashboard's own
   persisted per-label setting (toggling one here doesn't affect the other) and, unlike that
   setting, persist across sessions on their own. Events are merged by their actual log date
   plus time, not time-of-day alone - a single server's backlog can itself span more than a
@@ -199,12 +203,14 @@ dedicated servers running on the same machine.
   up if it was running before. Whenever a server in the group actually transitions to
   running or stopped (not for the in-between starting/stopping/updating/restarting states),
   a toast pops in the top-right corner - green "&lt;name&gt; started" or red
-  "&lt;name&gt; stopped" - and fades away on its own a few seconds later. Each profile's
+  "&lt;name&gt; stopped" - and fades away on its own a few seconds later, and the matching
+  START/STOP line described above lands in the log feed at the same time, so the change is
+  both a transient notification and a permanent part of the feed's history. Each profile's
   last-seen status is tracked at module scope rather than tied to this page being mounted,
   so starting or stopping a server from the Dashboard while the Group Console isn't open
-  still pops its toast the next time you open the console for that group - only each
-  profile's very first status observed this session is treated as a baseline, not a
-  transition.
+  still produces both the toast and the log line the next time you open the console for
+  that group - only each profile's very first status observed this session is treated as a
+  baseline, not a transition.
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: one consolidated group with everything at a glance, no explanatory
     text and no sub-headers - just the fields:
