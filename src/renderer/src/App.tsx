@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { ServerProfile } from '@shared/types'
 import Dashboard from './pages/Dashboard'
+import ClusterDataView from './pages/ClusterDataView'
 import ServerDetail, { type TabKey } from './pages/ServerDetail'
 import SteamCmdView from './pages/SteamCmdView'
 import DataSettingsView from './pages/DataSettingsView'
 import ProfileManagementView from './pages/ProfileManagementView'
+
+type MainPage = 'dashboard' | 'clusterData'
 
 export default function App(): JSX.Element {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
@@ -13,6 +16,7 @@ export default function App(): JSX.Element {
   const [showSteamCmd, setShowSteamCmd] = useState(false)
   const [showDataSettings, setShowDataSettings] = useState(false)
   const [showProfileManagement, setShowProfileManagement] = useState(false)
+  const [mainPage, setMainPage] = useState<MainPage>('dashboard')
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
@@ -62,21 +66,49 @@ export default function App(): JSX.Element {
     )
   }
 
-  return selected ? (
-    <ServerDetail
-      profile={selected}
-      initialTab={initialTab}
-      onBack={() => setSelectedId(null)}
-      onProfileChange={handleProfileChange}
-    />
-  ) : (
-    <Dashboard
-      profiles={profiles}
-      onProfilesChange={handleProfilesChange}
-      onOpenProfile={handleOpenProfile}
-      onOpenSteamCmd={() => setShowSteamCmd(true)}
-      onOpenDataSettings={() => setShowDataSettings(true)}
-      onOpenProfileManagement={() => setShowProfileManagement(true)}
-    />
+  if (selected) {
+    return (
+      <ServerDetail
+        profile={selected}
+        initialTab={initialTab}
+        onBack={() => setSelectedId(null)}
+        onProfileChange={handleProfileChange}
+      />
+    )
+  }
+
+  return (
+    <div className="app-shell">
+      <nav className="app-sidebar">
+        <button
+          type="button"
+          className={mainPage === 'dashboard' ? 'active' : ''}
+          onClick={() => setMainPage('dashboard')}
+        >
+          Dashboard
+        </button>
+        <button
+          type="button"
+          className={mainPage === 'clusterData' ? 'active' : ''}
+          onClick={() => setMainPage('clusterData')}
+        >
+          Cluster Data
+        </button>
+      </nav>
+      <div className="app-content">
+        {mainPage === 'clusterData' ? (
+          <ClusterDataView profiles={profiles} />
+        ) : (
+          <Dashboard
+            profiles={profiles}
+            onProfilesChange={handleProfilesChange}
+            onOpenProfile={handleOpenProfile}
+            onOpenSteamCmd={() => setShowSteamCmd(true)}
+            onOpenDataSettings={() => setShowDataSettings(true)}
+            onOpenProfileManagement={() => setShowProfileManagement(true)}
+          />
+        )}
+      </div>
+    </div>
   )
 }

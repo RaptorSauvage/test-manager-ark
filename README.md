@@ -132,6 +132,19 @@ dedicated servers running on the same machine.
   Version as the Analytics tab, e.g. "92.28") - reads whatever's already known when the
   dashboard loads and shows "-" if nothing's been detected yet for that server (it doesn't
   actively poll/"Detect" here the way the Analytics tab does).
+- **Sidebar / Cluster Data page** — a left sidebar (`src/renderer/src/App.tsx`) with two
+  entries, **Dashboard** (the page described above) and **Cluster Data**, shown whenever
+  you're not inside a server's own tabs or one of the settings screens. Cluster Data shows
+  one row per **Dashboard group** (same grouping/ordering as the Dashboard's collapsible
+  sections, hidden servers excluded, an "Ungrouped" row for anything with no group) with
+  that group's servers summed together: how many are running out of the group's total,
+  combined CPU %, combined memory (MB), and combined connected players out of the group's
+  combined configured max. A stopped server contributes nothing to the numeric totals (its
+  telemetry is stale/absent) but still counts toward the server total, so the totals always
+  reflect what's actually running right now rather than what's configured. This reads the
+  Manager's own dashboard `group` field - unrelated to ARK's own multiplayer clustering
+  (`clusterId`/`clusterEnabled` in a profile's Settings), which is a completely separate,
+  game-level feature.
 - **Analytics tab** — the first tab on every server, read-only:
   - **Server Status**: one consolidated group with everything at a glance, no explanatory
     text and no sub-headers - just the fields:

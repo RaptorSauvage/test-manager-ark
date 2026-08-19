@@ -107,6 +107,98 @@ label.checkbox {
   font-size: 0.85rem;
 }
 
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.app-sidebar {
+  width: 180px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 20px 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+}
+
+.app-sidebar button {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  padding: 10px 20px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.app-sidebar button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.app-sidebar button.active {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: rgba(79, 140, 255, 0.1);
+}
+
+.app-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.cluster-data-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cluster-data-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+
+.cluster-data-row-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cluster-data-row-header h3 {
+  margin: 0;
+}
+
+.cluster-data-row-sub {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.cluster-data-stats {
+  display: flex;
+  gap: 28px;
+}
+
+.cluster-data-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 0.85em;
+}
+
+.cluster-data-stat span {
+  color: var(--muted);
+}
+
 .dashboard {
   padding: 24px;
 }
