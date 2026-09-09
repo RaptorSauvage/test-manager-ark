@@ -1,8 +1,8 @@
 import os from 'node:os'
-import pidusage from 'pidusage'
 import type { ServerProfile } from '@shared/types'
 import { getStatus, emitStatus, markProcessExited, isPidTracked, confirmAliveViaRcon, handleUnexpectedExit } from './serverProcess'
 import { listPlayers } from './rcon'
+import { getProcessStats } from './processStats'
 
 const timers = new Map<string, NodeJS.Timeout>()
 
@@ -38,8 +38,8 @@ async function tick(profile: ServerProfile): Promise<void> {
   if (!isPidTracked(profile.id)) {
     // The process we originally spawned exited but RCON confirmed the server itself kept
     // running (see handleUnexpectedExit in serverProcess.ts) - there's no trustworthy pid
-    // left for pidusage, so RCON is the only liveness signal available: CPU/RAM just stay
-    // at their last known values instead of being reported as 0/gone.
+    // left for a CPU/RAM reading, so RCON is the only liveness signal available: CPU/RAM
+    // just stay at their last known values instead of being reported as 0/gone.
     const stillAlive = await confirmAliveViaRcon(profile, 2, 2000)
     const current = getStatus(profile.id)
     if (current.state !== 'running') return
@@ -54,9 +54,9 @@ async function tick(profile: ServerProfile): Promise<void> {
 
   let stats
   try {
-    stats = await pidusage(status.pid)
+    stats = await getProcessStats(status.pid)
   } catch (err) {
-    // pidusage failing means the tracked OS process is gone - this is the only
+    // A failed read means the tracked OS process is gone - this is the only
     // exit signal we get for a server adopted from a previous app session (no
     // child.on('exit') listener exists for those), and can also race ahead of
     // that listener for one we spawned ourselves. Route through the same

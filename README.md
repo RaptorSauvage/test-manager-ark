@@ -139,15 +139,20 @@ dedicated servers running on the same machine.
   Refresh) picks whose folder to browse, then the same checkbox-select table/toolbar as
   the world backups (Refresh backup file list, Open backup folder, Restore selected
   backup, Delete selected backup(s)) operates on that player's snapshots specifically.
-- **Monitoring** — CPU/RAM usage and connected player count while a server is running, via
-  [`pidusage`](https://www.npmjs.com/package/pidusage) (`^4.0.1` - the `3.x` line only ever
-  shells out to `wmic`, which recent Windows versions have been removing by default; `4.x`
-  detects that and falls back to PowerShell's `Get-WmiObject` automatically, so CPU/RAM
-  don't silently stay blank on a system where `wmic` is gone). If a CPU/RAM reading still
-  fails for any other reason, the Analytics tab's Server Status block shows "Unavailable"
-  (hover, or the error line right below the grid, for the raw OS error) instead of just a
-  bare `-`, so a persistent failure is diagnosable from the UI alone rather than needing the
-  Manager's own console output.
+- **Monitoring** — CPU/RAM usage and connected player count while a server is running. On
+  Windows this reads through `src/main/lib/processStats.ts`, not
+  [`pidusage`](https://www.npmjs.com/package/pidusage) directly: recent Windows versions
+  have been removing `wmic.exe` by default, and while `pidusage@4.x` added a PowerShell
+  (`Get-WmiObject`) fallback for exactly that, its own wmic-availability probe doesn't
+  reliably catch the failure in this app's Electron/Node environment - a missing `wmic.exe`
+  still surfaces as a raw `ENOENT` instead of triggering the fallback. `processStats.ts`
+  calls pidusage's own `wmic`/`gwmi` implementations directly instead, catching a failed
+  wmic attempt itself and switching to the PowerShell one from then on (remembered for the
+  rest of the session, since a missing `wmic.exe` isn't a one-off hiccup). If a CPU/RAM
+  reading still fails for any other reason, the Analytics tab's Server Status block shows
+  "Unavailable" (hover, or the error line right below the grid, for the raw OS error)
+  instead of just a bare `-`, so a persistent failure is diagnosable from the UI alone
+  rather than needing the Manager's own console output.
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
   the order is persisted and stays the same next time you open the app. A **Hide**/**Unhide**
   button on each card removes it from the main grid and the "...All" bulk actions without
