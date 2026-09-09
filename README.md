@@ -139,7 +139,11 @@ dedicated servers running on the same machine.
   Refresh) picks whose folder to browse, then the same checkbox-select table/toolbar as
   the world backups (Refresh backup file list, Open backup folder, Restore selected
   backup, Delete selected backup(s)) operates on that player's snapshots specifically.
-- **Monitoring** — CPU/RAM usage and connected player count while a server is running.
+- **Monitoring** — CPU/RAM usage and connected player count while a server is running, via
+  [`pidusage`](https://www.npmjs.com/package/pidusage) (`^4.0.1` - the `3.x` line only ever
+  shells out to `wmic`, which recent Windows versions have been removing by default; `4.x`
+  detects that and falls back to PowerShell's `Get-WmiObject` automatically, so CPU/RAM
+  don't silently stay blank on a system where `wmic` is gone).
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
   the order is persisted and stays the same next time you open the app. A **Hide**/**Unhide**
   button on each card removes it from the main grid and the "...All" bulk actions without
