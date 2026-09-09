@@ -1,13 +1,16 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, exec, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
 import { platform } from 'node:process'
+import { promisify } from 'node:util'
 import type { ServerMod, ServerProfile, ServerStatus } from '@shared/types'
 import { sendRconCommand } from './rcon'
 import { readAdminPassword } from './config'
 import { setRunningPid, setRunningStartedAt } from '../store'
 import { delay } from './delay'
+
+const execAsync = promisify(exec)
 
 /** How long to wait after RCON confirms SaveWorld before sending DoExit - the RCON
  *  response only means ARK accepted the command, not that every file under SavedArks has
@@ -170,6 +173,29 @@ function killByPid(pid: number): void {
   }
 }
 
+/** Finds the pid of whichever process currently holds a TCP port in LISTENING state, via
+ *  `netstat` - Windows only (the only platform this app ships a build for). Returns null
+ *  on any other platform, or if netstat's output can't be parsed/doesn't have a match, so
+ *  callers can fall back gracefully instead of throwing. */
+export async function findListeningPid(port: number): Promise<number | null> {
+  if (platform !== 'win32') return null
+  try {
+    const { stdout } = await execAsync('netstat -ano -p TCP')
+    const suffix = `:${port}`
+    for (const line of stdout.split('\n')) {
+      const parts = line.trim().split(/\s+/)
+      if (parts.length < 5) continue
+      const [proto, local, , state, pid] = parts
+      if (proto !== 'TCP' || state !== 'LISTENING' || !local.endsWith(suffix)) continue
+      const parsedPid = Number(pid)
+      if (Number.isFinite(parsedPid) && parsedPid > 0) return parsedPid
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 /** Tries a harmless RCON round-trip a few times, spaced out, to confirm the server is
  *  genuinely still reachable - a couple of retries rather than one shot, since a process
  *  hand-off (see handleUnexpectedExit) can leave RCON briefly unreachable for a moment
@@ -204,6 +230,24 @@ export async function handleUnexpectedExit(profile: ServerProfile): Promise<void
   if (!current) return // stopped/restarted for real while we were checking
 
   if (stillAlive) {
+    // RCON only answers if some process is holding that port, so whichever pid netstat
+    // reports for it is unambiguously the new process - re-attach full pid-based
+    // monitoring (CPU/RAM, force-kill) to it rather than settling for the degraded,
+    // RCON-only fallback.
+    const newPid = await findListeningPid(profile.rconPort)
+    if (newPid && isPidAlive(newPid)) {
+      console.warn(
+        `${profile.name}: its process exited unexpectedly but RCON still responds - re-attached to the new process (pid ${newPid}) that took over.`
+      )
+      current.process = null
+      current.pid = newPid
+      current.pidTracked = true
+      current.status = { ...current.status, pid: newPid }
+      setRunningPid(profile.id, newPid)
+      emitStatus(current.status)
+      return
+    }
+
     console.warn(
       `${profile.name}: its process exited unexpectedly but RCON still responds - assuming a hand-off to a new process and continuing to monitor it without pid tracking.`
     )

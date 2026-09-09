@@ -21,7 +21,13 @@ const { getFakeChild, setFakeChild } = vi.hoisted(() => {
 })
 
 vi.mock('../src/main/lib/rcon', () => ({ sendRconCommand: vi.fn(async () => ({ ok: true, response: 'x' })) }))
-vi.mock('node:child_process', () => ({ spawn: vi.fn(() => getFakeChild()) }))
+vi.mock('node:child_process', () => ({
+  spawn: vi.fn(() => getFakeChild()),
+  // findListeningPid (Windows-only pid rediscovery) shells out via exec - on this
+  // non-Windows test platform it already short-circuits before ever calling this, but
+  // the module still needs the export to exist to load at all.
+  exec: vi.fn()
+}))
 
 import {
   startServer,

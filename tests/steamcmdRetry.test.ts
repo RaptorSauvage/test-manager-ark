@@ -45,7 +45,8 @@ vi.mock('node:child_process', () => ({
     const code = nextExitCode()
     setImmediate(() => child.emit('close', code))
     return child
-  })
+  }),
+  exec: vi.fn()
 }))
 
 import { updateServer, steamcmdUpdateEvents } from '../src/main/lib/steamcmd'

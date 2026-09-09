@@ -27,11 +27,15 @@ dedicated servers running on the same machine.
   stopped. Any exit that wasn't asked for (i.e. not already mid `stopping`/`restarting`) -
   and the same for a monitored pid that `pidusage` can no longer find - is first double
   checked with a few spaced-out RCON round-trips before being believed. If RCON still
-  answers, the profile stays `running` and monitoring carries on (CPU/RAM just hold their
-  last known values instead of pidusage, since there's no trustworthy pid left to read
-  them from); only once RCON stops answering too does it actually finalize as `stopped`.
-  A deliberate Stop/Restart/Kill is unaffected - it already flips the status before
-  touching the process, so seeing it exit right after is never treated as unexpected.
+  answers, the Manager asks Windows (`netstat -ano`) which pid now owns the server's own
+  RCON port - since RCON only answers if some process is holding that port, whichever pid
+  it finds is unambiguously the new one - and re-attaches full monitoring (CPU/RAM,
+  force-kill) to it, so the switch is invisible in the UI. Only if that lookup can't find a
+  match does it fall back to an RCON-only degraded mode (CPU/RAM hold their last known
+  values instead, since there's no trustworthy pid left to read them from); only once RCON
+  stops answering too does it actually finalize as `stopped`. A deliberate Stop/Restart/Kill
+  is unaffected - it already flips the status before touching the process, so seeing it
+  exit right after is never treated as unexpected.
 - **Survives the Manager closing or crashing** — the server process is spawned detached
   from the app, so it keeps running either way instead of being torn down with it (the
   default on Windows otherwise). Relaunching the Manager re-detects any server that's

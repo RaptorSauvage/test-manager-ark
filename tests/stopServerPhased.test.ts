@@ -21,7 +21,7 @@ const { getFakeChild, setFakeChild } = vi.hoisted(() => {
 })
 
 vi.mock('../src/main/lib/rcon', () => ({ sendRconCommand: vi.fn(async () => ({ ok: true, response: 'World Saved' })) }))
-vi.mock('node:child_process', () => ({ spawn: vi.fn(() => getFakeChild()) }))
+vi.mock('node:child_process', () => ({ spawn: vi.fn(() => getFakeChild()), exec: vi.fn() }))
 
 import { startServer, stopServerPhased } from '../src/main/lib/serverProcess'
 import { sendRconCommand as mockSendRconCommand } from '../src/main/lib/rcon'
