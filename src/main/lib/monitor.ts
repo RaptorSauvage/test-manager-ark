@@ -14,6 +14,17 @@ export function startMonitoring(profile: ServerProfile, intervalMs = 5000): void
   timers.set(profile.id, timer)
 }
 
+/** Refreshes just the player list against whatever the latest status is right now (not a
+ *  possibly-stale snapshot from earlier in the calling tick) and re-emits it - used
+ *  whenever this tick can't also get a fresh CPU/RAM reading, so a server confirmed alive
+ *  over RCON doesn't sit with a stale player list for a whole extra interval on top. */
+async function refreshPlayersOnly(profile: ServerProfile, fallbackPlayers: string[] | undefined): Promise<void> {
+  const players = await listPlayers(profile).catch(() => fallbackPlayers ?? [])
+  const latest = getStatus(profile.id)
+  if (latest.state !== 'running') return
+  emitStatus({ ...latest, players })
+}
+
 async function tick(profile: ServerProfile): Promise<void> {
   const status = getStatus(profile.id)
   if (status.state !== 'running' || !status.pid) return
@@ -31,8 +42,7 @@ async function tick(profile: ServerProfile): Promise<void> {
       markProcessExited(profile.id)
       return
     }
-    const players = await listPlayers(profile).catch(() => status.players ?? [])
-    emitStatus({ ...current, players })
+    await refreshPlayersOnly(profile, status.players)
     return
   }
 
@@ -47,7 +57,16 @@ async function tick(profile: ServerProfile): Promise<void> {
     // RCON-verification safety net as an unexpected child exit before
     // believing the server itself is down.
     await handleUnexpectedExit(profile)
-    if (getStatus(profile.id).state !== 'running') stopMonitoring(profile.id)
+    const current = getStatus(profile.id)
+    if (current.state !== 'running') {
+      stopMonitoring(profile.id)
+      return
+    }
+    // handleUnexpectedExit confirmed the server is still up (whether it re-attached pid
+    // tracking to a rediscovered pid, or fell back to degraded mode) - refresh players
+    // right away rather than leaving the card stale until the next interval. A fresh
+    // CPU/RAM reading, if pid tracking came back, follows naturally on the next tick.
+    await refreshPlayersOnly(profile, status.players)
     return
   }
 

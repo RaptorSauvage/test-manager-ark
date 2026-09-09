@@ -106,6 +106,29 @@ describe('monitor tick - pidusage failing (adopted process, or racing ahead of c
       stopMonitoring(profile.id)
     }
   })
+
+  it('refreshes players on the very same tick that pidusage first fails, not a tick later', async () => {
+    vi.useFakeTimers()
+    // A large interval so exactly one tick fires within the window advanced below - proves
+    // the player list updates within that single tick's own RCON re-verification, rather
+    // than only catching up once pid tracking later settles into degraded polling.
+    vi.mocked(pidusage).mockRejectedValue(new Error('no such process'))
+    vi.mocked(mockSendRconCommand).mockResolvedValue({ ok: true, response: 'x' })
+    vi.mocked(mockListPlayers).mockResolvedValue(['Carol'])
+
+    const profile = makeProfile('monitor-pidusage-refresh-same-tick')
+    adoptPersistedProcesses([profile], { [profile.id]: process.pid })
+
+    try {
+      startMonitoring(profile, 50_000)
+      await vi.advanceTimersByTimeAsync(50_000)
+
+      expect(isRunning(profile.id)).toBe(true)
+      expect(getStatus(profile.id).players).toEqual(['Carol'])
+    } finally {
+      stopMonitoring(profile.id)
+    }
+  })
 })
 
 describe('monitor tick - already in degraded (pid-untracked) mode', () => {

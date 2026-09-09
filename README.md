@@ -28,11 +28,13 @@ dedicated servers running on the same machine.
   and the same for a monitored pid that `pidusage` can no longer find - is first double
   checked with a few spaced-out RCON round-trips before being believed. If RCON still
   answers, the Manager asks Windows (`netstat -ano`) which pid now owns the server's own
-  RCON port - since RCON only answers if some process is holding that port, whichever pid
-  it finds is unambiguously the new one - and re-attaches full monitoring (CPU/RAM,
-  force-kill) to it, so the switch is invisible in the UI. Only if that lookup can't find a
-  match does it fall back to an RCON-only degraded mode (CPU/RAM hold their last known
-  values instead, since there's no trustworthy pid left to read them from); only once RCON
+  RCON port - matched by the listening socket's placeholder foreign address
+  (`0.0.0.0:0`/`[::]:0`) rather than the State column's text, since that text is localized
+  (e.g. `LISTENING` becomes `ÉCOUTE` on a French install) while the address never is -
+  and re-attaches full monitoring (CPU/RAM, force-kill) to it, so the switch is invisible in
+  the UI. Only if that lookup can't find a match does it fall back to an RCON-only degraded
+  mode; even then, the player list keeps refreshing every tick (CPU/RAM hold their last
+  known values, since there's no trustworthy pid left to read them from). Only once RCON
   stops answering too does it actually finalize as `stopped`. A deliberate Stop/Restart/Kill
   is unaffected - it already flips the status before touching the process, so seeing it
   exit right after is never treated as unexpected.

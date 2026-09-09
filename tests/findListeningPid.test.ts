@@ -146,6 +146,27 @@ describe('findListeningPid', () => {
 
     await expect(findListeningPid(27020)).resolves.toBeNull()
   })
+
+  it('still finds it on a non-English Windows install, where the State column is localized', async () => {
+    // French Windows prints "ÉCOUTE" instead of "LISTENING" - matching on the foreign
+    // address placeholder (0.0.0.0:0) rather than that text is what makes this work
+    // regardless of system language.
+    mockNetstatOutput(
+      '  Proto  Adresse locale         Adresse distante       État            PID\r\n' +
+        '  TCP    0.0.0.0:27020          0.0.0.0:0              ÉCOUTE          55123\r\n'
+    )
+
+    await expect(findListeningPid(27020)).resolves.toBe(55123)
+  })
+
+  it('recognizes the IPv6 listening placeholder too', async () => {
+    mockNetstatOutput(
+      '  Proto  Local Address          Foreign Address        State           PID\r\n' +
+        '  TCP    [::]:27020             [::]:0                 LISTENING       55123\r\n'
+    )
+
+    await expect(findListeningPid(27020)).resolves.toBe(55123)
+  })
 })
 
 describe('handleUnexpectedExit - Windows pid rediscovery', () => {

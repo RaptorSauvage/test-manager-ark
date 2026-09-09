@@ -185,8 +185,13 @@ export async function findListeningPid(port: number): Promise<number | null> {
     for (const line of stdout.split('\n')) {
       const parts = line.trim().split(/\s+/)
       if (parts.length < 5) continue
-      const [proto, local, , state, pid] = parts
-      if (proto !== 'TCP' || state !== 'LISTENING' || !local.endsWith(suffix)) continue
+      const [proto, local, foreign, , pid] = parts
+      if (proto !== 'TCP' || !local.endsWith(suffix)) continue
+      // A listening socket's foreign address is always the "nobody yet" placeholder
+      // (0.0.0.0:0 / [::]:0) - checking that instead of the State column keeps this
+      // locale-independent, since Windows localizes State text (e.g. "LISTENING" becomes
+      // "ÉCOUTE" on a French install) but never the IP literal.
+      if (!/^(0\.0\.0\.0|\[::\]):0$/.test(foreign)) continue
       const parsedPid = Number(pid)
       if (Number.isFinite(parsedPid) && parsedPid > 0) return parsedPid
     }
