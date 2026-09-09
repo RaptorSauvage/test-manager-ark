@@ -1,7 +1,7 @@
 {
   "name": "ark-server-manager",
   "version": "0.1.0",
-  "description": "Desktop app to control ARK: Survival Ascended dedicated servers",
+  "description": "ARK Server Manager",
   "main": "out/main/index.js",
   "author": "",
   "license": "MIT",
