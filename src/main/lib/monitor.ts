@@ -17,12 +17,18 @@ export function startMonitoring(profile: ServerProfile, intervalMs = 5000): void
 /** Refreshes just the player list against whatever the latest status is right now (not a
  *  possibly-stale snapshot from earlier in the calling tick) and re-emits it - used
  *  whenever this tick can't also get a fresh CPU/RAM reading, so a server confirmed alive
- *  over RCON doesn't sit with a stale player list for a whole extra interval on top. */
-async function refreshPlayersOnly(profile: ServerProfile, fallbackPlayers: string[] | undefined): Promise<void> {
+ *  over RCON doesn't sit with a stale player list for a whole extra interval on top.
+ *  `statsError`, when given, is the raw pidusage failure that led here - surfaced on the
+ *  status so a persistent failure (e.g. a missing OS tool) is diagnosable from the UI alone. */
+async function refreshPlayersOnly(
+  profile: ServerProfile,
+  fallbackPlayers: string[] | undefined,
+  statsError?: string
+): Promise<void> {
   const players = await listPlayers(profile).catch(() => fallbackPlayers ?? [])
   const latest = getStatus(profile.id)
   if (latest.state !== 'running') return
-  emitStatus({ ...latest, players })
+  emitStatus({ ...latest, players, statsError })
 }
 
 async function tick(profile: ServerProfile): Promise<void> {
@@ -42,20 +48,21 @@ async function tick(profile: ServerProfile): Promise<void> {
       markProcessExited(profile.id)
       return
     }
-    await refreshPlayersOnly(profile, status.players)
+    await refreshPlayersOnly(profile, status.players, status.statsError)
     return
   }
 
   let stats
   try {
     stats = await pidusage(status.pid)
-  } catch {
+  } catch (err) {
     // pidusage failing means the tracked OS process is gone - this is the only
     // exit signal we get for a server adopted from a previous app session (no
     // child.on('exit') listener exists for those), and can also race ahead of
     // that listener for one we spawned ourselves. Route through the same
     // RCON-verification safety net as an unexpected child exit before
     // believing the server itself is down.
+    const statsError = (err as Error).message
     await handleUnexpectedExit(profile)
     const current = getStatus(profile.id)
     if (current.state !== 'running') {
@@ -66,7 +73,7 @@ async function tick(profile: ServerProfile): Promise<void> {
     // tracking to a rediscovered pid, or fell back to degraded mode) - refresh players
     // right away rather than leaving the card stale until the next interval. A fresh
     // CPU/RAM reading, if pid tracking came back, follows naturally on the next tick.
-    await refreshPlayersOnly(profile, status.players)
+    await refreshPlayersOnly(profile, status.players, statsError)
     return
   }
 
@@ -84,7 +91,8 @@ async function tick(profile: ServerProfile): Promise<void> {
     cpu: Math.round(stats.cpu * 10) / 10,
     memoryMB,
     memoryPercent: Math.round((stats.memory / os.totalmem()) * 1000) / 10,
-    players
+    players,
+    statsError: undefined
   })
 }
 

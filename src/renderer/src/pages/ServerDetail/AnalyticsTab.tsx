@@ -205,14 +205,18 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
               </div>
               <div>
                 <dt>CPU usage</dt>
-                <dd>{status?.cpu !== undefined ? `${status.cpu}%` : '-'}</dd>
+                <dd title={status?.statsError}>
+                  {status?.cpu !== undefined ? `${status.cpu}%` : status?.statsError ? 'Unavailable' : '-'}
+                </dd>
               </div>
               <div>
                 <dt>Server Memory</dt>
-                <dd>
+                <dd title={status?.statsError}>
                   {status?.memoryMB !== undefined
                     ? `${status.memoryMB} MB${status.memoryPercent !== undefined ? ` (${status.memoryPercent}%)` : ''}`
-                    : '-'}
+                    : status?.statsError
+                      ? 'Unavailable'
+                      : '-'}
                 </dd>
               </div>
               <div>
@@ -259,6 +263,9 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
             </dl>
             {!isRunning && (
               <p className="empty-state">Server isn&apos;t running - these will fill in once it starts.</p>
+            )}
+            {isRunning && status?.statsError && (
+              <p className="error-message">CPU/RAM unavailable: {status.statsError}</p>
             )}
             <UpdateCheckPanel profileIds={[profile.id]} compact />
           </div>

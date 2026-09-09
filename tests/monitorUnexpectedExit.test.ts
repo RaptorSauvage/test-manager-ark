@@ -9,7 +9,7 @@ vi.mock('../src/main/lib/rcon', () => ({
 
 import pidusage from 'pidusage'
 import { sendRconCommand as mockSendRconCommand, listPlayers as mockListPlayers } from '../src/main/lib/rcon'
-import { adoptPersistedProcesses, isRunning, isPidTracked, getStatus } from '../src/main/lib/serverProcess'
+import { adoptPersistedProcesses, isRunning, isPidTracked, getStatus, emitStatus } from '../src/main/lib/serverProcess'
 import { startMonitoring, stopMonitoring } from '../src/main/lib/monitor'
 
 function makeProfile(id: string): ServerProfile {
@@ -83,6 +83,48 @@ describe('monitor tick - pidusage failing (adopted process, or racing ahead of c
       expect(isPidTracked(profile.id)).toBe(false)
       expect(getStatus(profile.id).state).toBe('running')
       expect(getStatus(profile.id).players).toEqual(['Alice'])
+    } finally {
+      stopMonitoring(profile.id)
+    }
+  })
+
+  it('surfaces the raw pidusage error on the status, so a persistent failure is diagnosable', async () => {
+    vi.useFakeTimers()
+    vi.mocked(pidusage).mockRejectedValue(new Error("'wmic' is not recognized as an internal or external command"))
+    vi.mocked(mockSendRconCommand).mockResolvedValue({ ok: true, response: 'x' })
+
+    const profile = makeProfile('monitor-pidusage-surfaces-error')
+    adoptPersistedProcesses([profile], { [profile.id]: process.pid })
+
+    try {
+      startMonitoring(profile, 10)
+      await vi.advanceTimersByTimeAsync(10)
+
+      expect(getStatus(profile.id).statsError).toBe(
+        "'wmic' is not recognized as an internal or external command"
+      )
+    } finally {
+      stopMonitoring(profile.id)
+    }
+  })
+
+  it('clears a previously surfaced stats error once a reading succeeds', async () => {
+    vi.useFakeTimers()
+    vi.mocked(pidusage).mockResolvedValue({ cpu: 4.2, memory: 256 * 1024 * 1024 })
+
+    const profile = makeProfile('monitor-pidusage-error-clears')
+    adoptPersistedProcesses([profile], { [profile.id]: process.pid })
+    // Simulate a stats error left over from an earlier failure (e.g. a previous tick, or
+    // carried over from adoption) - a fresh successful reading should wipe it, not just
+    // silently leave it sitting alongside otherwise-current cpu/memory numbers.
+    emitStatus({ ...getStatus(profile.id), statsError: 'stale error from before' })
+
+    try {
+      startMonitoring(profile, 10)
+      await vi.advanceTimersByTimeAsync(10)
+
+      expect(getStatus(profile.id).statsError).toBeUndefined()
+      expect(getStatus(profile.id).cpu).toBe(4.2)
     } finally {
       stopMonitoring(profile.id)
     }

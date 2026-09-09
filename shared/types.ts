@@ -204,6 +204,11 @@ export interface ServerStatus {
   memoryPercent?: number
   players?: string[]
   lastError?: string
+  /** Set whenever the last attempt to read CPU/RAM (pidusage) failed, with its raw error
+   *  message - surfaced in the UI so a persistent failure (e.g. a missing OS tool) is
+   *  diagnosable without needing the Manager's own console output. Cleared once a reading
+   *  succeeds again. */
+  statsError?: string
 }
 
 export interface BackupEntry {
