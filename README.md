@@ -20,6 +20,18 @@ dedicated servers running on the same machine.
   standard stdout handle a piped process would normally use - (`running`), and a distinct
   `restarting` phase for the shutdown half of a restart, so it never claims "running"
   before the world has actually loaded or while it's mid-restart.
+- **Tolerates a process hand-off without a false "stopped"** — on some ARK builds, the
+  dedicated server's OS process exits shortly after finishing startup while the game
+  itself keeps running under a different, untracked process; Node correctly reports that
+  as "the process we spawned exited", but that's no longer proof the server itself
+  stopped. Any exit that wasn't asked for (i.e. not already mid `stopping`/`restarting`) -
+  and the same for a monitored pid that `pidusage` can no longer find - is first double
+  checked with a few spaced-out RCON round-trips before being believed. If RCON still
+  answers, the profile stays `running` and monitoring carries on (CPU/RAM just hold their
+  last known values instead of pidusage, since there's no trustworthy pid left to read
+  them from); only once RCON stops answering too does it actually finalize as `stopped`.
+  A deliberate Stop/Restart/Kill is unaffected - it already flips the status before
+  touching the process, so seeing it exit right after is never treated as unexpected.
 - **Survives the Manager closing or crashing** — the server process is spawned detached
   from the app, so it keeps running either way instead of being torn down with it (the
   default on Windows otherwise). Relaunching the Manager re-detects any server that's

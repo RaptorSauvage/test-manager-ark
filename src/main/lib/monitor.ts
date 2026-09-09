@@ -1,7 +1,7 @@
 import os from 'node:os'
 import pidusage from 'pidusage'
 import type { ServerProfile } from '@shared/types'
-import { getStatus, emitStatus, markProcessExited } from './serverProcess'
+import { getStatus, emitStatus, markProcessExited, isPidTracked, confirmAliveViaRcon, handleUnexpectedExit } from './serverProcess'
 import { listPlayers } from './rcon'
 
 const timers = new Map<string, NodeJS.Timeout>()
@@ -18,15 +18,36 @@ async function tick(profile: ServerProfile): Promise<void> {
   const status = getStatus(profile.id)
   if (status.state !== 'running' || !status.pid) return
 
+  if (!isPidTracked(profile.id)) {
+    // The process we originally spawned exited but RCON confirmed the server itself kept
+    // running (see handleUnexpectedExit in serverProcess.ts) - there's no trustworthy pid
+    // left for pidusage, so RCON is the only liveness signal available: CPU/RAM just stay
+    // at their last known values instead of being reported as 0/gone.
+    const stillAlive = await confirmAliveViaRcon(profile, 2, 2000)
+    const current = getStatus(profile.id)
+    if (current.state !== 'running') return
+    if (!stillAlive) {
+      stopMonitoring(profile.id)
+      markProcessExited(profile.id)
+      return
+    }
+    const players = await listPlayers(profile).catch(() => status.players ?? [])
+    emitStatus({ ...current, players })
+    return
+  }
+
   let stats
   try {
     stats = await pidusage(status.pid)
   } catch {
-    // pidusage failing means the OS process is gone - this is the only exit
-    // signal we get for a server adopted from a previous app session, and a
-    // useful fallback even for one we spawned ourselves this session.
-    stopMonitoring(profile.id)
-    markProcessExited(profile.id)
+    // pidusage failing means the tracked OS process is gone - this is the only
+    // exit signal we get for a server adopted from a previous app session (no
+    // child.on('exit') listener exists for those), and can also race ahead of
+    // that listener for one we spawned ourselves. Route through the same
+    // RCON-verification safety net as an unexpected child exit before
+    // believing the server itself is down.
+    await handleUnexpectedExit(profile)
+    if (getStatus(profile.id).state !== 'running') stopMonitoring(profile.id)
     return
   }
 

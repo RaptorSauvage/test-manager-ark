@@ -120,6 +120,10 @@ interface RunningServer {
   process: ChildProcess | null
   pid: number
   status: ServerStatus
+  /** False once the process we actually spawned has exited but RCON confirmed the server
+   *  itself is still up (see handleUnexpectedExit) - `pid` is stale past that point, so
+   *  monitor.ts falls back to an RCON-only liveness/player-list check instead of pidusage. */
+  pidTracked: boolean
 }
 
 const running = new Map<string, RunningServer>()
@@ -132,6 +136,13 @@ export function emitStatus(status: ServerStatus): void {
   const entry = running.get(status.profileId)
   if (entry) entry.status = status
   serverEvents.emit('status', status)
+}
+
+/** Whether a running profile's pid is still trustworthy for OS-level checks (pidusage,
+ *  force-kill) - false after handleUnexpectedExit decided a process hand-off happened
+ *  rather than a real stop. Unknown/not-running profiles report true (nothing to distrust). */
+export function isPidTracked(profileId: string): boolean {
+  return running.get(profileId)?.pidTracked ?? true
 }
 
 function finalizeStopped(profileId: string): void {
@@ -157,6 +168,51 @@ function killByPid(pid: number): void {
   } catch {
     // Already gone - nothing to do.
   }
+}
+
+/** Tries a harmless RCON round-trip a few times, spaced out, to confirm the server is
+ *  genuinely still reachable - a couple of retries rather than one shot, since a process
+ *  hand-off (see handleUnexpectedExit) can leave RCON briefly unreachable for a moment
+ *  right as the new process takes over. */
+export async function confirmAliveViaRcon(profile: ServerProfile, attempts = 3, delayMs = 2000): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await delay(delayMs)
+    const result = await sendRconCommand(profile, 'ListPlayers')
+    if (result.ok) return true
+  }
+  return false
+}
+
+/**
+ * The process we actually spawned exited, but nothing asked it to - on some recent ARK
+ * builds, the dedicated server hands off to a new underlying process shortly after
+ * finishing startup (the game itself keeps running, just no longer under the pid we
+ * originally tracked), and Node correctly reports that hand-off as our child exiting. A
+ * lost child process isn't by itself proof the server actually stopped, so before believing
+ * it, ask the server directly over RCON - the one channel that doesn't care which OS
+ * process is actually serving it. If RCON still answers, keep the entry as running but stop
+ * trusting `pid` for OS-level checks (CPU/RAM monitoring, force-kill) until it either comes
+ * back later or genuinely goes offline. If RCON doesn't answer either, this was a real,
+ * unexpected stop (a crash) - finalize it as stopped like before.
+ */
+export async function handleUnexpectedExit(profile: ServerProfile): Promise<void> {
+  const entry = running.get(profile.id)
+  if (!entry) return
+
+  const stillAlive = await confirmAliveViaRcon(profile)
+  const current = running.get(profile.id)
+  if (!current) return // stopped/restarted for real while we were checking
+
+  if (stillAlive) {
+    console.warn(
+      `${profile.name}: its process exited unexpectedly but RCON still responds - assuming a hand-off to a new process and continuing to monitor it without pid tracking.`
+    )
+    current.process = null
+    current.pidTracked = false
+    return
+  }
+
+  finalizeStopped(profile.id)
 }
 
 const updatingProfiles = new Set<string>()
@@ -265,7 +321,7 @@ export function adoptPersistedProcesses(
         pid,
         ...(persistedStartedAt[profile.id] !== undefined ? { startedAt: persistedStartedAt[profile.id] } : {})
       }
-      running.set(profile.id, { process: null, pid, status })
+      running.set(profile.id, { process: null, pid, status, pidTracked: true })
       // Broadcasts the same way a fresh start does, so anything listening for a
       // running-transition (e.g. serverVersionWatcher.ts) treats an adopted server the
       // same as one this session actually started - no renderer window exists yet to
@@ -323,7 +379,7 @@ export function startServer(profile: ServerProfile): ServerStatus {
     pid,
     startedAt
   }
-  running.set(profile.id, { process: child, pid, status })
+  running.set(profile.id, { process: child, pid, status, pidTracked: true })
   setRunningPid(profile.id, pid)
   setRunningStartedAt(profile.id, startedAt)
   emitStatus(status)
@@ -343,7 +399,17 @@ export function startServer(profile: ServerProfile): ServerStatus {
   child.on('exit', () => {
     clearTimeout(fallback)
     stopWatchingLog()
-    finalizeStopped(profile.id)
+    const entry = running.get(profile.id)
+    // A deliberate stop/kill/restart already flips the status to 'stopping'/'restarting'
+    // before it ever touches the process - so seeing it exit from one of those states is
+    // expected, not a surprise, and there's nothing to double-check. Anything else (still
+    // 'starting' or 'running') is an exit nobody asked for.
+    const expected = !entry || entry.status.state === 'stopping' || entry.status.state === 'restarting'
+    if (expected) {
+      finalizeStopped(profile.id)
+      return
+    }
+    void handleUnexpectedExit(profile)
   })
 
   child.on('error', (err) => {
