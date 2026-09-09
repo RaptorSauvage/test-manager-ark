@@ -1,44 +1,85 @@
+import { spawn } from 'node:child_process'
 import { platform } from 'node:process'
-import { promisify } from 'node:util'
 import pidusage from 'pidusage'
-import wmic from 'pidusage/lib/wmic'
-import gwmi from 'pidusage/lib/gwmi'
 
 export interface ProcessStats {
   cpu: number
   memory: number
 }
 
-const wmicAsync = promisify(wmic)
-const gwmiAsync = promisify(gwmi)
+interface HistoryEntry {
+  cpuMs: number
+  timestamp: number
+}
 
-/** Once a wmic attempt has failed, stick with the PowerShell fallback for the rest of this
- *  process's lifetime rather than re-trying (and re-waiting on) a command that isn't coming
- *  back - wmic.exe being missing is a property of the machine, not a one-off hiccup. */
-let useGwmi = false
+/** Per-pid CPU-time snapshot from the previous read, so cpu% can be derived as a delta over
+ *  wall-clock time (a single WMI/Get-Process read only gives total CPU time accumulated
+ *  since the process started, not a percentage) - kept independent of pidusage's own
+ *  history module rather than reused, since this app no longer goes through pidusage's
+ *  Windows backends at all (see readWindowsProcessStats). */
+const history = new Map<number, HistoryEntry>()
+
+function runPowerShell(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let child: ReturnType<typeof spawn>
+    try {
+      child = spawn('powershell.exe', args, { windowsHide: true })
+    } catch (err) {
+      reject(err as Error)
+      return
+    }
+    let stdout = ''
+    let stderr = ''
+    child.stdout?.on('data', (chunk) => (stdout += chunk))
+    child.stderr?.on('data', (chunk) => (stderr += chunk))
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `powershell.exe exited with code ${code}`))
+        return
+      }
+      resolve(stdout)
+    })
+  })
+}
 
 /**
- * Windows-only CPU/RAM reader, bypassing pidusage's own wmic-vs-PowerShell dispatch.
+ * Windows-only CPU/RAM reader via PowerShell's `Get-Process`, bypassing `pidusage`
+ * entirely on this platform.
  *
- * pidusage@4.x added a PowerShell (`Get-WmiObject`) fallback specifically for Windows builds
- * that have removed `wmic.exe` by default, but its own detection - a quick throwaway spawn of
- * `wmic` it wraps in a try/catch - doesn't reliably catch the failure in this app's
- * Electron/Node environment (a missing `wmic.exe` still surfaces as a raw `ENOENT` from the
- * real read, rather than triggering the fallback). Calling wmic.js/gwmi.js directly - the same
- * implementations pidusage itself ships and uses once dispatched - sidesteps that broken
- * detection while reusing its already-correct stats math.
+ * Both of pidusage's own Windows backends proved unreliable in practice: its `wmic` path
+ * breaks outright on the growing number of Windows installs that no longer ship
+ * `wmic.exe`, and its documented PowerShell fallback invokes `powershell.exe` without
+ * `-NoProfile`, so on any machine where the user's own PowerShell profile script fails to
+ * load (script execution disabled by policy, in one case actually observed) every single
+ * reading fails with a PSSecurityException before the real query ever runs - regardless of
+ * whether that query itself would have worked. `-NoProfile` plus an explicit
+ * `-ExecutionPolicy Bypass` (scoped to just this one process, not a system-wide policy
+ * change) sidesteps both failure modes.
  */
 async function readWindowsProcessStats(pid: number): Promise<ProcessStats> {
-  if (!useGwmi) {
-    try {
-      const stats = await wmicAsync([pid], {})
-      return stats[pid]
-    } catch {
-      useGwmi = true
-    }
+  const script = [
+    `$p = Get-Process -Id ${pid} -ErrorAction Stop`,
+    '$cpu = if ($null -eq $p.CPU) { 0 } else { $p.CPU }',
+    "Write-Output ($cpu.ToString([System.Globalization.CultureInfo]::InvariantCulture) + '|' + $p.WorkingSet64.ToString([System.Globalization.CultureInfo]::InvariantCulture))"
+  ].join('; ')
+
+  const stdout = await runPowerShell(['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script])
+  const [cpuSecondsRaw, memoryRaw] = stdout.trim().split('|')
+  const cpuMs = Number(cpuSecondsRaw) * 1000
+  const memory = Number(memoryRaw)
+  if (!Number.isFinite(cpuMs) || !Number.isFinite(memory)) {
+    throw new Error(`Could not parse PowerShell process stats output: ${stdout.trim()}`)
   }
-  const stats = await gwmiAsync([pid], {})
-  return stats[pid]
+
+  const timestamp = Date.now()
+  const previous = history.get(pid)
+  history.set(pid, { cpuMs, timestamp })
+
+  const elapsedMs = previous ? timestamp - previous.timestamp : 0
+  const cpu = previous && elapsedMs > 0 ? Math.max(((cpuMs - previous.cpuMs) / elapsedMs) * 100, 0) : 0
+
+  return { cpu, memory }
 }
 
 /** Reads a process's current CPU%/RAM usage. Delegates to `pidusage` as-is on every platform

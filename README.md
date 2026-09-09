@@ -141,18 +141,23 @@ dedicated servers running on the same machine.
   backup, Delete selected backup(s)) operates on that player's snapshots specifically.
 - **Monitoring** — CPU/RAM usage and connected player count while a server is running. On
   Windows this reads through `src/main/lib/processStats.ts`, not
-  [`pidusage`](https://www.npmjs.com/package/pidusage) directly: recent Windows versions
-  have been removing `wmic.exe` by default, and while `pidusage@4.x` added a PowerShell
-  (`Get-WmiObject`) fallback for exactly that, its own wmic-availability probe doesn't
-  reliably catch the failure in this app's Electron/Node environment - a missing `wmic.exe`
-  still surfaces as a raw `ENOENT` instead of triggering the fallback. `processStats.ts`
-  calls pidusage's own `wmic`/`gwmi` implementations directly instead, catching a failed
-  wmic attempt itself and switching to the PowerShell one from then on (remembered for the
-  rest of the session, since a missing `wmic.exe` isn't a one-off hiccup). If a CPU/RAM
-  reading still fails for any other reason, the Analytics tab's Server Status block shows
-  "Unavailable" (hover, or the error line right below the grid, for the raw OS error)
-  instead of just a bare `-`, so a persistent failure is diagnosable from the UI alone
-  rather than needing the Manager's own console output.
+  [`pidusage`](https://www.npmjs.com/package/pidusage) - both of pidusage's own Windows
+  backends proved unreliable in practice: its `wmic` path breaks outright on the growing
+  number of Windows installs that have removed `wmic.exe` by default (and its `4.x`
+  PowerShell fallback for exactly that case doesn't reliably trigger in this app's
+  Electron/Node environment - a missing `wmic.exe` still surfaces as a raw `ENOENT`), and
+  its PowerShell fallback itself invokes `powershell.exe` without `-NoProfile`, so on a
+  machine where the user's own PowerShell profile script can't load (script execution
+  disabled by policy, observed in practice) every reading fails with a PSSecurityException
+  before the actual query ever runs. `processStats.ts` shells out to PowerShell's
+  `Get-Process` directly instead, with `-NoProfile -ExecutionPolicy Bypass` (scoped to that
+  one process, not a system-wide policy change) and explicit invariant-culture number
+  parsing (a plain `.ToString()` would print a comma decimal separator on a
+  French/European-locale Windows install). If a CPU/RAM reading still fails for any other
+  reason, the Analytics tab's Server Status block shows "Unavailable" (hover, or the error
+  line right below the grid, for the raw OS error) instead of just a bare `-`, so a
+  persistent failure is diagnosable from the UI alone rather than needing the Manager's own
+  console output.
 - **Dashboard** — server cards can be dragged (via the ⠿ handle) into any order you like;
   the order is persisted and stays the same next time you open the app. A **Hide**/**Unhide**
   button on each card removes it from the main grid and the "...All" bulk actions without
