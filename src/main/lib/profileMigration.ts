@@ -36,6 +36,8 @@ interface LegacyProfileFields {
  * - `group` is new and defaults to '' (no dashboard group)
  * - `startOnManagerLaunch` is new and defaults to false
  * - `crashWatchEnabled` is new and defaults to false
+ * - `zombieDetectionEnabled`/`zombieDetectionAutoRestart` are new and default to false;
+ *   `zombieDetectionTimeoutMinutes` is new and defaults to 10
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -91,6 +93,9 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     startOnManagerLaunch: rest.startOnManagerLaunch ?? false,
     hidden: rest.hidden ?? false,
     group: rest.group ?? '',
-    crashWatchEnabled: rest.crashWatchEnabled ?? false
+    crashWatchEnabled: rest.crashWatchEnabled ?? false,
+    zombieDetectionEnabled: rest.zombieDetectionEnabled ?? false,
+    zombieDetectionTimeoutMinutes: rest.zombieDetectionTimeoutMinutes ?? 10,
+    zombieDetectionAutoRestart: rest.zombieDetectionAutoRestart ?? false
   }
 }

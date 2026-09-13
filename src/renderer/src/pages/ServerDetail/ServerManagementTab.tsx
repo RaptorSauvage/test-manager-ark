@@ -70,6 +70,46 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
       </section>
 
       <section className="schedule-section">
+        <h3>Zombie Detection</h3>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.zombieDetectionEnabled}
+            onChange={(e) => update('zombieDetectionEnabled', e.target.checked)}
+          />
+          Kill this server if it gets stuck starting up
+        </label>
+        <div className="schedule-suboptions">
+          <label>
+            Timeout (minutes)
+            <input
+              type="number"
+              min={1}
+              value={form.zombieDetectionTimeoutMinutes}
+              onChange={(e) => update('zombieDetectionTimeoutMinutes', Number(e.target.value))}
+              disabled={!form.zombieDetectionEnabled}
+            />
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={form.zombieDetectionAutoRestart}
+              onChange={(e) => update('zombieDetectionAutoRestart', e.target.checked)}
+              disabled={!form.zombieDetectionEnabled}
+            />
+            Restart automatically after killing it
+          </label>
+        </div>
+        <p className="empty-state">
+          Only watches the window between the process spawning (Starting) and the Manager
+          confirming it actually finished loading (Running) - once Running, this has no
+          effect until the next time the server starts. If it's still stuck Starting after
+          the timeout above, it's killed as a zombie caught in an endless startup loop.
+          Independent from every other server.
+        </p>
+      </section>
+
+      <section className="schedule-section">
         <h3>Advanced Schedule: Server Shutdown, Update, and Startup</h3>
         <ScheduleDaysPicker
           label="Shutdown server at:"

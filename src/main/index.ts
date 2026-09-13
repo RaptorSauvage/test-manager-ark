@@ -17,11 +17,12 @@ import { startMonitoring } from './lib/monitor'
 import { registerPlayerBackupWatch, startPlayerBackupWatch } from './lib/playerBackupWatch'
 import { startUpdateCheckPolling } from './lib/updateCheck'
 import { applyLaunchOnStartup } from './lib/launchOnStartup'
-import { doStartServer } from './lib/serverActions'
+import { doStartServer, doKillServer } from './lib/serverActions'
 import { runAutoStart } from './lib/autoStart'
 import { registerServerVersionWatcher, checkAllGameVersionsOnStartup } from './lib/serverVersionWatcher'
 import { registerIniLockWatcher, unlockStoppedProfilesOnStartup, applyIniLockSetting } from './lib/iniLock'
 import { registerCrashWatch } from './lib/crashWatch'
+import { registerZombieDetection } from './lib/zombieDetection'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -77,6 +78,7 @@ app.whenReady().then(() => {
   registerIniLockWatcher()
   registerBackupScheduleWatcher()
   registerCrashWatch(doStartServer)
+  registerZombieDetection(doKillServer, doStartServer)
 
   // Re-attach to servers still running from a previous session (they survive
   // this app crashing/closing by design - see serverProcess.startServer).

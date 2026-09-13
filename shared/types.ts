@@ -89,6 +89,16 @@ export interface ServerProfile {
    *  restart are never mistaken for a crash, since each of those always sets `stopping` or
    *  `restarting` before touching the process. Independent per profile. */
   crashWatchEnabled: boolean
+  /** Zombie detection: active only during the `starting` phase (from the process spawning
+   *  until the startup-complete log marker confirms `running`, or the server otherwise
+   *  leaves `starting` for any reason) - if it's still stuck in `starting` after
+   *  `zombieDetectionTimeoutMinutes`, the process is killed as a zombie stuck in an endless
+   *  loop, optionally followed by an automatic restart attempt. Independent per profile. */
+  zombieDetectionEnabled: boolean
+  /** Minutes to wait in `starting` before treating it as a zombie. Default 10. */
+  zombieDetectionTimeoutMinutes: number
+  /** Whether to attempt starting the server again right after killing a detected zombie. */
+  zombieDetectionAutoRestart: boolean
   /** When true, this server is started automatically when the Manager application itself
    *  launches (not to be confused with AppSettings.launchOnStartup, which is about the
    *  Manager launching at OS login). Staggered against other auto-start profiles by

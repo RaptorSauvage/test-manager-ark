@@ -92,6 +92,9 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     hidden: false,
     group: '',
     crashWatchEnabled: false,
+    zombieDetectionEnabled: false,
+    zombieDetectionTimeoutMinutes: 10,
+    zombieDetectionAutoRestart: false,
     ...overrides
   }
 }

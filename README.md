@@ -709,11 +709,21 @@ dedicated servers running on the same machine.
   Kill, and Restart also explicitly cancel any already-pending auto-restart themselves as a
   second layer of certainty, on top of never being able to trigger a new one. The checkbox
   is re-checked right before the restart actually fires, so turning it off during the 15s
-  wait cancels it too. Also a "Start this server when the
-  Manager starts" checkbox (not to be confused with "Start Manager when you log into
-  Windows" in Settings, which is about the Manager application itself): when enabled, this
-  server is started automatically every time the Manager app launches - skipped if it's
-  already running (e.g. re-adopted
+  wait cancels it too.
+- **Zombie Detection** — the Watchdog above deliberately leaves a startup failure alone (see
+  just above); this is its counterpart for that exact gap. Independent per profile, active
+  only during the window between the process spawning (`starting`) and the Manager
+  confirming it actually finished loading (`running`) - armed the moment a profile enters
+  `starting`, and disarmed the instant it leaves `starting` for any reason. If it's still
+  stuck `starting` after a configurable timeout (default 10 minutes), the process is killed
+  as a zombie caught in an endless startup loop, optionally (a separate checkbox, per
+  profile) followed by an automatic restart attempt once the kill is confirmed complete.
+  Both the enabled flag and the auto-restart choice are re-checked right before they'd take
+  effect, same as the Watchdog above.
+- The Server Management tab also has a "Start this server when the Manager starts" checkbox
+  (not to be confused with "Start Manager when you log into Windows" in Settings, which is
+  about the Manager application itself): when enabled, this server is started automatically
+  every time the Manager app launches - skipped if it's already running (e.g. re-adopted
   from a previous Manager session that never actually stopped it). Waits for the "Delay
   between auto-started servers" setting in Settings (default 10s) before starting - even if
   it's the only enabled profile - so the Manager's own monitoring has time to finish

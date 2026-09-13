@@ -42,6 +42,9 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     hidden: false,
     group: '',
     crashWatchEnabled: false,
+    zombieDetectionEnabled: false,
+    zombieDetectionTimeoutMinutes: 10,
+    zombieDetectionAutoRestart: false,
     mods: [],
     ...overrides
   } as ServerProfile

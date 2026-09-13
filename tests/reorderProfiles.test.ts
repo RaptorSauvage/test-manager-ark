@@ -42,7 +42,10 @@ function profile(id: string): ServerProfile {
     startOnManagerLaunch: false,
     hidden: false,
     group: '',
-    crashWatchEnabled: false
+    crashWatchEnabled: false,
+    zombieDetectionEnabled: false,
+    zombieDetectionTimeoutMinutes: 10,
+    zombieDetectionAutoRestart: false
   }
 }
 

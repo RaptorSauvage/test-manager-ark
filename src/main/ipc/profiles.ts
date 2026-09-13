@@ -104,7 +104,10 @@ export function registerProfileHandlers(): void {
       startOnManagerLaunch: false,
       hidden: false,
       group: '',
-      crashWatchEnabled: false
+      crashWatchEnabled: false,
+      zombieDetectionEnabled: false,
+      zombieDetectionTimeoutMinutes: 10,
+      zombieDetectionAutoRestart: false
     }
 
     const profiles = saveProfile(profile)
