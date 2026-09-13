@@ -122,12 +122,14 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
           />
         </label>
         <p className="empty-state">
-          Always on - this server's log events are continuously copied into a permanent
-          archive file, separate from ARK's own ShooterGame.log (which a server restart
-          resets). The Cluster Data group console's backlog reads from this archive once it
-          exists, so it can show history from before the server's last restart. The oldest
-          content is trimmed automatically once the archive passes the size above - it's a
-          rolling window, not a hard stop on further logging. Configurable from 1 to 100 MB.
+          Always on - only this server's displayable log events (joins/leaves, chat, admin
+          commands, and the like) are continuously copied into a permanent archive file,
+          separate from ARK's own ShooterGame.log (which a server restart resets); the
+          internal engine noise that makes up most of the raw log is never kept. The Cluster
+          Data group console's backlog reads from this archive once it exists, so it can show
+          history from before the server's last restart. The oldest events are trimmed
+          automatically once the archive passes the size above - it's a rolling window, not a
+          hard stop on further logging. Configurable from 1 to 100 MB.
         </p>
       </section>
 

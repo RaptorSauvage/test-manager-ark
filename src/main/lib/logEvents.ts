@@ -153,8 +153,10 @@ const BACKLOG_BYTES = 300_000
 const BACKLOG_MAX_LINES = 60
 
 /** Reads up to `maxBytes` from the end of a file, dropping a possibly-truncated first line
- *  when starting mid-file. Empty string if the file doesn't exist. */
-function readFileTail(filePath: string, maxBytes: number): string {
+ *  when starting mid-file. Empty string if the file doesn't exist. Exported for
+ *  clusterLogArchive.ts, which reuses just this byte-tail-reading part on its own
+ *  differently-formatted (JSON Lines, not raw ShooterGame.log text) archive file. */
+export function readFileTail(filePath: string, maxBytes: number): string {
   if (!fs.existsSync(filePath)) return ''
 
   const size = fs.statSync(filePath).size
@@ -185,24 +187,6 @@ function readFileTail(filePath: string, maxBytes: number): string {
  */
 export function readLogBacklog(installDir: string, disabledLabels?: ReadonlySet<string>): DatedLogEvent[] {
   const text = readFileTail(getLogFilePath(installDir), BACKLOG_BYTES)
-  const events = parseLogChunkWithDate(text, createLogEventCaches())
-  const filtered = disabledLabels ? events.filter((event) => !disabledLabels.has(event.label)) : events
-  return filtered.slice(-BACKLOG_MAX_LINES)
-}
-
-/**
- * Same as readLogBacklog, but reads an arbitrary file directly instead of deriving the path
- * from an install dir, and takes its own byte budget - used for clusterLogArchive.ts's
- * persistent log, which can span far more than a single session's worth of content (unlike
- * ShooterGame.log itself, it isn't reset by a server restart) so a much larger `maxBytes`
- * than BACKLOG_BYTES above is worthwhile there.
- */
-export function readLogBacklogFromFile(
-  filePath: string,
-  maxBytes: number,
-  disabledLabels?: ReadonlySet<string>
-): DatedLogEvent[] {
-  const text = readFileTail(filePath, maxBytes)
   const events = parseLogChunkWithDate(text, createLogEventCaches())
   const filtered = disabledLabels ? events.filter((event) => !disabledLabels.has(event.label)) : events
   return filtered.slice(-BACKLOG_MAX_LINES)

@@ -84,11 +84,20 @@ describe('getGroupConsoleBacklog', () => {
   it('prefers a profile\'s persistent archive over its live ShooterGame.log once one exists', () => {
     // The live log only has the current (post-restart) session's content...
     writeLog(dirA, leaveLineEarlier)
-    // ...but the permanent archive also has an older session's line the live log has
-    // already lost - getGroupConsoleBacklog should surface that older line too.
+    // ...but the permanent archive (one already-parsed event per line - see
+    // clusterLogArchive.ts) also has an older session's event the live log has already
+    // lost - getGroupConsoleBacklog should surface that older event too.
     const archivePath = getClusterLogArchivePath('a')
     fs.mkdirSync(path.dirname(archivePath), { recursive: true })
-    fs.writeFileSync(archivePath, joinLine + '\n' + leaveLineEarlier)
+    fs.writeFileSync(
+      archivePath,
+      [
+        { label: 'JOIN', cls: 'join', text: 'Someone joined the server', ts: '20:00:00', date: '2026.07.26' },
+        { label: 'LEFT', cls: 'leave', text: 'Someone left the server', ts: '20:05:00', date: '2026.07.26' }
+      ]
+        .map((event) => JSON.stringify(event))
+        .join('\n') + '\n'
+    )
 
     const result = getGroupConsoleBacklog([makeProfile('a', 'ServerA', dirA)])
 
