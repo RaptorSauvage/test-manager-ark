@@ -231,8 +231,10 @@ dedicated servers running on the same machine.
   fallback for a profile that's never been archived yet (a fresh install, or one that simply
   hasn't started since this existed). The archive is a rolling window rather than growing
   forever: each server has its own **Max archive size (MB)** setting (Server Management tab,
-  default 10) past which the oldest content is trimmed automatically, always on with no
-  separate enable toggle - this is passive background logging, not an automated action. Each log line also shows its date as
+  1-100, default 10) past which the oldest content is trimmed automatically, always on with
+  no separate enable toggle - this is passive background logging, not an automated action.
+
+  Each log line also shows its date as
   **DD/MM** next to the HH:MM:SS timestamp (derived from ARK's own "YYYY.MM.DD" log date,
   the same field the merge/sort already relies on), since a merged multi-server feed can
   span more than one day. Below the log feed sits an **RCON command bar**: a target

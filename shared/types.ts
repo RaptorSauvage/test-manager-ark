@@ -105,7 +105,8 @@ export interface ServerProfile {
    *  file is never reset by a server restart, so the group console's backlog can span
    *  further back than the current session. Always on, no separate enable toggle - this is
    *  passive background logging, not an automated action like the watchdog/zombie features
-   *  above. Default 10. */
+   *  above. Default 10, configurable 1-100 (enforced by the Server Management tab's input,
+   *  not this type itself). */
   clusterLogArchiveMaxSizeMB: number
   /** When true, this server is started automatically when the Manager application itself
    *  launches (not to be confused with AppSettings.launchOnStartup, which is about the
