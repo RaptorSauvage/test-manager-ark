@@ -41,6 +41,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     startOnManagerLaunch: false,
     hidden: false,
     group: '',
+    crashWatchEnabled: false,
     mods: [],
     ...overrides
   } as ServerProfile

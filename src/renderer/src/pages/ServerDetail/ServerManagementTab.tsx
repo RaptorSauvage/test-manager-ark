@@ -51,6 +51,25 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
       </section>
 
       <section className="schedule-section">
+        <h3>Anti-Crash Watchdog</h3>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.crashWatchEnabled}
+            onChange={(e) => update('crashWatchEnabled', e.target.checked)}
+          />
+          Automatically restart this server if it crashes unexpectedly
+        </label>
+        <p className="empty-state">
+          Only reacts to a confirmed, unexpected crash - one where the server was running and
+          then simply vanished, with no sign of it being reachable at all anymore. Restarts
+          15 seconds after detection. Stop, Kill, Restart, Update, and the scheduled restart
+          below are never treated as a crash, since each of those already tells the Manager
+          it's deliberate before it happens. Independent from every other server.
+        </p>
+      </section>
+
+      <section className="schedule-section">
         <h3>Advanced Schedule: Server Shutdown, Update, and Startup</h3>
         <ScheduleDaysPicker
           label="Shutdown server at:"

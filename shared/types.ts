@@ -82,6 +82,13 @@ export interface ServerProfile {
   scheduledDinoWipeTime: string
   /** Days it fires on, 0=Sunday..6=Saturday */
   scheduledDinoWipeDays: number[]
+  /** Anti-crash watchdog: when a server that was running is found stopped without ever
+   *  passing through a deliberate `stopping`/`restarting` state first (i.e. a confirmed,
+   *  unexpected crash - see handleUnexpectedExit in serverProcess.ts), restart it
+   *  automatically after a short delay. Deliberate Stop/Kill/Restart/Update/scheduled
+   *  restart are never mistaken for a crash, since each of those always sets `stopping` or
+   *  `restarting` before touching the process. Independent per profile. */
+  crashWatchEnabled: boolean
   /** When true, this server is started automatically when the Manager application itself
    *  launches (not to be confused with AppSettings.launchOnStartup, which is about the
    *  Manager launching at OS login). Staggered against other auto-start profiles by

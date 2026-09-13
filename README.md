@@ -695,10 +695,19 @@ dedicated servers running on the same machine.
   Sound (`-nosound`). This section also shows an always-on, non-interactive "RCON Enabled"
   indicator - RCON can't actually be turned off since the Manager depends on it for
   Stop/Restart and the web dashboard.
-- **Server Management tab** — a "Start this server when the Manager starts" checkbox
-  (not to be confused with "Start Manager when you log into Windows" in Settings, which is
-  about the Manager application itself): when enabled, this server is started automatically
-  every time the Manager app launches - skipped if it's already running (e.g. re-adopted
+- **Server Management tab** — an **Anti-Crash Watchdog** checkbox, independent per profile:
+  when enabled, if this server is found to have gone from `running` straight to `stopped`
+  with no deliberate action in between, it's restarted automatically 15 seconds after
+  detection. That transition is only ever reached for a genuinely confirmed crash - Stop,
+  Kill, Restart, Update, and the scheduled restart below all set a `stopping`/`restarting`
+  status before ever touching the process (see "Tolerates a process hand-off..." above for
+  how a stopped status gets to be trustworthy in the first place), so none of those are ever
+  mistaken for one. The checkbox is re-checked right before the restart actually fires, so
+  turning it off during the 15s wait cancels it too. Also a "Start this server when the
+  Manager starts" checkbox (not to be confused with "Start Manager when you log into
+  Windows" in Settings, which is about the Manager application itself): when enabled, this
+  server is started automatically every time the Manager app launches - skipped if it's
+  already running (e.g. re-adopted
   from a previous Manager session that never actually stopped it). Waits for the "Delay
   between auto-started servers" setting in Settings (default 10s) before starting - even if
   it's the only enabled profile - so the Manager's own monitoring has time to finish

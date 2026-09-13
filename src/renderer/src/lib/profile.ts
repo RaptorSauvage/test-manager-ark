@@ -40,6 +40,7 @@ export function createDefaultProfile(name: string): ServerProfile {
     scheduledDinoWipeDays: [],
     startOnManagerLaunch: false,
     hidden: false,
-    group: ''
+    group: '',
+    crashWatchEnabled: false
   }
 }

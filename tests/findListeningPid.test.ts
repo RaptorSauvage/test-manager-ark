@@ -95,7 +95,8 @@ function makeProfile(id: string, rconPort: number): ServerProfile {
     scheduledDinoWipeDays: [],
     startOnManagerLaunch: false,
     hidden: false,
-    group: ''
+    group: '',
+    crashWatchEnabled: false
   }
 }
 

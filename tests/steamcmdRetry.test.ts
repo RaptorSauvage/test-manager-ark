@@ -91,6 +91,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     startOnManagerLaunch: false,
     hidden: false,
     group: '',
+    crashWatchEnabled: false,
     ...overrides
   }
 }

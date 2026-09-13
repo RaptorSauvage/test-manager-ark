@@ -103,7 +103,8 @@ export function registerProfileHandlers(): void {
       scheduledDinoWipeDays: [],
       startOnManagerLaunch: false,
       hidden: false,
-      group: ''
+      group: '',
+      crashWatchEnabled: false
     }
 
     const profiles = saveProfile(profile)

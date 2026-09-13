@@ -65,7 +65,8 @@ function makeProfile(id: string): ServerProfile {
     scheduledDinoWipeDays: [],
     startOnManagerLaunch: false,
     hidden: false,
-    group: ''
+    group: '',
+    crashWatchEnabled: false
   }
 }
 
