@@ -25,7 +25,8 @@ import {
   hasClusterLogArchive,
   startClusterLogArchiveWatch,
   stopClusterLogArchiveWatch,
-  registerClusterLogArchiveWatch
+  registerClusterLogArchiveWatch,
+  handleStatusForClusterLogArchiveNotification
 } from '../src/main/lib/clusterLogArchive'
 
 function wait(ms: number): Promise<void> {
@@ -200,7 +201,7 @@ describe('clusterLogArchive', () => {
     writeLog(installDir, '')
     const profile = makeProfile({ id: 'archive-register', installDir })
 
-    registerClusterLogArchiveWatch((id) => (id === profile.id ? profile : undefined), 20)
+    const unregister = registerClusterLogArchiveWatch((id) => (id === profile.id ? profile : undefined), 20)
     try {
       serverEvents.emit('status', { profileId: profile.id, state: 'starting' } as ServerStatus)
       await wait(60)
@@ -218,6 +219,117 @@ describe('clusterLogArchive', () => {
       expect(fs.statSync(getClusterLogArchivePath(profile.id)).size).toBe(sizeBeforeMoreWrites)
     } finally {
       stopClusterLogArchiveWatch(profile.id)
+      unregister()
+    }
+  })
+})
+
+describe('handleStatusForClusterLogArchiveNotification', () => {
+  const usedProfileIds: string[] = []
+
+  afterEach(() => {
+    for (const id of usedProfileIds) fs.rmSync(getClusterLogArchivePath(id), { force: true })
+    usedProfileIds.length = 0
+  })
+
+  // A fresh, never-before-used profile id per test - handleStatusForClusterLogArchiveNotification
+  // is edge-triggered off a module-level Map keyed by profileId that's never reset between
+  // tests (same convention as crashWatch.test.ts/zombieDetection.test.ts), so reusing an id
+  // would leak a previous test's "last known state" into this one.
+  function makeNotifyProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
+    const id = overrides.id ?? `notify-${usedProfileIds.length}-${Math.random().toString(36).slice(2)}`
+    usedProfileIds.push(id)
+    return makeProfile({ id, name: `NotifyServer-${id}`, ...overrides })
+  }
+
+  function lookup(profile: ServerProfile): (id: string) => ServerProfile | undefined {
+    return (id) => (id === profile.id ? profile : undefined)
+  }
+
+  it('archives a START event the first time a profile is observed transitioning into running', () => {
+    const profile = makeNotifyProfile()
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+
+    const backlog = readClusterLogArchiveBacklog(profile.id)
+    expect(backlog).toContainEqual(expect.objectContaining({ label: 'START', cls: 'start', text: `${profile.name} started` }))
+  })
+
+  it('archives a STOP event the moment a running profile transitions into stopped', () => {
+    const profile = makeNotifyProfile()
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopping' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopped' } as ServerStatus, lookup(profile))
+
+    const backlog = readClusterLogArchiveBacklog(profile.id)
+    expect(backlog).toContainEqual(expect.objectContaining({ label: 'STOP', cls: 'stop', text: `${profile.name} stopped` }))
+  })
+
+  it('never fires on a profile\'s very first observed status, even if it is already running or stopped', () => {
+    const profile = makeNotifyProfile()
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+
+    expect(hasClusterLogArchive(profile.id)).toBe(false)
+  })
+
+  it('ignores intermediate states and repeated ticks of the same state', () => {
+    const profile = makeNotifyProfile()
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'restarting' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'updating' } as ServerStatus, lookup(profile))
+
+    const backlog = readClusterLogArchiveBacklog(profile.id)
+    expect(backlog).toHaveLength(1)
+    expect(backlog[0]).toMatchObject({ label: 'START' })
+  })
+
+  it('does nothing for an unknown/deleted profile instead of throwing', () => {
+    const id = 'notify-unknown-' + Math.random().toString(36).slice(2)
+    usedProfileIds.push(id)
+    expect(() =>
+      handleStatusForClusterLogArchiveNotification({ profileId: id, state: 'starting' } as ServerStatus, () => undefined)
+    ).not.toThrow()
+    expect(() =>
+      handleStatusForClusterLogArchiveNotification({ profileId: id, state: 'running' } as ServerStatus, () => undefined)
+    ).not.toThrow()
+    expect(hasClusterLogArchive(id)).toBe(false)
+  })
+
+  it('treats each profile independently', () => {
+    const profileA = makeNotifyProfile()
+    const profileB = makeNotifyProfile()
+    const lookupBoth = (id: string): ServerProfile | undefined =>
+      id === profileA.id ? profileA : id === profileB.id ? profileB : undefined
+
+    handleStatusForClusterLogArchiveNotification({ profileId: profileA.id, state: 'starting' } as ServerStatus, lookupBoth)
+    handleStatusForClusterLogArchiveNotification({ profileId: profileB.id, state: 'starting' } as ServerStatus, lookupBoth)
+    handleStatusForClusterLogArchiveNotification({ profileId: profileA.id, state: 'running' } as ServerStatus, lookupBoth)
+
+    expect(readClusterLogArchiveBacklog(profileA.id)).toContainEqual(expect.objectContaining({ label: 'START' }))
+    expect(hasClusterLogArchive(profileB.id)).toBe(false)
+  })
+
+  it('is wired into registerClusterLogArchiveWatch, so a real start/stop cycle ends up in the archive', async () => {
+    const profile = makeNotifyProfile({ installDir: path.join(os.tmpdir(), 'notify-register-install-' + Math.random().toString(36).slice(2)) })
+    const unregister = registerClusterLogArchiveWatch((id) => (id === profile.id ? profile : undefined), 20)
+    try {
+      serverEvents.emit('status', { profileId: profile.id, state: 'starting' } as ServerStatus)
+      await wait(30)
+      serverEvents.emit('status', { profileId: profile.id, state: 'running' } as ServerStatus)
+      await wait(30)
+      serverEvents.emit('status', { profileId: profile.id, state: 'stopped' } as ServerStatus)
+      await wait(30)
+
+      const backlog = readClusterLogArchiveBacklog(profile.id)
+      expect(backlog).toContainEqual(expect.objectContaining({ label: 'START' }))
+      expect(backlog).toContainEqual(expect.objectContaining({ label: 'STOP' }))
+    } finally {
+      stopClusterLogArchiveWatch(profile.id)
+      unregister()
     }
   })
 })

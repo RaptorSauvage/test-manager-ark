@@ -4,6 +4,7 @@ import type { ServerProfile, ServerStatus } from '@shared/types'
 import { watchLogFile, serverEvents } from './serverProcess'
 import { getDataDir } from './dataDir'
 import { createLogEventCaches, parseLogChunkWithDate, readFileTail, type DatedLogEvent } from './logEvents'
+import { getProfile } from '../store'
 
 /** How much of the archive to actually re-read for a backlog request - generous compared
  *  to the live-log backlog's own budget (logEvents.ts's BACKLOG_BYTES), since the whole
@@ -85,6 +86,57 @@ export function hasClusterLogArchive(profileId: string): boolean {
   return fs.existsSync(getClusterLogArchivePath(profileId))
 }
 
+/** The current moment, formatted like a parsed log event's own `date`/`ts` fields - for the
+ *  synthetic START/STOP entries below, there's no actual log line to derive them from (they
+ *  come from a live status transition, not the log itself). Mirrors
+ *  GroupConsoleView.tsx's own `nowAsLogDateTime`, which independently does the same thing
+ *  for the live, in-session feed/toast - this is that same notion of "a server just
+ *  started/stopped", but written straight to the permanent archive so it survives even when
+ *  nobody has a console open to see the live version. */
+function nowAsLogDateTime(): { date: string; ts: string } {
+  const now = new Date()
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return {
+    date: `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}`,
+    ts: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+  }
+}
+
+const lastKnownRunState = new Map<string, 'running' | 'stopped' | 'other'>()
+
+/**
+ * Archives a synthetic START/STOP event the moment a profile's status actually transitions
+ * into `running` or `stopped` - edge-triggered off `lastKnownRunState`, so a profile's
+ * first-ever observed status never counts as a transition, and the in-between
+ * starting/stopping/updating/restarting states are never mistaken for one either (only
+ * entering running or stopped counts, matching the desktop Group Console's own
+ * `nowAsLogDateTime`/toast logic). Independent of whether any console is currently open to
+ * show it live - this is what makes Start/Stop/Restart show up in a *future* backlog even
+ * if nobody was watching when they happened.
+ */
+export function handleStatusForClusterLogArchiveNotification(
+  status: ServerStatus,
+  lookupProfile: (id: string) => ServerProfile | undefined = getProfile
+): void {
+  const previous = lastKnownRunState.get(status.profileId)
+  const current = status.state === 'running' || status.state === 'stopped' ? status.state : 'other'
+  lastKnownRunState.set(status.profileId, current)
+
+  if (previous === undefined || previous === current) return
+  if (current !== 'running' && current !== 'stopped') return
+
+  const profile = lookupProfile(status.profileId)
+  if (!profile) return
+
+  const event: DatedLogEvent = {
+    ...nowAsLogDateTime(),
+    label: current === 'running' ? 'START' : 'STOP',
+    cls: current === 'running' ? 'start' : 'stop',
+    text: `${profile.name} ${current === 'running' ? 'started' : 'stopped'}`
+  }
+  appendEventsToArchive(profile.id, [event], Math.max(1, profile.clusterLogArchiveMaxSizeMB) * 1024 * 1024)
+}
+
 const stopFns = new Map<string, () => void>()
 
 export function stopClusterLogArchiveWatch(profileId: string): void {
@@ -123,17 +175,22 @@ export function startClusterLogArchiveWatch(profile: ServerProfile, intervalMs =
 
 /** Starts/stops the per-server archive watch alongside the server's own lifecycle - wired
  *  off serverEvents so it self-cleans on a crash, not just an explicit Stop/Kill. Call once
- *  at app startup. */
+ *  at app startup. Returns an unsubscribe function - normally never called in production
+ *  (this is meant to run for the Manager's whole lifetime), but lets tests avoid leaking a
+ *  listener onto the shared serverEvents singleton across test cases. */
 export function registerClusterLogArchiveWatch(
   lookupProfile: (id: string) => ServerProfile | undefined,
   intervalMs = 2000
-): void {
-  serverEvents.on('status', (status: ServerStatus) => {
+): () => void {
+  const listener = (status: ServerStatus): void => {
+    handleStatusForClusterLogArchiveNotification(status, lookupProfile)
     if (status.state === 'starting') {
       const profile = lookupProfile(status.profileId)
       if (profile) startClusterLogArchiveWatch(profile, intervalMs)
     } else if (status.state === 'stopped' || status.state === 'error') {
       stopClusterLogArchiveWatch(status.profileId)
     }
-  })
+  }
+  serverEvents.on('status', listener)
+  return () => serverEvents.off('status', listener)
 }
