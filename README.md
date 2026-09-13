@@ -696,14 +696,20 @@ dedicated servers running on the same machine.
   indicator - RCON can't actually be turned off since the Manager depends on it for
   Stop/Restart and the web dashboard.
 - **Server Management tab** — an **Anti-Crash Watchdog** checkbox, independent per profile:
-  when enabled, if this server is found to have gone from `running` straight to `stopped`
-  with no deliberate action in between, it's restarted automatically 15 seconds after
-  detection. That transition is only ever reached for a genuinely confirmed crash - Stop,
-  Kill, Restart, Update, and the scheduled restart below all set a `stopping`/`restarting`
-  status before ever touching the process (see "Tolerates a process hand-off..." above for
-  how a stopped status gets to be trustworthy in the first place), so none of those are ever
-  mistaken for one. The checkbox is re-checked right before the restart actually fires, so
-  turning it off during the 15s wait cancels it too. Also a "Start this server when the
+  when enabled, if this server is found to have gone from `running` (i.e. fully Started, not
+  merely `starting`) straight to `stopped` with no deliberate action in between, it's
+  restarted automatically 15 seconds after detection. A crash during startup itself (never
+  reaching `running` in the first place) is a startup failure, not "a running server that
+  crashed" - deliberately not retried, since blindly retrying every 15s would just loop
+  forever on a fundamentally broken config. The running→stopped transition is only ever
+  reached for a genuinely confirmed crash to begin with - Stop, Kill, Restart, Update, and
+  the scheduled restart below all set a `stopping`/`restarting` status before ever touching
+  the process (see "Tolerates a process hand-off..." above for how a stopped status gets to
+  be trustworthy in the first place), so none of those are ever mistaken for one; Stop,
+  Kill, and Restart also explicitly cancel any already-pending auto-restart themselves as a
+  second layer of certainty, on top of never being able to trigger a new one. The checkbox
+  is re-checked right before the restart actually fires, so turning it off during the 15s
+  wait cancels it too. Also a "Start this server when the
   Manager starts" checkbox (not to be confused with "Start Manager when you log into
   Windows" in Settings, which is about the Manager application itself): when enabled, this
   server is started automatically every time the Manager app launches - skipped if it's

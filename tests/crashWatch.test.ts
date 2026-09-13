@@ -5,7 +5,7 @@ vi.mock('../src/main/lib/serverProcess', () => ({
   isRunning: vi.fn(() => false)
 }))
 
-import { handleStatusForCrashWatch } from '../src/main/lib/crashWatch'
+import { handleStatusForCrashWatch, cancelPendingCrashRestart } from '../src/main/lib/crashWatch'
 import { isRunning as mockIsRunning } from '../src/main/lib/serverProcess'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
@@ -71,8 +71,8 @@ describe('handleStatusForCrashWatch', () => {
     const profile = makeProfile({ id: 'crash-unexpected' })
     const startServer = vi.fn()
 
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, () => profile, startServer)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
     expect(startServer).not.toHaveBeenCalled()
 
     vi.advanceTimersByTime(15000)
@@ -84,8 +84,8 @@ describe('handleStatusForCrashWatch', () => {
     const profile = makeProfile({ id: 'crash-disabled', crashWatchEnabled: false })
     const startServer = vi.fn()
 
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, () => profile, startServer)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
     vi.advanceTimersByTime(15000)
 
     expect(startServer).not.toHaveBeenCalled()
@@ -95,9 +95,9 @@ describe('handleStatusForCrashWatch', () => {
     const profile = makeProfile({ id: 'crash-deliberate-stop' })
     const startServer = vi.fn()
 
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopping' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, () => profile, startServer)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopping' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
     vi.advanceTimersByTime(15000)
 
     expect(startServer).not.toHaveBeenCalled()
@@ -107,9 +107,23 @@ describe('handleStatusForCrashWatch', () => {
     const profile = makeProfile({ id: 'crash-deliberate-restart' })
     const startServer = vi.fn()
 
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'restarting' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, () => profile, startServer)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'restarting' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
+    vi.advanceTimersByTime(15000)
+
+    expect(startServer).not.toHaveBeenCalled()
+  })
+
+  it('never arms in the first place for a failure during startup - only a crash from a fully Started server counts', () => {
+    // The server never got past 'starting' (e.g. it crashed before finishing startup) -
+    // this is a startup failure, not "a running server that crashed", and retrying it
+    // blindly every 15s would just loop forever on a fundamentally broken config.
+    const profile = makeProfile({ id: 'crash-never-started' })
+    const startServer = vi.fn()
+
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'starting' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
     vi.advanceTimersByTime(15000)
 
     expect(startServer).not.toHaveBeenCalled()
@@ -119,8 +133,8 @@ describe('handleStatusForCrashWatch', () => {
     const profile = makeProfile({ id: 'crash-disabled-during-wait' })
     const startServer = vi.fn()
 
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, () => profile, startServer)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
 
     profile.crashWatchEnabled = false // e.g. the user turns it off during the 15s wait
     vi.advanceTimersByTime(15000)
@@ -132,9 +146,9 @@ describe('handleStatusForCrashWatch', () => {
     const profile = makeProfile({ id: 'crash-recovered-early' })
     const startServer = vi.fn()
 
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'starting' }, () => profile, startServer)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'starting' }, startServer, () => profile)
 
     vi.advanceTimersByTime(15000)
 
@@ -145,9 +159,9 @@ describe('handleStatusForCrashWatch', () => {
     const profile = makeProfile({ id: 'crash-repeated-stopped' })
     const startServer = vi.fn()
 
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, () => profile, startServer)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
 
     vi.advanceTimersByTime(15000)
 
@@ -159,8 +173,8 @@ describe('handleStatusForCrashWatch', () => {
     const startServer = vi.fn()
     let exists = true
 
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, () => (exists ? profile : undefined), startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, () => (exists ? profile : undefined), startServer)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, startServer, () => (exists ? profile : undefined))
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => (exists ? profile : undefined))
 
     exists = false
     vi.advanceTimersByTime(15000)
@@ -172,8 +186,8 @@ describe('handleStatusForCrashWatch', () => {
     const profile = makeProfile({ id: 'crash-already-running-again' })
     const startServer = vi.fn()
 
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, () => profile, startServer)
-    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, () => profile, startServer)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
 
     vi.mocked(mockIsRunning).mockReturnValue(true)
     vi.advanceTimersByTime(15000)
@@ -188,10 +202,10 @@ describe('handleStatusForCrashWatch', () => {
       id === enabledProfile.id ? enabledProfile : id === disabledProfile.id ? disabledProfile : undefined
     const startServer = vi.fn()
 
-    handleStatusForCrashWatch({ profileId: enabledProfile.id, state: 'running' }, lookup, startServer)
-    handleStatusForCrashWatch({ profileId: disabledProfile.id, state: 'running' }, lookup, startServer)
-    handleStatusForCrashWatch({ profileId: enabledProfile.id, state: 'stopped' }, lookup, startServer)
-    handleStatusForCrashWatch({ profileId: disabledProfile.id, state: 'stopped' }, lookup, startServer)
+    handleStatusForCrashWatch({ profileId: enabledProfile.id, state: 'running' }, startServer, lookup)
+    handleStatusForCrashWatch({ profileId: disabledProfile.id, state: 'running' }, startServer, lookup)
+    handleStatusForCrashWatch({ profileId: enabledProfile.id, state: 'stopped' }, startServer, lookup)
+    handleStatusForCrashWatch({ profileId: disabledProfile.id, state: 'stopped' }, startServer, lookup)
 
     vi.advanceTimersByTime(15000)
 
@@ -202,9 +216,26 @@ describe('handleStatusForCrashWatch', () => {
   it('does nothing for an unknown profile id', () => {
     const startServer = vi.fn()
     expect(() =>
-      handleStatusForCrashWatch({ profileId: 'crash-unknown', state: 'stopped' }, () => undefined, startServer)
+      handleStatusForCrashWatch({ profileId: 'crash-unknown', state: 'stopped' }, startServer, () => undefined)
     ).not.toThrow()
     vi.advanceTimersByTime(15000)
     expect(startServer).not.toHaveBeenCalled()
+  })
+
+  it('cancelPendingCrashRestart stops an already-scheduled restart from ever firing (e.g. an explicit Kill)', () => {
+    const profile = makeProfile({ id: 'crash-explicit-cancel' })
+    const startServer = vi.fn()
+
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
+
+    cancelPendingCrashRestart(profile.id)
+    vi.advanceTimersByTime(15000)
+
+    expect(startServer).not.toHaveBeenCalled()
+  })
+
+  it('cancelPendingCrashRestart is a harmless no-op when nothing is pending', () => {
+    expect(() => cancelPendingCrashRestart('crash-nothing-pending')).not.toThrow()
   })
 })

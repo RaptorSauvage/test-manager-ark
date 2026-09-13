@@ -76,7 +76,7 @@ app.whenReady().then(() => {
   registerServerVersionWatcher()
   registerIniLockWatcher()
   registerBackupScheduleWatcher()
-  registerCrashWatch()
+  registerCrashWatch(doStartServer)
 
   // Re-attach to servers still running from a previous session (they survive
   // this app crashing/closing by design - see serverProcess.startServer).

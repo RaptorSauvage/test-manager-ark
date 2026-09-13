@@ -11,6 +11,7 @@ import {
 } from './serverProcess'
 import { startMonitoring, stopMonitoring } from './monitor'
 import { updateServer } from './steamcmd'
+import { cancelPendingCrashRestart } from './crashWatch'
 import { getSettings } from '../store'
 
 /** Orchestration shared by the IPC handlers (desktop app) and the web dashboard's server
@@ -25,6 +26,7 @@ export function doStartServer(profile: ServerProfile): ServerStatus {
 }
 
 export async function doStopServer(profile: ServerProfile): Promise<ServerStatus> {
+  cancelPendingCrashRestart(profile.id)
   stopMonitoring(profile.id)
   return stopServer(profile)
 }
@@ -35,6 +37,7 @@ export async function doStopServer(profile: ServerProfile): Promise<ServerStatus
  *  "stopping was kicked off" with no idea whether SaveWorld ever happened. The rest of the
  *  shutdown keeps running in the background regardless. */
 export async function doStopServerConfirmSave(profile: ServerProfile): Promise<{ saved: boolean }> {
+  cancelPendingCrashRestart(profile.id)
   stopMonitoring(profile.id)
   const { saved, finished } = stopServerPhased(profile)
   finished.catch((err: Error) => console.error(`Background stop for ${profile.name} failed:`, err.message))
@@ -42,6 +45,7 @@ export async function doStopServerConfirmSave(profile: ServerProfile): Promise<{
 }
 
 export async function doRestartServer(profile: ServerProfile): Promise<ServerStatus> {
+  cancelPendingCrashRestart(profile.id)
   const status = await restartServer(profile)
   startMonitoring(profile)
   return status
@@ -50,6 +54,7 @@ export async function doRestartServer(profile: ServerProfile): Promise<ServerSta
 /** Restart's counterpart to doStopServerConfirmSave - resolves once the shutdown half's
  *  SaveWorld is confirmed, letting the server actually come back up in the background. */
 export async function doRestartServerConfirmSave(profile: ServerProfile): Promise<{ saved: boolean }> {
+  cancelPendingCrashRestart(profile.id)
   const { saved, finished } = restartServerPhased(profile)
   finished
     .then(() => startMonitoring(profile))
@@ -58,6 +63,7 @@ export async function doRestartServerConfirmSave(profile: ServerProfile): Promis
 }
 
 export function doKillServer(profileId: string): ServerStatus {
+  cancelPendingCrashRestart(profileId)
   stopMonitoring(profileId)
   return killServer(profileId)
 }
