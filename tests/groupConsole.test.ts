@@ -1,10 +1,28 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { ServerProfile, ServerStatus } from '../shared/types'
+
+// getGroupConsoleBacklog checks each profile's clusterLogArchive.ts file, which lives under
+// getDataDir() - normally Electron's app.getPath(), unavailable in this Node test
+// environment. None of these tests ever populate an archive, so redirecting it to an empty
+// temp dir just makes hasClusterLogArchive() correctly report false and fall back to the
+// live-log path these tests actually exercise.
+const { mockDataDir } = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require('node:fs')
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const os = require('node:os')
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require('node:path')
+  return { mockDataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'group-console-datadir-')) }
+})
+vi.mock('../src/main/lib/dataDir', () => ({ getDataDir: () => mockDataDir }))
+
 import { serverEvents } from '../src/main/lib/serverProcess'
 import { getGroupConsoleBacklog, watchGroupConsole } from '../src/main/lib/groupConsole'
+import { getClusterLogArchivePath } from '../src/main/lib/clusterLogArchive'
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -34,6 +52,8 @@ describe('getGroupConsoleBacklog', () => {
 
   afterEach(() => {
     fs.rmSync(testDir, { recursive: true, force: true })
+    fs.rmSync(getClusterLogArchivePath('a'), { force: true })
+    fs.rmSync(getClusterLogArchivePath('b'), { force: true })
   })
 
   it('tags every event with its profile and merges them sorted by time', () => {
@@ -59,6 +79,21 @@ describe('getGroupConsoleBacklog', () => {
 
   it('returns an empty array when none of the profiles have a log file yet', () => {
     expect(getGroupConsoleBacklog([makeProfile('a', 'ServerA', dirA)])).toEqual([])
+  })
+
+  it('prefers a profile\'s persistent archive over its live ShooterGame.log once one exists', () => {
+    // The live log only has the current (post-restart) session's content...
+    writeLog(dirA, leaveLineEarlier)
+    // ...but the permanent archive also has an older session's line the live log has
+    // already lost - getGroupConsoleBacklog should surface that older line too.
+    const archivePath = getClusterLogArchivePath('a')
+    fs.mkdirSync(path.dirname(archivePath), { recursive: true })
+    fs.writeFileSync(archivePath, joinLine + '\n' + leaveLineEarlier)
+
+    const result = getGroupConsoleBacklog([makeProfile('a', 'ServerA', dirA)])
+
+    expect(result).toContainEqual(expect.objectContaining({ label: 'JOIN' }))
+    expect(result).toContainEqual(expect.objectContaining({ label: 'LEFT' }))
   })
 })
 

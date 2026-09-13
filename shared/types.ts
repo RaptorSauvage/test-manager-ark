@@ -99,6 +99,14 @@ export interface ServerProfile {
   zombieDetectionTimeoutMinutes: number
   /** Whether to attempt starting the server again right after killing a detected zombie. */
   zombieDetectionAutoRestart: boolean
+  /** Max size (MB) of this server's permanent Cluster Console log archive
+   *  (clusterLogArchive.ts) before its oldest content is trimmed to make room - a rolling
+   *  window, not a hard cutoff that stops archiving. Unlike ShooterGame.log itself, this
+   *  file is never reset by a server restart, so the group console's backlog can span
+   *  further back than the current session. Always on, no separate enable toggle - this is
+   *  passive background logging, not an automated action like the watchdog/zombie features
+   *  above. Default 10. */
+  clusterLogArchiveMaxSizeMB: number
   /** When true, this server is started automatically when the Manager application itself
    *  launches (not to be confused with AppSettings.launchOnStartup, which is about the
    *  Manager launching at OS login). Staggered against other auto-start profiles by

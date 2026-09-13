@@ -1,24 +1,33 @@
 import type { GroupConsoleEvent, ServerProfile, ServerStatus } from '@shared/types'
 import { watchLogFile, serverEvents, isRunning } from './serverProcess'
 import { parseLogChunkWithDate, createLogEventCaches, readLogBacklog } from './logEvents'
+import { readClusterLogArchiveBacklog, hasClusterLogArchive } from './clusterLogArchive'
 
 function sortKey(event: GroupConsoleEvent): string {
   return `${event.date} ${event.ts}`
 }
 
 /**
- * Reads each given profile's recent backlog independently (see readLogBacklog), tags every
- * event with which profile it came from, and merges them into one list sorted by date+time
- * (not just time - a single server's backlog can itself span more than a day, so HH:MM:SS
- * alone isn't enough to merge multiple servers' backlogs correctly). No per-label filtering
- * here (unlike the web dashboard's own backlog reader), since the Cluster Data group console
- * filters what it displays entirely on its own, independent of the web dashboard's persisted
- * per-label toggle.
+ * Reads each given profile's recent backlog independently, tags every event with which
+ * profile it came from, and merges them into one list sorted by date+time (not just time -
+ * a single server's backlog can itself span more than a day, so HH:MM:SS alone isn't enough
+ * to merge multiple servers' backlogs correctly). No per-label filtering here (unlike the
+ * web dashboard's own backlog reader), since the Cluster Data group console filters what it
+ * displays entirely on its own, independent of the web dashboard's persisted per-label
+ * toggle.
+ *
+ * Prefers each profile's permanent clusterLogArchive.ts file over the live, session-scoped
+ * ShooterGame.log (readLogBacklog) whenever that archive exists - it isn't reset by a server
+ * restart, so it can surface an older session's history the live log has already lost.
+ * Falls back to the live log for a profile that's never been archived yet (a fresh install,
+ * or one that simply hasn't started since this feature shipped), so nothing regresses from
+ * before this existed.
  */
 export function getGroupConsoleBacklog(profiles: ServerProfile[]): GroupConsoleEvent[] {
   const tagged: GroupConsoleEvent[] = []
   for (const profile of profiles) {
-    for (const event of readLogBacklog(profile.installDir)) {
+    const events = hasClusterLogArchive(profile.id) ? readClusterLogArchiveBacklog(profile.id) : readLogBacklog(profile.installDir)
+    for (const event of events) {
       tagged.push({ ...event, profileId: profile.id, profileName: profile.name })
     }
   }

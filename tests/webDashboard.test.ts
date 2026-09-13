@@ -9,11 +9,15 @@ import type { WebDashboardAccount, WebDashboardApiKey } from '../shared/types'
 
 const EMPTY_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-empty-${process.pid}`)
 const LOGGED_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-logged-${process.pid}`)
+// A real temp dir rather than '' - getGroupConsoleBacklog's clusterLogArchive.ts check
+// calls getDataDir(), which falls back to Electron's app.getPath() (unavailable here) only
+// when settings.dataDir is empty.
+const DATA_DIR = path.join(os.tmpdir(), `web-dashboard-test-data-${process.pid}`)
 const PLAYER = `${PLAYER_NAME_OPEN}LeRaptorSauvage${PLAYER_NAME_CLOSE}`
 
 let mockSettings = {
   steamCmdPath: '',
-  dataDir: '',
+  dataDir: DATA_DIR,
   webDashboardEnabled: false,
   webDashboardPort: 47091,
   webDashboardHost: '127.0.0.1',
@@ -608,7 +612,7 @@ describe('web dashboard HTTP server, auth enabled', () => {
 
   afterAll(() => {
     stopWebDashboard()
-    mockSettings = { ...mockSettings, webDashboardAuthEnabled: false, dataDir: '' }
+    mockSettings = { ...mockSettings, webDashboardAuthEnabled: false, dataDir: DATA_DIR }
     mockAccounts = []
     mockApiKeys = []
     fs.rmSync(CERTS_DIR, { recursive: true, force: true })

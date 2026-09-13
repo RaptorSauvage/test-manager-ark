@@ -110,6 +110,27 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
       </section>
 
       <section className="schedule-section">
+        <h3>Cluster Console Log Archive</h3>
+        <label>
+          Max archive size (MB)
+          <input
+            type="number"
+            min={1}
+            value={form.clusterLogArchiveMaxSizeMB}
+            onChange={(e) => update('clusterLogArchiveMaxSizeMB', Number(e.target.value))}
+          />
+        </label>
+        <p className="empty-state">
+          Always on - this server's log events are continuously copied into a permanent
+          archive file, separate from ARK's own ShooterGame.log (which a server restart
+          resets). The Cluster Data group console's backlog reads from this archive once it
+          exists, so it can show history from before the server's last restart. The oldest
+          content is trimmed automatically once the archive passes the size above - it's a
+          rolling window, not a hard stop on further logging.
+        </p>
+      </section>
+
+      <section className="schedule-section">
         <h3>Advanced Schedule: Server Shutdown, Update, and Startup</h3>
         <ScheduleDaysPicker
           label="Shutdown server at:"

@@ -152,6 +152,29 @@ export function parseLogChunkWithDate(chunk: string, caches: LogEventCaches): Da
 const BACKLOG_BYTES = 300_000
 const BACKLOG_MAX_LINES = 60
 
+/** Reads up to `maxBytes` from the end of a file, dropping a possibly-truncated first line
+ *  when starting mid-file. Empty string if the file doesn't exist. */
+function readFileTail(filePath: string, maxBytes: number): string {
+  if (!fs.existsSync(filePath)) return ''
+
+  const size = fs.statSync(filePath).size
+  const readSize = Math.min(size, maxBytes)
+  const buffer = Buffer.alloc(readSize)
+  const fd = fs.openSync(filePath, 'r')
+  try {
+    fs.readSync(fd, buffer, 0, readSize, size - readSize)
+  } finally {
+    fs.closeSync(fd)
+  }
+
+  let text = buffer.toString('utf-8')
+  if (readSize < size) {
+    const firstNewline = text.indexOf('\n')
+    if (firstNewline >= 0) text = text.slice(firstNewline + 1)
+  }
+  return text
+}
+
 /**
  * Reads a server's recent event history straight from its own ShooterGame.log, independent
  * of whatever the Manager's own process tracking thinks its state is - so this works even
@@ -161,26 +184,25 @@ const BACKLOG_MAX_LINES = 60
  * Cluster Data group console.
  */
 export function readLogBacklog(installDir: string, disabledLabels?: ReadonlySet<string>): DatedLogEvent[] {
-  const logPath = getLogFilePath(installDir)
-  if (!fs.existsSync(logPath)) return []
+  const text = readFileTail(getLogFilePath(installDir), BACKLOG_BYTES)
+  const events = parseLogChunkWithDate(text, createLogEventCaches())
+  const filtered = disabledLabels ? events.filter((event) => !disabledLabels.has(event.label)) : events
+  return filtered.slice(-BACKLOG_MAX_LINES)
+}
 
-  const size = fs.statSync(logPath).size
-  const readSize = Math.min(size, BACKLOG_BYTES)
-  const buffer = Buffer.alloc(readSize)
-  const fd = fs.openSync(logPath, 'r')
-  try {
-    fs.readSync(fd, buffer, 0, readSize, size - readSize)
-  } finally {
-    fs.closeSync(fd)
-  }
-
-  let text = buffer.toString('utf-8')
-  if (readSize < size) {
-    // Drop a possibly-truncated first line when starting mid-file.
-    const firstNewline = text.indexOf('\n')
-    if (firstNewline >= 0) text = text.slice(firstNewline + 1)
-  }
-
+/**
+ * Same as readLogBacklog, but reads an arbitrary file directly instead of deriving the path
+ * from an install dir, and takes its own byte budget - used for clusterLogArchive.ts's
+ * persistent log, which can span far more than a single session's worth of content (unlike
+ * ShooterGame.log itself, it isn't reset by a server restart) so a much larger `maxBytes`
+ * than BACKLOG_BYTES above is worthwhile there.
+ */
+export function readLogBacklogFromFile(
+  filePath: string,
+  maxBytes: number,
+  disabledLabels?: ReadonlySet<string>
+): DatedLogEvent[] {
+  const text = readFileTail(filePath, maxBytes)
   const events = parseLogChunkWithDate(text, createLogEventCaches())
   const filtered = disabledLabels ? events.filter((event) => !disabledLabels.has(event.label)) : events
   return filtered.slice(-BACKLOG_MAX_LINES)

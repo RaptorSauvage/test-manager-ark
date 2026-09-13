@@ -45,6 +45,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     zombieDetectionEnabled: false,
     zombieDetectionTimeoutMinutes: 10,
     zombieDetectionAutoRestart: false,
+    clusterLogArchiveMaxSizeMB: 10,
     mods: [],
     ...overrides
   } as ServerProfile

@@ -8,7 +8,7 @@ process.env.UV_THREADPOOL_SIZE = '8'
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
-import { listProfiles, getRunningPids, getRunningStartedAt, getSettings } from './store'
+import { listProfiles, getRunningPids, getRunningStartedAt, getSettings, getProfile } from './store'
 import { applyWebDashboardSettings } from './lib/webDashboard'
 import { applyBackupSchedule, registerBackupScheduleWatcher } from './lib/schedule'
 import { applyScheduledRestart, applyScheduledDinoWipe } from './lib/scheduledActions'
@@ -23,6 +23,7 @@ import { registerServerVersionWatcher, checkAllGameVersionsOnStartup } from './l
 import { registerIniLockWatcher, unlockStoppedProfilesOnStartup, applyIniLockSetting } from './lib/iniLock'
 import { registerCrashWatch } from './lib/crashWatch'
 import { registerZombieDetection } from './lib/zombieDetection'
+import { registerClusterLogArchiveWatch, startClusterLogArchiveWatch } from './lib/clusterLogArchive'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -79,6 +80,7 @@ app.whenReady().then(() => {
   registerBackupScheduleWatcher()
   registerCrashWatch(doStartServer)
   registerZombieDetection(doKillServer, doStartServer)
+  registerClusterLogArchiveWatch(getProfile)
 
   // Re-attach to servers still running from a previous session (they survive
   // this app crashing/closing by design - see serverProcess.startServer).
@@ -107,6 +109,7 @@ app.whenReady().then(() => {
     if (isRunning(profile.id)) {
       startMonitoring(profile)
       startPlayerBackupWatch(profile)
+      startClusterLogArchiveWatch(profile)
     }
   }
 

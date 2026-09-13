@@ -99,7 +99,8 @@ function makeProfile(id: string, rconPort: number): ServerProfile {
     crashWatchEnabled: false,
     zombieDetectionEnabled: false,
     zombieDetectionTimeoutMinutes: 10,
-    zombieDetectionAutoRestart: false
+    zombieDetectionAutoRestart: false,
+    clusterLogArchiveMaxSizeMB: 10
   }
 }
 

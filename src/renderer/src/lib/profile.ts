@@ -44,6 +44,7 @@ export function createDefaultProfile(name: string): ServerProfile {
     crashWatchEnabled: false,
     zombieDetectionEnabled: false,
     zombieDetectionTimeoutMinutes: 10,
-    zombieDetectionAutoRestart: false
+    zombieDetectionAutoRestart: false,
+    clusterLogArchiveMaxSizeMB: 10
   }
 }

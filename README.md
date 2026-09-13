@@ -220,7 +220,19 @@ dedicated servers running on the same machine.
   `watchLogFile` per running server in the group, the same primitive every other
   log-following feature in this app already uses concurrently); a stopped server's older
   history still shows up in the initial backlog, it just stops growing. Navigating back
-  stops every tailer still active for that group. Each log line also shows its date as
+  stops every tailer still active for that group. That initial backlog survives a server
+  restart too, not just a stop: independently of the console page being open at all,
+  `src/main/lib/clusterLogArchive.ts` continuously copies every running server's log growth
+  (for as long as it's running, wired off the same status events as everything else) into a
+  permanent per-server archive file under the Manager's data folder, separate from ARK's own
+  `ShooterGame.log` (which a server restart truncates back to empty for the new session).
+  The backlog above reads from that archive instead of the live log whenever one exists, so
+  it can show history from before the server's last restart - the live log is only a
+  fallback for a profile that's never been archived yet (a fresh install, or one that simply
+  hasn't started since this existed). The archive is a rolling window rather than growing
+  forever: each server has its own **Max archive size (MB)** setting (Server Management tab,
+  default 10) past which the oldest content is trimmed automatically, always on with no
+  separate enable toggle - this is passive background logging, not an automated action. Each log line also shows its date as
   **DD/MM** next to the HH:MM:SS timestamp (derived from ARK's own "YYYY.MM.DD" log date,
   the same field the merge/sort already relies on), since a merged multi-server feed can
   span more than one day. Below the log feed sits an **RCON command bar**: a target

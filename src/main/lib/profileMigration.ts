@@ -38,6 +38,7 @@ interface LegacyProfileFields {
  * - `crashWatchEnabled` is new and defaults to false
  * - `zombieDetectionEnabled`/`zombieDetectionAutoRestart` are new and default to false;
  *   `zombieDetectionTimeoutMinutes` is new and defaults to 10
+ * - `clusterLogArchiveMaxSizeMB` is new and defaults to 10
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -96,6 +97,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     crashWatchEnabled: rest.crashWatchEnabled ?? false,
     zombieDetectionEnabled: rest.zombieDetectionEnabled ?? false,
     zombieDetectionTimeoutMinutes: rest.zombieDetectionTimeoutMinutes ?? 10,
-    zombieDetectionAutoRestart: rest.zombieDetectionAutoRestart ?? false
+    zombieDetectionAutoRestart: rest.zombieDetectionAutoRestart ?? false,
+    clusterLogArchiveMaxSizeMB: rest.clusterLogArchiveMaxSizeMB ?? 10
   }
 }
