@@ -8,9 +8,16 @@ import { startMonitoring } from './monitor'
 import { updateServer, getUpdateLogPath } from './steamcmd'
 import { sendRconCommand } from './rcon'
 import { getSettings } from '../store'
+import { delay } from './delay'
 
 const restartTasks = new Map<string, ScheduledTask>()
 const dinoWipeTasks = new Map<string, ScheduledTask>()
+
+/** Grace period between the server actually stopping and SteamCMD starting the update -
+ *  gives the OS a moment to fully release the install directory's file handles (log file,
+ *  save files) before SteamCMD starts touching them, avoiding a race where the update
+ *  starts against files the just-killed process hasn't finished letting go of yet. */
+const POST_STOP_UPDATE_DELAY_MS = 10_000
 
 /** Appends a timestamped note to the same per-profile log the manual Update button's
  *  "View update log" reads, so a scheduled update's outcome - including a guard-clause
@@ -22,12 +29,13 @@ function logScheduledUpdateOutcome(profileId: string, message: string): void {
   fs.appendFileSync(logPath, `\n[${new Date().toISOString()}] ${message}\n`)
 }
 
-async function runScheduledRestart(profile: ServerProfile): Promise<void> {
+export async function runScheduledRestart(profile: ServerProfile): Promise<void> {
   if (!isRunning(profile.id)) return
 
   await stopServer(profile)
 
   if (profile.scheduledRestartUpdateAfter) {
+    await delay(POST_STOP_UPDATE_DELAY_MS)
     try {
       await updateServer(profile, getSettings().steamCmdPath)
       logScheduledUpdateOutcome(profile.id, 'Scheduled update (after shutdown) completed successfully.')
