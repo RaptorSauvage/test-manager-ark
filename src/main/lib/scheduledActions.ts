@@ -3,7 +3,7 @@ import path from 'node:path'
 import cron, { type ScheduledTask } from 'node-cron'
 import type { ServerProfile } from '@shared/types'
 import { buildDayOfWeekCron } from '@shared/scheduleTime'
-import { isRunning, startServer, stopServer } from './serverProcess'
+import { isRunning, startServer, stopServer, setUpdating } from './serverProcess'
 import { startMonitoring } from './monitor'
 import { updateServer, getUpdateLogPath } from './steamcmd'
 import { sendRconCommand } from './rcon'
@@ -35,14 +35,21 @@ export async function runScheduledRestart(profile: ServerProfile): Promise<void>
   await stopServer(profile)
 
   if (profile.scheduledRestartUpdateAfter) {
-    await delay(POST_STOP_UPDATE_DELAY_MS)
+    // Reserved for the whole grace delay too, not just while SteamCMD is actually running -
+    // doStartServer already refuses to start a server while isUpdating is set, so this also
+    // blocks a manual Start during the 10s window between the shutdown and the update
+    // actually beginning. Always released in the finally below, however this exits.
+    setUpdating(profile.id, true)
     try {
-      await updateServer(profile, getSettings().steamCmdPath)
+      await delay(POST_STOP_UPDATE_DELAY_MS)
+      await updateServer(profile, getSettings().steamCmdPath, { skipInProgressGuard: true })
       logScheduledUpdateOutcome(profile.id, 'Scheduled update (after shutdown) completed successfully.')
     } catch (err) {
       const message = (err as Error).message
       console.error(`Scheduled update failed for ${profile.name}:`, message)
       logScheduledUpdateOutcome(profile.id, `Scheduled update (after shutdown) failed: ${message}`)
+    } finally {
+      setUpdating(profile.id, false)
     }
   }
 

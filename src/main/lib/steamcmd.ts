@@ -228,11 +228,20 @@ function runUpdateAttempt(profile: ServerProfile, steamCmdPath: string, logStrea
   })
 }
 
-export async function updateServer(profile: ServerProfile, steamCmdPath: string): Promise<void> {
+/** `skipInProgressGuard`: for a caller (the scheduled restart's post-stop grace delay) that
+ *  already reserved the isUpdating lock itself before calling in - without this, the guard
+ *  just below would see that self-reserved lock and mistake it for a second, concurrent
+ *  update already running. Manual/bulk update callers never pass this, so a real overlapping
+ *  update attempt is still rejected as normal. */
+export async function updateServer(
+  profile: ServerProfile,
+  steamCmdPath: string,
+  options: { skipInProgressGuard?: boolean } = {}
+): Promise<void> {
   if (isRunning(profile.id)) {
     throw new Error('Stop the server before updating it.')
   }
-  if (isUpdating(profile.id)) {
+  if (!options.skipInProgressGuard && isUpdating(profile.id)) {
     throw new Error('An update is already running for this server.')
   }
   if (!steamCmdPath.trim()) {

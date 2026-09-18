@@ -763,7 +763,11 @@ dedicated servers running on the same machine.
     after the shutdown before starting SteamCMD (`src/main/lib/scheduledActions.ts`,
     `POST_STOP_UPDATE_DELAY_MS`) - a grace period for the OS to fully release the install
     directory's file handles (log/save files) rather than racing SteamCMD against a
-    process that just exited. Since this runs unattended, its outcome (success, or a
+    process that just exited. The server is locked from being started manually (Dashboard,
+    server page, or the web dashboard) for that whole 10s window, not just while SteamCMD
+    is actually running - the same `isUpdating` guard the manual Update button itself uses
+    is reserved as soon as the shutdown completes, so a manual Start can't sneak in and race
+    the scheduled update. Since this runs unattended, its outcome (success, or a
     failure - including one that never even got to spawn SteamCMD, e.g. no SteamCMD path
     configured) is appended to that server's usual update log, viewable via "View update
     log" on the Dashboard, the same place a manual Update's output shows up.
