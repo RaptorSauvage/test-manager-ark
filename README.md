@@ -197,12 +197,16 @@ dedicated servers running on the same machine.
   (`clusterId`/`clusterEnabled` in a profile's Settings), which is a completely separate,
   game-level feature. Each row also gets a **Server Statistics** chart identical in
   behavior to the per-server Analytics tab's (same sparklines, same hover tooltip, same
-  gap-breaking, same 1h-collected/selectable-scale/persisted-per-group design) fed the
-  group's summed CPU/memory/player samples instead of one server's raw ones - a single
-  **Time Scale** selector at the top of the page applies to every group's chart at once.
-  The chart (and its sampling) only exists while at least one server in the group is
-  actually running - a fully-stopped group shows no chart at all rather than a flat line
-  of zeroes, and nothing gets sampled/persisted for it while it's down.
+  gap-breaking) fed that group's *persisted* history summed across its servers -
+  `src/main/lib/statsHistory.ts`'s `readClusterStatsHistory`, the same query the web
+  dashboard's own Cluster Dashboard chart uses - rather than the group's own separate
+  client-side sampling; only servers with stats enabled (Analytics tab) contribute to a
+  group's chart, and a group with none of its servers opted in simply shows no chart. A
+  single **Time Scale** selector at the top of the page (**6h / 12h / 24h / All**, same
+  options and same main-process downsampling as the per-server chart) applies to every
+  group's chart at once and re-queries every group when changed. A group with no history
+  in the selected window (nothing enabled, or a fully-stopped group with nothing recorded
+  recently) shows no chart at all rather than a flat line of zeroes.
 
   Clicking anywhere on a row other than its chart opens that group's **Group Console**,
   filling the full page: a live log feed merging every server in the group into one
@@ -352,39 +356,45 @@ dedicated servers running on the same machine.
     and locking stays off until it's turned back on.
   - **Server Statistics**: three sparkline charts (CPU %, RAM in MB, connected players),
     stacked with no gap between them and the metric name on the left of each row rather
-    than above it, sampled every 5 seconds from the same status data the Server Status
-    fields above already use - no extra polling. Hovering a row shows a vertical guide line
-    plus a small tooltip with the clock time and value of the nearest sample. The CPU row's
-    scale adapts to the highest value actually seen in the current window (with a small
-    floor so a near-idle server's jitter doesn't get blown up to fill the whole row) rather
-    than always spanning a fixed 0-100% range, so a server that never spikes past e.g. 40%
-    still uses the chart's full height instead of hugging the bottom - RAM already worked
-    this way. Not capped at 100%: CPU usage is measured per-process across all cores, so a
-    multi-threaded server can legitimately read well above 100%, and every row's points are
-    clamped to stay within the chart's own height regardless of scale, so nothing ever draws
-    outside its row. A gap of a minute or more between two consecutive samples (server
-    stopped for a while, Manager closed, stats disabled and re-enabled, ...) breaks the line
-    into a separate segment instead of connecting them with a straight slope - otherwise the
-    chart would draw a misleading diagonal bridging two readings that aren't actually part of
-    the same continuous run. Up to 1 hour of history is collected in
-    the background regardless of what's currently displayed, and a **Time Scale** selector
-    (1m/5m/30m/1h) picks how much of that collected history each chart actually shows - the
-    chosen scale is remembered per server in local storage too, so it stays on whatever you
-    last picked instead of resetting to the 5m default the next time you open the tab.
-    Each point is placed by its real timestamp within the selected window rather than spaced
-    evenly by index, so a window that isn't fully populated yet (e.g. a server that just
-    started, viewed at the 1h scale) only draws a line across the portion of the chart that
-    has real data instead of stretching a handful of samples across the whole width. History
-    is also mirrored to the browser's local storage as it's collected (per server, capped to
-    the same 1h window), so reopening the Analytics tab or reloading the app picks up right
-    where it left off instead of starting from an empty chart. An **Enable stats** checkbox
-    lets you turn the whole feature off per server (also persisted in local storage) if
-    you'd rather not pay even the modest 5s-interval sampling cost. Deliberately hand-rolled
-    inline SVGs, not a full-page chart library, to keep this "a small graph" rather than the
-    whole page. Sampling and rendering both live entirely inside the Analytics tab
-    component: since `ServerDetail` only ever mounts the currently-selected tab, switching
-    to another tab unmounts Analytics and tears the sampling interval down with it, so
-    nothing keeps running (and nothing keeps redrawing) in the background.
+    than above it. An **Enable stats** checkbox (`ServerProfile.statsEnabled`, off by
+    default) turns on continuous background sampling for this server: every 5s while it's
+    running, `src/main/lib/monitor.ts` records a CPU/RAM/player sample straight to a
+    persistent, global history file (`src/main/lib/statsHistory.ts`), independent of
+    whether this tab - or the Manager itself - is even open. That's a real behavior change
+    from a per-browser-tab feature: history now survives closing the tab, switching
+    profiles, and restarting the Manager, and every server sharing this toggle draws from
+    one combined disk budget (**Stats history size limit (MB)** in the app-wide Settings
+    view, default 1024/1GB - see below) rather than each keeping its own separate quota.
+    A **Time Scale** selector (**6h / 12h / 24h / All**) picks how far back to query -
+    "All" means every sample ever recorded for this server, no lower bound. Whichever scale
+    is picked, the Analytics tab asks the main process for at most 500 points spanning that
+    window; a query covering more raw samples than that gets bucketed and averaged down to
+    500 on the main-process side before it's ever sent to the renderer, so switching to
+    "All" over weeks of history is never slow to fetch or render just because there's a lot
+    of it. The chosen scale is still remembered per server in local storage, so it stays on
+    whatever you last picked instead of resetting to the 12h default the next time you open
+    the tab. Hovering a row shows a vertical guide line plus a small tooltip with the clock
+    time and value of the nearest point. The CPU row's scale adapts to the highest value
+    actually seen in the current window (with a small floor so a near-idle server's jitter
+    doesn't get blown up to fill the whole row) rather than always spanning a fixed 0-100%
+    range, so a server that never spikes past e.g. 40% still uses the chart's full height
+    instead of hugging the bottom - RAM already worked this way. Not capped at 100%: CPU
+    usage is measured per-process across all cores, so a multi-threaded server can
+    legitimately read well above 100%, and every row's points are clamped to stay within
+    the chart's own height regardless of scale, so nothing ever draws outside its row. A
+    gap large enough to represent several missing points in a row (server stopped for a
+    while, stats disabled and re-enabled, ...) - scaled to how far apart points actually are
+    at the current resolution, not a fixed threshold, since "All" over weeks and "6h" sample
+    at very different granularities - breaks the line into a separate segment instead of
+    connecting them with a straight slope, so the chart never draws a misleading diagonal
+    bridging two readings that aren't actually part of the same continuous run. Each point
+    is placed by its real timestamp within the selected window rather than spaced evenly by
+    index, so a window that isn't fully populated yet only draws a line across the portion
+    of the chart that has real data instead of stretching a handful of samples across the
+    whole width. Deliberately hand-rolled inline SVGs, not a full-page chart library, to
+    keep this "a small graph" rather than the whole page. The tab itself just polls its
+    query every 5s while open and renders whatever comes back - all the actual sampling
+    keeps running in the main process regardless of which tab (if any) is open.
 - **Open profiles folder** — a button in the app-wide Settings view opens the folder
   holding this app's own data file (profiles, app settings, which pid belongs to which
   running server): a single `config.json`, written by `electron-store` at Electron's

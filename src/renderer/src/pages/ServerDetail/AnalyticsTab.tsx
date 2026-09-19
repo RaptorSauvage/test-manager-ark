@@ -1,62 +1,21 @@
-import { useEffect, useRef, useState } from 'react'
-import type { BackupScheduleStatus, ServerProfile, ServerStatus } from '@shared/types'
+import { useEffect, useState } from 'react'
+import type { BackupScheduleStatus, ServerProfile } from '@shared/types'
 import { formatCountdown } from '@shared/scheduleTime'
 import { useServerStatuses } from '../../lib/useServerStatuses'
-import { appendSample, selectHistoryWindow, type StatSample } from '../../lib/sparkline'
+import { STATS_TIME_SCALES, loadStoredScale, saveStoredScale, type StatSample } from '../../lib/sparkline'
 import UpdateCheckPanel from '../../components/UpdateCheckPanel'
 import ServerStatsChart from './ServerStatsChart'
 
-/** How much history the Server Statistics chart collects, regardless of what time scale is
- *  currently selected for display. */
-const STATS_HISTORY_WINDOW_MS = 60 * 60 * 1000
-/** How often a new point is sampled - independent of whatever cadence status pushes
- *  actually arrive at, so the chart has a steady, predictable rhythm. */
-const STATS_SAMPLE_INTERVAL_MS = 5000
-/** Time scale choices for the Server Statistics chart, matching the collected window (1h max). */
-const STATS_TIME_SCALES: Array<{ label: string; ms: number }> = [
-  { label: '1m', ms: 60 * 1000 },
-  { label: '5m', ms: 5 * 60 * 1000 },
-  { label: '30m', ms: 30 * 60 * 1000 },
-  { label: '1h', ms: 60 * 60 * 1000 }
-]
-
-function statsEnabledKey(profileId: string): string {
-  return `analytics-stats-enabled:${profileId}`
-}
-
-function statsHistoryKey(profileId: string): string {
-  return `analytics-stats-history:${profileId}`
-}
+/** How often the chart re-fetches this server's persisted history while the tab is open -
+ *  independent of whatever cadence samples actually get recorded at (monitor.ts samples
+ *  every 5s while statsEnabled is on), just how fresh the display stays. */
+const STATS_POLL_INTERVAL_MS = 5000
+/** How many points to ask for - plenty for a ~1000px-wide chart regardless of how much
+ *  history the selected scale spans; the main process downsamples to this on read. */
+const STATS_MAX_POINTS = 500
 
 function statsScaleKey(profileId: string): string {
   return `analytics-stats-scale:${profileId}`
-}
-
-/** Falls back to the default (5m) scale if nothing's stored yet, or if what's stored no
- *  longer matches one of the selectable time scales. */
-function loadStoredScale(profileId: string): number {
-  const raw = localStorage.getItem(statsScaleKey(profileId))
-  const parsed = raw !== null ? Number(raw) : NaN
-  return STATS_TIME_SCALES.some((scale) => scale.ms === parsed) ? parsed : STATS_TIME_SCALES[1].ms
-}
-
-/** Reloads whatever history was collected before the tab/page was last torn down, trimmed to
- *  the current collection window - so reopening Analytics (or reloading the app) picks up
- *  where it left off instead of starting from an empty chart every time. */
-function loadStoredHistory(profileId: string): StatSample[] {
-  try {
-    const raw = localStorage.getItem(statsHistoryKey(profileId))
-    if (!raw) return []
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return selectHistoryWindow(parsed as StatSample[], STATS_HISTORY_WINDOW_MS, Date.now())
-  } catch {
-    return []
-  }
-}
-
-function saveStoredHistory(profileId: string, history: StatSample[]): void {
-  localStorage.setItem(statsHistoryKey(profileId), JSON.stringify(history))
 }
 
 interface AnalyticsTabProps {
@@ -75,7 +34,7 @@ function formatUptime(ms: number): string {
   return `${days}d ${hours}h ${minutes}m ${seconds}s`
 }
 
-export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Element {
+export default function AnalyticsTab({ profile, onProfileChange }: AnalyticsTabProps): JSX.Element {
   const statuses = useServerStatuses([profile.id])
   const status = statuses[profile.id]
   const [now, setNow] = useState(() => Date.now())
@@ -83,12 +42,9 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   const [gameVersion, setGameVersion] = useState<string | null>(null)
   const [backupStatus, setBackupStatus] = useState<BackupScheduleStatus | null>(null)
   const [configFolderError, setConfigFolderError] = useState('')
-  const [history, setHistory] = useState<StatSample[]>(() => loadStoredHistory(profile.id))
-  const [statsEnabled, setStatsEnabled] = useState(() => localStorage.getItem(statsEnabledKey(profile.id)) !== 'false')
-  const [statsScale, setStatsScale] = useState(() => loadStoredScale(profile.id))
+  const [history, setHistory] = useState<StatSample[]>([])
+  const [statsScale, setStatsScale] = useState(() => loadStoredScale(statsScaleKey(profile.id), STATS_TIME_SCALES[1].ms))
   const isRunning = status?.state === 'running'
-  const statusRef = useRef<ServerStatus | undefined>(status)
-  statusRef.current = status
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000)
@@ -96,38 +52,41 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
   }, [])
 
   useEffect(() => {
-    setHistory(loadStoredHistory(profile.id))
-    setStatsEnabled(localStorage.getItem(statsEnabledKey(profile.id)) !== 'false')
-    setStatsScale(loadStoredScale(profile.id))
+    setStatsScale(loadStoredScale(statsScaleKey(profile.id), STATS_TIME_SCALES[1].ms))
   }, [profile.id])
 
+  // Polls this server's persisted history (src/main/lib/statsHistory.ts) rather than
+  // accumulating samples client-side - the main process keeps recording independently of
+  // whether this tab is even open, so switching tabs (or restarting the Manager) never
+  // loses history the way the old localStorage-only version did.
   useEffect(() => {
-    if (!statsEnabled) return
-    const interval = setInterval(() => {
-      const s = statusRef.current
-      if (!s || s.state !== 'running') return
-      setHistory((prev) => {
-        const next = appendSample(
-          prev,
-          { time: Date.now(), cpu: s.cpu ?? 0, memoryMB: s.memoryMB ?? 0, players: s.players?.length ?? 0 },
-          STATS_HISTORY_WINDOW_MS
-        )
-        saveStoredHistory(profile.id, next)
-        return next
+    if (!profile.statsEnabled) {
+      setHistory([])
+      return
+    }
+    let cancelled = false
+    function refresh(): void {
+      window.api.statsHistory.get(profile.id, statsScale, STATS_MAX_POINTS).then((h) => {
+        if (!cancelled) setHistory(h)
       })
-    }, STATS_SAMPLE_INTERVAL_MS)
-    return () => clearInterval(interval)
-  }, [profile.id, statsEnabled])
+    }
+    refresh()
+    const interval = setInterval(refresh, STATS_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [profile.id, profile.statsEnabled, statsScale])
 
-  function toggleStatsEnabled(): void {
-    const next = !statsEnabled
-    setStatsEnabled(next)
-    localStorage.setItem(statsEnabledKey(profile.id), String(next))
+  async function toggleStatsEnabled(): Promise<void> {
+    const updated = await window.api.profiles.save({ ...profile, statsEnabled: !profile.statsEnabled })
+    const saved = updated.find((p) => p.id === profile.id)
+    if (saved) onProfileChange(saved)
   }
 
-  function selectStatsScale(ms: number): void {
+  function selectStatsScale(ms: number | null): void {
     setStatsScale(ms)
-    localStorage.setItem(statsScaleKey(profile.id), String(ms))
+    saveStoredScale(statsScaleKey(profile.id), ms)
   }
 
   useEffect(() => {
@@ -302,15 +261,15 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
           <h3>Server Statistics</h3>
           <div className="stats-controls">
             <label className="stats-toggle">
-              <input type="checkbox" checked={statsEnabled} onChange={toggleStatsEnabled} />
+              <input type="checkbox" checked={profile.statsEnabled} onChange={() => void toggleStatsEnabled()} />
               Enable stats
             </label>
-            {statsEnabled && (
+            {profile.statsEnabled && (
               <div className="time-scale-selector">
                 <span>Time Scale</span>
                 {STATS_TIME_SCALES.map((scale) => (
                   <button
-                    key={scale.ms}
+                    key={scale.label}
                     type="button"
                     className={`time-scale-btn${scale.ms === statsScale ? ' active' : ''}`}
                     onClick={() => selectStatsScale(scale.ms)}
@@ -322,10 +281,19 @@ export default function AnalyticsTab({ profile }: AnalyticsTabProps): JSX.Elemen
             )}
           </div>
         </div>
-        {!statsEnabled ? (
-          <p className="empty-state">Stats collection is disabled for this server.</p>
+        {!profile.statsEnabled ? (
+          <p className="empty-state">
+            Stats collection is disabled for this server - enable it above to start recording CPU/RAM/player
+            history persistently (survives Manager restarts, and keeps recording even while this tab isn&apos;t
+            open).
+          </p>
         ) : history.length > 0 ? (
-          <ServerStatsChart history={history} maxPlayers={profile.maxPlayers} windowMs={statsScale} now={now} />
+          <ServerStatsChart
+            history={history}
+            maxPlayers={profile.maxPlayers}
+            windowMs={statsScale ?? Math.max(1, now - history[0].time)}
+            now={now}
+          />
         ) : (
           <p className="empty-state">
             {isRunning ? 'Collecting data...' : "Server isn't running - start it to see live stats."}

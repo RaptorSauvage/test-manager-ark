@@ -1,58 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appendSample, buildTimeSeriesPath, selectHistoryWindow } from '../src/renderer/src/lib/sparkline'
-
-describe('appendSample', () => {
-  it('appends to an empty history', () => {
-    const result = appendSample([], { time: 1000, cpu: 5, memoryMB: 100, players: 1 }, 60000)
-    expect(result).toEqual([{ time: 1000, cpu: 5, memoryMB: 100, players: 1 }])
-  })
-
-  it('keeps samples still within the window', () => {
-    const history = [{ time: 1000, cpu: 1, memoryMB: 1, players: 0 }]
-    const result = appendSample(history, { time: 5000, cpu: 2, memoryMB: 2, players: 1 }, 60000)
-    expect(result).toHaveLength(2)
-    expect(result[0].time).toBe(1000)
-    expect(result[1].time).toBe(5000)
-  })
-
-  it('drops samples older than the window', () => {
-    const history = [
-      { time: 1000, cpu: 1, memoryMB: 1, players: 0 },
-      { time: 2000, cpu: 1, memoryMB: 1, players: 0 }
-    ]
-    const result = appendSample(history, { time: 70000, cpu: 3, memoryMB: 3, players: 2 }, 60000)
-    expect(result).toEqual([{ time: 70000, cpu: 3, memoryMB: 3, players: 2 }])
-  })
-
-  it('does not mutate the input array', () => {
-    const history = [{ time: 1000, cpu: 1, memoryMB: 1, players: 0 }]
-    appendSample(history, { time: 2000, cpu: 2, memoryMB: 2, players: 1 }, 60000)
-    expect(history).toHaveLength(1)
-  })
-})
-
-describe('selectHistoryWindow', () => {
-  const history = [
-    { time: 0, cpu: 1, memoryMB: 1, players: 0 },
-    { time: 30000, cpu: 2, memoryMB: 2, players: 0 },
-    { time: 90000, cpu: 3, memoryMB: 3, players: 0 }
-  ]
-
-  it('keeps only samples within the last windowMs relative to now', () => {
-    const result = selectHistoryWindow(history, 60000, 90000)
-    expect(result).toEqual([history[1], history[2]])
-  })
-
-  it('returns everything when the window covers the whole history', () => {
-    const result = selectHistoryWindow(history, 3600000, 90000)
-    expect(result).toEqual(history)
-  })
-
-  it('returns an empty array when nothing falls in the window', () => {
-    const result = selectHistoryWindow(history, 1000, 200000)
-    expect(result).toEqual([])
-  })
-})
+import { buildTimeSeriesPath, loadStoredScale, saveStoredScale, STATS_TIME_SCALES } from '../src/renderer/src/lib/sparkline'
 
 describe('buildTimeSeriesPath', () => {
   it('returns an empty string for no samples', () => {
@@ -126,5 +73,27 @@ describe('buildTimeSeriesPath', () => {
     ]
     const path = buildTimeSeriesPath(samples, 100000, 100000, 200, 40, 0, 100, 5000)
     expect(path).toBe('M0.0,40.0 M20.0,0.0')
+  })
+})
+
+describe('STATS_TIME_SCALES', () => {
+  it('offers 6h/12h/24h/All, with All represented as ms: null', () => {
+    expect(STATS_TIME_SCALES.map((s) => s.label)).toEqual(['6h', '12h', '24h', 'All'])
+    expect(STATS_TIME_SCALES.find((s) => s.label === 'All')?.ms).toBeNull()
+    expect(STATS_TIME_SCALES.find((s) => s.label === '6h')?.ms).toBe(6 * 60 * 60 * 1000)
+  })
+})
+
+describe('loadStoredScale', () => {
+  // This test suite runs in a plain Node environment (no jsdom/localStorage) - these two
+  // functions are written to degrade gracefully rather than throw when storage isn't
+  // available at all, so this exercises exactly that path (a real browser round-trip isn't
+  // reachable from here).
+  it('falls back to the given default when localStorage is unavailable', () => {
+    expect(loadStoredScale('some-key', STATS_TIME_SCALES[2].ms)).toBe(STATS_TIME_SCALES[2].ms)
+  })
+
+  it('does not throw when asked to save with no localStorage available', () => {
+    expect(() => saveStoredScale('some-key', null)).not.toThrow()
   })
 })

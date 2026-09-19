@@ -1,34 +1,13 @@
-export interface StatSample {
-  time: number
-  cpu: number
-  memoryMB: number
-  players: number
-}
+import type { StatSample } from '@shared/types'
 
-/**
- * Drops samples older than `windowMs` relative to `sample.time`, then appends `sample` -
- * keeps the rolling window capped so a chart for a server that's been running for hours
- * doesn't accumulate an ever-growing array.
- */
-export function appendSample(history: StatSample[], sample: StatSample, windowMs: number): StatSample[] {
-  const cutoff = sample.time - windowMs
-  return [...history.filter((s) => s.time >= cutoff), sample]
-}
-
-/**
- * Restricts `history` to samples within the last `windowMs` relative to `now` - used to
- * derive what a selected time scale (1m/5m/30m/1h) should actually display out of the
- * full collected history.
- */
-export function selectHistoryWindow(history: StatSample[], windowMs: number, now: number): StatSample[] {
-  const cutoff = now - windowMs
-  return history.filter((s) => s.time >= cutoff)
-}
+export type { StatSample }
 
 /** A gap this long (or longer) between two consecutive samples breaks the line instead of
  *  connecting them - at the normal 5s sample cadence this only trips when samples were
  *  actually missed (server stopped, Manager closed, stats disabled for a while), not on
- *  ordinary jitter. */
+ *  ordinary jitter. Charts fed pre-bucketed history (see statsHistory.ts) should compute
+ *  their own gap threshold from the actual bucket width used instead of relying on this
+ *  default, which assumes raw ~5s samples. */
 export const MAX_CONTINUOUS_GAP_MS = 60_000
 
 /**
@@ -72,4 +51,47 @@ export function buildTimeSeriesPath(
     previousTime = s.time
   }
   return d.trim()
+}
+
+/** Time scale choices for the Server Statistics chart (Analytics tab) and the Cluster
+ *  Dashboard chart alike - `ms: null` means "All" (every recorded sample, no lower time
+ *  bound), the one scale that isn't a fixed window. */
+export interface StatsTimeScale {
+  label: string
+  ms: number | null
+}
+
+export const STATS_TIME_SCALES: StatsTimeScale[] = [
+  { label: '6h', ms: 6 * 60 * 60 * 1000 },
+  { label: '12h', ms: 12 * 60 * 60 * 1000 },
+  { label: '24h', ms: 24 * 60 * 60 * 1000 },
+  { label: 'All', ms: null }
+]
+
+function serializeScale(ms: number | null): string {
+  return ms === null ? 'null' : String(ms)
+}
+
+/** Reads back a scale previously saved by saveStoredScale - falls back to `fallbackMs` if
+ *  nothing's stored yet, or if what's stored no longer matches one of STATS_TIME_SCALES
+ *  (e.g. an older version of this app persisted a now-removed scale like "1m"). */
+export function loadStoredScale(key: string, fallbackMs: number | null): number | null {
+  let raw: string | null
+  try {
+    raw = localStorage.getItem(key)
+  } catch {
+    return fallbackMs
+  }
+  if (raw === null) return fallbackMs
+  const parsed = raw === 'null' ? null : Number(raw)
+  if (parsed !== null && !Number.isFinite(parsed)) return fallbackMs
+  return STATS_TIME_SCALES.some((scale) => scale.ms === parsed) ? parsed : fallbackMs
+}
+
+export function saveStoredScale(key: string, ms: number | null): void {
+  try {
+    localStorage.setItem(key, serializeScale(ms))
+  } catch {
+    // Storage unavailable (private browsing, quota) - not fatal, just won't persist.
+  }
 }

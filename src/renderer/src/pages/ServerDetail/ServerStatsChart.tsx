@@ -1,5 +1,5 @@
 import { useRef, useState, type MouseEvent } from 'react'
-import { buildTimeSeriesPath, selectHistoryWindow, type StatSample } from '../../lib/sparkline'
+import { buildTimeSeriesPath, MAX_CONTINUOUS_GAP_MS, type StatSample } from '../../lib/sparkline'
 
 const CHART_WIDTH = 1000
 const CHART_HEIGHT = 60
@@ -19,10 +19,11 @@ interface SparklineProps {
   now: number
   color: string
   max: number
+  maxGapMs: number
 }
 
-function Sparkline({ label, unit, current, samples, windowMs, now, color, max }: SparklineProps): JSX.Element {
-  const pathD = buildTimeSeriesPath(samples, windowMs, now, CHART_WIDTH, CHART_HEIGHT, 0, max)
+function Sparkline({ label, unit, current, samples, windowMs, now, color, max, maxGapMs }: SparklineProps): JSX.Element {
+  const pathD = buildTimeSeriesPath(samples, windowMs, now, CHART_WIDTH, CHART_HEIGHT, 0, max, maxGapMs)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<HoverState | null>(null)
 
@@ -78,21 +79,21 @@ interface ServerStatsChartProps {
 }
 
 /**
- * Three compact sparklines (CPU%, RAM, Players) stacked full-width, each showing samples
- * that fall within the last `windowMs` (the selected time scale) out of the full history the
- * caller collected - deliberately hand-rolled SVG rather than a chart library, kept to a fixed
- * modest height per row rather than a full-page graph. Hovering a row shows the time and value
- * of the nearest sample under the cursor. Only ever mounted while the Analytics tab itself is
- * active (see ServerDetail/index.tsx, which unmounts inactive tabs entirely), so sampling and
- * redrawing both stop the moment you navigate away instead of running in the background.
+ * Three compact sparklines (CPU%, RAM, Players) stacked full-width - deliberately hand-rolled
+ * SVG rather than a chart library, kept to a fixed modest height per row rather than a
+ * full-page graph. `history` is already exactly the data to show (the main process has
+ * already filtered to the selected time scale and downsampled it - see
+ * src/main/lib/statsHistory.ts), so this component just renders it, it doesn't do any
+ * windowing of its own. Hovering a row shows the time and value of the nearest sample under
+ * the cursor. Only ever mounted while the Analytics tab itself is active (see
+ * ServerDetail/index.tsx, which unmounts inactive tabs entirely).
  */
 export default function ServerStatsChart({ history, maxPlayers, windowMs, now }: ServerStatsChartProps): JSX.Element {
-  const windowed = selectHistoryWindow(history, windowMs, now)
   const latest = history[history.length - 1]
 
-  const cpuSamples = windowed.map((h) => ({ time: h.time, value: h.cpu }))
-  const memorySamples = windowed.map((h) => ({ time: h.time, value: h.memoryMB }))
-  const playerSamples = windowed.map((h) => ({ time: h.time, value: h.players }))
+  const cpuSamples = history.map((h) => ({ time: h.time, value: h.cpu }))
+  const memorySamples = history.map((h) => ({ time: h.time, value: h.memoryMB }))
+  const playerSamples = history.map((h) => ({ time: h.time, value: h.players }))
   // Scaled to the highest value actually seen rather than always to 100, so a server that
   // never spikes past e.g. 40% still uses the chart's full height instead of hugging the
   // bottom - a small floor keeps a near-idle server's jitter from being blown up to fill the
@@ -100,6 +101,12 @@ export default function ServerStatsChart({ history, maxPlayers, windowMs, now }:
   // multi-threaded server can legitimately read well above 100%.
   const cpuMax = Math.max(10, ...cpuSamples.map((s) => s.value))
   const memoryMax = Math.max(100, ...memorySamples.map((s) => s.value))
+  // History arrives pre-bucketed at a resolution that depends on the selected scale/window
+  // (see computeBucketWidth in statsHistory.ts) - a fixed 60s gap threshold would constantly
+  // (mis)fire at coarser resolutions (e.g. "All" over weeks, where consecutive real points can
+  // legitimately be many minutes apart). Scale the threshold to the actual point density
+  // instead, with the original 60s default as a floor for dense, short-window data.
+  const maxGapMs = Math.max(MAX_CONTINUOUS_GAP_MS, (windowMs / Math.max(history.length, 1)) * 3)
 
   return (
     <div className="stats-charts-grid">
@@ -112,6 +119,7 @@ export default function ServerStatsChart({ history, maxPlayers, windowMs, now }:
         now={now}
         color="var(--accent)"
         max={cpuMax}
+        maxGapMs={maxGapMs}
       />
       <Sparkline
         label="RAM"
@@ -122,6 +130,7 @@ export default function ServerStatsChart({ history, maxPlayers, windowMs, now }:
         now={now}
         color="var(--ok)"
         max={memoryMax}
+        maxGapMs={maxGapMs}
       />
       <Sparkline
         label="Players"
@@ -132,6 +141,7 @@ export default function ServerStatsChart({ history, maxPlayers, windowMs, now }:
         now={now}
         color="var(--warn)"
         max={Math.max(maxPlayers, 1)}
+        maxGapMs={maxGapMs}
       />
     </div>
   )
