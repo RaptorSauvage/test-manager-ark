@@ -99,19 +99,13 @@ interface RconResultEntry extends RconResult {
   profileName: string
 }
 
-interface StateNotification {
-  id: string
-  profileName: string
-  type: 'start' | 'stop'
-}
-
 /**
  * Each profile's last-seen live status, module-scope rather than component state - a page
  * remount (navigating away to start/stop a server from the Dashboard, then back into the
  * Group Console) must not look like a fresh baseline, or the transition that already
- * happened while this page was unmounted would silently never get a toast. Persists for the
- * renderer's lifetime (cleared only on a full app reload), independent of any one Group
- * Console instance.
+ * happened while this page was unmounted would silently never get a START/STOP log line.
+ * Persists for the renderer's lifetime (cleared only on a full app reload), independent of
+ * any one Group Console instance.
  */
 const lastKnownStates = new Map<string, string>()
 
@@ -143,7 +137,6 @@ export default function GroupConsoleView({
   const [gameVersions, setGameVersions] = useState<Record<string, string | null>>({})
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({})
   const [contextMenu, setContextMenu] = useState<{ profileId: string; x: number; y: number } | null>(null)
-  const [notifications, setNotifications] = useState<StateNotification[]>([])
   const feedRef = useRef<HTMLDivElement>(null)
   const profileIdsKey = profiles.map((p) => p.id).join(',')
   const statuses = useServerStatuses(profiles.map((p) => p.id))
@@ -185,15 +178,13 @@ export default function GroupConsoleView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileIdsKey])
 
-  // Whenever a server's live status actually transitions into 'running' or 'stopped', pops
-  // a transient toast AND drops a START/STOP line into the log feed itself - compares
-  // against each profile's last-seen status in the module-level `lastKnownStates` map (not
-  // component state) so a profile's first-ever status ever observed never counts as a
-  // transition, but leaving this page and coming back after starting/stopping a server from
-  // elsewhere (e.g. the Dashboard) still does - the map remembers what this profile was
-  // doing before the page unmounted.
+  // Whenever a server's live status actually transitions into 'running' or 'stopped', drops
+  // a START/STOP line into the log feed itself - compares against each profile's last-seen
+  // status in the module-level `lastKnownStates` map (not component state) so a profile's
+  // first-ever status ever observed never counts as a transition, but leaving this page and
+  // coming back after starting/stopping a server from elsewhere (e.g. the Dashboard) still
+  // does - the map remembers what this profile was doing before the page unmounted.
   useEffect(() => {
-    const toNotify: StateNotification[] = []
     const logEvents: GroupConsoleEvent[] = []
 
     for (const profile of profiles) {
@@ -205,7 +196,6 @@ export default function GroupConsoleView({
       if (state !== 'running' && state !== 'stopped') continue
 
       const type = state === 'running' ? 'start' : 'stop'
-      toNotify.push({ id: `${profile.id}-${Date.now()}`, profileName: profile.name, type })
       logEvents.push({
         ...nowAsLogDateTime(),
         label: type === 'start' ? 'START' : 'STOP',
@@ -217,13 +207,6 @@ export default function GroupConsoleView({
     }
 
     if (logEvents.length > 0) appendEvents(logEvents)
-    if (toNotify.length === 0) return
-    setNotifications((prev) => [...prev, ...toNotify])
-    for (const notification of toNotify) {
-      setTimeout(() => {
-        setNotifications((prev) => prev.filter((n) => n.id !== notification.id))
-      }, 6000)
-    }
     // profileIdsKey (via `profiles`) is the stable dependency; `statuses` is a fresh object
     // on every live status update, which is exactly what should retrigger this diff.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -318,16 +301,6 @@ export default function GroupConsoleView({
         <button onClick={onBack}>&larr; Back</button>
         <h1>{groupName || 'Ungrouped'} — Group Console</h1>
       </header>
-
-      {notifications.length > 0 && (
-        <div className="group-console-notifications">
-          {notifications.map((n) => (
-            <div key={n.id} className={`group-console-notification group-console-notification-${n.type}`}>
-              {n.profileName} {n.type === 'start' ? 'started' : 'stopped'}
-            </div>
-          ))}
-        </div>
-      )}
 
       <div className="group-console-body">
         <div className="group-console-main">
