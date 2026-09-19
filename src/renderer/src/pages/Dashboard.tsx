@@ -34,8 +34,6 @@ export default function Dashboard({
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
   const [dragId, setDragId] = useState<string | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
-  const [logProfileId, setLogProfileId] = useState<string | null>(null)
-  const [logContent, setLogContent] = useState('')
   const [installedById, setInstalledById] = useState<Record<string, boolean>>({})
   const [gameVersionById, setGameVersionById] = useState<Record<string, string | null>>({})
   const [maps, setMaps] = useState<MapDefinition[]>([])
@@ -43,19 +41,6 @@ export default function Dashboard({
   useEffect(() => {
     window.api.maps.list().then(setMaps)
   }, [])
-
-  // Refetches the open update log as soon as it actually changes (pushed from main),
-  // instead of polling on a fixed timer - so it reads live rather than catching up every
-  // couple seconds.
-  useEffect(() => {
-    if (!logProfileId) return
-    return window.api.steamcmd.onUpdateLogChanged((changedProfileId) => {
-      if (changedProfileId !== logProfileId) return
-      void window.api.steamcmd
-        .getUpdateLog(logProfileId)
-        .then((log) => setLogContent(log ?? 'No update log yet - run Update at least once.'))
-    })
-  }, [logProfileId])
 
   function mapDisplayName(mapId: string): string {
     return maps.find((m) => m.id === mapId)?.displayName ?? mapId
@@ -169,16 +154,6 @@ export default function Dashboard({
     await refreshInstalled(profile.id)
   }
 
-  async function handleViewLog(profile: ServerProfile): Promise<void> {
-    if (logProfileId === profile.id) {
-      setLogProfileId(null)
-      return
-    }
-    const log = await window.api.steamcmd.getUpdateLog(profile.id)
-    setLogContent(log ?? 'No update log yet - run Update at least once.')
-    setLogProfileId(profile.id)
-  }
-
   function stateOf(profile: ServerProfile): ServerRunState {
     return statuses[profile.id]?.state ?? 'stopped'
   }
@@ -282,17 +257,21 @@ export default function Dashboard({
         {status?.lastError && <p className="error-message">{status.lastError}</p>}
         {actionErrors[profile.id] && <p className="error-message">{actionErrors[profile.id]}</p>}
         <div className="server-card-actions">
-          <button disabled={state !== 'stopped'} onClick={() => void handleAction(profile, 'start')}>
+          <button className="start" disabled={state !== 'stopped'} onClick={() => void handleAction(profile, 'start')}>
             Start
           </button>
-          <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'stop')}>
+          <button className="stop" disabled={state !== 'running'} onClick={() => void handleAction(profile, 'stop')}>
             Stop
           </button>
-          <button disabled={state !== 'running'} onClick={() => void handleAction(profile, 'restart')}>
+          <button
+            className="restart"
+            disabled={state !== 'running'}
+            onClick={() => void handleAction(profile, 'restart')}
+          >
             Restart
           </button>
           <button
-            className="danger"
+            className="kill"
             disabled={state === 'stopped' || state === 'updating'}
             onClick={() => void handleKill(profile)}
             title="Force-kill immediately, without saving"
@@ -316,9 +295,6 @@ export default function Dashboard({
                 ? 'Updating...'
                 : 'Update'}
           </button>
-          <button onClick={() => void handleViewLog(profile)} title="Show the last SteamCMD update's output">
-            {logProfileId === profile.id ? 'Hide update log' : 'View update log'}
-          </button>
           <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
           <button
             onClick={() => void handleToggleHidden(profile)}
@@ -330,7 +306,6 @@ export default function Dashboard({
             Delete
           </button>
         </div>
-        {logProfileId === profile.id && <pre className="log-output">{logContent}</pre>}
       </div>
     )
   }

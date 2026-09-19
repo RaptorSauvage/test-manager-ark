@@ -9,6 +9,7 @@ import { updateServer, getUpdateLogPath } from './steamcmd'
 import { sendRconCommand } from './rcon'
 import { getSettings } from '../store'
 import { delay } from './delay'
+import { logManagerEvent, newTaskId } from './managerLog'
 
 const restartTasks = new Map<string, ScheduledTask>()
 const dinoWipeTasks = new Map<string, ScheduledTask>()
@@ -32,7 +33,12 @@ function logScheduledUpdateOutcome(profileId: string, message: string): void {
 export async function runScheduledRestart(profile: ServerProfile): Promise<void> {
   if (!isRunning(profile.id)) return
 
+  const taskId = newTaskId('scheduled-restart')
+  const taskLabel = `Scheduled Restart — ${profile.name}`
+
+  logManagerEvent(taskId, taskLabel, 'Stopping...')
   await stopServer(profile)
+  logManagerEvent(taskId, taskLabel, 'Stopped')
 
   if (profile.scheduledRestartUpdateAfter) {
     // Reserved for the whole grace delay too, not just while SteamCMD is actually running -
@@ -42,20 +48,25 @@ export async function runScheduledRestart(profile: ServerProfile): Promise<void>
     setUpdating(profile.id, true)
     try {
       await delay(POST_STOP_UPDATE_DELAY_MS)
+      logManagerEvent(taskId, taskLabel, 'Updating...')
       await updateServer(profile, getSettings().steamCmdPath, { skipInProgressGuard: true })
       logScheduledUpdateOutcome(profile.id, 'Scheduled update (after shutdown) completed successfully.')
+      logManagerEvent(taskId, taskLabel, 'Update completed')
     } catch (err) {
       const message = (err as Error).message
       console.error(`Scheduled update failed for ${profile.name}:`, message)
       logScheduledUpdateOutcome(profile.id, `Scheduled update (after shutdown) failed: ${message}`)
+      logManagerEvent(taskId, taskLabel, `Update failed: ${message}`, 'error')
     } finally {
       setUpdating(profile.id, false)
     }
   }
 
   if (profile.scheduledRestartStartAfter) {
+    logManagerEvent(taskId, taskLabel, 'Starting...')
     startServer(profile)
     startMonitoring(profile)
+    logManagerEvent(taskId, taskLabel, 'Started')
   }
 }
 

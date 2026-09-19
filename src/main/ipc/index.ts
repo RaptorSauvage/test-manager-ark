@@ -17,6 +17,7 @@ import { registerSystemHandlers } from './system'
 import { registerAppUpdateHandlers } from './appUpdate'
 import { registerMapManagementHandlers } from './mapManagement'
 import { registerGroupConsoleHandlers } from './groupConsole'
+import { registerManagerLogHandlers } from './managerLog'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers()
@@ -37,4 +38,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerAppUpdateHandlers(mainWindow.webContents)
   registerMapManagementHandlers()
   registerGroupConsoleHandlers(mainWindow.webContents)
+  registerManagerLogHandlers(mainWindow.webContents)
 }

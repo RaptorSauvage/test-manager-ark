@@ -10,6 +10,8 @@ vi.mock('../src/main/lib/serverProcess', () => ({
   isRunning: vi.fn(() => false)
 }))
 
+vi.mock('../src/main/lib/managerLog', () => ({ logManagerEvent: vi.fn(), newTaskId: vi.fn(() => 'task-id') }))
+
 import {
   applyBackupSchedule,
   clearBackupSchedule,

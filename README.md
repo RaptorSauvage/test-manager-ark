@@ -12,7 +12,10 @@ dedicated servers running on the same machine.
   file is done being flushed - sending `DoExit` too soon risks the server exiting
   mid-write and corrupting the save it just claimed to have finished) before finally
   sending `DoExit`; Kill force-terminates the process immediately with no save, for when a
-  server is stuck. The status badge tracks the OS process
+  server is stuck. Each server's card colors these four buttons the same way the web
+  dashboard does - Start green, Stop red, Restart orange - plus Kill in its own darker red
+  (`--danger-dark`), distinct from Stop's red so the more destructive action doesn't blend
+  in with the merely disruptive one. The status badge tracks the OS process
   (`starting`), the server actually finishing loading - detected by polling its own log
   file (`ShooterGame/Saved/Logs/ShooterGame.log`) for the
   `Server has completed startup and is now advertising for join` line, since ARK's
@@ -765,8 +768,8 @@ dedicated servers running on the same machine.
     is reserved as soon as the shutdown completes, so a manual Start can't sneak in and race
     the scheduled update. Since this runs unattended, its outcome (success, or a
     failure - including one that never even got to spawn SteamCMD, e.g. no SteamCMD path
-    configured) is appended to that server's usual update log, viewable via "View update
-    log" on the Dashboard, the same place a manual Update's output shows up.
+    configured) is appended to that server's usual update log, viewable in that server's
+    **Update Log** tab, the same place a manual Update's output shows up.
   - **Scheduled dino wipe** is independent of the restart above: its own time/day picker
     that just sends RCON `DestroyWildDinos` directly, while the server is running - no
     shutdown involved.
@@ -785,10 +788,12 @@ dedicated servers running on the same machine.
   the packaged app's executable: electron-builder's NSIS installer wipes the install
   folder's contents on every update/rebuild, which was silently deleting a managed
   SteamCMD copy kept there while the saved SteamCMD path setting kept pointing at the
-  now-gone location. "View update log" refreshes itself live - the main process pushes an
-  event the moment new output is written, rather than the panel polling on a timer, so a
-  scheduled update's outcome shows up as it happens without having to close and reopen it.
-  A failed attempt is retried automatically, up to 3 attempts total, before actually
+  now-gone location. Each server's **Update Log** tab shows its last install/update run and
+  refreshes itself live - the main process pushes an event the moment new output is written,
+  rather than the tab polling on a timer, so a scheduled update's outcome shows up as it
+  happens whether or not the tab was already open when it started (previously this was a
+  toggleable panel on the Dashboard card itself, which only refreshed live while left open
+  there). A failed attempt is retried automatically, up to 3 attempts total, before actually
   reporting an error - a stale/freshly-installed SteamCMD's very first run in a while often
   has to self-update itself first, which tends to fail once (exit code 7) before succeeding
   right after, so a single failure isn't necessarily the final outcome. A successful
@@ -803,6 +808,29 @@ dedicated servers running on the same machine.
   **Open map folder** and **Delete selected map** acting on whichever one is selected.
   Folder/file names are limited to a plain name - no path separators or `..` - since
   they're used to build a path on disk.
+- **Update Log tab** — this server's last SteamCMD install/update run (manual or
+  scheduled), moved here from a toggleable panel on the Dashboard card so it's always
+  reachable and always live-refreshing rather than only while that panel happened to be
+  left open - see "Update / install via SteamCMD" above for the retry/live-refresh
+  behavior itself, which is unchanged.
+
+## Manager Log
+
+A page (sidebar **Log** button, alongside Dashboard and Cluster Dashboard) recording
+everything the Manager itself does - Start/Stop/Kill/Restart (manual, from either the
+Dashboard or the web dashboard), a scheduled restart's stop/update/start sequence, and a
+backup's save/zip sequence (manual or scheduled) - independent of any one server's own
+ShooterGame.log or SteamCMD update log, and persisted across Manager restarts
+(`src/main/lib/managerLog.ts`, `logs/manager.jsonl` under the Data files location, capped
+at a fixed 5 MB with the oldest entries trimmed automatically once exceeded - not a
+per-server setting like the cluster log archive, since this is Manager-wide activity
+expected to accumulate slowly). A single action (e.g. a plain Start) is one line; a
+multi-step task (the scheduled restart's Stopping/Stopped/Updating/Started sequence, or a
+backup's Started/Completed sequence) shares one `taskId` under the hood so the page groups
+them under one header showing the task's name (e.g. "Scheduled Restart — ServerName") with
+each step listed underneath, rather than as unrelated lines. Refreshes live while the page
+is open - the main process pushes each new entry as it's recorded, the same push pattern as
+the Backups tab's own process log.
 
 ## Prerequisites
 

@@ -10,7 +10,8 @@ import {
   type BackupLogEntry,
   type WebDashboardRole,
   type GroupConsoleEvent,
-  type RconResult
+  type RconResult,
+  type ManagerLogEntry
 } from '@shared/types'
 
 const api: Api = {
@@ -163,6 +164,14 @@ const api: Api = {
     },
     sendRcon: (profileId: string, command: string): Promise<RconResult> =>
       ipcRenderer.invoke(IPC.groupConsoleRconSend, profileId, command)
+  },
+  managerLog: {
+    getLog: () => ipcRenderer.invoke(IPC.managerLogGet),
+    onLogChanged: (callback: (entry: ManagerLogEntry) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, entry: ManagerLogEntry): void => callback(entry)
+      ipcRenderer.on(IPC.managerLogChanged, listener)
+      return () => ipcRenderer.removeListener(IPC.managerLogChanged, listener)
+    }
   }
 }
 

@@ -8,6 +8,7 @@ import type { ServerProfile, BackupEntry, BackupLogEntry } from '@shared/types'
 import { sendRconCommand } from './rcon'
 import { isRunning } from './serverProcess'
 import { delay } from './delay'
+import { logManagerEvent, newTaskId } from './managerLog'
 
 /** Emits 'created' with a profileId whenever a backup finishes - manual or scheduled -
  *  so the renderer can reload its backup list without polling. Also emits 'log' with
@@ -73,9 +74,14 @@ const SAVE_SETTLE_MS = 40_000
  * and the settle wait are both skipped entirely.
  */
 export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_SETTLE_MS): Promise<BackupEntry> {
+  const taskId = newTaskId('backup')
+  const taskLabel = `Backup — ${profile.name}`
+  logManagerEvent(taskId, taskLabel, 'Started')
+
   if (!profile.backupDir.trim()) {
     const message = 'Set a backup directory in the Backups tab first.'
     logBackup(profile.id, message, 'error')
+    logManagerEvent(taskId, taskLabel, `Failed: ${message}`, 'error')
     throw new Error(message)
   }
 
@@ -85,6 +91,7 @@ export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_S
     if (!saveResult.ok) {
       const message = `SaveGame did not confirm, backup cancelled: ${saveResult.error ?? 'no response from RCON'}`
       logBackup(profile.id, message, 'error')
+      logManagerEvent(taskId, taskLabel, `Failed: ${message}`, 'error')
       throw new Error(message)
     }
     logBackup(profile.id, `SaveGame confirmed - waiting ${Math.round(saveSettleMs / 1000)}s for the save to settle...`)
@@ -97,6 +104,7 @@ export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_S
   if (!fs.existsSync(sourceDir)) {
     const message = `SavedArks folder not found: ${sourceDir} - backup cancelled.`
     logBackup(profile.id, message, 'error')
+    logManagerEvent(taskId, taskLabel, `Failed: ${message}`, 'error')
     throw new Error(message)
   }
   const files = fs
@@ -125,12 +133,14 @@ export async function createBackup(profile: ServerProfile, saveSettleMs = SAVE_S
         sizeBytes: archive.pointer()
       }
       logBackup(profile.id, `Backup created: ${fileName} (${(entry.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`)
+      logManagerEvent(taskId, taskLabel, `Completed: ${fileName} (${(entry.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`)
       pruneOldBackups(profile)
       backupEvents.emit('created', profile.id)
       resolve(entry)
     })
     archive.on('error', (err) => {
       logBackup(profile.id, `Backup failed while zipping: ${err.message}`, 'error')
+      logManagerEvent(taskId, taskLabel, `Failed while zipping: ${err.message}`, 'error')
       reject(err)
     })
 

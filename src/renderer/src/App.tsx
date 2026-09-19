@@ -3,12 +3,13 @@ import type { ServerProfile } from '@shared/types'
 import Dashboard from './pages/Dashboard'
 import ClusterDataView from './pages/ClusterDataView'
 import GroupConsoleView from './pages/GroupConsoleView'
+import ManagerLogView from './pages/ManagerLogView'
 import ServerDetail, { type TabKey } from './pages/ServerDetail'
 import SteamCmdView from './pages/SteamCmdView'
 import DataSettingsView from './pages/DataSettingsView'
 import ProfileManagementView from './pages/ProfileManagementView'
 
-type MainPage = 'dashboard' | 'clusterData'
+type MainPage = 'dashboard' | 'clusterData' | 'managerLog'
 
 export default function App(): JSX.Element {
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
@@ -114,10 +115,19 @@ export default function App(): JSX.Element {
         >
           Cluster Dashboard
         </button>
+        <button
+          type="button"
+          className={mainPage === 'managerLog' ? 'active' : ''}
+          onClick={() => setMainPage('managerLog')}
+        >
+          Log
+        </button>
       </nav>
       <div className="app-content">
         {mainPage === 'clusterData' ? (
           <ClusterDataView profiles={profiles} onOpenGroup={handleOpenGroup} />
+        ) : mainPage === 'managerLog' ? (
+          <ManagerLogView />
         ) : (
           <Dashboard
             profiles={profiles}

@@ -3,6 +3,7 @@ import type { BackupScheduleStatus, ServerProfile, ServerRunState, ServerStatus 
 import { createBackup, logBackup } from './backup'
 import { isRunning, serverEvents } from './serverProcess'
 import { getProfile } from '../store'
+import { logManagerEvent, newTaskId } from './managerLog'
 
 interface ArmedBackupSchedule {
   timer: NodeJS.Timeout
@@ -43,6 +44,7 @@ function arm(profile: ServerProfile): void {
         // instead of re-arming - the schedule stays off until the server starts again,
         // same as if the stop had been noticed a moment earlier.
         logBackup(profile.id, 'Scheduled backup skipped - server is not running.')
+        logManagerEvent(newTaskId('backup'), `Backup — ${profile.name}`, 'Skipped - server is not running.')
         armedSchedules.delete(profile.id)
         return
       }

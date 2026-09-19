@@ -22,7 +22,11 @@ vi.mock('../src/main/lib/steamcmd', () => ({
   getUpdateLogPath: vi.fn(() => '/tmp/scheduled-actions-test-update.log')
 }))
 vi.mock('../src/main/lib/rcon', () => ({ sendRconCommand: vi.fn() }))
-vi.mock('../src/main/store', () => ({ getSettings: vi.fn(() => ({ steamCmdPath: '/tmp/steamcmd' })) }))
+vi.mock('../src/main/store', () => ({
+  getSettings: vi.fn(() => ({ steamCmdPath: '/tmp/steamcmd' })),
+  getProfile: vi.fn()
+}))
+vi.mock('../src/main/lib/managerLog', () => ({ logManagerEvent: vi.fn(), newTaskId: vi.fn(() => 'task-id') }))
 vi.mock('node:fs', () => ({ default: { mkdirSync: vi.fn(), appendFileSync: vi.fn() } }))
 
 import { runScheduledRestart } from '../src/main/lib/scheduledActions'

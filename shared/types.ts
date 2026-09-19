@@ -402,7 +402,10 @@ export const IPC = {
   groupConsoleSubscribe: 'group-console:subscribe',
   groupConsoleUnsubscribe: 'group-console:unsubscribe',
   groupConsoleEvent: 'group-console:event',
-  groupConsoleRconSend: 'group-console:rcon-send'
+  groupConsoleRconSend: 'group-console:rcon-send',
+
+  managerLogGet: 'manager-log:get',
+  managerLogChanged: 'manager-log:changed'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -445,6 +448,29 @@ export interface GroupConsoleEvent extends LogEvent {
   date: string
   profileId: string
   profileName: string
+}
+
+/**
+ * One entry in the Manager's own activity log (src/main/lib/managerLog.ts) - what the
+ * Manager itself did (Start/Stop/Kill/Restart, a scheduled restart, a backup), separate
+ * from any one server's own ShooterGame.log or per-server SteamCMD update log. Every entry
+ * belongs to a `taskId`: a single manual action (e.g. a plain Start) is a task with exactly
+ * one entry, while a multi-step task (a scheduled restart's stop/update/start sequence, a
+ * backup's save/zip sequence) reuses the same taskId across several entries so the Manager
+ * Log view can group them under one `taskLabel` header instead of showing each step as an
+ * unrelated line.
+ */
+export interface ManagerLogEntry {
+  id: string
+  /** The entry's date (ARK log style "YYYY.MM.DD") - same reasoning as GroupConsoleEvent's
+   *  own `date` field: `ts` alone (HH:MM:SS) isn't enough to order entries spanning more
+   *  than a day. */
+  date: string
+  ts: string
+  taskId: string
+  taskLabel: string
+  message: string
+  level: 'info' | 'error'
 }
 
 /** Official ARK:SA server status feed, parsed from its "<RichColor>" formatted line. */
@@ -588,5 +614,9 @@ export interface Api {
     /** Sends an RCON command to one server in the group - never rejects, the result's
      *  `ok`/`error` says whether it actually succeeded. */
     sendRcon: (profileId: string, command: string) => Promise<RconResult>
+  }
+  managerLog: {
+    getLog: () => Promise<ManagerLogEntry[]>
+    onLogChanged: (callback: (entry: ManagerLogEntry) => void) => () => void
   }
 }

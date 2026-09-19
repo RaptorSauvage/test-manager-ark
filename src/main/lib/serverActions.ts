@@ -12,23 +12,28 @@ import {
 import { startMonitoring, stopMonitoring } from './monitor'
 import { updateServer } from './steamcmd'
 import { cancelPendingCrashRestart } from './crashWatch'
-import { getSettings } from '../store'
+import { logManagerEvent, newTaskId } from './managerLog'
+import { getSettings, getProfile } from '../store'
 
 /** Orchestration shared by the IPC handlers (desktop app) and the web dashboard's server
  *  controls, so both stay in sync on what "start", "stop", etc. actually involve (starting/
- *  stopping the CPU/RAM monitor alongside the process itself). */
+ *  stopping the CPU/RAM monitor alongside the process itself, and now also recording the
+ *  action in the Manager's own activity log). */
 
 export function doStartServer(profile: ServerProfile): ServerStatus {
   if (isUpdating(profile.id)) throw new Error('Cannot start the server while an update is in progress.')
   const status = startServer(profile)
   startMonitoring(profile)
+  logManagerEvent(newTaskId('start'), `Start — ${profile.name}`, 'Started')
   return status
 }
 
 export async function doStopServer(profile: ServerProfile): Promise<ServerStatus> {
   cancelPendingCrashRestart(profile.id)
   stopMonitoring(profile.id)
-  return stopServer(profile)
+  const status = await stopServer(profile)
+  logManagerEvent(newTaskId('stop'), `Stop — ${profile.name}`, 'Stopped')
+  return status
 }
 
 /** Like doStopServer, but resolves as soon as SaveWorld's outcome is confirmed instead of
@@ -40,7 +45,12 @@ export async function doStopServerConfirmSave(profile: ServerProfile): Promise<{
   cancelPendingCrashRestart(profile.id)
   stopMonitoring(profile.id)
   const { saved, finished } = stopServerPhased(profile)
-  finished.catch((err: Error) => console.error(`Background stop for ${profile.name} failed:`, err.message))
+  finished
+    .then(() => logManagerEvent(newTaskId('stop'), `Stop — ${profile.name}`, 'Stopped'))
+    .catch((err: Error) => {
+      console.error(`Background stop for ${profile.name} failed:`, err.message)
+      logManagerEvent(newTaskId('stop'), `Stop — ${profile.name}`, `Failed: ${err.message}`, 'error')
+    })
   return { saved: await saved }
 }
 
@@ -48,6 +58,7 @@ export async function doRestartServer(profile: ServerProfile): Promise<ServerSta
   cancelPendingCrashRestart(profile.id)
   const status = await restartServer(profile)
   startMonitoring(profile)
+  logManagerEvent(newTaskId('restart'), `Restart — ${profile.name}`, 'Restarted')
   return status
 }
 
@@ -57,15 +68,24 @@ export async function doRestartServerConfirmSave(profile: ServerProfile): Promis
   cancelPendingCrashRestart(profile.id)
   const { saved, finished } = restartServerPhased(profile)
   finished
-    .then(() => startMonitoring(profile))
-    .catch((err: Error) => console.error(`Background restart for ${profile.name} failed:`, err.message))
+    .then(() => {
+      startMonitoring(profile)
+      logManagerEvent(newTaskId('restart'), `Restart — ${profile.name}`, 'Restarted')
+    })
+    .catch((err: Error) => {
+      console.error(`Background restart for ${profile.name} failed:`, err.message)
+      logManagerEvent(newTaskId('restart'), `Restart — ${profile.name}`, `Failed: ${err.message}`, 'error')
+    })
   return { saved: await saved }
 }
 
 export function doKillServer(profileId: string): ServerStatus {
   cancelPendingCrashRestart(profileId)
   stopMonitoring(profileId)
-  return killServer(profileId)
+  const status = killServer(profileId)
+  const name = getProfile(profileId)?.name ?? profileId
+  logManagerEvent(newTaskId('kill'), `Kill — ${name}`, 'Killed')
+  return status
 }
 
 export async function doUpdateServer(profile: ServerProfile): Promise<void> {
