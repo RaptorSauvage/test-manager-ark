@@ -7,6 +7,7 @@ import { getStatus, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches, readLogBacklog } from './logEvents'
 import { getGroupConsoleBacklog, watchGroupConsole } from './groupConsole'
+import { readClusterStatsHistory } from './statsHistory'
 import {
   doStartServer,
   doStopServerConfirmSave,
@@ -211,6 +212,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         players: status.players ?? [],
         cpu: status.cpu ?? null,
         memoryMB: status.memoryMB ?? null,
+        startedAt: status.startedAt ?? null,
         gameVersion: getCachedGameVersion(profile.id)
       }
     })
@@ -318,6 +320,26 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       res.write(`data: ${JSON.stringify(event)}\n\n`)
     })
     req.on('close', () => stopWatchingGroup())
+    return
+  }
+
+  const groupStatsMatch = path.match(/^\/api\/groups\/([^/]+)\/stats$/)
+  if (req.method === 'GET' && groupStatsMatch) {
+    if (!(await requireRole(req, res, 'readonly'))) return
+    const profiles = resolveGroupProfiles(decodeURIComponent(groupStatsMatch[1]))
+    const sinceParam = url.searchParams.get('since')
+    const sinceMs = sinceParam === null || sinceParam === 'null' ? null : Number(sinceParam)
+    const maxPointsParam = url.searchParams.get('maxPoints')
+    const maxPoints = maxPointsParam !== null ? Number(maxPointsParam) : undefined
+    sendJson(
+      res,
+      200,
+      readClusterStatsHistory(
+        profiles.map((p) => p.id),
+        Number.isFinite(sinceMs) ? sinceMs : null,
+        maxPoints
+      )
+    )
     return
   }
 
@@ -950,10 +972,10 @@ const DASHBOARD_HTML = `<!doctype html>
     <div id="cluster-groups">
       <div id="cluster-time-scale" class="cluster-time-scale">
         <span>Time Scale</span>
-        <button type="button" class="time-scale-btn" data-ms="60000">1m</button>
-        <button type="button" class="time-scale-btn" data-ms="300000">5m</button>
-        <button type="button" class="time-scale-btn" data-ms="1800000">30m</button>
-        <button type="button" class="time-scale-btn" data-ms="3600000">1h</button>
+        <button type="button" class="time-scale-btn" data-ms="21600000">6h</button>
+        <button type="button" class="time-scale-btn" data-ms="43200000">12h</button>
+        <button type="button" class="time-scale-btn" data-ms="86400000">24h</button>
+        <button type="button" class="time-scale-btn" data-ms="null">All</button>
       </div>
       <div id="cluster-cards"></div>
     </div>
@@ -1336,56 +1358,34 @@ const DASHBOARD_HTML = `<!doctype html>
   navConsoleBtn.addEventListener('click', function () { selectView('console'); });
   navBackupBtn.addEventListener('click', function () { selectView('backup'); });
 
-  // Renders one summary row per Dashboard group (ungrouped servers get their own
   // ---- Cluster stats chart (desktop only) ----------------------------------------------
-  // Ports the same sampling/SVG-path math the Manager's own Cluster Dashboard chart uses
-  // (sparkline.ts / ServerStatsChart.tsx), so this web dashboard's Cluster Dashboard shows
-  // the same live CPU/RAM/Players history on a wide-enough screen instead of just plain
-  // totals. History is collected regardless of the selected scale (up to 1h, sampled once
-  // per poll - loadServers() already runs every 5s, so no separate timer is needed) and
-  // persisted in this browser's own localStorage per group, same as the desktop version's
-  // own per-browser-tab history (it isn't shared between viewers or with the Manager).
-  var STATS_HISTORY_WINDOW_MS = 60 * 60 * 1000;
-  var STATS_TIME_SCALES = [60000, 300000, 1800000, 3600000];
+  // Same 6h/12h/24h/All time scales and persistent, server-downsampled history as the
+  // desktop Manager's own Cluster Dashboard (src/main/lib/statsHistory.ts) - queried over
+  // HTTP (GET /api/groups/:group/stats) once per poll (loadServers() already runs every
+  // 5s) instead of sampled/accumulated client-side, so every viewer of this page sees the
+  // same history the Manager itself recorded rather than their own separate per-browser
+  // copy, and only servers with stats enabled (Analytics tab) contribute to a group's chart.
+  var STATS_TIME_SCALES = [
+    { label: '6h', ms: 6 * 60 * 60 * 1000 },
+    { label: '12h', ms: 12 * 60 * 60 * 1000 },
+    { label: '24h', ms: 24 * 60 * 60 * 1000 },
+    { label: 'All', ms: null }
+  ];
   var STATS_SCALE_KEY = 'web-dashboard-cluster-stats-scale';
+  var STATS_MAX_POINTS = 500;
   var DESKTOP_CHART_MIN_WIDTH = 701;
-  var statsHistoryByGroup = {};
-
-  function clusterHistoryKey(group) {
-    return 'web-dashboard-cluster-history:' + (group || '(ungrouped)');
-  }
-
-  function selectHistoryWindow(history, windowMs, now) {
-    var cutoff = now - windowMs;
-    return history.filter(function (s) { return s.time >= cutoff; });
-  }
-
-  function loadStoredHistory(group) {
-    try {
-      var raw = localStorage.getItem(clusterHistoryKey(group));
-      if (!raw) return [];
-      var parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-      return selectHistoryWindow(parsed, STATS_HISTORY_WINDOW_MS, Date.now());
-    } catch (err) {
-      return [];
-    }
-  }
-
-  function saveStoredHistory(group, history) {
-    try { localStorage.setItem(clusterHistoryKey(group), JSON.stringify(history)); } catch (err) { /* storage unavailable - not fatal */ }
-  }
-
-  function appendStatSample(history, sample, windowMs) {
-    var cutoff = sample.time - windowMs;
-    return history.filter(function (s) { return s.time >= cutoff; }).concat([sample]);
-  }
 
   function loadStoredScale() {
     var raw = null;
     try { raw = localStorage.getItem(STATS_SCALE_KEY); } catch (err) { /* storage unavailable */ }
-    var parsed = raw !== null ? Number(raw) : NaN;
-    return STATS_TIME_SCALES.indexOf(parsed) >= 0 ? parsed : STATS_TIME_SCALES[1];
+    if (raw === null) return STATS_TIME_SCALES[1].ms;
+    var parsed = raw === 'null' ? null : Number(raw);
+    var known = STATS_TIME_SCALES.some(function (s) { return s.ms === parsed; });
+    return known ? parsed : STATS_TIME_SCALES[1].ms;
+  }
+
+  function saveStoredScale(ms) {
+    try { localStorage.setItem(STATS_SCALE_KEY, ms === null ? 'null' : String(ms)); } catch (err) { /* storage unavailable - not fatal */ }
   }
 
   var statsScale = loadStoredScale();
@@ -1413,7 +1413,7 @@ const DASHBOARD_HTML = `<!doctype html>
   var STATS_CHART_HEIGHT = 30;
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
-  function buildSparkline(label, unit, current, samples, windowMs, now, color, max) {
+  function buildSparkline(label, unit, current, samples, windowMs, now, color, max, maxGapMs) {
     var wrap = document.createElement('div');
     wrap.className = 'stats-chart';
 
@@ -1433,7 +1433,7 @@ const DASHBOARD_HTML = `<!doctype html>
     svg.setAttribute('viewBox', '0 0 ' + STATS_CHART_WIDTH + ' ' + STATS_CHART_HEIGHT);
     svg.setAttribute('preserveAspectRatio', 'none');
     svg.setAttribute('class', 'stats-chart-svg');
-    var pathD = buildTimeSeriesPath(samples, windowMs, now, STATS_CHART_WIDTH, STATS_CHART_HEIGHT, 0, max);
+    var pathD = buildTimeSeriesPath(samples, windowMs, now, STATS_CHART_WIDTH, STATS_CHART_HEIGHT, 0, max, maxGapMs);
     if (pathD) {
       var path = document.createElementNS(SVG_NS, 'path');
       path.setAttribute('d', pathD);
@@ -1481,21 +1481,21 @@ const DASHBOARD_HTML = `<!doctype html>
   }
 
   function buildClusterChart(history, maxPlayers, windowMs, now) {
-    var windowed = selectHistoryWindow(history, windowMs, now);
     var latest = history[history.length - 1];
-    var cpuSamples = windowed.map(function (h) { return { time: h.time, value: h.cpu }; });
-    var memorySamples = windowed.map(function (h) { return { time: h.time, value: h.memoryMB }; });
-    var playerSamples = windowed.map(function (h) { return { time: h.time, value: h.players }; });
+    var cpuSamples = history.map(function (h) { return { time: h.time, value: h.cpu }; });
+    var memorySamples = history.map(function (h) { return { time: h.time, value: h.memoryMB }; });
+    var playerSamples = history.map(function (h) { return { time: h.time, value: h.players }; });
     var cpuMax = Math.max(10, cpuSamples.reduce(function (m, s) { return Math.max(m, s.value); }, 0));
     var memoryMax = Math.max(100, memorySamples.reduce(function (m, s) { return Math.max(m, s.value); }, 0));
+    var maxGapMs = Math.max(MAX_CONTINUOUS_GAP_MS, (windowMs / Math.max(history.length, 1)) * 3);
 
     var container = document.createElement('div');
     container.className = 'cluster-card-chart';
     container.appendChild(
-      buildSparkline('CPU', '%', latest ? latest.cpu : undefined, cpuSamples, windowMs, now, 'var(--accent)', cpuMax)
+      buildSparkline('CPU', '%', latest ? latest.cpu : undefined, cpuSamples, windowMs, now, 'var(--accent)', cpuMax, maxGapMs)
     );
     container.appendChild(
-      buildSparkline('RAM', ' MB', latest ? latest.memoryMB : undefined, memorySamples, windowMs, now, 'var(--ok)', memoryMax)
+      buildSparkline('RAM', ' MB', latest ? latest.memoryMB : undefined, memorySamples, windowMs, now, 'var(--ok)', memoryMax, maxGapMs)
     );
     container.appendChild(
       buildSparkline(
@@ -1506,7 +1506,8 @@ const DASHBOARD_HTML = `<!doctype html>
         windowMs,
         now,
         'var(--warn)',
-        Math.max(maxPlayers, 1)
+        Math.max(maxPlayers, 1),
+        maxGapMs
       )
     );
     return container;
@@ -1514,16 +1515,20 @@ const DASHBOARD_HTML = `<!doctype html>
 
   var clusterTimeScaleEl = document.getElementById('cluster-time-scale');
   var timeScaleButtons = Array.prototype.slice.call(document.querySelectorAll('.time-scale-btn'));
+  function scaleFromButton(btn) {
+    var raw = btn.getAttribute('data-ms');
+    return raw === 'null' ? null : Number(raw);
+  }
   function updateTimeScaleButtons() {
     timeScaleButtons.forEach(function (btn) {
-      btn.classList.toggle('active', Number(btn.getAttribute('data-ms')) === statsScale);
+      btn.classList.toggle('active', scaleFromButton(btn) === statsScale);
     });
   }
   updateTimeScaleButtons();
   timeScaleButtons.forEach(function (btn) {
     btn.addEventListener('click', function () {
-      statsScale = Number(btn.getAttribute('data-ms'));
-      try { localStorage.setItem(STATS_SCALE_KEY, String(statsScale)); } catch (err) { /* storage unavailable - not fatal */ }
+      statsScale = scaleFromButton(btn);
+      saveStoredScale(statsScale);
       updateTimeScaleButtons();
       renderClusterCards(latestServers);
     });
@@ -1533,9 +1538,9 @@ const DASHBOARD_HTML = `<!doctype html>
   // the group's servers are online (offline count in parens), combined players/max,
   // combined CPU%, combined RAM. Tapping a row opens that group's mobile Group Console.
   // Built from the same /api/servers response loadServers() already fetches every poll,
-  // no separate request needed. now and history are only used for the desktop-only stats
-  // chart appended below the plain totals.
-  function buildGroupRow(g, now, history) {
+  // no separate request needed. The desktop-only stats chart is fetched separately and
+  // appended to this row once its own request resolves - see renderClusterCards.
+  function buildGroupRow(g) {
     var card = document.createElement('div');
     card.className = 'cluster-card';
 
@@ -1575,26 +1580,19 @@ const DASHBOARD_HTML = `<!doctype html>
     card.appendChild(header);
     card.appendChild(stats);
 
-    // Desktop-only, same breakpoint as the mobile CSS above - and only once there's
-    // actually a sample to show (a group with nothing running yet has no live chart to
-    // draw, same as the desktop Manager's own runningCount > 0 && history.length > 0 gate).
-    if (window.innerWidth >= DESKTOP_CHART_MIN_WIDTH && g.onlineCount > 0 && history.length > 0) {
-      var chart = buildClusterChart(history, Math.max(g.totalMaxPlayers, 1), statsScale, now);
-      chart.addEventListener('click', function (e) { e.stopPropagation(); });
-      card.appendChild(chart);
-    }
-
     card.addEventListener('click', function () { openGroupConsole(g.groupName); });
     return card;
   }
 
   // Same grouping/ordering as the desktop dashboard: ungrouped servers first, then each
   // named group alphabetically (the already-sorted /api/servers response puts them in
-  // that order already).
+  // that order already). Plain totals render immediately from data loadServers() already
+  // has; the desktop-only stats chart (same persistent store + 6h/12h/24h/All scales as
+  // the Manager) is fetched per group from /api/groups/:group/stats and appended once it
+  // resolves, so a slow/failed fetch never blocks the totals from showing up.
   function renderClusterCards(servers) {
     clusterCardsEl.innerHTML = '';
     if (clusterTimeScaleEl) clusterTimeScaleEl.style.display = servers.length > 0 ? '' : 'none';
-    var now = Date.now();
     var byGroup = {};
     var order = [];
     servers.forEach(function (s) {
@@ -1602,6 +1600,8 @@ const DASHBOARD_HTML = `<!doctype html>
       if (!byGroup[key]) { byGroup[key] = []; order.push(key); }
       byGroup[key].push(s);
     });
+    var rowEls = {};
+    var groups = {};
     order.forEach(function (key) {
       var list = byGroup[key];
       var g = {
@@ -1614,20 +1614,34 @@ const DASHBOARD_HTML = `<!doctype html>
         totalCpu: list.reduce(function (sum, s) { return sum + (s.cpu || 0); }, 0),
         totalMemoryMB: list.reduce(function (sum, s) { return sum + (s.memoryMB || 0); }, 0)
       };
+      groups[key] = g;
+      var row = buildGroupRow(g);
+      rowEls[key] = row;
+      clusterCardsEl.appendChild(row);
+    });
 
+    if (window.innerWidth < DESKTOP_CHART_MIN_WIDTH) return;
+    var now = Date.now();
+    var sinceParam = statsScale === null ? 'null' : String(now - statsScale);
+    order.forEach(function (key) {
+      var g = groups[key];
       // Nothing running in this group right now - same as the desktop Manager's own
-      // Cluster Dashboard, there's nothing live to record, and a flat 0 sample would
+      // Cluster Dashboard, there's nothing live to show, and an empty chart would just
       // misrepresent the group as merely idle instead of fully down.
-      if (g.onlineCount > 0) {
-        var sample = { time: now, cpu: g.totalCpu, memoryMB: g.totalMemoryMB, players: g.totalPlayers };
-        var existing = Object.prototype.hasOwnProperty.call(statsHistoryByGroup, key) ? statsHistoryByGroup[key] : loadStoredHistory(key);
-        var updated = appendStatSample(existing, sample, STATS_HISTORY_WINDOW_MS);
-        statsHistoryByGroup[key] = updated;
-        saveStoredHistory(key, updated);
-      }
-
-      var history = Object.prototype.hasOwnProperty.call(statsHistoryByGroup, key) ? statsHistoryByGroup[key] : loadStoredHistory(key);
-      clusterCardsEl.appendChild(buildGroupRow(g, now, history));
+      if (g.onlineCount === 0) return;
+      var urlToken = key ? encodeURIComponent(key) : UNGROUPED_TOKEN;
+      fetch('/api/groups/' + urlToken + '/stats?since=' + sinceParam + '&maxPoints=' + STATS_MAX_POINTS)
+        .then(function (res) { return res.ok ? res.json() : []; })
+        .then(function (history) {
+          if (!Array.isArray(history) || history.length === 0) return;
+          var row = rowEls[key];
+          if (!row) return;
+          var windowMs = statsScale !== null ? statsScale : Math.max(1, Date.now() - history[0].time);
+          var chart = buildClusterChart(history, Math.max(g.totalMaxPlayers, 1), windowMs, Date.now());
+          chart.addEventListener('click', function (e) { e.stopPropagation(); });
+          row.appendChild(chart);
+        })
+        .catch(function () { /* stats chart is best-effort - totals above already rendered */ });
     });
   }
 
@@ -2237,10 +2251,36 @@ const DASHBOARD_HTML = `<!doctype html>
     consoleEl.scrollTop = consoleEl.scrollHeight;
   }
 
+  // Ticks the uptime line once a second between the 5s /api/servers polls, the same "live"
+  // feel the desktop Manager's own Analytics tab uptime field has - rebuilding the whole
+  // status panel every second just for this would be wasteful, so only this one span is
+  // touched by the interval below.
+  var uptimeValueEl = null;
+  var uptimeStartedAt = null;
+  var uptimeRunning = false;
+
+  function formatUptime(ms) {
+    var totalSeconds = Math.floor(ms / 1000);
+    var seconds = totalSeconds % 60;
+    var totalMinutes = Math.floor(totalSeconds / 60);
+    var minutes = totalMinutes % 60;
+    var totalHours = Math.floor(totalMinutes / 60);
+    var hours = totalHours % 24;
+    var days = Math.floor(totalHours / 24);
+    return days + 'd ' + hours + 'h ' + minutes + 'm ' + seconds + 's';
+  }
+
+  setInterval(function () {
+    if (uptimeValueEl && uptimeRunning && uptimeStartedAt) {
+      uptimeValueEl.textContent = formatUptime(Date.now() - uptimeStartedAt);
+    }
+  }, 1000);
+
   function renderStatus(s) {
     statusEl.innerHTML = '';
     if (!s) {
       startBtn.disabled = true; stopBtn.disabled = true; restartBtn.disabled = true; stopUpdateRestartBtn.disabled = true;
+      uptimeValueEl = null;
       return;
     }
     var lines = document.createElement('div');
@@ -2271,6 +2311,18 @@ const DASHBOARD_HTML = `<!doctype html>
       line.appendChild(document.createTextNode(pair[1]));
       lines.appendChild(line);
     });
+
+    uptimeRunning = s.state === 'running';
+    uptimeStartedAt = s.startedAt || null;
+    var uptimeLine = document.createElement('div');
+    var uptimeStrong = document.createElement('strong');
+    uptimeStrong.textContent = 'Uptime: ';
+    uptimeValueEl = document.createElement('span');
+    uptimeValueEl.textContent = uptimeRunning && uptimeStartedAt ? formatUptime(Date.now() - uptimeStartedAt) : '-';
+    uptimeLine.appendChild(uptimeStrong);
+    uptimeLine.appendChild(uptimeValueEl);
+    lines.appendChild(uptimeLine);
+
     statusEl.appendChild(lines);
     startBtn.disabled = s.state !== 'stopped';
     stopBtn.disabled = s.state !== 'running';

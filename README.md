@@ -505,14 +505,19 @@ dedicated servers running on the same machine.
     701px wide (the same breakpoint the rest of this page's mobile layout switches on), each
     row with at least one server online also gets the same **Server Statistics** chart as
     the desktop Manager's own Cluster Dashboard - CPU/RAM/Players sparklines with a
-    **Time Scale** selector (1m/5m/30m/1h) above the cards and a hover tooltip on each chart
-    - built from the same sampling/SVG-path math (`sparkline.ts`/`ServerStatsChart.tsx`)
-    reimplemented in this page's own vanilla JS, sampled once per poll (every 5s) and kept
-    in this browser's own `localStorage` per group, same as the desktop version's own
-    per-session history - it isn't shared between viewers or synced with the Manager, and a
-    page reload starts from whatever's already in that browser's storage. Narrower than
-    701px, the chart and time-scale selector don't render at all, keeping the mobile layout
-    to the plain numeric totals. Tapping a row (outside the chart, which has its own click
+    **Time Scale** selector (**6h/12h/24h/All**) above the cards and a hover tooltip on each
+    chart, built from the same SVG-path math (`sparkline.ts`/`ServerStatsChart.tsx`)
+    reimplemented in this page's own vanilla JS. Unlike the mobile layout's other data, the
+    chart's history isn't sampled or accumulated in the browser at all - it's fetched from
+    the same persistent, main-process stats store the desktop Manager itself records to
+    (`GET /api/groups/:group/stats`, backed by `src/main/lib/statsHistory.ts`), once per
+    group per poll (every 5s), server-downsampled to at most 500 points regardless of the
+    selected scale. That means every viewer of this page, and the desktop Manager, all see
+    the exact same recorded history - not a separate per-browser copy - and only servers
+    with stats collection enabled (the Analytics tab's toggle) contribute to a group's chart.
+    Only the selected time scale itself is remembered in this browser's `localStorage`.
+    Narrower than 701px, the chart and time-scale selector don't render at all, keeping the
+    mobile layout to the plain numeric totals. Tapping a row (outside the chart, which has its own click
     handler so it doesn't also trigger this) drills into that group's own **mobile Group
     Console**, which mirrors the desktop Manager's Group Console feature-for-feature:
     - A merged, chronological log feed across every server in the group, each line tagged
@@ -612,8 +617,11 @@ dedicated servers running on the same machine.
     as entries in that same feed, in order.
   - A small **Status** box in the right-hand column, above the online players panel -
     state, player count, CPU%, and RAM for the selected server, each on its own line
-    instead of one long line squeezed into the header (that's what it used to be). A
-    **Status ▾** button in the header, next to the **Events ▾** filter toggle, collapses/
+    instead of one long line squeezed into the header (that's what it used to be), followed
+    by **Uptime** - live, ticking every second while the server is running, same "0d 2h 3m
+    4s" format as the desktop Manager's own Analytics tab, computed from the `startedAt`
+    timestamp now included in every `/api/servers` entry; shows "-" when the server isn't
+    running. A **Status ▾** button in the header, next to the **Events ▾** filter toggle, collapses/
     expands that whole right-hand column (both boxes together), for more room for the
     console - handy on a small screen; remembered in `localStorage` like the Events
     collapse toggle.

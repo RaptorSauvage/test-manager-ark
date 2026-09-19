@@ -265,6 +265,7 @@ describe('web dashboard HTTP server', () => {
         players: ['Alice'],
         cpu: 12.3,
         memoryMB: 512,
+        startedAt: null,
         gameVersion: null
       },
       {
@@ -275,6 +276,7 @@ describe('web dashboard HTTP server', () => {
         players: ['Alice'],
         cpu: 12.3,
         memoryMB: 512,
+        startedAt: null,
         gameVersion: '92.28'
       }
     ])
