@@ -47,6 +47,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     zombieDetectionTimeoutMinutes: 10,
     zombieDetectionAutoRestart: false,
     clusterLogArchiveMaxSizeMB: 10,
+    statsEnabled: false,
     ...overrides
   }
 }

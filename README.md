@@ -68,10 +68,13 @@ dedicated servers running on the same machine.
   GameUserSettings.ini involvement). Each header checkbox toggles that column for every
   mod at once. Mod Name is a free-text label you type in yourself, not looked up
   automatically. The app never touches your `.ini` files — edit those yourself.
-  **Export mod list...**/**Import mod list...** save/load the whole table (ids, names,
-  enabled/passive/dev flags, and order) as a JSON file - handy for sharing a modpack setup
-  between servers. Importing replaces the table in the editor, then auto-saves like any
-  other edit here (see below).
+  A **Copy / Paste Mod List** section below the table shares the whole list (ids, names,
+  enabled/passive/dev flags, and order) as plain JSON text - **Copy mod list to clipboard**
+  puts it on the clipboard directly (no save-file dialog), and pasting a previously copied
+  list into the text box below and clicking **Import pasted list** replaces the table in
+  the editor with it, then auto-saves like any other edit here (see below). Handy for
+  sharing a modpack setup between servers without leaving a file on disk to clean up
+  afterward.
 - **Backups tab** — backup directory (with a folder picker that saves immediately on
   picking a folder, no separate Save click needed for that field specifically - typing a
   path by hand still needs "Save backup settings"), max backups to keep, and scheduled
@@ -472,7 +475,12 @@ dedicated servers running on the same machine.
   Documents/ARK Server Manager), the folder `maps.json`, `customMaps.json`, the managed
   SteamCMD install, per-profile update logs, and any future editable/generated files live
   in. Changing it only affects where the app looks going forward - it doesn't move
-  existing files to the new folder for you. This is also where the **web dashboard** is
+  existing files to the new folder for you. A **Stats history size limit (MB)** field
+  (default 1024 / 1GB) caps the combined size of every server's persisted CPU/RAM/player
+  history (`src/main/lib/statsHistory.ts`, see Analytics tab below) - one shared budget
+  across every server with stats collection enabled, not a per-server quota; the oldest
+  samples, from whichever server they belong to, are trimmed first once it's exceeded. This
+  is also where the **web dashboard** is
   enabled - the only place in this app for a live console feed and RCON, on purpose (the
   desktop app itself has no console/RCON tab). It's a plain HTTP server built into the
   Manager (no separate process), serving a page with a sidebar switching between three

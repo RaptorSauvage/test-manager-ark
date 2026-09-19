@@ -37,7 +37,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     launchOnStartup: false,
     webDashboardAuthEnabled: false,
     serverAutoStartStaggerSeconds: 10,
-    iniLockEnabled: true
+    iniLockEnabled: true,
+    statsHistoryMaxSizeMB: 1024
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
   const [status, setStatus] = useState('')
@@ -108,6 +109,21 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
           Where <code>maps.json</code>, <code>customMaps.json</code>, and any future editable config files live.
           Leave blank to use the default ({defaultDataDir || 'Documents/ARK Server Manager'}). Changing this only
           affects where the app looks going forward - it won&apos;t move any existing files for you.
+        </p>
+
+        <label>
+          Stats history size limit (MB)
+          <input
+            type="number"
+            min={1}
+            value={settings.statsHistoryMaxSizeMB}
+            onChange={(e) => setSettings({ ...settings, statsHistoryMaxSizeMB: Number(e.target.value) })}
+          />
+        </label>
+        <p className="empty-state">
+          Global budget (default 1024 MB / 1GB) shared across every server with stats collection enabled (Analytics
+          tab) - not a per-server quota. Once the combined history exceeds this, the oldest samples (from whichever
+          server they belong to) are trimmed first.
         </p>
 
         <label className="checkbox">

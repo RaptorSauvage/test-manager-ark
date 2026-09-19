@@ -1,0 +1,186 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import type { StatSample } from '@shared/types'
+import { getDataDir } from './dataDir'
+import { getSettings } from '../store'
+
+interface StoredStatSample extends StatSample {
+  profileId: string
+}
+
+function getStatsHistoryPath(): string {
+  return path.join(getDataDir(), 'logs', 'stats-history.jsonl')
+}
+
+/**
+ * Appends one sample for `profileId` to the shared, global stats history file, then trims
+ * the oldest lines (from any profile) once the file exceeds the configured global size cap
+ * (AppSettings.statsHistoryMaxSizeMB, default 1024 = 1GB) - a single shared budget across
+ * every server's history rather than a per-server quota, so the oldest data anywhere is
+ * what gets dropped first once the limit is hit, the same rolling-window trim already used
+ * by clusterLogArchive.ts and managerLog.ts.
+ */
+export function recordStatSample(profileId: string, sample: StatSample): void {
+  const logPath = getStatsHistoryPath()
+  fs.mkdirSync(path.dirname(logPath), { recursive: true })
+  const entry: StoredStatSample = { profileId, ...sample }
+  fs.appendFileSync(logPath, JSON.stringify(entry) + '\n')
+
+  const maxBytes = Math.max(1, getSettings().statsHistoryMaxSizeMB) * 1024 * 1024
+  const { size } = fs.statSync(logPath)
+  if (size <= maxBytes) return
+
+  const buffer = Buffer.alloc(maxBytes)
+  const fd = fs.openSync(logPath, 'r')
+  try {
+    fs.readSync(fd, buffer, 0, maxBytes, size - maxBytes)
+  } finally {
+    fs.closeSync(fd)
+  }
+  let text = buffer.toString('utf-8')
+  const firstNewline = text.indexOf('\n')
+  if (firstNewline >= 0) text = text.slice(firstNewline + 1)
+  fs.writeFileSync(logPath, text)
+}
+
+function readAllSamples(): StoredStatSample[] {
+  const logPath = getStatsHistoryPath()
+  if (!fs.existsSync(logPath)) return []
+  const samples: StoredStatSample[] = []
+  for (const line of fs.readFileSync(logPath, 'utf-8').split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const parsed: unknown = JSON.parse(line)
+      if (parsed && typeof parsed === 'object' && 'profileId' in parsed && 'time' in parsed) {
+        samples.push(parsed as StoredStatSample)
+      }
+    } catch {
+      // Skip a corrupt/truncated line rather than losing the whole history to it.
+    }
+  }
+  return samples
+}
+
+interface Bucket {
+  cpuSum: number
+  memSum: number
+  playersSum: number
+  count: number
+  lastTime: number
+}
+
+function bucketizeOne(samples: StatSample[], start: number, bucketWidth: number): Map<number, Bucket> {
+  const buckets = new Map<number, Bucket>()
+  for (const s of samples) {
+    const idx = Math.floor((s.time - start) / bucketWidth)
+    const b = buckets.get(idx)
+    if (b) {
+      b.cpuSum += s.cpu
+      b.memSum += s.memoryMB
+      b.playersSum += s.players
+      b.count += 1
+      b.lastTime = Math.max(b.lastTime, s.time)
+    } else {
+      buckets.set(idx, { cpuSum: s.cpu, memSum: s.memoryMB, playersSum: s.players, count: 1, lastTime: s.time })
+    }
+  }
+  return buckets
+}
+
+function bucketAverage(b: Bucket): StatSample {
+  return {
+    time: b.lastTime,
+    cpu: Math.round((b.cpuSum / b.count) * 10) / 10,
+    memoryMB: Math.round(b.memSum / b.count),
+    players: Math.round(b.playersSum / b.count)
+  }
+}
+
+/** Bucket width so a query spanning any amount of history still returns at most `maxPoints`
+ *  points - a chart doesn't benefit from more points than it has pixels for, and returning
+ *  every raw ~5s sample over weeks of "All" history would be slow to transfer and render for
+ *  no visual benefit. Floored at 1s so a very short/empty window never produces a
+ *  zero-width bucket. The `+ 1` before dividing guards the exact-boundary case - without it,
+ *  a sample landing precisely on `now` would floor into bucket index `maxPoints` itself
+ *  (one past the last valid index), yielding maxPoints + 1 buckets instead of the promised
+ *  maxPoints. */
+function computeBucketWidth(start: number, now: number, maxPoints: number): number {
+  return Math.max(1000, Math.ceil((now - start + 1) / Math.max(1, maxPoints)))
+}
+
+/** Reads one profile's CPU/RAM/player history since `sinceMs` (or since its earliest
+ *  recorded sample, if `sinceMs` is null - the "All" time scale), downsampled to at most
+ *  `maxPoints` points. `now` defaults to the real current time - only ever overridden by
+ *  tests, so bucket width math doesn't depend on wall-clock timing during a test run. */
+export function readStatsHistory(
+  profileId: string,
+  sinceMs: number | null,
+  maxPoints = 500,
+  now = Date.now()
+): StatSample[] {
+  const filtered = readAllSamples()
+    .filter((s) => s.profileId === profileId && (sinceMs === null || s.time >= sinceMs))
+    .map(({ time, cpu, memoryMB, players }) => ({ time, cpu, memoryMB, players }))
+  if (filtered.length === 0) return []
+
+  const start = sinceMs ?? Math.min(...filtered.map((s) => s.time))
+  const bucketWidth = computeBucketWidth(start, now, maxPoints)
+  return Array.from(bucketizeOne(filtered, start, bucketWidth).entries())
+    .sort(([a], [b]) => a - b)
+    .map(([, b]) => bucketAverage(b))
+}
+
+/**
+ * Same as readStatsHistory, but for several profiles at once, summed together per time
+ * bucket - each profile's own samples are bucketed (and averaged within a bucket)
+ * independently first, then the resulting per-profile values are summed per bucket index.
+ * This mirrors the live Cluster Dashboard's own "combined CPU/RAM/players across running
+ * servers" aggregation, just applied to history instead of a single live snapshot.
+ */
+export function readClusterStatsHistory(
+  profileIds: string[],
+  sinceMs: number | null,
+  maxPoints = 500,
+  now = Date.now()
+): StatSample[] {
+  const idSet = new Set(profileIds)
+  const filtered = readAllSamples()
+    .filter((s) => idSet.has(s.profileId) && (sinceMs === null || s.time >= sinceMs))
+    .map((s) => ({ profileId: s.profileId, time: s.time, cpu: s.cpu, memoryMB: s.memoryMB, players: s.players }))
+  if (filtered.length === 0) return []
+
+  const start = sinceMs ?? Math.min(...filtered.map((s) => s.time))
+  const bucketWidth = computeBucketWidth(start, now, maxPoints)
+
+  const perProfile = new Map<string, StatSample[]>()
+  for (const s of filtered) {
+    const arr = perProfile.get(s.profileId) ?? []
+    arr.push({ time: s.time, cpu: s.cpu, memoryMB: s.memoryMB, players: s.players })
+    perProfile.set(s.profileId, arr)
+  }
+
+  const combined = new Map<number, { cpuSum: number; memSum: number; playersSum: number; lastTime: number }>()
+  for (const samples of perProfile.values()) {
+    for (const [idx, b] of bucketizeOne(samples, start, bucketWidth)) {
+      const avg = bucketAverage(b)
+      const existing = combined.get(idx)
+      if (existing) {
+        existing.cpuSum += avg.cpu
+        existing.memSum += avg.memoryMB
+        existing.playersSum += avg.players
+        existing.lastTime = Math.max(existing.lastTime, avg.time)
+      } else {
+        combined.set(idx, { cpuSum: avg.cpu, memSum: avg.memoryMB, playersSum: avg.players, lastTime: avg.time })
+      }
+    }
+  }
+
+  return Array.from(combined.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([, c]) => ({
+      time: c.lastTime,
+      cpu: Math.round(c.cpuSum * 10) / 10,
+      memoryMB: Math.round(c.memSum),
+      players: Math.round(c.playersSum)
+    }))
+}

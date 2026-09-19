@@ -1235,6 +1235,28 @@ label.checkbox {
   gap: 14px;
 }
 
+.mods-copy-paste {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mods-copy-paste h3 {
+  margin: 0;
+}
+
+.mods-paste-area {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.8rem;
+}
+
 .server-management-tab {
   display: flex;
   flex-direction: column;

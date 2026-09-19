@@ -32,9 +32,7 @@ const api: Api = {
     selectDirectory: () => ipcRenderer.invoke(IPC.dialogSelectDirectory),
     selectFile: () => ipcRenderer.invoke(IPC.dialogSelectFile),
     saveProfileFile: (defaultName: string) => ipcRenderer.invoke(IPC.dialogSaveProfileFile, defaultName),
-    selectProfileFile: () => ipcRenderer.invoke(IPC.dialogSelectProfileFile),
-    saveModsFile: (defaultName: string) => ipcRenderer.invoke(IPC.dialogSaveModsFile, defaultName),
-    selectModsFile: () => ipcRenderer.invoke(IPC.dialogSelectModsFile)
+    selectProfileFile: () => ipcRenderer.invoke(IPC.dialogSelectProfileFile)
   },
   server: {
     start: (profileId: string) => ipcRenderer.invoke(IPC.serverStart, profileId),
@@ -54,8 +52,7 @@ const api: Api = {
   },
   mods: {
     save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods),
-    exportToFile: (filePath: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsExport, filePath, mods),
-    importFromFile: (filePath: string) => ipcRenderer.invoke(IPC.modsImportFromFile, filePath)
+    parseText: (text: string) => ipcRenderer.invoke(IPC.modsParseText, text)
   },
   backup: {
     create: (profileId: string) => ipcRenderer.invoke(IPC.backupCreate, profileId),
@@ -172,6 +169,12 @@ const api: Api = {
       ipcRenderer.on(IPC.managerLogChanged, listener)
       return () => ipcRenderer.removeListener(IPC.managerLogChanged, listener)
     }
+  },
+  statsHistory: {
+    get: (profileId: string, sinceMs: number | null, maxPoints?: number) =>
+      ipcRenderer.invoke(IPC.statsHistoryGet, profileId, sinceMs, maxPoints),
+    getForGroup: (profileIds: string[], sinceMs: number | null, maxPoints?: number) =>
+      ipcRenderer.invoke(IPC.statsHistoryGetForGroup, profileIds, sinceMs, maxPoints)
   }
 }
 

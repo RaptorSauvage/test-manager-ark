@@ -3,6 +3,7 @@ import type { ServerProfile } from '@shared/types'
 import { getStatus, emitStatus, markProcessExited, isPidTracked, confirmAliveViaRcon, handleUnexpectedExit } from './serverProcess'
 import { listPlayers } from './rcon'
 import { getProcessStats } from './processStats'
+import { recordStatSample } from './statsHistory'
 
 const timers = new Map<string, NodeJS.Timeout>()
 
@@ -86,14 +87,19 @@ async function tick(profile: ServerProfile): Promise<void> {
   if (current.state !== 'running') return
 
   const memoryMB = Math.round(stats.memory / 1024 / 1024)
+  const cpu = Math.round(stats.cpu * 10) / 10
   emitStatus({
     ...current,
-    cpu: Math.round(stats.cpu * 10) / 10,
+    cpu,
     memoryMB,
     memoryPercent: Math.round((stats.memory / os.totalmem()) * 1000) / 10,
     players,
     statsError: undefined
   })
+
+  if (profile.statsEnabled) {
+    recordStatSample(profile.id, { time: Date.now(), cpu, memoryMB, players: players.length })
+  }
 }
 
 export function stopMonitoring(profileId: string): void {

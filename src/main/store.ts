@@ -32,7 +32,8 @@ const store = new Store<StoreSchema>({
       launchOnStartup: false,
       webDashboardAuthEnabled: false,
       serverAutoStartStaggerSeconds: 10,
-      iniLockEnabled: true
+      iniLockEnabled: true,
+      statsHistoryMaxSizeMB: 1024
     },
     runningPids: {},
     runningStartedAt: {},
@@ -93,6 +94,7 @@ export function getSettings(): AppSettings {
     webDashboardAuthEnabled: false,
     serverAutoStartStaggerSeconds: 10,
     iniLockEnabled: true,
+    statsHistoryMaxSizeMB: 1024,
     ...settings
   }
 }

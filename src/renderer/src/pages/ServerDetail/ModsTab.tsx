@@ -11,6 +11,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   const [newModId, setNewModId] = useState('')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+  const [pasteText, setPasteText] = useState('')
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>()
   const mounted = useRef(false)
 
@@ -85,26 +86,23 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mods])
 
-  async function exportMods(): Promise<void> {
+  async function copyMods(): Promise<void> {
     setError('')
     try {
-      const filePath = await window.api.dialog.saveModsFile(`${profile.name}-mods`)
-      if (!filePath) return
-      await window.api.mods.exportToFile(filePath, mods)
-      setStatus('Exported')
+      await navigator.clipboard.writeText(JSON.stringify(mods, null, 2))
+      setStatus('Mod list copied to clipboard.')
       setTimeout(() => setStatus(''), 2000)
     } catch (err) {
       setError((err as Error).message)
     }
   }
 
-  async function importMods(): Promise<void> {
+  async function importPastedMods(): Promise<void> {
     setError('')
     try {
-      const filePath = await window.api.dialog.selectModsFile()
-      if (!filePath) return
-      const imported = await window.api.mods.importFromFile(filePath)
+      const imported = await window.api.mods.parseText(pasteText)
       setMods(imported)
+      setPasteText('')
       setStatus('Mod list imported.')
       setTimeout(() => setStatus(''), 3000)
     } catch (err) {
@@ -232,14 +230,33 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
       <p className="empty-state">Changes save automatically a moment after you make them - no need to click Save.</p>
       <div className="form-actions">
         <button onClick={() => void save()}>Save now</button>
-        <button type="button" onClick={() => void exportMods()}>
-          Export mod list...
-        </button>
-        <button type="button" onClick={() => void importMods()}>
-          Import mod list...
-        </button>
         {status && <span className="status-message">{status}</span>}
       </div>
+
+      <section className="mods-copy-paste">
+        <h3>Copy / Paste Mod List</h3>
+        <p className="empty-state">
+          Copy this server&apos;s current mod list as text to share it or keep as a backup, or paste a previously
+          copied list below to replace the mod list above with it.
+        </p>
+        <div className="form-actions">
+          <button type="button" onClick={() => void copyMods()}>
+            Copy mod list to clipboard
+          </button>
+        </div>
+        <textarea
+          className="mods-paste-area"
+          value={pasteText}
+          onChange={(e) => setPasteText(e.target.value)}
+          placeholder="Paste a copied mod list here..."
+          spellCheck={false}
+        />
+        <div className="form-actions">
+          <button type="button" onClick={() => void importPastedMods()} disabled={!pasteText.trim()}>
+            Import pasted list
+          </button>
+        </div>
+      </section>
     </div>
   )
 }

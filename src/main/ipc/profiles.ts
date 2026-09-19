@@ -108,7 +108,8 @@ export function registerProfileHandlers(): void {
       zombieDetectionEnabled: false,
       zombieDetectionTimeoutMinutes: 10,
       zombieDetectionAutoRestart: false,
-      clusterLogArchiveMaxSizeMB: 10
+      clusterLogArchiveMaxSizeMB: 10,
+      statsEnabled: false
     }
 
     const profiles = saveProfile(profile)

@@ -18,6 +18,7 @@ import { registerAppUpdateHandlers } from './appUpdate'
 import { registerMapManagementHandlers } from './mapManagement'
 import { registerGroupConsoleHandlers } from './groupConsole'
 import { registerManagerLogHandlers } from './managerLog'
+import { registerStatsHistoryHandlers } from './statsHistory'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers()
@@ -39,4 +40,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerMapManagementHandlers()
   registerGroupConsoleHandlers(mainWindow.webContents)
   registerManagerLogHandlers(mainWindow.webContents)
+  registerStatsHistoryHandlers()
 }

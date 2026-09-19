@@ -124,6 +124,12 @@ export interface ServerProfile {
    *  directly in the main grid. Any other value collects every profile sharing it into
    *  its own collapsible section on the dashboard, named after the group. */
   group: string
+  /** When true, this server's CPU/RAM/player count are sampled continuously in the main
+   *  process (src/main/lib/statsHistory.ts) and persisted to disk, independent of whether
+   *  any Analytics tab or Cluster Dashboard is currently open to see them live. Shares one
+   *  global size budget (AppSettings.statsHistoryMaxSizeMB) across every profile that has
+   *  this on. Default off - a server's owner opts in per profile. */
+  statsEnabled: boolean
 }
 
 export interface MapDefinition {
@@ -182,6 +188,11 @@ export interface AppSettings {
    *  server's config by accident. Turning this off unlocks every profile's config files
    *  right away, including ones currently running. */
   iniLockEnabled: boolean
+  /** Global cap (MB) on the combined size of every profile's persisted CPU/RAM/player
+   *  history (src/main/lib/statsHistory.ts), shared across every profile with
+   *  ServerProfile.statsEnabled on - not a per-server quota. Once exceeded, the oldest
+   *  samples (from whichever profile they belong to) are trimmed first. Default 1024 (1GB). */
+  statsHistoryMaxSizeMB: number
 }
 
 export type WebDashboardRole = 'admin' | 'operator' | 'readonly'
@@ -322,8 +333,6 @@ export const IPC = {
   dialogSelectFile: 'dialog:select-file',
   dialogSaveProfileFile: 'dialog:save-profile-file',
   dialogSelectProfileFile: 'dialog:select-profile-file',
-  dialogSaveModsFile: 'dialog:save-mods-file',
-  dialogSelectModsFile: 'dialog:select-mods-file',
 
   serverStart: 'server:start',
   serverStop: 'server:stop',
@@ -337,8 +346,7 @@ export const IPC = {
   serverGetGameVersion: 'server:get-game-version',
 
   modsSave: 'mods:save',
-  modsExport: 'mods:export',
-  modsImportFromFile: 'mods:import-from-file',
+  modsParseText: 'mods:parse-text',
 
   backupCreate: 'backup:create',
   backupList: 'backup:list',
@@ -405,7 +413,10 @@ export const IPC = {
   groupConsoleRconSend: 'group-console:rcon-send',
 
   managerLogGet: 'manager-log:get',
-  managerLogChanged: 'manager-log:changed'
+  managerLogChanged: 'manager-log:changed',
+
+  statsHistoryGet: 'stats-history:get',
+  statsHistoryGetForGroup: 'stats-history:get-for-group'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -473,6 +484,20 @@ export interface ManagerLogEntry {
   level: 'info' | 'error'
 }
 
+/**
+ * One point of a server's (or a cluster group's summed) CPU/RAM/player history, as returned
+ * by src/main/lib/statsHistory.ts. `time` is the point's own timestamp - for a query
+ * spanning more history than the requested point budget, this is already downsampled
+ * (bucketed and averaged/summed server-side), so the array is never larger than the
+ * `maxPoints` the caller asked for regardless of how much raw history it's built from.
+ */
+export interface StatSample {
+  time: number
+  cpu: number
+  memoryMB: number
+  players: number
+}
+
 /** Official ARK:SA server status feed, parsed from its "<RichColor>" formatted line. */
 export interface OfficialServerStatus {
   /** e.g. "ARK Official Server Network Status" */
@@ -503,8 +528,6 @@ export interface Api {
     selectFile: () => Promise<string | null>
     saveProfileFile: (defaultName: string) => Promise<string | null>
     selectProfileFile: () => Promise<string | null>
-    saveModsFile: (defaultName: string) => Promise<string | null>
-    selectModsFile: () => Promise<string | null>
   }
   server: {
     start: (profileId: string) => Promise<ServerStatus>
@@ -523,8 +546,11 @@ export interface Api {
   }
   mods: {
     save: (profileId: string, mods: ServerMod[]) => Promise<ServerProfile>
-    exportToFile: (filePath: string, mods: ServerMod[]) => Promise<void>
-    importFromFile: (filePath: string) => Promise<ServerMod[]>
+    /** Parses/validates a pasted mod list (the same JSON shape `JSON.stringify(mods, null,
+     *  2)` produces) - shares the exact validation `mods:import-from-file` used to have, just
+     *  reached from pasted text instead of a file. Throws with a readable message on
+     *  malformed input rather than silently dropping bad entries. */
+    parseText: (text: string) => Promise<ServerMod[]>
   }
   backup: {
     create: (profileId: string) => Promise<BackupEntry>
@@ -618,5 +644,10 @@ export interface Api {
   managerLog: {
     getLog: () => Promise<ManagerLogEntry[]>
     onLogChanged: (callback: (entry: ManagerLogEntry) => void) => () => void
+  }
+  statsHistory: {
+    /** `sinceMs: null` means "since the earliest recorded sample" (the "All" time scale). */
+    get: (profileId: string, sinceMs: number | null, maxPoints?: number) => Promise<StatSample[]>
+    getForGroup: (profileIds: string[], sinceMs: number | null, maxPoints?: number) => Promise<StatSample[]>
   }
 }
