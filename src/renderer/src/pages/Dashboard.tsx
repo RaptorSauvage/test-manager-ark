@@ -271,14 +271,7 @@ export default function Dashboard({
             Restart
           </button>
           <button
-            className="kill"
-            disabled={state === 'stopped' || state === 'updating'}
-            onClick={() => void handleKill(profile)}
-            title="Force-kill immediately, without saving"
-          >
-            Kill
-          </button>
-          <button
+            className="update"
             disabled={state !== 'stopped'}
             onClick={() => void handleUpdate(profile)}
             title={
@@ -294,6 +287,14 @@ export default function Dashboard({
               : state === 'updating'
                 ? 'Updating...'
                 : 'Update'}
+          </button>
+          <button
+            className="kill"
+            disabled={state === 'stopped' || state === 'updating'}
+            onClick={() => void handleKill(profile)}
+            title="Force-kill immediately, without saving"
+          >
+            Kill
           </button>
           <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
           <button

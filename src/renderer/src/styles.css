@@ -78,6 +78,11 @@ button.danger:hover:not(:disabled) {
   border-color: var(--danger-dark);
 }
 
+.server-card-actions button.update {
+  color: var(--status-updating);
+  border-color: var(--status-updating);
+}
+
 button.active {
   color: var(--ok);
   border-color: var(--ok);

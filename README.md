@@ -12,10 +12,12 @@ dedicated servers running on the same machine.
   file is done being flushed - sending `DoExit` too soon risks the server exiting
   mid-write and corrupting the save it just claimed to have finished) before finally
   sending `DoExit`; Kill force-terminates the process immediately with no save, for when a
-  server is stuck. Each server's card colors these four buttons the same way the web
-  dashboard does - Start green, Stop red, Restart orange - plus Kill in its own darker red
+  server is stuck. Each server's card colors these buttons the same way the web dashboard
+  does - Start green, Stop red, Restart orange, Update light blue (`--status-updating`,
+  the same color the Updating status badge already uses) - plus Kill in its own darker red
   (`--danger-dark`), distinct from Stop's red so the more destructive action doesn't blend
-  in with the merely disruptive one. The status badge tracks the OS process
+  in with the merely disruptive one; Update sits right before Kill in the button row. The
+  status badge tracks the OS process
   (`starting`), the server actually finishing loading - detected by polling its own log
   file (`ShooterGame/Saved/Logs/ShooterGame.log`) for the
   `Server has completed startup and is now advertising for join` line, since ARK's
