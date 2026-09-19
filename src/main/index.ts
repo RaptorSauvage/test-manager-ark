@@ -5,7 +5,7 @@
 // for as long as the backup's zipping takes.
 process.env.UV_THREADPOOL_SIZE = '8'
 
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
 import { listProfiles, getRunningPids, getRunningStartedAt, getSettings, getProfile } from './store'
@@ -36,6 +36,10 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled promise rejection in main process:', reason)
 })
+
+// No File/Edit/View/Window/Help needed for this app - it's not a document editor, and this
+// bar was never intentionally set up, just Electron's unremoved default.
+Menu.setApplicationMenu(null)
 
 const iconPath = app.isPackaged
   ? join(process.resourcesPath, 'icon.png')

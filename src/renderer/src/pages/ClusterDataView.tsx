@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ServerProfile, StatSample } from '@shared/types'
 import { useServerStatuses } from '../lib/useServerStatuses'
 import { computeClusterGroupStats, type ClusterGroupStats } from '../lib/clusterStats'
-import { STATS_TIME_SCALES, loadStoredScale, saveStoredScale } from '../lib/sparkline'
+import { STATS_TIME_SCALES, STATS_DEFAULT_SCALE_MS, loadStoredScale, saveStoredScale } from '../lib/sparkline'
 import ServerStatsChart from './ServerDetail/ServerStatsChart'
 
 interface ClusterDataViewProps {
@@ -32,7 +32,7 @@ export default function ClusterDataView({ profiles, onOpenGroup }: ClusterDataVi
   const statuses = useServerStatuses(visibleIds)
   const groupStats = computeClusterGroupStats(profiles, statuses)
   const [now, setNow] = useState(() => Date.now())
-  const [statsScale, setStatsScale] = useState(() => loadStoredScale(STATS_SCALE_KEY, STATS_TIME_SCALES[1].ms))
+  const [statsScale, setStatsScale] = useState(() => loadStoredScale(STATS_SCALE_KEY, STATS_DEFAULT_SCALE_MS))
   const [historyByGroup, setHistoryByGroup] = useState<Record<string, StatSample[]>>({})
   const profilesRef = useRef(profiles)
   profilesRef.current = profiles
@@ -53,9 +53,10 @@ export default function ClusterDataView({ profiles, onOpenGroup }: ClusterDataVi
         ids.push(p.id)
         byGroup.set(key, ids)
       }
+      const sinceMs = statsScale === null ? null : Date.now() - statsScale
       const entries = await Promise.all(
         Array.from(byGroup.entries()).map(async ([group, ids]) => {
-          const history = await window.api.statsHistory.getForGroup(ids, statsScale, STATS_MAX_POINTS)
+          const history = await window.api.statsHistory.getForGroup(ids, sinceMs, STATS_MAX_POINTS)
           return [group, history] as const
         })
       )

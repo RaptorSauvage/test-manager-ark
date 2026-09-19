@@ -180,7 +180,15 @@ dedicated servers running on the same machine.
   regardless of its group). Each card also shows a **Version** field (the same Game
   Version as the Analytics tab, e.g. "92.28") - reads whatever's already known when the
   dashboard loads and shows "-" if nothing's been detected yet for that server (it doesn't
-  actively poll/"Detect" here the way the Analytics tab does).
+  actively poll/"Detect" here the way the Analytics tab does). The Map/Port/Version/
+  Players/CPU/RAM fields sit in their own slightly darker inset panel within the card
+  (rather than blending into the card's own background), and the card is wide enough
+  (440px max, up from 340px) that Start/Stop/Restart/Update/Kill all fit on one row
+  instead of Update wrapping onto its own line - Manage/Hide/Delete sit on a second row
+  below.
+- **No native File/Edit/View/Window/Help menu bar** — this app never intentionally set one
+  up; `Menu.setApplicationMenu(null)` (`src/main/index.ts`) removes Electron's unused
+  default instead of leaving it to show up unasked for.
 - **Sidebar / Cluster Dashboard page** — a left sidebar (`src/renderer/src/App.tsx`) with
   three entries, **Dashboard** (the page described above), **Cluster Dashboard**, and **Log**
   (see "Manager Log" below), shown whenever you're not inside a server's own tabs or one of
@@ -201,7 +209,7 @@ dedicated servers running on the same machine.
   dashboard's own Cluster Dashboard chart uses - rather than the group's own separate
   client-side sampling; only servers with stats enabled (Analytics tab) contribute to a
   group's chart, and a group with none of its servers opted in simply shows no chart. A
-  single **Time Scale** selector at the top of the page (**6h / 12h / 24h / All**, same
+  single **Time Scale** selector at the top of the page (**1m/5m/15m/1h/6h/12h/24h/All**, same
   options and same main-process downsampling as the per-server chart) applies to every
   group's chart at once and re-queries every group when changed. A group with no history
   in the selected window (nothing enabled, or a fully-stopped group with nothing recorded
@@ -221,7 +229,9 @@ dedicated servers running on the same machine.
   started"/"&lt;name&gt; stopped" text, though the label still exists under the hood for the
   Show filter checkboxes above. Its filter checkboxes are independent of the web dashboard's own
   persisted per-label setting (toggling one here doesn't affect the other) and, unlike that
-  setting, persist across sessions on their own. Events are merged by their actual log date
+  setting, persist across sessions on their own. An **Auto-scroll** checkbox sits alongside
+  the Show filters (unchecked by default) - only when checked does a new event jump the feed
+  to the bottom; otherwise it appends silently wherever you've scrolled to. Events are merged by their actual log date
   plus time, not time-of-day alone - a single server's backlog can itself span more than a
   day, so HH:MM:SS by itself isn't enough to correctly order events from multiple servers'
   backlogs together. Only servers that are actually running get their new events tailed
@@ -364,7 +374,7 @@ dedicated servers running on the same machine.
     profiles, and restarting the Manager, and every server sharing this toggle draws from
     one combined disk budget (**Stats history size limit (MB)** in the app-wide Settings
     view, default 1024/1GB - see below) rather than each keeping its own separate quota.
-    A **Time Scale** selector (**6h / 12h / 24h / All**) picks how far back to query -
+    A **Time Scale** selector (**1m/5m/15m/1h/6h/12h/24h/All**) picks how far back to query -
     "All" means every sample ever recorded for this server, no lower bound. Whichever scale
     is picked, the Analytics tab asks the main process for at most 500 points spanning that
     window; a query covering more raw samples than that gets bucketed and averaged down to
@@ -505,7 +515,7 @@ dedicated servers running on the same machine.
     701px wide (the same breakpoint the rest of this page's mobile layout switches on), each
     row with at least one server online also gets the same **Server Statistics** chart as
     the desktop Manager's own Cluster Dashboard - CPU/RAM/Players sparklines with a
-    **Time Scale** selector (**6h/12h/24h/All**) above the cards and a hover tooltip on each
+    **Time Scale** selector (**1m/5m/15m/1h/6h/12h/24h/All**) above the cards and a hover tooltip on each
     chart, built from the same SVG-path math (`sparkline.ts`/`ServerStatsChart.tsx`)
     reimplemented in this page's own vanilla JS. Unlike the mobile layout's other data, the
     chart's history isn't sampled or accumulated in the browser at all - it's fetched from
@@ -543,7 +553,9 @@ dedicated servers running on the same machine.
       exists for the filter checkboxes. A **Show ▾** button next to the group name
       collapses/expands the whole checkbox row - same collapse-to-`localStorage` pattern as
       the single-server Dashboard view's own **Events ▾** toggle, independent key so
-      collapsing one doesn't affect the other.
+      collapsing one doesn't affect the other. That same row ends with an **Auto-scroll**
+      checkbox (unchecked by default, persisted the same way) - only when checked does a new
+      merged event jump the feed to the bottom.
     - Whenever any server's status transitions to running or stopped - not just a member of
       the currently-open group, and not for the in-between
       starting/stopping/updating/restarting states - a toast pops (green "started" / red
@@ -603,7 +615,9 @@ dedicated servers running on the same machine.
     considers that server running. A "Show:" row of checkboxes lets you hide individual
     categories from the feed; this is server-side and persisted, applied to the backlog
     and the live stream alike, so a disabled category is simply never sent to the
-    browser. An **Events** button next to that row collapses/expands the whole checkbox
+    browser. That row also ends with an **Auto-scroll** checkbox (client-side only,
+    unchecked by default) - only when checked does a new event jump the feed to the
+    bottom. An **Events** button next to that row collapses/expands the whole checkbox
     row (handy on a small screen); the collapsed/expanded state is remembered in
     `localStorage`. Whenever the Manager (re)starts that server - Start, Restart, or the
     restart step of Stop+Update+Restart, from this page, the desktop app, or a bot calling
@@ -756,7 +770,14 @@ dedicated servers running on the same machine.
   Sound (`-nosound`). This section also shows an always-on, non-interactive "RCON Enabled"
   indicator - RCON can't actually be turned off since the Manager depends on it for
   Stop/Restart and the web dashboard.
-- **Server Management tab** — an **Anti-Crash Watchdog** checkbox, independent per profile:
+- **Server Management tab** — **Manager Startup**, **Anti-Crash Watchdog**, **Zombie
+  Detection**, and **Cluster Console Log Archive** share one **Startup & Watchdog** card
+  (in that order, each its own labeled subsection with a one-line description rather than
+  a full paragraph), and the schedule renamed to **Advanced Schedule: Restart** (previously
+  "Advanced Schedule: Server Shutdown, Update, and Startup") gets its own card placed right
+  after that Watchdog group, ahead of **Advanced Schedule: Dino Wipe**. None of the
+  underlying behavior changed - just how it's grouped and worded on the page. An
+  **Anti-Crash Watchdog** checkbox, independent per profile:
   when enabled, if this server is found to have gone from `running` (i.e. fully Started, not
   merely `starting`) straight to `stopped` with no deliberate action in between, it's
   restarted automatically 15 seconds after detection. A crash during startup itself (never
@@ -868,7 +889,12 @@ backup's Started/Completed sequence) shares one `taskId` under the hood so the p
 them under one header showing the task's name (e.g. "Scheduled Restart — ServerName") with
 each step listed underneath, rather than as unrelated lines. Refreshes live while the page
 is open - the main process pushes each new entry as it's recorded, the same push pattern as
-the Backups tab's own process log.
+the Backups tab's own process log. Entries are set in a smaller, tighter font (rather than
+the app's normal text size) so more of them fit on screen at once, especially on a large
+monitor. An **Auto-scroll** checkbox next to the page title (unchecked by default) is the
+only thing that scrolls the feed to the newest entry as new ones arrive - left off, new
+entries still append live but the page stays exactly where you scrolled it, so reading
+through older activity isn't constantly interrupted by a jump to the bottom.
 
 ## Prerequisites
 
@@ -948,9 +974,11 @@ tab:
   to fewer (down to one) on a narrower window.
 - Settings groups **Name**, **Install directory**, **Game/RCON ports**, **Server
   Platform**, **Max Players**, **Map**, and **Mod Map** together into one **Server**
-  section (same visual treatment as the **Cluster**/**Extra Settings** sections below it),
-  with **Map** and **Mod Map** nested together in their own boxed subgroup within it, since
-  a custom map's Workshop mod id only matters alongside the Map it's paired with.
+  section, followed by **Extra Settings** (which also holds **Extra launch arguments** at
+  its end, rather than as its own standalone field below every section) and then
+  **Cluster** last - all three sections share the same card treatment, with **Map** and
+  **Mod Map** nested together in their own boxed subgroup within the **Server** section,
+  since a custom map's Workshop mod id only matters alongside the Map it's paired with.
   **Install directory** is the folder containing `ShooterGame/Binaries/...` for that
   server instance - **Browse...** opens a folder picker; pasting a path works too, and a
   surrounding pair of quotes (e.g. from Windows Explorer's "Copy as path") is stripped
@@ -1016,7 +1044,7 @@ with enough role to match the table in the Settings section above:
 | --- | --- | --- | --- | --- |
 | POST | `/api/login` | `{ "username": "...", "password": "..." }` | `{ ok, role? , error? }` | Only meaningful with **Require login** on; sets the session cookie on success. 401 on bad credentials, 429 if this address has failed too many times recently |
 | POST | `/api/logout` | — | `{ ok: true }` | Clears the session cookie |
-| GET | `/api/servers` | — | `[{ id, name, group, maxPlayers, state, players, cpu, memoryMB, gameVersion }]` | `id` is what every other endpoint below expects; `group` is the Manager's dashboard group name (empty string when ungrouped) |
+| GET | `/api/servers` | — | `[{ id, name, group, maxPlayers, state, players, cpu, memoryMB, startedAt, gameVersion }]` | `id` is what every other endpoint below expects; `group` is the Manager's dashboard group name (empty string when ungrouped); `startedAt` (epoch ms, or `null`) feeds the Status panel's live Uptime field |
 | GET | `/api/groups/:group/events` | — | Same shape as `/api/servers/:id/events` below, plus `profileId`/`profileName` on each event | Merged, date+time-sorted backlog across every server in the group. `:group` is the group name, or the literal `_ungrouped_` for the ungrouped bucket |
 | GET | `/api/groups/:group/events/stream` | — | `text/event-stream`, one `data:` line per merged event (same shape as the backlog above) | Only tails servers in the group that are actually running, starting/stopping individual tailers live as they start/stop while the connection is open |
 | POST | `/api/servers/:id/start` | — | `{ ok, error? }` | 400 with `error` if it can't start right now (e.g. an update is running) |

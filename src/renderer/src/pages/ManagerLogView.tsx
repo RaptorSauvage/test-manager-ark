@@ -35,6 +35,7 @@ function groupByTask(entries: ManagerLogEntry[]): TaskGroup[] {
  */
 export default function ManagerLogView(): JSX.Element {
   const [entries, setEntries] = useState<ManagerLogEntry[]>([])
+  const [autoScroll, setAutoScroll] = useState(false)
   const feedRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -54,9 +55,10 @@ export default function ManagerLogView(): JSX.Element {
   }, [])
 
   useEffect(() => {
+    if (!autoScroll) return
     const el = feedRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [entries])
+  }, [entries, autoScroll])
 
   const groups = groupByTask(entries)
 
@@ -64,6 +66,10 @@ export default function ManagerLogView(): JSX.Element {
     <div className="manager-log-page dashboard">
       <header className="dashboard-header">
         <h1>Manager Log</h1>
+        <label className="checkbox">
+          <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
+          Auto-scroll
+        </label>
       </header>
       <p className="empty-state">
         Everything the Manager itself has done - Start/Stop/Kill/Restart, scheduled restarts, and backups - separate

@@ -256,7 +256,7 @@ export default function Dashboard({
         </dl>
         {status?.lastError && <p className="error-message">{status.lastError}</p>}
         {actionErrors[profile.id] && <p className="error-message">{actionErrors[profile.id]}</p>}
-        <div className="server-card-actions">
+        <div className="server-card-actions-primary">
           <button className="start" disabled={state !== 'stopped'} onClick={() => void handleAction(profile, 'start')}>
             Start
           </button>
@@ -296,6 +296,8 @@ export default function Dashboard({
           >
             Kill
           </button>
+        </div>
+        <div className="server-card-actions-secondary">
           <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
           <button
             onClick={() => void handleToggleHidden(profile)}

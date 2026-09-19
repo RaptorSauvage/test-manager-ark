@@ -58,27 +58,27 @@ button.danger:hover:not(:disabled) {
    own per-server action buttons, rather than only on hover like the generic .danger class
    above (still used as-is for unrelated destructive actions like Delete). Kill gets its own
    darker red (--danger-dark) so it reads as distinct from - and more severe than - Stop. */
-.server-card-actions button.start {
+.server-card-actions-primary button.start {
   color: var(--ok);
   border-color: var(--ok);
 }
 
-.server-card-actions button.stop {
+.server-card-actions-primary button.stop {
   color: var(--danger);
   border-color: var(--danger);
 }
 
-.server-card-actions button.restart {
+.server-card-actions-primary button.restart {
   color: var(--warn);
   border-color: var(--warn);
 }
 
-.server-card-actions button.kill {
+.server-card-actions-primary button.kill {
   color: var(--danger-dark);
   border-color: var(--danger-dark);
 }
 
-.server-card-actions button.update {
+.server-card-actions-primary button.update {
   color: var(--status-updating);
   border-color: var(--status-updating);
 }
@@ -257,12 +257,13 @@ label.checkbox {
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
+  font-size: 0.85rem;
 }
 
 .manager-log-task {
   border-bottom: 1px solid var(--border);
-  padding-bottom: 10px;
+  padding-bottom: 4px;
 }
 
 .manager-log-task:last-child {
@@ -274,7 +275,7 @@ label.checkbox {
   display: flex;
   gap: 10px;
   align-items: baseline;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .manager-log-task-entries {
@@ -282,7 +283,8 @@ label.checkbox {
 }
 
 .manager-log-line {
-  margin: 0 0 4px;
+  margin: 0;
+  line-height: 1.35;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -291,7 +293,7 @@ label.checkbox {
   color: var(--muted);
   margin-right: 6px;
   font-family: monospace;
-  font-size: 0.85rem;
+  font-size: 0.85em;
 }
 
 .group-console-page {
@@ -738,7 +740,9 @@ label.checkbox {
 
 .server-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 340px));
+  /* Wide enough that Start/Stop/Restart/Update/Kill fit on one row (see
+     .server-card-actions-primary) instead of Update wrapping onto its own line. */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 440px));
   gap: 16px;
 }
 
@@ -846,6 +850,10 @@ label.checkbox {
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
 }
 
 .server-card-info div {
@@ -923,10 +931,15 @@ label.checkbox {
   color: var(--status-stopping);
 }
 
-.server-card-actions {
+.server-card-actions-primary,
+.server-card-actions-secondary {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.server-card-actions-primary button {
+  flex: 1 1 0;
 }
 
 .log-output {
@@ -1324,6 +1337,22 @@ label.checkbox {
 .schedule-section h3 {
   margin: 0;
   color: var(--accent);
+}
+
+.schedule-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.schedule-subsection + .schedule-subsection {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.schedule-subsection h4 {
+  margin: 0;
+  font-size: 0.9rem;
 }
 
 .schedule-picker {

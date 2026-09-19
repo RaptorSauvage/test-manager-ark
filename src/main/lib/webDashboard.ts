@@ -972,6 +972,10 @@ const DASHBOARD_HTML = `<!doctype html>
     <div id="cluster-groups">
       <div id="cluster-time-scale" class="cluster-time-scale">
         <span>Time Scale</span>
+        <button type="button" class="time-scale-btn" data-ms="60000">1m</button>
+        <button type="button" class="time-scale-btn" data-ms="300000">5m</button>
+        <button type="button" class="time-scale-btn" data-ms="900000">15m</button>
+        <button type="button" class="time-scale-btn" data-ms="3600000">1h</button>
         <button type="button" class="time-scale-btn" data-ms="21600000">6h</button>
         <button type="button" class="time-scale-btn" data-ms="43200000">12h</button>
         <button type="button" class="time-scale-btn" data-ms="86400000">24h</button>
@@ -1359,13 +1363,17 @@ const DASHBOARD_HTML = `<!doctype html>
   navBackupBtn.addEventListener('click', function () { selectView('backup'); });
 
   // ---- Cluster stats chart (desktop only) ----------------------------------------------
-  // Same 6h/12h/24h/All time scales and persistent, server-downsampled history as the
-  // desktop Manager's own Cluster Dashboard (src/main/lib/statsHistory.ts) - queried over
-  // HTTP (GET /api/groups/:group/stats) once per poll (loadServers() already runs every
+  // Same 1m/5m/15m/1h/6h/12h/24h/All time scales and persistent, server-downsampled history
+  // as the desktop Manager's own Cluster Dashboard (src/main/lib/statsHistory.ts) - queried
+  // over HTTP (GET /api/groups/:group/stats) once per poll (loadServers() already runs every
   // 5s) instead of sampled/accumulated client-side, so every viewer of this page sees the
   // same history the Manager itself recorded rather than their own separate per-browser
   // copy, and only servers with stats enabled (Analytics tab) contribute to a group's chart.
   var STATS_TIME_SCALES = [
+    { label: '1m', ms: 60 * 1000 },
+    { label: '5m', ms: 5 * 60 * 1000 },
+    { label: '15m', ms: 15 * 60 * 1000 },
+    { label: '1h', ms: 60 * 60 * 1000 },
     { label: '6h', ms: 6 * 60 * 60 * 1000 },
     { label: '12h', ms: 12 * 60 * 60 * 1000 },
     { label: '24h', ms: 24 * 60 * 60 * 1000 },
@@ -1374,14 +1382,18 @@ const DASHBOARD_HTML = `<!doctype html>
   var STATS_SCALE_KEY = 'web-dashboard-cluster-stats-scale';
   var STATS_MAX_POINTS = 500;
   var DESKTOP_CHART_MIN_WIDTH = 701;
+  // Named rather than indexed into STATS_TIME_SCALES so adding/reordering scales can't
+  // silently change which one a fresh viewer starts on - matches the desktop Manager's own
+  // STATS_DEFAULT_SCALE_MS (src/renderer/src/lib/sparkline.ts).
+  var STATS_DEFAULT_SCALE_MS = 12 * 60 * 60 * 1000;
 
   function loadStoredScale() {
     var raw = null;
     try { raw = localStorage.getItem(STATS_SCALE_KEY); } catch (err) { /* storage unavailable */ }
-    if (raw === null) return STATS_TIME_SCALES[1].ms;
+    if (raw === null) return STATS_DEFAULT_SCALE_MS;
     var parsed = raw === 'null' ? null : Number(raw);
     var known = STATS_TIME_SCALES.some(function (s) { return s.ms === parsed; });
-    return known ? parsed : STATS_TIME_SCALES[1].ms;
+    return known ? parsed : STATS_DEFAULT_SCALE_MS;
   }
 
   function saveStoredScale(ms) {
@@ -1650,6 +1662,9 @@ const DASHBOARD_HTML = `<!doctype html>
   var UNGROUPED_TOKEN = '_ungrouped_';
   var CLUSTER_ALL_LABELS = ['JOIN', 'LEFT', 'CHAT', 'WARN', 'KILL', 'TAME', 'CMD', 'SAVE', 'CRYO', 'MISSION', 'READY', 'START', 'STOP'];
   var CLUSTER_VISIBLE_LABELS_KEY = 'ark-dashboard-cluster-visible-labels';
+  var CLUSTER_AUTOSCROLL_KEY = 'ark-dashboard-cluster-autoscroll';
+  var clusterAutoScroll = false;
+  try { clusterAutoScroll = localStorage.getItem(CLUSTER_AUTOSCROLL_KEY) === '1'; } catch (err) { /* storage unavailable - not fatal */ }
   var clusterConsoleGroup = null; // null = showing the group list; otherwise the raw group name ('' for ungrouped)
   var clusterConsoleServers = [];
   var clusterEs = null;
@@ -1699,6 +1714,17 @@ const DASHBOARD_HTML = `<!doctype html>
       wrapper.appendChild(document.createTextNode(label));
       clusterConsoleFiltersEl.appendChild(wrapper);
     });
+    var autoScrollWrapper = document.createElement('label');
+    var autoScrollCb = document.createElement('input');
+    autoScrollCb.type = 'checkbox';
+    autoScrollCb.checked = clusterAutoScroll;
+    autoScrollCb.addEventListener('change', function () {
+      clusterAutoScroll = autoScrollCb.checked;
+      try { localStorage.setItem(CLUSTER_AUTOSCROLL_KEY, clusterAutoScroll ? '1' : '0'); } catch (err) { /* storage unavailable - not fatal */ }
+    });
+    autoScrollWrapper.appendChild(autoScrollCb);
+    autoScrollWrapper.appendChild(document.createTextNode('Auto-scroll'));
+    clusterConsoleFiltersEl.appendChild(autoScrollWrapper);
   }
 
   // "YYYY.MM.DD" (ARK's own log date format, as sent by the merged-backlog/stream) -> "DD/MM".
@@ -1734,7 +1760,7 @@ const DASHBOARD_HTML = `<!doctype html>
     renderEventText(text, ev.text);
     div.appendChild(text);
     clusterConsoleFeedEl.appendChild(div);
-    clusterConsoleFeedEl.scrollTop = clusterConsoleFeedEl.scrollHeight;
+    if (clusterAutoScroll) clusterConsoleFeedEl.scrollTop = clusterConsoleFeedEl.scrollHeight;
   }
 
   function renderClusterConsoleStats(servers) {
@@ -2187,6 +2213,10 @@ const DASHBOARD_HTML = `<!doctype html>
       .then(function (entries) { if (id === currentId) renderBackupLog(entries); });
   }, 5000);
 
+  var CONSOLE_AUTOSCROLL_KEY = 'ark-dashboard-console-autoscroll';
+  var consoleAutoScroll = false;
+  try { consoleAutoScroll = localStorage.getItem(CONSOLE_AUTOSCROLL_KEY) === '1'; } catch (err) { /* storage unavailable - not fatal */ }
+
   function loadLabelSettings() {
     fetch('/api/labelsettings').then(function (r) { return r.json(); }).then(function (settings) {
       filtersEl.innerHTML = '';
@@ -2210,6 +2240,17 @@ const DASHBOARD_HTML = `<!doctype html>
         wrapper.appendChild(document.createTextNode(label));
         filtersEl.appendChild(wrapper);
       });
+      var autoScrollWrapper = document.createElement('label');
+      var autoScrollCb = document.createElement('input');
+      autoScrollCb.type = 'checkbox';
+      autoScrollCb.checked = consoleAutoScroll;
+      autoScrollCb.addEventListener('change', function () {
+        consoleAutoScroll = autoScrollCb.checked;
+        try { localStorage.setItem(CONSOLE_AUTOSCROLL_KEY, consoleAutoScroll ? '1' : '0'); } catch (err) { /* storage unavailable - not fatal */ }
+      });
+      autoScrollWrapper.appendChild(autoScrollCb);
+      autoScrollWrapper.appendChild(document.createTextNode('Auto-scroll'));
+      filtersEl.appendChild(autoScrollWrapper);
     });
   }
 
@@ -2248,7 +2289,7 @@ const DASHBOARD_HTML = `<!doctype html>
     renderEventText(text, ev.text);
     div.appendChild(ts); div.appendChild(label); div.appendChild(text);
     consoleEl.appendChild(div);
-    consoleEl.scrollTop = consoleEl.scrollHeight;
+    if (consoleAutoScroll) consoleEl.scrollTop = consoleEl.scrollHeight;
   }
 
   // Ticks the uptime line once a second between the 5s /api/servers polls, the same "live"

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildTimeSeriesPath, loadStoredScale, saveStoredScale, STATS_TIME_SCALES } from '../src/renderer/src/lib/sparkline'
+import {
+  buildTimeSeriesPath,
+  loadStoredScale,
+  saveStoredScale,
+  STATS_TIME_SCALES,
+  STATS_DEFAULT_SCALE_MS
+} from '../src/renderer/src/lib/sparkline'
 
 describe('buildTimeSeriesPath', () => {
   it('returns an empty string for no samples', () => {
@@ -77,10 +83,24 @@ describe('buildTimeSeriesPath', () => {
 })
 
 describe('STATS_TIME_SCALES', () => {
-  it('offers 6h/12h/24h/All, with All represented as ms: null', () => {
-    expect(STATS_TIME_SCALES.map((s) => s.label)).toEqual(['6h', '12h', '24h', 'All'])
+  it('offers 1m/5m/15m/1h/6h/12h/24h/All, with All represented as ms: null', () => {
+    expect(STATS_TIME_SCALES.map((s) => s.label)).toEqual([
+      '1m',
+      '5m',
+      '15m',
+      '1h',
+      '6h',
+      '12h',
+      '24h',
+      'All'
+    ])
     expect(STATS_TIME_SCALES.find((s) => s.label === 'All')?.ms).toBeNull()
+    expect(STATS_TIME_SCALES.find((s) => s.label === '1m')?.ms).toBe(60 * 1000)
     expect(STATS_TIME_SCALES.find((s) => s.label === '6h')?.ms).toBe(6 * 60 * 60 * 1000)
+  })
+
+  it('STATS_DEFAULT_SCALE_MS matches the 12h scale', () => {
+    expect(STATS_DEFAULT_SCALE_MS).toBe(STATS_TIME_SCALES.find((s) => s.label === '12h')?.ms)
   })
 })
 

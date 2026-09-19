@@ -62,11 +62,20 @@ export interface StatsTimeScale {
 }
 
 export const STATS_TIME_SCALES: StatsTimeScale[] = [
+  { label: '1m', ms: 60 * 1000 },
+  { label: '5m', ms: 5 * 60 * 1000 },
+  { label: '15m', ms: 15 * 60 * 1000 },
+  { label: '1h', ms: 60 * 60 * 1000 },
   { label: '6h', ms: 6 * 60 * 60 * 1000 },
   { label: '12h', ms: 12 * 60 * 60 * 1000 },
   { label: '24h', ms: 24 * 60 * 60 * 1000 },
   { label: 'All', ms: null }
 ]
+
+/** The scale shown by default the first time a chart is opened (no stored preference yet) -
+ *  named rather than indexed into STATS_TIME_SCALES so adding/reordering scales can't
+ *  silently change which one this points at. */
+export const STATS_DEFAULT_SCALE_MS = 12 * 60 * 60 * 1000
 
 function serializeScale(ms: number | null): string {
   return ms === null ? 'null' : String(ms)

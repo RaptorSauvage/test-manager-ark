@@ -4,6 +4,7 @@ import { getStatus, emitStatus, markProcessExited, isPidTracked, confirmAliveVia
 import { listPlayers } from './rcon'
 import { getProcessStats } from './processStats'
 import { recordStatSample } from './statsHistory'
+import { getProfile } from '../store'
 
 const timers = new Map<string, NodeJS.Timeout>()
 
@@ -97,7 +98,12 @@ async function tick(profile: ServerProfile): Promise<void> {
     statsError: undefined
   })
 
-  if (profile.statsEnabled) {
+  // Re-read from the store rather than trusting the `profile` this monitor loop was
+  // started with - that closure is captured once at server-start time, so toggling the
+  // Analytics tab's "Enable stats" checkbox on an already-running server would otherwise
+  // never take effect until the next start (falls back to the closure's own profile if
+  // it isn't in the store at all, e.g. under test).
+  if ((getProfile(profile.id) ?? profile).statsEnabled) {
     recordStatSample(profile.id, { time: Date.now(), cpu, memoryMB, players: players.length })
   }
 }

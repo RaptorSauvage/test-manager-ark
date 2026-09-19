@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react'
 import type { BackupScheduleStatus, ServerProfile } from '@shared/types'
 import { formatCountdown } from '@shared/scheduleTime'
 import { useServerStatuses } from '../../lib/useServerStatuses'
-import { STATS_TIME_SCALES, loadStoredScale, saveStoredScale, type StatSample } from '../../lib/sparkline'
+import {
+  STATS_TIME_SCALES,
+  STATS_DEFAULT_SCALE_MS,
+  loadStoredScale,
+  saveStoredScale,
+  type StatSample
+} from '../../lib/sparkline'
 import UpdateCheckPanel from '../../components/UpdateCheckPanel'
 import ServerStatsChart from './ServerStatsChart'
 
@@ -43,7 +49,9 @@ export default function AnalyticsTab({ profile, onProfileChange }: AnalyticsTabP
   const [backupStatus, setBackupStatus] = useState<BackupScheduleStatus | null>(null)
   const [configFolderError, setConfigFolderError] = useState('')
   const [history, setHistory] = useState<StatSample[]>([])
-  const [statsScale, setStatsScale] = useState(() => loadStoredScale(statsScaleKey(profile.id), STATS_TIME_SCALES[1].ms))
+  const [statsScale, setStatsScale] = useState(() =>
+    loadStoredScale(statsScaleKey(profile.id), STATS_DEFAULT_SCALE_MS)
+  )
   const isRunning = status?.state === 'running'
 
   useEffect(() => {
@@ -52,7 +60,7 @@ export default function AnalyticsTab({ profile, onProfileChange }: AnalyticsTabP
   }, [])
 
   useEffect(() => {
-    setStatsScale(loadStoredScale(statsScaleKey(profile.id), STATS_TIME_SCALES[1].ms))
+    setStatsScale(loadStoredScale(statsScaleKey(profile.id), STATS_DEFAULT_SCALE_MS))
   }, [profile.id])
 
   // Polls this server's persisted history (src/main/lib/statsHistory.ts) rather than
@@ -66,7 +74,8 @@ export default function AnalyticsTab({ profile, onProfileChange }: AnalyticsTabP
     }
     let cancelled = false
     function refresh(): void {
-      window.api.statsHistory.get(profile.id, statsScale, STATS_MAX_POINTS).then((h) => {
+      const sinceMs = statsScale === null ? null : Date.now() - statsScale
+      window.api.statsHistory.get(profile.id, sinceMs, STATS_MAX_POINTS).then((h) => {
         if (!cancelled) setHistory(h)
       })
     }

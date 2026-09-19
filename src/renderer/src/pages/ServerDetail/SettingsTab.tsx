@@ -205,57 +205,6 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         </div>
       </section>
       <section className="cluster-section">
-        <h3>Cluster</h3>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={form.clusterEnabled}
-            onChange={(e) => update('clusterEnabled', e.target.checked)}
-          />
-          Enable cluster
-        </label>
-        <label>
-          Cluster ID
-          <input
-            value={form.clusterId}
-            onChange={(e) => update('clusterId', e.target.value)}
-            placeholder="my-cluster"
-            disabled={!form.clusterEnabled}
-          />
-        </label>
-        <label>
-          Dedicated Cluster Directory
-          <div className="path-input-row">
-            <input
-              value={form.clusterDirOverride}
-              onChange={(e) => update('clusterDirOverride', e.target.value)}
-              disabled={!form.clusterEnabled}
-            />
-            <button type="button" onClick={() => void browseClusterDir()} disabled={!form.clusterEnabled}>
-              Browse...
-            </button>
-          </div>
-        </label>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={form.noTransferFromFiltering}
-            onChange={(e) => update('noTransferFromFiltering', e.target.checked)}
-            disabled={!form.clusterEnabled}
-          />
-          No Transfer From Filtering
-        </label>
-        <label>
-          External IP
-          <input
-            value={form.externalIp}
-            onChange={(e) => update('externalIp', e.target.value)}
-            placeholder="203.0.113.10"
-            disabled={!form.clusterEnabled}
-          />
-        </label>
-      </section>
-      <section className="cluster-section">
         <h3>Extra Settings</h3>
         <label className="checkbox">
           <input type="checkbox" checked disabled />
@@ -316,11 +265,62 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           named after the group - handy for organizing a cluster or a set of test servers. Leave blank to show
           this server directly in the main grid.
         </p>
+        <label>
+          Extra launch arguments
+          <input value={form.extraArgs} onChange={(e) => update('extraArgs', e.target.value)} />
+        </label>
       </section>
-      <label>
-        Extra launch arguments
-        <input value={form.extraArgs} onChange={(e) => update('extraArgs', e.target.value)} />
-      </label>
+      <section className="cluster-section">
+        <h3>Cluster</h3>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.clusterEnabled}
+            onChange={(e) => update('clusterEnabled', e.target.checked)}
+          />
+          Enable cluster
+        </label>
+        <label>
+          Cluster ID
+          <input
+            value={form.clusterId}
+            onChange={(e) => update('clusterId', e.target.value)}
+            placeholder="my-cluster"
+            disabled={!form.clusterEnabled}
+          />
+        </label>
+        <label>
+          Dedicated Cluster Directory
+          <div className="path-input-row">
+            <input
+              value={form.clusterDirOverride}
+              onChange={(e) => update('clusterDirOverride', e.target.value)}
+              disabled={!form.clusterEnabled}
+            />
+            <button type="button" onClick={() => void browseClusterDir()} disabled={!form.clusterEnabled}>
+              Browse...
+            </button>
+          </div>
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.noTransferFromFiltering}
+            onChange={(e) => update('noTransferFromFiltering', e.target.checked)}
+            disabled={!form.clusterEnabled}
+          />
+          No Transfer From Filtering
+        </label>
+        <label>
+          External IP
+          <input
+            value={form.externalIp}
+            onChange={(e) => update('externalIp', e.target.value)}
+            placeholder="203.0.113.10"
+            disabled={!form.clusterEnabled}
+          />
+        </label>
+      </section>
       {formError && <p className="error-message">{formError}</p>}
       <div className="form-actions">
         <button type="button" onClick={() => void exportProfile()}>

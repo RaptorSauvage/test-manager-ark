@@ -31,110 +31,88 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
   return (
     <div className="server-management-tab">
       <section className="schedule-section">
-        <h3>Manager Startup</h3>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={form.startOnManagerLaunch}
-            onChange={(e) => update('startOnManagerLaunch', e.target.checked)}
-          />
-          Start this server when the Manager starts
-        </label>
-        <p className="empty-state">
-          Applies when the Manager application itself launches - not when Windows starts (see the &quot;Start
-          Manager when you log into Windows&quot; option in Settings for that). Skipped if the server is already
-          running (e.g. re-adopted from a previous Manager session). Waits for the delay configured in Settings
-          before starting - even if it's the only one - so the Manager's own monitoring has time to finish
-          initializing first and picks up this server's telemetry correctly from the start. If several servers
-          have this enabled, they start one after another, each waiting that same delay after the previous one.
-        </p>
-      </section>
-
-      <section className="schedule-section">
-        <h3>Anti-Crash Watchdog</h3>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={form.crashWatchEnabled}
-            onChange={(e) => update('crashWatchEnabled', e.target.checked)}
-          />
-          Automatically restart this server if it crashes unexpectedly
-        </label>
-        <p className="empty-state">
-          Only reacts to a confirmed, unexpected crash - one where the server was running and
-          then simply vanished, with no sign of it being reachable at all anymore. Restarts
-          15 seconds after detection. Stop, Kill, Restart, Update, and the scheduled restart
-          below are never treated as a crash, since each of those already tells the Manager
-          it's deliberate before it happens. Independent from every other server.
-        </p>
-      </section>
-
-      <section className="schedule-section">
-        <h3>Zombie Detection</h3>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={form.zombieDetectionEnabled}
-            onChange={(e) => update('zombieDetectionEnabled', e.target.checked)}
-          />
-          Kill this server if it gets stuck starting up
-        </label>
-        <div className="schedule-suboptions">
-          <label>
-            Timeout (minutes)
-            <input
-              type="number"
-              min={1}
-              value={form.zombieDetectionTimeoutMinutes}
-              onChange={(e) => update('zombieDetectionTimeoutMinutes', Number(e.target.value))}
-              disabled={!form.zombieDetectionEnabled}
-            />
-          </label>
+        <h3>Startup &amp; Watchdog</h3>
+        <div className="schedule-subsection">
+          <h4>Manager Startup</h4>
           <label className="checkbox">
             <input
               type="checkbox"
-              checked={form.zombieDetectionAutoRestart}
-              onChange={(e) => update('zombieDetectionAutoRestart', e.target.checked)}
-              disabled={!form.zombieDetectionEnabled}
+              checked={form.startOnManagerLaunch}
+              onChange={(e) => update('startOnManagerLaunch', e.target.checked)}
             />
-            Restart automatically after killing it
+            Start this server when the Manager starts
           </label>
+          <p className="empty-state">Starts automatically when the Manager launches, unless already running.</p>
         </div>
-        <p className="empty-state">
-          Only watches the window between the process spawning (Starting) and the Manager
-          confirming it actually finished loading (Running) - once Running, this has no
-          effect until the next time the server starts. If it's still stuck Starting after
-          the timeout above, it's killed as a zombie caught in an endless startup loop.
-          Independent from every other server.
-        </p>
+
+        <div className="schedule-subsection">
+          <h4>Anti-Crash Watchdog</h4>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={form.crashWatchEnabled}
+              onChange={(e) => update('crashWatchEnabled', e.target.checked)}
+            />
+            Automatically restart this server if it crashes unexpectedly
+          </label>
+          <p className="empty-state">Restarts the server 15 seconds after a confirmed, unexpected crash.</p>
+        </div>
+
+        <div className="schedule-subsection">
+          <h4>Zombie Detection</h4>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={form.zombieDetectionEnabled}
+              onChange={(e) => update('zombieDetectionEnabled', e.target.checked)}
+            />
+            Kill this server if it gets stuck starting up
+          </label>
+          <div className="schedule-suboptions">
+            <label>
+              Timeout (minutes)
+              <input
+                type="number"
+                min={1}
+                value={form.zombieDetectionTimeoutMinutes}
+                onChange={(e) => update('zombieDetectionTimeoutMinutes', Number(e.target.value))}
+                disabled={!form.zombieDetectionEnabled}
+              />
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={form.zombieDetectionAutoRestart}
+                onChange={(e) => update('zombieDetectionAutoRestart', e.target.checked)}
+                disabled={!form.zombieDetectionEnabled}
+              />
+              Restart automatically after killing it
+            </label>
+          </div>
+          <p className="empty-state">Kills the server if it's still stuck Starting past the timeout above.</p>
+        </div>
+
+        <div className="schedule-subsection">
+          <h4>Cluster Console Log Archive</h4>
+          <label>
+            Max archive size (MB, 1-100)
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={form.clusterLogArchiveMaxSizeMB}
+              onChange={(e) => update('clusterLogArchiveMaxSizeMB', Math.min(100, Math.max(1, Number(e.target.value))))}
+            />
+          </label>
+          <p className="empty-state">
+            Always on - continuously archives this server's log events so cluster console history survives a
+            restart.
+          </p>
+        </div>
       </section>
 
       <section className="schedule-section">
-        <h3>Cluster Console Log Archive</h3>
-        <label>
-          Max archive size (MB, 1-100)
-          <input
-            type="number"
-            min={1}
-            max={100}
-            value={form.clusterLogArchiveMaxSizeMB}
-            onChange={(e) => update('clusterLogArchiveMaxSizeMB', Math.min(100, Math.max(1, Number(e.target.value))))}
-          />
-        </label>
-        <p className="empty-state">
-          Always on - only this server's displayable log events (joins/leaves, chat, admin
-          commands, and the like) are continuously copied into a permanent archive file,
-          separate from ARK's own ShooterGame.log (which a server restart resets); the
-          internal engine noise that makes up most of the raw log is never kept. The Cluster
-          Data group console's backlog reads from this archive once it exists, so it can show
-          history from before the server's last restart. The oldest events are trimmed
-          automatically once the archive passes the size above - it's a rolling window, not a
-          hard stop on further logging. Configurable from 1 to 100 MB.
-        </p>
-      </section>
-
-      <section className="schedule-section">
-        <h3>Advanced Schedule: Server Shutdown, Update, and Startup</h3>
+        <h3>Advanced Schedule: Restart</h3>
         <ScheduleDaysPicker
           label="Shutdown server at:"
           countdownLabel="Next shutdown in:"

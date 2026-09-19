@@ -129,6 +129,7 @@ export default function GroupConsoleView({
   onOpenProfile
 }: GroupConsoleViewProps): JSX.Element {
   const [events, setEvents] = useState<GroupConsoleEvent[]>([])
+  const [autoScroll, setAutoScroll] = useState(false)
   const [visibleLabels, setVisibleLabels] = useState<Set<string>>(() => loadVisibleLabels())
   const [rconTarget, setRconTarget] = useState<string>(RCON_TARGET_ALL)
   const [rconCommand, setRconCommand] = useState('')
@@ -213,9 +214,10 @@ export default function GroupConsoleView({
   }, [statuses, profileIdsKey])
 
   useEffect(() => {
+    if (!autoScroll) return
     const el = feedRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [events])
+  }, [events, autoScroll])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -312,6 +314,10 @@ export default function GroupConsoleView({
                 {label}
               </label>
             ))}
+            <label className="checkbox">
+              <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
+              Auto-scroll
+            </label>
           </div>
 
           <div className="group-console-feed" ref={feedRef}>
