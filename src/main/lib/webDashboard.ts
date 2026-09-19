@@ -748,6 +748,16 @@ const DASHBOARD_HTML = `<!doctype html>
   .group-row-online { color: var(--status-running); font-weight: 700; }
   .group-row-online .group-row-offline { color: var(--muted); font-weight: 400; }
   #cluster-groups.hidden { display: none; }
+  .cluster-time-scale { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 0.85rem; color: var(--muted); }
+  .time-scale-btn { padding: 3px 10px; font-size: 0.8rem; }
+  .time-scale-btn.active { color: var(--ok); border-color: var(--ok); }
+  .cluster-card-chart { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .stats-chart-label { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--muted); }
+  .stats-chart-label strong { color: var(--text); }
+  .stats-chart-svg-wrap { position: relative; height: 30px; }
+  .stats-chart-svg { width: 100%; height: 100%; display: block; }
+  .stats-chart-hover-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); pointer-events: none; }
+  .stats-chart-tooltip { position: absolute; top: -20px; transform: translateX(-50%); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 0.65rem; white-space: nowrap; pointer-events: none; }
   #cluster-console { display: none; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
   #cluster-console.active { display: flex; }
   .cluster-console-header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
@@ -909,6 +919,10 @@ const DASHBOARD_HTML = `<!doctype html>
     .player-row { flex: 0 0 auto; background: var(--bg); border: 1px solid var(--border); }
     .cluster-cards { grid-template-columns: 1fr; gap: 10px; }
     .cluster-card { padding: 14px; }
+    /* The stats chart is desktop-only (see the JS width check in buildGroupRow) - this is
+       just a safety net so a chart already in the DOM from a resize down from desktop
+       width doesn't linger visually before the next poll rebuilds the cards without it. */
+    .cluster-time-scale, .cluster-card-chart { display: none; }
     .cluster-console-feed { font-size: 0.72rem; }
     .cluster-console-stats { grid-template-columns: repeat(2, 1fr); gap: 4px 10px; padding: 8px 10px; }
     .cluster-console-stats dt { font-size: 0.62rem; }
@@ -934,6 +948,13 @@ const DASHBOARD_HTML = `<!doctype html>
 <div id="main-area">
   <section id="view-cluster" class="view">
     <div id="cluster-groups">
+      <div id="cluster-time-scale" class="cluster-time-scale">
+        <span>Time Scale</span>
+        <button type="button" class="time-scale-btn" data-ms="60000">1m</button>
+        <button type="button" class="time-scale-btn" data-ms="300000">5m</button>
+        <button type="button" class="time-scale-btn" data-ms="1800000">30m</button>
+        <button type="button" class="time-scale-btn" data-ms="3600000">1h</button>
+      </div>
       <div id="cluster-cards"></div>
     </div>
     <div id="cluster-console">
@@ -1316,12 +1337,205 @@ const DASHBOARD_HTML = `<!doctype html>
   navBackupBtn.addEventListener('click', function () { selectView('backup'); });
 
   // Renders one summary row per Dashboard group (ungrouped servers get their own
+  // ---- Cluster stats chart (desktop only) ----------------------------------------------
+  // Ports the same sampling/SVG-path math the Manager's own Cluster Dashboard chart uses
+  // (sparkline.ts / ServerStatsChart.tsx), so this web dashboard's Cluster Dashboard shows
+  // the same live CPU/RAM/Players history on a wide-enough screen instead of just plain
+  // totals. History is collected regardless of the selected scale (up to 1h, sampled once
+  // per poll - loadServers() already runs every 5s, so no separate timer is needed) and
+  // persisted in this browser's own localStorage per group, same as the desktop version's
+  // own per-browser-tab history (it isn't shared between viewers or with the Manager).
+  var STATS_HISTORY_WINDOW_MS = 60 * 60 * 1000;
+  var STATS_TIME_SCALES = [60000, 300000, 1800000, 3600000];
+  var STATS_SCALE_KEY = 'web-dashboard-cluster-stats-scale';
+  var DESKTOP_CHART_MIN_WIDTH = 701;
+  var statsHistoryByGroup = {};
+
+  function clusterHistoryKey(group) {
+    return 'web-dashboard-cluster-history:' + (group || '(ungrouped)');
+  }
+
+  function selectHistoryWindow(history, windowMs, now) {
+    var cutoff = now - windowMs;
+    return history.filter(function (s) { return s.time >= cutoff; });
+  }
+
+  function loadStoredHistory(group) {
+    try {
+      var raw = localStorage.getItem(clusterHistoryKey(group));
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return selectHistoryWindow(parsed, STATS_HISTORY_WINDOW_MS, Date.now());
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function saveStoredHistory(group, history) {
+    try { localStorage.setItem(clusterHistoryKey(group), JSON.stringify(history)); } catch (err) { /* storage unavailable - not fatal */ }
+  }
+
+  function appendStatSample(history, sample, windowMs) {
+    var cutoff = sample.time - windowMs;
+    return history.filter(function (s) { return s.time >= cutoff; }).concat([sample]);
+  }
+
+  function loadStoredScale() {
+    var raw = null;
+    try { raw = localStorage.getItem(STATS_SCALE_KEY); } catch (err) { /* storage unavailable */ }
+    var parsed = raw !== null ? Number(raw) : NaN;
+    return STATS_TIME_SCALES.indexOf(parsed) >= 0 ? parsed : STATS_TIME_SCALES[1];
+  }
+
+  var statsScale = loadStoredScale();
+  var MAX_CONTINUOUS_GAP_MS = 60000;
+
+  function buildTimeSeriesPath(samples, windowMs, now, width, height, min, max, maxGapMs) {
+    if (samples.length === 0) return '';
+    maxGapMs = maxGapMs || MAX_CONTINUOUS_GAP_MS;
+    var range = (max - min) || 1;
+    var start = now - windowMs;
+    var span = windowMs || 1;
+    var d = '';
+    var previousTime = null;
+    samples.forEach(function (s) {
+      var x = Math.max(0, Math.min(width, ((s.time - start) / span) * width));
+      var y = Math.max(0, Math.min(height, height - ((s.value - min) / range) * height));
+      var command = previousTime === null || s.time - previousTime > maxGapMs ? 'M' : 'L';
+      d += command + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+      previousTime = s.time;
+    });
+    return d.trim();
+  }
+
+  var STATS_CHART_WIDTH = 1000;
+  var STATS_CHART_HEIGHT = 30;
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function buildSparkline(label, unit, current, samples, windowMs, now, color, max) {
+    var wrap = document.createElement('div');
+    wrap.className = 'stats-chart';
+
+    var labelRow = document.createElement('div');
+    labelRow.className = 'stats-chart-label';
+    var labelSpan = document.createElement('span');
+    labelSpan.textContent = label;
+    var currentStrong = document.createElement('strong');
+    currentStrong.textContent = current !== undefined ? Math.round(current) + unit : '-';
+    labelRow.appendChild(labelSpan);
+    labelRow.appendChild(currentStrong);
+    wrap.appendChild(labelRow);
+
+    var svgWrap = document.createElement('div');
+    svgWrap.className = 'stats-chart-svg-wrap';
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + STATS_CHART_WIDTH + ' ' + STATS_CHART_HEIGHT);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('class', 'stats-chart-svg');
+    var pathD = buildTimeSeriesPath(samples, windowMs, now, STATS_CHART_WIDTH, STATS_CHART_HEIGHT, 0, max);
+    if (pathD) {
+      var path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', pathD);
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', color);
+      path.setAttribute('stroke-width', '2');
+      path.setAttribute('stroke-linejoin', 'round');
+      path.setAttribute('vector-effect', 'non-scaling-stroke');
+      svg.appendChild(path);
+    }
+    svgWrap.appendChild(svg);
+
+    var hoverLine = document.createElement('div');
+    hoverLine.className = 'stats-chart-hover-line';
+    hoverLine.style.display = 'none';
+    var tooltip = document.createElement('div');
+    tooltip.className = 'stats-chart-tooltip';
+    tooltip.style.display = 'none';
+    svgWrap.appendChild(hoverLine);
+    svgWrap.appendChild(tooltip);
+
+    svgWrap.addEventListener('mousemove', function (e) {
+      var rect = svgWrap.getBoundingClientRect();
+      if (rect.width === 0 || samples.length === 0) return;
+      var fraction = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      var targetTime = now - windowMs + fraction * windowMs;
+      var nearest = samples[0];
+      samples.forEach(function (s) {
+        if (Math.abs(s.time - targetTime) < Math.abs(nearest.time - targetTime)) nearest = s;
+      });
+      var xPercent = (fraction * 100).toFixed(2) + '%';
+      hoverLine.style.left = xPercent;
+      hoverLine.style.display = 'block';
+      tooltip.style.left = xPercent;
+      tooltip.style.display = 'block';
+      tooltip.textContent = new Date(nearest.time).toLocaleTimeString() + ' · ' + Math.round(nearest.value) + unit;
+    });
+    svgWrap.addEventListener('mouseleave', function () {
+      hoverLine.style.display = 'none';
+      tooltip.style.display = 'none';
+    });
+
+    wrap.appendChild(svgWrap);
+    return wrap;
+  }
+
+  function buildClusterChart(history, maxPlayers, windowMs, now) {
+    var windowed = selectHistoryWindow(history, windowMs, now);
+    var latest = history[history.length - 1];
+    var cpuSamples = windowed.map(function (h) { return { time: h.time, value: h.cpu }; });
+    var memorySamples = windowed.map(function (h) { return { time: h.time, value: h.memoryMB }; });
+    var playerSamples = windowed.map(function (h) { return { time: h.time, value: h.players }; });
+    var cpuMax = Math.max(10, cpuSamples.reduce(function (m, s) { return Math.max(m, s.value); }, 0));
+    var memoryMax = Math.max(100, memorySamples.reduce(function (m, s) { return Math.max(m, s.value); }, 0));
+
+    var container = document.createElement('div');
+    container.className = 'cluster-card-chart';
+    container.appendChild(
+      buildSparkline('CPU', '%', latest ? latest.cpu : undefined, cpuSamples, windowMs, now, 'var(--accent)', cpuMax)
+    );
+    container.appendChild(
+      buildSparkline('RAM', ' MB', latest ? latest.memoryMB : undefined, memorySamples, windowMs, now, 'var(--ok)', memoryMax)
+    );
+    container.appendChild(
+      buildSparkline(
+        'Players',
+        '',
+        latest ? latest.players : undefined,
+        playerSamples,
+        windowMs,
+        now,
+        'var(--warn)',
+        Math.max(maxPlayers, 1)
+      )
+    );
+    return container;
+  }
+
+  var clusterTimeScaleEl = document.getElementById('cluster-time-scale');
+  var timeScaleButtons = Array.prototype.slice.call(document.querySelectorAll('.time-scale-btn'));
+  function updateTimeScaleButtons() {
+    timeScaleButtons.forEach(function (btn) {
+      btn.classList.toggle('active', Number(btn.getAttribute('data-ms')) === statsScale);
+    });
+  }
+  updateTimeScaleButtons();
+  timeScaleButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      statsScale = Number(btn.getAttribute('data-ms'));
+      try { localStorage.setItem(STATS_SCALE_KEY, String(statsScale)); } catch (err) { /* storage unavailable - not fatal */ }
+      updateTimeScaleButtons();
+      renderClusterCards(latestServers);
+    });
+  });
+
   // "Ungrouped" row) - like the desktop Manager's own Cluster Dashboard rows: how many of
   // the group's servers are online (offline count in parens), combined players/max,
   // combined CPU%, combined RAM. Tapping a row opens that group's mobile Group Console.
   // Built from the same /api/servers response loadServers() already fetches every poll,
-  // no separate request needed.
-  function buildGroupRow(g) {
+  // no separate request needed. now and history are only used for the desktop-only stats
+  // chart appended below the plain totals.
+  function buildGroupRow(g, now, history) {
     var card = document.createElement('div');
     card.className = 'cluster-card';
 
@@ -1360,6 +1574,16 @@ const DASHBOARD_HTML = `<!doctype html>
 
     card.appendChild(header);
     card.appendChild(stats);
+
+    // Desktop-only, same breakpoint as the mobile CSS above - and only once there's
+    // actually a sample to show (a group with nothing running yet has no live chart to
+    // draw, same as the desktop Manager's own runningCount > 0 && history.length > 0 gate).
+    if (window.innerWidth >= DESKTOP_CHART_MIN_WIDTH && g.onlineCount > 0 && history.length > 0) {
+      var chart = buildClusterChart(history, Math.max(g.totalMaxPlayers, 1), statsScale, now);
+      chart.addEventListener('click', function (e) { e.stopPropagation(); });
+      card.appendChild(chart);
+    }
+
     card.addEventListener('click', function () { openGroupConsole(g.groupName); });
     return card;
   }
@@ -1369,6 +1593,8 @@ const DASHBOARD_HTML = `<!doctype html>
   // that order already).
   function renderClusterCards(servers) {
     clusterCardsEl.innerHTML = '';
+    if (clusterTimeScaleEl) clusterTimeScaleEl.style.display = servers.length > 0 ? '' : 'none';
+    var now = Date.now();
     var byGroup = {};
     var order = [];
     servers.forEach(function (s) {
@@ -1378,7 +1604,7 @@ const DASHBOARD_HTML = `<!doctype html>
     });
     order.forEach(function (key) {
       var list = byGroup[key];
-      clusterCardsEl.appendChild(buildGroupRow({
+      var g = {
         groupName: key,
         displayName: key || 'Ungrouped',
         servers: list,
@@ -1387,7 +1613,21 @@ const DASHBOARD_HTML = `<!doctype html>
         totalMaxPlayers: list.reduce(function (sum, s) { return sum + (s.maxPlayers || 0); }, 0),
         totalCpu: list.reduce(function (sum, s) { return sum + (s.cpu || 0); }, 0),
         totalMemoryMB: list.reduce(function (sum, s) { return sum + (s.memoryMB || 0); }, 0)
-      }));
+      };
+
+      // Nothing running in this group right now - same as the desktop Manager's own
+      // Cluster Dashboard, there's nothing live to record, and a flat 0 sample would
+      // misrepresent the group as merely idle instead of fully down.
+      if (g.onlineCount > 0) {
+        var sample = { time: now, cpu: g.totalCpu, memoryMB: g.totalMemoryMB, players: g.totalPlayers };
+        var existing = Object.prototype.hasOwnProperty.call(statsHistoryByGroup, key) ? statsHistoryByGroup[key] : loadStoredHistory(key);
+        var updated = appendStatSample(existing, sample, STATS_HISTORY_WINDOW_MS);
+        statsHistoryByGroup[key] = updated;
+        saveStoredHistory(key, updated);
+      }
+
+      var history = Object.prototype.hasOwnProperty.call(statsHistoryByGroup, key) ? statsHistoryByGroup[key] : loadStoredHistory(key);
+      clusterCardsEl.appendChild(buildGroupRow(g, now, history));
     });
   }
 

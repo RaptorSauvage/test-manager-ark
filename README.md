@@ -178,9 +178,9 @@ dedicated servers running on the same machine.
   dashboard loads and shows "-" if nothing's been detected yet for that server (it doesn't
   actively poll/"Detect" here the way the Analytics tab does).
 - **Sidebar / Cluster Dashboard page** — a left sidebar (`src/renderer/src/App.tsx`) with
-  two entries, **Dashboard** (the page described above) and **Cluster Dashboard**, shown
-  whenever you're not inside a server's own tabs or one of the settings screens. Cluster
-  Dashboard shows
+  three entries, **Dashboard** (the page described above), **Cluster Dashboard**, and **Log**
+  (see "Manager Log" below), shown whenever you're not inside a server's own tabs or one of
+  the settings screens. Cluster Dashboard shows
   one row per **Dashboard group** (same grouping/ordering as the Dashboard's collapsible
   sections, hidden servers excluded, an "Ungrouped" row for anything with no group) with
   that group's servers summed together: how many are running out of the group's total,
@@ -482,9 +482,20 @@ dedicated servers running on the same machine.
     how many of the group's servers are online (offline count in parens, green), combined
     players/max, combined CPU%, combined RAM - computed client-side from the same
     `/api/servers` poll the Dashboard view already uses, no separate request. Hidden
-    profiles never appear here, same as everywhere else in this page. Tapping a row drills
-    into that group's own **mobile Group Console**, which mirrors the desktop Manager's
-    Group Console feature-for-feature:
+    profiles never appear here, same as everywhere else in this page. On a screen at least
+    701px wide (the same breakpoint the rest of this page's mobile layout switches on), each
+    row with at least one server online also gets the same **Server Statistics** chart as
+    the desktop Manager's own Cluster Dashboard - CPU/RAM/Players sparklines with a
+    **Time Scale** selector (1m/5m/30m/1h) above the cards and a hover tooltip on each chart
+    - built from the same sampling/SVG-path math (`sparkline.ts`/`ServerStatsChart.tsx`)
+    reimplemented in this page's own vanilla JS, sampled once per poll (every 5s) and kept
+    in this browser's own `localStorage` per group, same as the desktop version's own
+    per-session history - it isn't shared between viewers or synced with the Manager, and a
+    page reload starts from whatever's already in that browser's storage. Narrower than
+    701px, the chart and time-scale selector don't render at all, keeping the mobile layout
+    to the plain numeric totals. Tapping a row (outside the chart, which has its own click
+    handler so it doesn't also trigger this) drills into that group's own **mobile Group
+    Console**, which mirrors the desktop Manager's Group Console feature-for-feature:
     - A merged, chronological log feed across every server in the group, each line tagged
       `[Server Name]` in the same turquoise as the desktop Group Console (with a space
       before whatever follows it - label or, for the label-less START/STOP lines described
