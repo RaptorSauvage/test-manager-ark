@@ -27,10 +27,11 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   const canRestore = !status || status.state === 'stopped'
 
   const [form, setForm] = useState<ServerProfile>(profile)
-  const [settingsStatus, setSettingsStatus] = useState('')
 
   function update<K extends keyof ServerProfile>(key: K, value: ServerProfile[K]): void {
-    setForm((prev) => ({ ...prev, [key]: value }))
+    const next = { ...form, [key]: value }
+    setForm(next)
+    void persist(next)
   }
 
   function reload(): void {
@@ -74,8 +75,6 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
       const updated = await window.api.profiles.save(next)
       const saved = updated.find((p) => p.id === next.id)
       if (saved) onProfileChange(saved)
-      setSettingsStatus('Saved')
-      setTimeout(() => setSettingsStatus(''), 2000)
     } catch (err) {
       setError((err as Error).message)
     }
@@ -87,10 +86,6 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
     const next = { ...form, backupDir: dir }
     setForm(next)
     await persist(next)
-  }
-
-  async function saveSettings(): Promise<void> {
-    await persist(form)
   }
 
   async function handleCreate(): Promise<void> {
@@ -166,13 +161,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   return (
     <div className="backups-tab">
       <div className="backup-settings-row">
-        <form
-          className="settings-tab backup-settings"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void saveSettings()
-          }}
-        >
+        <form className="settings-tab backup-settings" onSubmit={(e) => e.preventDefault()}>
           <h3>World Backups</h3>
           <label>
             Backup directory
@@ -208,19 +197,9 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
               disabled={!form.backupScheduleEnabled}
             />
           </label>
-          <div className="form-actions">
-            <button type="submit">Save backup settings</button>
-            {settingsStatus && <span className="status-message">{settingsStatus}</span>}
-          </div>
         </form>
 
-        <form
-          className="settings-tab backup-settings"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void saveSettings()
-          }}
-        >
+        <form className="settings-tab backup-settings" onSubmit={(e) => e.preventDefault()}>
           <h3>Player Profile Backups</h3>
           <label className="checkbox">
             <input
@@ -247,10 +226,6 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
             directory to be set. Toggling this takes effect immediately, even while the server is running -
             no restart needed.
           </p>
-          <div className="form-actions">
-            <button type="submit">Save player profile backup settings</button>
-            {settingsStatus && <span className="status-message">{settingsStatus}</span>}
-          </div>
         </form>
       </div>
 

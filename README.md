@@ -75,9 +75,8 @@ dedicated servers running on the same machine.
   the editor with it, then auto-saves like any other edit here (see below). Handy for
   sharing a modpack setup between servers without leaving a file on disk to clean up
   afterward.
-- **Backups tab** — backup directory (with a folder picker that saves immediately on
-  picking a folder, no separate Save click needed for that field specifically - typing a
-  path by hand still needs "Save backup settings"), max backups to keep, and scheduled
+- **Backups tab** — backup directory (folder picker or typed by hand, both save
+  immediately - see below), max backups to keep, and scheduled
   automatic backups (gated behind an explicit enable/disable toggle, not just an
   empty/filled cron field) live here, instead of being split off into Settings. The
   scheduled task itself only actually runs while the server is online - not just skipped
@@ -928,12 +927,12 @@ downloads release assets anonymously, `GH_TOKEN` is only for the publish step ab
 From the dashboard, click **+ Add server**, then open it and fill in the **Settings**
 tab:
 
-- Both the **Settings** and **Mods** tabs auto-save - about 800ms after your last edit,
-  every field/checkbox/reorder is written to disk on its own, no button required. A
-  **Save now** button stays available if you want it applied immediately (e.g. right
-  before closing the app). Auto-save is debounced rather than firing on every keystroke
-  because saving a profile also re-applies its backup/restart/dino-wipe schedules and the
-  player-backup watcher, which would be wasteful to redo per character typed.
+- Every tab auto-saves immediately - there's no Save button anywhere in a server's own
+  tabs (Settings, Mods, Backups, Server Management), and no debounce delay either: each
+  field/checkbox/reorder/drag is written to disk the moment you make it, the same way the
+  Server Management tab always has. Saving a profile also re-applies its backup/restart/
+  dino-wipe schedules and the player-backup watcher, so this happens on every edit, not
+  just eventually.
 - **Install directory**: the folder containing `ShooterGame/Binaries/...` for that
   server instance - **Browse...** opens a folder picker; pasting a path works too, and a
   surrounding pair of quotes (e.g. from Windows Explorer's "Copy as path") is stripped

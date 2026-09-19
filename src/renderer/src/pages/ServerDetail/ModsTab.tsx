@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { ServerProfile, ServerMod } from '@shared/types'
 
 interface ModsTabProps {
@@ -8,83 +8,65 @@ interface ModsTabProps {
 
 export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX.Element {
   const [mods, setMods] = useState<ServerMod[]>(profile.mods)
-  const [newModId, setNewModId] = useState('')
   const [status, setStatus] = useState('')
+  const [newModId, setNewModId] = useState('')
   const [error, setError] = useState('')
   const [pasteText, setPasteText] = useState('')
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout>>()
-  const mounted = useRef(false)
 
-  function addMod(): void {
-    const id = newModId.trim()
-    if (!id || mods.some((m) => m.id === id)) return
-    setMods((prev) => [...prev, { id, enabled: true, passive: false, dev: false }])
-    setNewModId('')
-  }
-
-  function removeMod(id: string): void {
-    setMods((prev) => prev.filter((m) => m.id !== id))
-  }
-
-  function toggleField(id: string, field: 'enabled' | 'passive' | 'dev'): void {
-    setMods((prev) => prev.map((m) => (m.id === id ? { ...m, [field]: !m[field] } : m)))
-  }
-
-  function toggleAll(field: 'enabled' | 'passive' | 'dev'): void {
-    const allSet = mods.length > 0 && mods.every((m) => m[field])
-    setMods((prev) => prev.map((m) => ({ ...m, [field]: !allSet })))
-  }
-
-  function renameMod(id: string, name: string): void {
-    setMods((prev) => prev.map((m) => (m.id === id ? { ...m, name: name || undefined } : m)))
-  }
-
-  function move(index: number, direction: -1 | 1): void {
-    setMods((prev) => {
-      const next = [...prev]
-      const target = index + direction
-      if (target < 0 || target >= next.length) return prev
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return next
-    })
-  }
-
-  function moveToTop(index: number): void {
-    setMods((prev) => {
-      if (index <= 0) return prev
-      const next = [...prev]
-      const [moved] = next.splice(index, 1)
-      next.unshift(moved)
-      return next
-    })
-  }
-
-  async function save(): Promise<void> {
-    clearTimeout(autoSaveTimer.current)
+  async function persist(next: ServerMod[]): Promise<void> {
     setError('')
     try {
-      const updated = await window.api.mods.save(profile.id, mods)
+      const updated = await window.api.mods.save(profile.id, next)
       onProfileChange(updated)
-      setStatus('Mods saved. Restart the server to apply changes.')
-      setTimeout(() => setStatus(''), 3000)
     } catch (err) {
       setError((err as Error).message)
     }
   }
 
-  // Auto-saves shortly after the last edit, so switching tabs or closing the app never
-  // loses a change - no need to remember to click Save. Debounced rather than saving on
-  // every keystroke (e.g. typing a mod's display name).
-  useEffect(() => {
-    if (!mounted.current) {
-      mounted.current = true
-      return
-    }
-    clearTimeout(autoSaveTimer.current)
-    autoSaveTimer.current = setTimeout(() => void save(), 800)
-    return () => clearTimeout(autoSaveTimer.current)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mods])
+  function applyMods(next: ServerMod[]): void {
+    setMods(next)
+    void persist(next)
+  }
+
+  function addMod(): void {
+    const id = newModId.trim()
+    if (!id || mods.some((m) => m.id === id)) return
+    applyMods([...mods, { id, enabled: true, passive: false, dev: false }])
+    setNewModId('')
+  }
+
+  function removeMod(id: string): void {
+    applyMods(mods.filter((m) => m.id !== id))
+  }
+
+  function toggleField(id: string, field: 'enabled' | 'passive' | 'dev'): void {
+    applyMods(mods.map((m) => (m.id === id ? { ...m, [field]: !m[field] } : m)))
+  }
+
+  function toggleAll(field: 'enabled' | 'passive' | 'dev'): void {
+    const allSet = mods.length > 0 && mods.every((m) => m[field])
+    applyMods(mods.map((m) => ({ ...m, [field]: !allSet })))
+  }
+
+  function renameMod(id: string, name: string): void {
+    applyMods(mods.map((m) => (m.id === id ? { ...m, name: name || undefined } : m)))
+  }
+
+  function move(index: number, direction: -1 | 1): void {
+    const next = [...mods]
+    const target = index + direction
+    if (target < 0 || target >= next.length) return
+    ;[next[index], next[target]] = [next[target], next[index]]
+    applyMods(next)
+  }
+
+  function moveToTop(index: number): void {
+    if (index <= 0) return
+    const next = [...mods]
+    const [moved] = next.splice(index, 1)
+    next.unshift(moved)
+    applyMods(next)
+  }
 
   async function copyMods(): Promise<void> {
     setError('')
@@ -101,7 +83,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
     setError('')
     try {
       const imported = await window.api.mods.parseText(pasteText)
-      setMods(imported)
+      applyMods(imported)
       setPasteText('')
       setStatus('Mod list imported.')
       setTimeout(() => setStatus(''), 3000)
@@ -117,7 +99,8 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
         <code>-mods=</code> launch flag at the next start, unless <strong>Passive</strong> is checked, in
         which case they go via <code>-passivemods=</code> instead. Check <strong>Dev</strong> to load a
         mod&apos;s in-development build (appends <code>-dev</code> to its ID). Mod Name is just your own
-        label, typed in by hand - not looked up automatically.
+        label, typed in by hand - not looked up automatically. Changes save immediately - restart the server
+        to actually apply them.
       </p>
       <div className="mods-add">
         <input
@@ -227,11 +210,11 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
         </tbody>
       </table>
       {error && <p className="error-message">{error}</p>}
-      <p className="empty-state">Changes save automatically a moment after you make them - no need to click Save.</p>
-      <div className="form-actions">
-        <button onClick={() => void save()}>Save now</button>
-        {status && <span className="status-message">{status}</span>}
-      </div>
+      {status && (
+        <div className="form-actions">
+          <span className="status-message">{status}</span>
+        </div>
+      )}
 
       <section className="mods-copy-paste">
         <h3>Copy / Paste Mod List</h3>
