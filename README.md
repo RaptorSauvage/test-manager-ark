@@ -933,26 +933,38 @@ tab:
   Server Management tab always has. Saving a profile also re-applies its backup/restart/
   dino-wipe schedules and the player-backup watcher, so this happens on every edit, not
   just eventually.
-- **Install directory**: the folder containing `ShooterGame/Binaries/...` for that
+- The Settings and Server Management tabs both lay their sections out as wrapping cards
+  (`.server-settings-tab`/`.server-management-tab` in `styles.css`) rather than one narrow
+  column down the left with the rest of the window empty - each section keeps a consistent
+  width and the sections flow across the available width, as many per row as fit, dropping
+  to fewer (down to one) on a narrower window.
+- Settings groups **Name**, **Install directory**, **Game/RCON ports**, **Server
+  Platform**, **Max Players**, **Map**, and **Mod Map** together into one **Server**
+  section (same visual treatment as the **Cluster**/**Extra Settings** sections below it),
+  with **Map** and **Mod Map** nested together in their own boxed subgroup within it, since
+  a custom map's Workshop mod id only matters alongside the Map it's paired with.
+  **Install directory** is the folder containing `ShooterGame/Binaries/...` for that
   server instance - **Browse...** opens a folder picker; pasting a path works too, and a
   surrounding pair of quotes (e.g. from Windows Explorer's "Copy as path") is stripped
-  automatically so that doesn't silently break detection.
-- **Map**, **game/RCON ports**, and **Server Platform** (PC/ALL). RCON authenticates using
-  `ServerAdminPassword` from that install's `GameUserSettings.ini` - set it there, not in
-  this app - and must be reachable on `127.0.0.1` (start/stop rely on it to save the world
-  before shutting down). The Map dropdown has two groups, **Official** (from `maps.json`)
-  and **Custom** (from `customMaps.json`) - same folder (Documents/ARK Server Manager by
-  default - not next to the Manager executable, since electron-builder's NSIS installer
-  wipes that folder's contents on every update; Documents is untouched by that and by
-  swapping the portable exe) and shape for both files, just two separate lists. A seed
-  list of the official maps is created in `maps.json` on first run; `customMaps.json`
-  starts empty since custom/modded maps are specific to whatever Workshop mods you use -
-  add a line for each (its real map identifier, exactly like an official map's, plus a
-  display name) with no app update needed. Either group is a plain, direct pick: selecting
-  one just sets this server's map, same as picking an official one always did - there's no
-  more indirection through Mod Map below. A profile's current map is always shown even if
-  it isn't (or isn't yet) in either file. A single "Refresh" button reloads both files on
-  demand.
+  automatically so that doesn't silently break detection. **Game/RCON ports** and
+  **Server Platform** (PC/ALL): RCON authenticates using `ServerAdminPassword` from that
+  install's `GameUserSettings.ini` - set it there, not in this app - and must be reachable
+  on `127.0.0.1` (start/stop rely on it to save the world before shutting down).
+- **Map**: a dropdown with two groups, **Official** (from `maps.json`) and **Custom**
+  (from `customMaps.json`) - same folder (Documents/ARK Server Manager by default - not
+  next to the Manager executable, since electron-builder's NSIS installer wipes that
+  folder's contents on every update; Documents is untouched by that and by swapping the
+  portable exe) and shape for both files, just two separate lists. A seed list of the
+  official maps is created in `maps.json` on first run; `customMaps.json` starts empty
+  since custom/modded maps are specific to whatever Workshop mods you use - add a line for
+  each (its real map identifier, exactly like an official map's, plus a display name) with
+  no app update needed. Either group is a plain, direct pick: selecting one just sets this
+  server's map, same as picking an official one always did - there's no more indirection
+  through Mod Map below. A profile's current map is always shown even if it isn't (or
+  isn't yet) in either file. Next to the dropdown, **Open Folder** opens that same
+  Documents/ARK Server Manager folder directly (so you can edit `maps.json`/
+  `customMaps.json` by hand without hunting for the path yourself), and **Refresh** reloads
+  both files on demand after an edit.
 - **Mod Map** - a separate "Enable Modded Map" toggle for Workshop-based custom maps that
   also need their mod id passed explicitly: paste the mod's Workshop id and, while enabled,
   it's passed as `-MapModID=<id>` alongside the Map value above. Fully manual and

@@ -128,6 +128,7 @@ const api: Api = {
   },
   system: {
     openProfilesFolder: () => ipcRenderer.invoke(IPC.appOpenProfilesFolder),
+    openDataDirFolder: () => ipcRenderer.invoke(IPC.appOpenDataDirFolder),
     openServerConfigFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenConfigFolder, profileId),
     openServerSavedArksFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSavedArksFolder, profileId),
     openServerSaveGamesFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSaveGamesFolder, profileId)

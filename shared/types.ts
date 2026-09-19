@@ -392,6 +392,7 @@ export const IPC = {
   webDashboardApiKeysDelete: 'web-dashboard-api-keys:delete',
 
   appOpenProfilesFolder: 'app:open-profiles-folder',
+  appOpenDataDirFolder: 'app:open-data-dir-folder',
   serverOpenConfigFolder: 'server:open-config-folder',
   serverOpenSavedArksFolder: 'server:open-savedarks-folder',
   serverOpenSaveGamesFolder: 'server:open-savegames-folder',
@@ -612,6 +613,7 @@ export interface Api {
   }
   system: {
     openProfilesFolder: () => Promise<void>
+    openDataDirFolder: () => Promise<void>
     openServerConfigFolder: (profileId: string) => Promise<void>
     openServerSavedArksFolder: (profileId: string) => Promise<void>
     openServerSaveGamesFolder: (profileId: string) => Promise<void>

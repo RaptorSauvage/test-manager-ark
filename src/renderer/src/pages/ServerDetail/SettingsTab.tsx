@@ -9,7 +9,7 @@ interface SettingsTabProps {
 export default function SettingsTab({ profile, onProfileChange }: SettingsTabProps): JSX.Element {
   const [form, setForm] = useState<ServerProfile>(profile)
   const [status, setStatus] = useState('')
-  const [exportError, setExportError] = useState('')
+  const [formError, setFormError] = useState('')
   const [maps, setMaps] = useState<MapDefinition[]>([])
   const [refreshingMaps, setRefreshingMaps] = useState(false)
   const [customMaps, setCustomMaps] = useState<MapDefinition[]>([])
@@ -61,8 +61,17 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
     if (dir) update('installDir', dir)
   }
 
+  async function openMapsFolder(): Promise<void> {
+    setFormError('')
+    try {
+      await window.api.system.openDataDirFolder()
+    } catch (err) {
+      setFormError((err as Error).message)
+    }
+  }
+
   async function exportProfile(): Promise<void> {
-    setExportError('')
+    setFormError('')
     try {
       const filePath = await window.api.dialog.saveProfileFile(profile.name)
       if (!filePath) return
@@ -70,117 +79,131 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
       setStatus('Exported')
       setTimeout(() => setStatus(''), 2000)
     } catch (err) {
-      setExportError((err as Error).message)
+      setFormError((err as Error).message)
     }
   }
 
   return (
-    <form className="settings-tab" onSubmit={(e) => e.preventDefault()}>
-      <label>
-        Name
-        <input value={form.name} onChange={(e) => update('name', e.target.value)} />
-      </label>
-      <label>
-        Install directory
-        <div className="path-input-row">
-          <input
-            value={form.installDir}
-            onChange={(e) => update('installDir', e.target.value)}
-            placeholder="C:\ARK\Server"
-          />
-          <button type="button" onClick={() => void browseInstallDir()}>
-            Browse...
-          </button>
+    <form className="server-settings-tab" onSubmit={(e) => e.preventDefault()}>
+      <section className="cluster-section">
+        <h3>Server</h3>
+        <label>
+          Name
+          <input value={form.name} onChange={(e) => update('name', e.target.value)} />
+        </label>
+        <label>
+          Install directory
+          <div className="path-input-row">
+            <input
+              value={form.installDir}
+              onChange={(e) => update('installDir', e.target.value)}
+              placeholder="C:\ARK\Server"
+            />
+            <button type="button" onClick={() => void browseInstallDir()}>
+              Browse...
+            </button>
+          </div>
+        </label>
+        <div className="settings-grid">
+          <label>
+            Game port
+            <input
+              type="number"
+              value={form.gamePort}
+              onChange={(e) => update('gamePort', Number(e.target.value))}
+            />
+          </label>
+          <label>
+            RCON port
+            <input
+              type="number"
+              value={form.rconPort}
+              onChange={(e) => update('rconPort', Number(e.target.value))}
+            />
+          </label>
+          <label>
+            Server Platform
+            <select
+              value={form.serverPlatform}
+              onChange={(e) => update('serverPlatform', e.target.value as ServerProfile['serverPlatform'])}
+            >
+              <option value="PC">PC</option>
+              <option value="ALL">ALL</option>
+            </select>
+          </label>
+          <label>
+            Max Players
+            <input
+              type="number"
+              value={form.maxPlayers}
+              onChange={(e) => update('maxPlayers', Number(e.target.value))}
+            />
+          </label>
         </div>
-      </label>
-      <label>
-        Map
-        <div className="path-input-row">
-          <select value={form.map} onChange={(e) => update('map', e.target.value)}>
-            {form.map && !maps.some((m) => m.id === form.map) && !customMaps.some((m) => m.id === form.map) && (
-              <option value={form.map}>{form.map}</option>
-            )}
-            <optgroup label="Official">
-              {maps.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.displayName}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Custom">
-              {customMaps.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.displayName}
-                </option>
-              ))}
-            </optgroup>
-          </select>
-          <button
-            type="button"
-            onClick={() => {
-              void refreshMaps()
-              void refreshCustomMaps()
-            }}
-            disabled={refreshingMaps || refreshingCustomMaps}
-            title="Reload maps.json and customMaps.json"
-          >
-            {refreshingMaps || refreshingCustomMaps ? 'Refreshing...' : 'Refresh'}
-          </button>
+        <div className="map-subgroup">
+          <label>
+            Map
+            <div className="path-input-row">
+              <select value={form.map} onChange={(e) => update('map', e.target.value)}>
+                {form.map && !maps.some((m) => m.id === form.map) && !customMaps.some((m) => m.id === form.map) && (
+                  <option value={form.map}>{form.map}</option>
+                )}
+                <optgroup label="Official">
+                  {maps.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.displayName}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Custom">
+                  {customMaps.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.displayName}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <button
+                type="button"
+                onClick={() => void openMapsFolder()}
+                title="Open the folder containing maps.json and customMaps.json"
+              >
+                Open Folder
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void refreshMaps()
+                  void refreshCustomMaps()
+                }}
+                disabled={refreshingMaps || refreshingCustomMaps}
+                title="Reload maps.json and customMaps.json"
+              >
+                {refreshingMaps || refreshingCustomMaps ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+          </label>
+          <label>
+            Mod Map
+            <div className="path-input-row">
+              <input
+                value={form.moddedMapId}
+                onChange={(e) => update('moddedMapId', e.target.value)}
+                placeholder="Workshop mod id"
+                disabled={!form.moddedMapEnabled}
+              />
+              <button
+                type="button"
+                className={form.moddedMapEnabled ? 'active' : ''}
+                onClick={() => update('moddedMapEnabled', !form.moddedMapEnabled)}
+              >
+                {form.moddedMapEnabled ? 'Modded Map Enabled' : 'Enable Modded Map'}
+              </button>
+            </div>
+            <p className="empty-state">Passed as -MapModID=&lt;id&gt; when enabled, alongside the Map above.</p>
+          </label>
         </div>
-        <p className="empty-state">
-          Official maps come from <code>maps.json</code>, custom/modded maps from <code>customMaps.json</code> (both
-          in your Documents folder, under "ARK Server Manager") - edit either to add more without an app update.
-          Either group just sets this server's map like normal; if a custom map also needs a Workshop mod id passed
-          alongside it, set that separately below in Mod Map.
-        </p>
-      </label>
-      <label>
-        Mod Map
-        <div className="path-input-row">
-          <input
-            value={form.moddedMapId}
-            onChange={(e) => update('moddedMapId', e.target.value)}
-            placeholder="Workshop mod id"
-            disabled={!form.moddedMapEnabled}
-          />
-          <button
-            type="button"
-            className={form.moddedMapEnabled ? 'active' : ''}
-            onClick={() => update('moddedMapEnabled', !form.moddedMapEnabled)}
-          >
-            {form.moddedMapEnabled ? 'Modded Map Enabled' : 'Enable Modded Map'}
-          </button>
-        </div>
-        <p className="empty-state">Passed as -MapModID=&lt;id&gt; when enabled, alongside the Map above.</p>
-      </label>
-      <div className="settings-grid">
-        <label>
-          Game port
-          <input type="number" value={form.gamePort} onChange={(e) => update('gamePort', Number(e.target.value))} />
-        </label>
-        <label>
-          RCON port
-          <input type="number" value={form.rconPort} onChange={(e) => update('rconPort', Number(e.target.value))} />
-        </label>
-        <label>
-          Server Platform
-          <select
-            value={form.serverPlatform}
-            onChange={(e) => update('serverPlatform', e.target.value as ServerProfile['serverPlatform'])}
-          >
-            <option value="PC">PC</option>
-            <option value="ALL">ALL</option>
-          </select>
-        </label>
-        <label>
-          Max Players
-          <input
-            type="number"
-            value={form.maxPlayers}
-            onChange={(e) => update('maxPlayers', Number(e.target.value))}
-          />
-        </label>
-      </div>
+      </section>
       <section className="cluster-section">
         <h3>Cluster</h3>
         <label className="checkbox">
@@ -298,7 +321,7 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         Extra launch arguments
         <input value={form.extraArgs} onChange={(e) => update('extraArgs', e.target.value)} />
       </label>
-      {exportError && <p className="error-message">{exportError}</p>}
+      {formError && <p className="error-message">{formError}</p>}
       <div className="form-actions">
         <button type="button" onClick={() => void exportProfile()}>
           Export profile...

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { app, shell } from 'electron'
 import type { ServerProfile } from '@shared/types'
+import { getDataDir } from './dataDir'
 
 /** Where electron-store persists profiles/settings (a single config.json), since no `cwd`
  *  override is passed to the Store constructor - this is electron-store's own default. */
@@ -11,6 +12,16 @@ export function getProfilesStoreDir(): string {
 
 export async function openProfilesFolder(): Promise<void> {
   const error = await shell.openPath(getProfilesStoreDir())
+  if (error) throw new Error(error)
+}
+
+/** Opens the effective (configured, or default) Data files location - where maps.json,
+ *  customMaps.json, and other editable/generated files live. Created if it doesn't exist
+ *  yet (a fresh install, before anything's ever been written there). */
+export async function openDataDirFolder(): Promise<void> {
+  const dir = getDataDir()
+  fs.mkdirSync(dir, { recursive: true })
+  const error = await shell.openPath(dir)
   if (error) throw new Error(error)
 }
 

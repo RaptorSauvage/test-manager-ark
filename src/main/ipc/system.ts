@@ -3,6 +3,7 @@ import { IPC } from '@shared/types'
 import { getProfile } from '../store'
 import {
   openProfilesFolder,
+  openDataDirFolder,
   openServerConfigFolder,
   openServerSavedArksFolder,
   openServerSaveGamesFolder
@@ -16,6 +17,7 @@ function requireProfile(profileId: string) {
 
 export function registerSystemHandlers(): void {
   ipcMain.handle(IPC.appOpenProfilesFolder, () => openProfilesFolder())
+  ipcMain.handle(IPC.appOpenDataDirFolder, () => openDataDirFolder())
   ipcMain.handle(IPC.serverOpenConfigFolder, (_event, profileId: string) =>
     openServerConfigFolder(requireProfile(profileId))
   )
