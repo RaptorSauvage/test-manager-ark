@@ -139,6 +139,7 @@ export default function GroupConsoleView({
   const [cardErrors, setCardErrors] = useState<Record<string, string>>({})
   const [contextMenu, setContextMenu] = useState<{ profileId: string; x: number; y: number } | null>(null)
   const feedRef = useRef<HTMLDivElement>(null)
+  const didInitialScroll = useRef(false)
   const profileIdsKey = profiles.map((p) => p.id).join(',')
   const statuses = useServerStatuses(profiles.map((p) => p.id))
 
@@ -151,6 +152,7 @@ export default function GroupConsoleView({
 
   useEffect(() => {
     let cancelled = false
+    didInitialScroll.current = false
     window.api.groupConsole.subscribe(profiles.map((p) => p.id)).then((backlog) => {
       if (!cancelled) setEvents(backlog)
     })
@@ -213,10 +215,18 @@ export default function GroupConsoleView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statuses, profileIdsKey])
 
+  // Jumps to the newest event the first time there's a backlog to show - opening the
+  // console should land on the latest activity, not the oldest - regardless of Auto-scroll,
+  // which only governs whether it keeps following new events afterward.
   useEffect(() => {
-    if (!autoScroll) return
     const el = feedRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (!el || events.length === 0) return
+    if (!didInitialScroll.current) {
+      el.scrollTop = el.scrollHeight
+      didInitialScroll.current = true
+      return
+    }
+    if (autoScroll) el.scrollTop = el.scrollHeight
   }, [events, autoScroll])
 
   useEffect(() => {

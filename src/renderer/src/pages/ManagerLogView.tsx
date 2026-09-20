@@ -67,6 +67,7 @@ export default function ManagerLogView(): JSX.Element {
   const [entries, setEntries] = useState<ManagerLogEntry[]>([])
   const [autoScroll, setAutoScroll] = useState(false)
   const feedRef = useRef<HTMLDivElement>(null)
+  const didInitialScroll = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -84,10 +85,18 @@ export default function ManagerLogView(): JSX.Element {
     })
   }, [])
 
+  // Jumps to the newest entry the first time there's anything to show - opening the page
+  // should land on the latest activity, not the oldest - regardless of Auto-scroll, which
+  // only governs whether it keeps following new entries afterward.
   useEffect(() => {
-    if (!autoScroll) return
     const el = feedRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (!el || entries.length === 0) return
+    if (!didInitialScroll.current) {
+      el.scrollTop = el.scrollHeight
+      didInitialScroll.current = true
+      return
+    }
+    if (autoScroll) el.scrollTop = el.scrollHeight
   }, [entries, autoScroll])
 
   const groups = groupByTask(entries)

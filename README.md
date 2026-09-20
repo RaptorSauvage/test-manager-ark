@@ -232,7 +232,9 @@ dedicated servers running on the same machine.
   persisted per-label setting (toggling one here doesn't affect the other) and, unlike that
   setting, persist across sessions on their own. An **Auto-scroll** checkbox sits alongside
   the Show filters (unchecked by default) - only when checked does a new event jump the feed
-  to the bottom; otherwise it appends silently wherever you've scrolled to. Events are merged by their actual log date
+  to the bottom; otherwise it appends silently wherever you've scrolled to. Either way,
+  opening the console always jumps to the latest entry in the backlog first - Auto-scroll
+  only decides what happens once new events start arriving live. Events are merged by their actual log date
   plus time, not time-of-day alone - a single server's backlog can itself span more than a
   day, so HH:MM:SS by itself isn't enough to correctly order events from multiple servers'
   backlogs together. Only servers that are actually running get their new events tailed
@@ -568,7 +570,8 @@ dedicated servers running on the same machine.
       the single-server Dashboard view's own **Events ▾** toggle, independent key so
       collapsing one doesn't affect the other. That same row ends with an **Auto-scroll**
       checkbox (unchecked by default, persisted the same way) - only when checked does a new
-      merged event jump the feed to the bottom.
+      merged event jump the feed to the bottom; opening the group console always jumps to the
+      latest backlog entry first regardless.
     - Whenever any server's status transitions to running or stopped - not just a member of
       the currently-open group, and not for the in-between
       starting/stopping/updating/restarting states - a toast pops (green "started" / red
@@ -630,7 +633,8 @@ dedicated servers running on the same machine.
     and the live stream alike, so a disabled category is simply never sent to the
     browser. That row also ends with an **Auto-scroll** checkbox (client-side only,
     unchecked by default) - only when checked does a new event jump the feed to the
-    bottom. An **Events** button next to that row collapses/expands the whole checkbox
+    bottom; selecting a server always jumps its console to the latest backlog entry first
+    regardless. An **Events** button next to that row collapses/expands the whole checkbox
     row (handy on a small screen); the collapsed/expanded state is remembered in
     `localStorage`. Whenever the Manager (re)starts that server - Start, Restart, or the
     restart step of Stop+Update+Restart, from this page, the desktop app, or a bot calling
@@ -939,7 +943,9 @@ app's normal text size) so more of them fit on screen at once, especially on a l
 monitor. An **Auto-scroll** checkbox next to the page title (unchecked by default) is the
 only thing that scrolls the feed to the newest entry as new ones arrive - left off, new
 entries still append live but the page stays exactly where you scrolled it, so reading
-through older activity isn't constantly interrupted by a jump to the bottom.
+through older activity isn't constantly interrupted by a jump to the bottom. Opening the
+page itself always jumps to the newest entry first either way, so it never opens on the
+oldest recorded activity.
 
 ## Prerequisites
 

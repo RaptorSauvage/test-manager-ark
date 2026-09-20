@@ -2029,7 +2029,13 @@ function initDashboard(resolvedRole) {
     var urlToken = groupName ? encodeURIComponent(groupName) : UNGROUPED_TOKEN;
     fetch('/api/groups/' + urlToken + '/events')
       .then(function (r) { return r.json(); })
-      .then(function (events) { events.forEach(addClusterEvent); });
+      .then(function (events) {
+        events.forEach(addClusterEvent);
+        // Opening the console should land on the latest activity, not the oldest -
+        // regardless of the Auto-scroll setting, which only governs whether it keeps
+        // following new events from here on.
+        clusterConsoleFeedEl.scrollTop = clusterConsoleFeedEl.scrollHeight;
+      });
 
     if (clusterEs) { clusterEs.close(); clusterEs = null; }
     var clusterEsUrl = '/api/groups/' + urlToken + '/events/stream';
@@ -2496,7 +2502,13 @@ function initDashboard(resolvedRole) {
     if (!id) return;
     fetch('/api/servers/' + encodeURIComponent(id) + '/events')
       .then(function (r) { return r.json(); })
-      .then(function (events) { events.forEach(addEvent); });
+      .then(function (events) {
+        events.forEach(addEvent);
+        // Opening a server's console should land on the latest activity, not the oldest -
+        // regardless of the Auto-scroll setting, which only governs whether it keeps
+        // following new events from here on.
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      });
     var esUrl = '/api/servers/' + encodeURIComponent(id) + '/events/stream';
     if (accessToken) esUrl += '?token=' + encodeURIComponent(accessToken);
     es = new EventSource(esUrl);
