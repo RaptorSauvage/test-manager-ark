@@ -6,7 +6,10 @@ import AdmZip from 'adm-zip'
 
 vi.mock('../src/main/lib/serverProcess', () => ({ isRunning: vi.fn(() => false) }))
 vi.mock('../src/main/lib/rcon', () => ({ sendRconCommand: vi.fn(async () => ({ ok: true, response: 'World Saved' })) }))
-vi.mock('../src/main/lib/managerLog', () => ({ logManagerEvent: vi.fn(), newTaskId: vi.fn(() => 'task-id') }))
+vi.mock('../src/main/lib/managerLog', () => ({
+  logManagerEvent: vi.fn(),
+  newTaskId: vi.fn((prefix: string) => `${prefix}-task-id`)
+}))
 
 import {
   createBackup,
@@ -19,6 +22,7 @@ import {
 } from '../src/main/lib/backup'
 import { isRunning as mockIsRunning } from '../src/main/lib/serverProcess'
 import { sendRconCommand as mockSendRconCommand } from '../src/main/lib/rcon'
+import { logManagerEvent as mockLogManagerEvent } from '../src/main/lib/managerLog'
 import type { BackupEntry, ServerProfile } from '../shared/types'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
@@ -316,5 +320,30 @@ describe('restoreBackup', () => {
     restoreBackup(profile, backupZip)
 
     expect(fs.readFileSync(path.join(savedArksDir, 'Restored.ark'), 'utf-8')).toBe('restored-save')
+  })
+
+  it('logs the restore to the manager log, success and failure alike', () => {
+    vi.mocked(mockLogManagerEvent).mockClear()
+    const backupZip = path.join(backupDir, 'fixture.zip')
+    const zip = new AdmZip()
+    zip.addFile('Restored.ark', Buffer.from('restored-save'))
+    zip.writeZip(backupZip)
+    const profile = makeProfile({ installDir, backupDir })
+
+    restoreBackup(profile, backupZip)
+    expect(mockLogManagerEvent).toHaveBeenCalledWith(
+      expect.stringContaining('restore'),
+      expect.stringContaining(profile.name),
+      expect.stringContaining('Completed')
+    )
+
+    vi.mocked(mockIsRunning).mockReturnValue(true)
+    expect(() => restoreBackup(profile, backupZip)).toThrow()
+    expect(mockLogManagerEvent).toHaveBeenCalledWith(
+      expect.stringContaining('restore'),
+      expect.stringContaining(profile.name),
+      expect.stringContaining('Failed'),
+      'error'
+    )
   })
 })

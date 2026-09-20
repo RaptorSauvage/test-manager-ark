@@ -11,6 +11,8 @@
   --ok: #3fbf6f;
   --warn: #e0a63f;
   --cyan: #22d3ee;
+  --purple: #a78bfa;
+  --pink: #f472b6;
   --status-running: #1f8a4c;
   --status-starting: #7ee6a0;
   --status-updating: #6fa8ff;
@@ -263,8 +265,33 @@ label.checkbox {
 
 .manager-log-task {
   border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
   padding-bottom: 4px;
+  padding-left: 8px;
 }
+
+/* One color per event category, reusing the same colors as elsewhere in the app where a
+   category already has one (Start/Stop/Restart/Kill match the Dashboard card buttons,
+   Update matches the Update button/badge) so the same event always reads the same color
+   everywhere it shows up. */
+.manager-log-task--start { border-left-color: var(--ok); }
+.manager-log-task--start .manager-log-task-header strong { color: var(--ok); }
+.manager-log-task--stop { border-left-color: var(--danger); }
+.manager-log-task--stop .manager-log-task-header strong { color: var(--danger); }
+.manager-log-task--restart { border-left-color: var(--warn); }
+.manager-log-task--restart .manager-log-task-header strong { color: var(--warn); }
+.manager-log-task--kill { border-left-color: var(--danger-dark); }
+.manager-log-task--kill .manager-log-task-header strong { color: var(--danger-dark); }
+.manager-log-task--update { border-left-color: var(--status-updating); }
+.manager-log-task--update .manager-log-task-header strong { color: var(--status-updating); }
+.manager-log-task--schedule { border-left-color: var(--cyan); }
+.manager-log-task--schedule .manager-log-task-header strong { color: var(--cyan); }
+.manager-log-task--backup { border-left-color: var(--purple); }
+.manager-log-task--backup .manager-log-task-header strong { color: var(--purple); }
+.manager-log-task--restore { border-left-color: var(--pink); }
+.manager-log-task--restore .manager-log-task-header strong { color: var(--pink); }
+.manager-log-task--crash { border-left-color: var(--danger); }
+.manager-log-task--crash .manager-log-task-header strong { color: var(--danger); }
 
 .manager-log-task:last-child {
   border-bottom: none;
@@ -999,6 +1026,37 @@ label.checkbox {
   flex-direction: column;
   gap: 14px;
   max-width: 520px;
+}
+
+/* The app-wide Settings screen's own wrapper (distinct from .settings-tab, which the
+   Backups tab's two side-by-side mini-forms also use and which should keep their narrower
+   single-column layout). Blocks keep a consistent width and wrap across the available
+   width instead of one long column of unrelated fields down the left, same treatment as
+   .server-settings-tab. display: contents on the <form> itself lets its <section> children
+   participate directly in this flex-wrap layout instead of the whole form being one item. */
+.app-settings-view {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.app-settings-form {
+  display: contents;
+}
+
+.app-settings-view .cluster-section,
+.app-settings-view > .accounts-section,
+.app-settings-view > .managed-steamcmd {
+  flex: 1 1 380px;
+  max-width: 480px;
+  margin-bottom: 0;
+}
+
+.app-settings-view .form-actions {
+  flex: 1 1 100%;
+  max-width: none;
 }
 
 /* The per-server Settings tab's own wrapper (distinct from .settings-tab, which the

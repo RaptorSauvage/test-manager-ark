@@ -4,8 +4,13 @@ import type { ServerProfile } from '../shared/types'
 vi.mock('../src/main/lib/serverProcess', () => ({
   isRunning: vi.fn(() => false)
 }))
+vi.mock('../src/main/lib/managerLog', () => ({
+  logManagerEvent: vi.fn(),
+  newTaskId: vi.fn((prefix: string) => `${prefix}-test`)
+}))
 
 import { handleStatusForCrashWatch, cancelPendingCrashRestart } from '../src/main/lib/crashWatch'
+import { logManagerEvent as mockLogManagerEvent } from '../src/main/lib/managerLog'
 import { isRunning as mockIsRunning } from '../src/main/lib/serverProcess'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
@@ -61,6 +66,7 @@ describe('handleStatusForCrashWatch', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.mocked(mockIsRunning).mockReset().mockReturnValue(false)
+    vi.mocked(mockLogManagerEvent).mockClear()
   })
 
   afterEach(() => {
@@ -78,6 +84,29 @@ describe('handleStatusForCrashWatch', () => {
     vi.advanceTimersByTime(15000)
 
     expect(startServer).toHaveBeenCalledWith(profile)
+  })
+
+  it('logs a manager log entry when a crash is detected and again once the restart fires', () => {
+    const profile = makeProfile({ id: 'crash-logged' })
+    const startServer = vi.fn()
+
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'running' }, startServer, () => profile)
+    handleStatusForCrashWatch({ profileId: profile.id, state: 'stopped' }, startServer, () => profile)
+
+    expect(mockLogManagerEvent).toHaveBeenCalledWith(
+      expect.stringContaining('crash-watch'),
+      expect.stringContaining(profile.name),
+      expect.stringContaining('Crash detected'),
+      'error'
+    )
+
+    vi.advanceTimersByTime(15000)
+
+    expect(mockLogManagerEvent).toHaveBeenCalledWith(
+      expect.stringContaining('crash-watch'),
+      expect.stringContaining(profile.name),
+      'Restarting...'
+    )
   })
 
   it('does not restart when the profile has the watchdog turned off', () => {

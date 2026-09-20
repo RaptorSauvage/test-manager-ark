@@ -7,6 +7,28 @@ interface TaskGroup {
   entries: ManagerLogEntry[]
 }
 
+/** taskId prefixes (see newTaskId in src/main/lib/managerLog.ts) mapped to a display
+ *  category, longest/most-specific prefix first so e.g. "scheduled-restart-..." matches
+ *  before a hypothetical plain "restart-" check would. Purely a display concern - an
+ *  unrecognized prefix (including any historical log entries predating this) just renders
+ *  uncolored instead of failing to render. */
+const CATEGORY_PREFIXES: ReadonlyArray<readonly [string, string]> = [
+  ['scheduled-restart-', 'schedule'],
+  ['crash-watch-', 'crash'],
+  ['backup-', 'backup'],
+  ['restore-', 'restore'],
+  ['update-', 'update'],
+  ['start-', 'start'],
+  ['stop-', 'stop'],
+  ['restart-', 'restart'],
+  ['kill-', 'kill']
+]
+
+function categoryForTaskId(taskId: string): string | null {
+  const found = CATEGORY_PREFIXES.find(([prefix]) => taskId.startsWith(prefix))
+  return found ? found[1] : null
+}
+
 /** Groups a chronological list of entries into consecutive runs sharing the same taskId -
  *  a single manual action (Start/Stop/Kill/Restart) is a "group" of exactly one entry, while
  *  a scheduled restart or a backup's several steps land together under one header instead of
@@ -72,13 +94,19 @@ export default function ManagerLogView(): JSX.Element {
         </label>
       </header>
       <p className="empty-state">
-        Everything the Manager itself has done - Start/Stop/Kill/Restart, scheduled restarts, and backups - separate
-        from any one server&apos;s own game log or update log. Persists across Manager restarts.
+        Everything the Manager itself has done - Start/Stop/Kill/Restart, scheduled restarts, backups (created or
+        restored), SteamCMD updates, and Anti-Crash Watchdog restarts - each colored by event type. Separate from
+        any one server&apos;s own game log or update log. Persists across Manager restarts.
       </p>
       <div className="manager-log-feed" ref={feedRef}>
         {groups.length === 0 && <p className="empty-state">No manager activity recorded yet.</p>}
-        {groups.map((group, i) => (
-          <div className="manager-log-task" key={`${group.taskId}-${i}`}>
+        {groups.map((group, i) => {
+          const category = categoryForTaskId(group.taskId)
+          return (
+          <div
+            className={category ? `manager-log-task manager-log-task--${category}` : 'manager-log-task'}
+            key={`${group.taskId}-${i}`}
+          >
             <div className="manager-log-task-header">
               <span className="manager-log-time">
                 {group.entries[0].date} {group.entries[0].ts}
@@ -93,7 +121,8 @@ export default function ManagerLogView(): JSX.Element {
               ))}
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

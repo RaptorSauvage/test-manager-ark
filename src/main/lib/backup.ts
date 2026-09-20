@@ -188,18 +188,28 @@ export function deleteBackup(filePath: string): void {
 }
 
 export function restoreBackup(profile: ServerProfile, backupFilePath: string): void {
+  const taskId = newTaskId('restore')
+  const taskLabel = `Restore — ${profile.name}`
   if (isRunning(profile.id)) {
     // Extracting straight into SavedArks while the server is up overwrites save files it
     // may have open/locked, or that it's mid-write to during its own autosave - either
     // way the result is a corrupted save that only surfaces as a crash on the next
     // restart, not at restore time. Requiring a stop first (same as Profile Copy/Move)
     // makes this a plain file copy against files nothing else is touching.
-    throw new Error('Stop the server before restoring a backup.')
+    const message = 'Stop the server before restoring a backup.'
+    logManagerEvent(taskId, taskLabel, `Failed: ${message}`, 'error')
+    throw new Error(message)
   }
-  const targetDir = savedArksDir(profile)
-  fs.mkdirSync(targetDir, { recursive: true })
-  const zip = new AdmZip(backupFilePath)
-  zip.extractAllTo(targetDir, true)
+  try {
+    const targetDir = savedArksDir(profile)
+    fs.mkdirSync(targetDir, { recursive: true })
+    const zip = new AdmZip(backupFilePath)
+    zip.extractAllTo(targetDir, true)
+    logManagerEvent(taskId, taskLabel, `Completed: ${path.basename(backupFilePath)}`)
+  } catch (err) {
+    logManagerEvent(taskId, taskLabel, `Failed: ${(err as Error).message}`, 'error')
+    throw err
+  }
 }
 
 export async function openBackupFolder(profile: ServerProfile): Promise<void> {

@@ -85,226 +85,206 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
         <h1>Settings</h1>
       </header>
 
-      <form
-        className="settings-tab"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void save()
-        }}
-      >
-        <label>
-          Data files location
-          <div className="path-input-row">
-            <input
-              value={settings.dataDir}
-              onChange={(e) => setSettings({ ...settings, dataDir: e.target.value })}
-              placeholder={defaultDataDir}
-            />
-            <button type="button" onClick={() => void browse()}>
-              Browse...
-            </button>
+      <div className="app-settings-view">
+        <form
+          className="app-settings-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void save()
+          }}
+        >
+          <section className="cluster-section">
+            <h3>Data &amp; Storage</h3>
+            <label>
+              Data files location
+              <div className="path-input-row">
+                <input
+                  value={settings.dataDir}
+                  onChange={(e) => setSettings({ ...settings, dataDir: e.target.value })}
+                  placeholder={defaultDataDir}
+                />
+                <button type="button" onClick={() => void browse()}>
+                  Browse...
+                </button>
+              </div>
+            </label>
+            <p className="empty-state">
+              Where <code>maps.json</code>, <code>customMaps.json</code>, and other config live - blank uses{' '}
+              {defaultDataDir || 'Documents/ARK Server Manager'}.
+            </p>
+            <label>
+              Stats history size limit (MB)
+              <input
+                type="number"
+                min={1}
+                value={settings.statsHistoryMaxSizeMB}
+                onChange={(e) => setSettings({ ...settings, statsHistoryMaxSizeMB: Number(e.target.value) })}
+              />
+            </label>
+            <p className="empty-state">
+              Combined cap on every server&apos;s CPU/RAM/player history (Analytics tab) - oldest samples trimmed
+              first once it&apos;s full.
+            </p>
+            <label>
+              Server profiles
+              <div className="path-input-row">
+                <button type="button" onClick={() => void window.api.system.openProfilesFolder()}>
+                  Open profiles folder
+                </button>
+              </div>
+            </label>
+            <p className="empty-state">Opens this app&apos;s own data folder (profiles, settings, config.json).</p>
+          </section>
+
+          <section className="cluster-section">
+            <h3>Startup &amp; Safety</h3>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={settings.launchOnStartup}
+                onChange={(e) => setSettings({ ...settings, launchOnStartup: e.target.checked })}
+              />
+              Start Manager when you log into Windows
+            </label>
+            <label>
+              Delay between auto-started servers (seconds)
+              <input
+                type="number"
+                min={0}
+                value={settings.serverAutoStartStaggerSeconds}
+                onChange={(e) => setSettings({ ...settings, serverAutoStartStaggerSeconds: Number(e.target.value) })}
+              />
+            </label>
+            <p className="empty-state">
+              Wait between each profile with &quot;Start this server when the Manager starts&quot; enabled (Server
+              Management tab), so monitoring is ready before each one starts.
+            </p>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={settings.iniLockEnabled}
+                onChange={(e) => setSettings({ ...settings, iniLockEnabled: e.target.checked })}
+              />
+              Lock config files while a server is running
+            </label>
+            <p className="empty-state">
+              Makes <code>GameUserSettings.ini</code>/<code>Game.ini</code> read-only while that server runs, as a
+              guard against editing it by accident.
+            </p>
+          </section>
+
+          <section className="cluster-section">
+            <h3>Web Dashboard</h3>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={settings.webDashboardEnabled}
+                onChange={(e) => setSettings({ ...settings, webDashboardEnabled: e.target.checked })}
+              />
+              Enable web dashboard
+            </label>
+            <p className="empty-state">
+              A browser-accessible page (live console + RCON, one server at a time) - same content as the desktop
+              console, reachable from any device with a web browser.
+            </p>
+            <div className="settings-grid">
+              <label>
+                Host
+                <input
+                  value={settings.webDashboardHost}
+                  onChange={(e) => setSettings({ ...settings, webDashboardHost: e.target.value })}
+                  placeholder="127.0.0.1"
+                  disabled={!settings.webDashboardEnabled}
+                />
+              </label>
+              <label>
+                Port
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={settings.webDashboardPort}
+                  onChange={(e) => setSettings({ ...settings, webDashboardPort: Number(e.target.value) })}
+                  disabled={!settings.webDashboardEnabled}
+                />
+              </label>
+            </div>
+            <p className="empty-state">
+              <code>127.0.0.1</code> (default) keeps it reachable from this machine only; <code>0.0.0.0</code> or a
+              specific local IP also allows other devices on your network.
+              {localIps.length > 0 && (
+                <>
+                  {' '}
+                  This machine&apos;s local IP{localIps.length > 1 ? 's' : ''}:{' '}
+                  {localIps.map((ip, i) => (
+                    <span key={ip}>
+                      <code>{ip}</code>
+                      {i < localIps.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                  .
+                </>
+              )}
+            </p>
+            {isLan && !settings.webDashboardAuthEnabled && (
+              <p className="error-message">
+                Host is set to {settings.webDashboardHost} - reachable from your network with no access token
+                required.
+              </p>
+            )}
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={settings.webDashboardAuthEnabled}
+                onChange={(e) => setSettings({ ...settings, webDashboardAuthEnabled: e.target.checked })}
+                disabled={!settings.webDashboardEnabled}
+              />
+              Require access token (HTTPS)
+            </label>
+            <p className="empty-state">
+              Switches to <code>https://</code> (self-signed - browsers will warn once) and requires pasting an
+              access token (below) into every browser that opens the dashboard. Needed before exposing this outside
+              your LAN.
+            </p>
+            {settings.webDashboardEnabled && (
+              <p className={webDashboardStatus.error ? 'error-message' : 'empty-state'}>
+                {webDashboardStatus.error
+                  ? `Failed to start: ${webDashboardStatus.error}`
+                  : webDashboardStatus.running
+                    ? `Running at ${settings.webDashboardAuthEnabled ? 'https' : 'http'}://${webDashboardStatus.host}:${settings.webDashboardPort}`
+                    : 'Not running yet - save to start it.'}
+              </p>
+            )}
+          </section>
+
+          <div className="form-actions">
+            <button type="submit">Save</button>
+            {status && <span className="status-message">{status}</span>}
           </div>
-        </label>
-        <p className="empty-state">
-          Where <code>maps.json</code>, <code>customMaps.json</code>, and any future editable config files live.
-          Leave blank to use the default ({defaultDataDir || 'Documents/ARK Server Manager'}). Changing this only
-          affects where the app looks going forward - it won&apos;t move any existing files for you.
-        </p>
+        </form>
 
-        <label>
-          Stats history size limit (MB)
-          <input
-            type="number"
-            min={1}
-            value={settings.statsHistoryMaxSizeMB}
-            onChange={(e) => setSettings({ ...settings, statsHistoryMaxSizeMB: Number(e.target.value) })}
-          />
-        </label>
-        <p className="empty-state">
-          Global budget (default 1024 MB / 1GB) shared across every server with stats collection enabled (Analytics
-          tab) - not a per-server quota. Once the combined history exceeds this, the oldest samples (from whichever
-          server they belong to) are trimmed first.
-        </p>
+        <AccessTokensSection />
+        <ApiKeysSection />
 
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={settings.launchOnStartup}
-            onChange={(e) => setSettings({ ...settings, launchOnStartup: e.target.checked })}
-          />
-          Start Manager when you log into Windows
-        </label>
-        <p className="empty-state">
-          Registers this app to launch automatically at login (minimized to the background isn&apos;t supported yet
-          - it opens its normal window). Save this form to apply the change immediately.
-        </p>
-
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={settings.iniLockEnabled}
-            onChange={(e) => setSettings({ ...settings, iniLockEnabled: e.target.checked })}
-          />
-          Lock config files while a server is running
-        </label>
-        <p className="empty-state">
-          Sets <code>GameUserSettings.ini</code>/<code>Game.ini</code> read-only a few seconds after a server
-          starts, and writable again a few seconds after it fully stops - a deterrent against editing a running
-          server&apos;s config by accident (see the Analytics tab). Turning this off unlocks every server&apos;s
-          config files right away, including ones currently running. Save this form to apply the change
-          immediately.
-        </p>
-
-        <label>
-          Delay between auto-started servers (seconds)
-          <input
-            type="number"
-            min={0}
-            value={settings.serverAutoStartStaggerSeconds}
-            onChange={(e) => setSettings({ ...settings, serverAutoStartStaggerSeconds: Number(e.target.value) })}
-          />
-        </label>
-        <p className="empty-state">
-          Applies to every profile with &quot;Start this server when the Manager starts&quot; enabled (Server
-          Management tab) - including the first one, so the Manager's own monitoring has time to finish
-          initializing before that server starts and its telemetry is picked up correctly from the start. If
-          several servers have it enabled, each subsequent one waits this same delay after the previous one.
-        </p>
-
-        <label>
-          Server profiles
-          <div className="path-input-row">
-            <button type="button" onClick={() => void window.api.system.openProfilesFolder()}>
-              Open profiles folder
-            </button>
-          </div>
-        </label>
-        <p className="empty-state">
-          Opens the folder holding this app&apos;s own data file (profiles, app settings, and which pid belongs to
-          which running server) - a single <code>config.json</code>, written by the underlying storage library this
-          app uses. It&apos;s already plain JSON today, just not broken out into one file per profile the way an
-          exported profile is.
-        </p>
-
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={settings.webDashboardEnabled}
-            onChange={(e) => setSettings({ ...settings, webDashboardEnabled: e.target.checked })}
-          />
-          Enable web dashboard
-        </label>
-        <label>
-          Host
-          <input
-            value={settings.webDashboardHost}
-            onChange={(e) => setSettings({ ...settings, webDashboardHost: e.target.value })}
-            placeholder="127.0.0.1"
-            disabled={!settings.webDashboardEnabled}
-          />
-        </label>
-        <label>
-          Port
-          <input
-            type="number"
-            min={1}
-            max={65535}
-            value={settings.webDashboardPort}
-            onChange={(e) => setSettings({ ...settings, webDashboardPort: Number(e.target.value) })}
-            disabled={!settings.webDashboardEnabled}
-          />
-        </label>
-        <p className="empty-state">
-          A browser-accessible page (live console feed + RCON command box, one server at a time) - the same
-          content as the Console &amp; RCON tab, reachable from a normal web browser instead of only from inside
-          this app.
-        </p>
-        <p className="empty-state">
-          <strong>Host</strong> controls who can reach it. Leave at <code>127.0.0.1</code> (default) to keep it
-          reachable from this machine only. Set it to <code>0.0.0.0</code> to accept connections on every network
-          interface, or to one specific local IP below to accept connections on just that one - either way, that
-          means anyone on your local network can reach it, so only do this on a network you trust unless
-          &quot;Require access token&quot; below is also on.
-          {localIps.length > 0 && (
-            <>
-              {' '}
-              This machine&apos;s local IP{localIps.length > 1 ? 's' : ''}:{' '}
-              {localIps.map((ip, i) => (
-                <span key={ip}>
-                  <code>{ip}</code>
-                  {i < localIps.length - 1 ? ', ' : ''}
-                </span>
-              ))}
-              .
-            </>
+        <section className="managed-steamcmd">
+          <h3>Manager updates</h3>
+          <p className="empty-state">
+            Current version: <code>{appVersion || '...'}</code>. Checks GitHub for a newer release and downloads it
+            - installing (below) restarts the Manager, as a separate step so it never happens automatically.
+          </p>
+          {appUpdateStatus.state !== 'idle' && (
+            <p className={appUpdateStatus.state === 'error' ? 'error-message' : 'empty-state'}>
+              {describeAppUpdateStatus(appUpdateStatus, appVersion)}
+            </p>
           )}
-        </p>
-        {isLan && !settings.webDashboardAuthEnabled && (
-          <p className="error-message">
-            Web dashboard host is set to {settings.webDashboardHost} - reachable from other devices on your
-            network with no access token required.
-          </p>
-        )}
-
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={settings.webDashboardAuthEnabled}
-            onChange={(e) => setSettings({ ...settings, webDashboardAuthEnabled: e.target.checked })}
-            disabled={!settings.webDashboardEnabled}
-          />
-          Require access token (HTTPS)
-        </label>
-        <p className="empty-state">
-          Switches the dashboard to <code>https://</code> with a self-signed certificate (browsers will show a
-          &quot;not trusted&quot; warning the first time - that&apos;s expected, click through or install the
-          certificate from <code>{defaultDataDir || 'the data folder'}/certs/cert.pem</code> if you want to avoid
-          it) and requires pasting one of the access tokens below into every browser that opens the dashboard. This
-          is what makes it reasonably safe to expose outside your LAN (e.g. via router port forwarding) - without
-          it, anyone who can reach the address has full unauthenticated control. A token is remembered by that
-          browser (its own localStorage) until it&apos;s cleared or the token is revoked from here - unlike a login
-          session, it survives a Manager restart or the dashboard being turned off and back on.
-        </p>
-        <p className="empty-state">Save this form to apply a change immediately, no restart needed.</p>
-        {settings.webDashboardEnabled && (
-          <p className={webDashboardStatus.error ? 'error-message' : 'empty-state'}>
-            {webDashboardStatus.error
-              ? `Failed to start: ${webDashboardStatus.error}`
-              : webDashboardStatus.running
-                ? `Running at ${settings.webDashboardAuthEnabled ? 'https' : 'http'}://${webDashboardStatus.host}:${settings.webDashboardPort}`
-                : 'Not running yet - save to start it.'}
-          </p>
-        )}
-
-        <div className="form-actions">
-          <button type="submit">Save</button>
-          {status && <span className="status-message">{status}</span>}
-        </div>
-      </form>
-
-      <AccessTokensSection />
-      <ApiKeysSection />
-
-      <section className="managed-steamcmd">
-        <h3>Manager updates</h3>
-        <p className="empty-state">
-          Current version: <code>{appVersion || '...'}</code>. Checks this app&apos;s GitHub Releases for a newer
-          version and downloads it - installing it (which restarts the Manager) is a separate step below, so it
-          never restarts on its own out from under unsaved changes elsewhere in the app. Only works in an
-          installed/packaged build, not when running from source.
-        </p>
-        {appUpdateStatus.state !== 'idle' && (
-          <p className={appUpdateStatus.state === 'error' ? 'error-message' : 'empty-state'}>
-            {describeAppUpdateStatus(appUpdateStatus, appVersion)}
-          </p>
-        )}
-        <button onClick={() => void window.api.appUpdate.check()} disabled={appUpdateBusy}>
-          {appUpdateBusy ? 'Working...' : 'Check for updates'}
-        </button>
-        {appUpdateStatus.state === 'downloaded' && (
-          <button onClick={() => void window.api.appUpdate.install()}>Restart &amp; install now</button>
-        )}
-      </section>
+          <button onClick={() => void window.api.appUpdate.check()} disabled={appUpdateBusy}>
+            {appUpdateBusy ? 'Working...' : 'Check for updates'}
+          </button>
+          {appUpdateStatus.state === 'downloaded' && (
+            <button onClick={() => void window.api.appUpdate.install()}>Restart &amp; install now</button>
+          )}
+        </section>
+      </div>
     </div>
   )
 }

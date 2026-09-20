@@ -89,7 +89,16 @@ export function doKillServer(profileId: string): ServerStatus {
 }
 
 export async function doUpdateServer(profile: ServerProfile): Promise<void> {
-  await updateServer(profile, getSettings().steamCmdPath)
+  const taskId = newTaskId('update')
+  const taskLabel = `Update — ${profile.name}`
+  logManagerEvent(taskId, taskLabel, 'Started')
+  try {
+    await updateServer(profile, getSettings().steamCmdPath)
+    logManagerEvent(taskId, taskLabel, 'Completed')
+  } catch (err) {
+    logManagerEvent(taskId, taskLabel, `Failed: ${(err as Error).message}`, 'error')
+    throw err
+  }
 }
 
 /** Stops the server if it's running, updates it via SteamCMD, then starts it back up -

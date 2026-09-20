@@ -203,6 +203,12 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
             <p className="empty-state">Passed as -MapModID=&lt;id&gt; when enabled, alongside the Map above.</p>
           </label>
         </div>
+        <div className="form-actions">
+          <button type="button" onClick={() => void exportProfile()}>
+            Export profile...
+          </button>
+          {status && <span className="status-message">{status}</span>}
+        </div>
       </section>
       <section className="cluster-section">
         <h3>Extra Settings</h3>
@@ -260,11 +266,6 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
             placeholder="Leave blank for no group"
           />
         </label>
-        <p className="empty-state">
-          Every profile sharing the same group name collects into its own collapsible section on the dashboard,
-          named after the group - handy for organizing a cluster or a set of test servers. Leave blank to show
-          this server directly in the main grid.
-        </p>
         <label>
           Extra launch arguments
           <input value={form.extraArgs} onChange={(e) => update('extraArgs', e.target.value)} />
@@ -322,12 +323,6 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         </label>
       </section>
       {formError && <p className="error-message">{formError}</p>}
-      <div className="form-actions">
-        <button type="button" onClick={() => void exportProfile()}>
-          Export profile...
-        </button>
-        {status && <span className="status-message">{status}</span>}
-      </div>
     </form>
   )
 }

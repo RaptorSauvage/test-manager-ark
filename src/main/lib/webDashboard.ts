@@ -1534,7 +1534,11 @@ function initDashboard(resolvedRole) {
   // combined CPU%, combined RAM. Tapping a row opens that group's mobile Group Console.
   // Built from the same /api/servers response loadServers() already fetches every poll,
   // no separate request needed. The desktop-only stats chart is fetched separately and
-  // appended to this row once its own request resolves - see renderClusterCards.
+  // appended to this row once its own request resolves - see renderClusterCards. Returns an
+  // "entry" (the row element plus references to the bits that change every poll) rather
+  // than just the element, so renderClusterCards can update those in place on later polls
+  // instead of tearing down and rebuilding the whole row - see the comment above that
+  // function for why that matters.
   function buildGroupRow(g) {
     var card = document.createElement('div');
     card.className = 'cluster-card';
@@ -1545,30 +1549,25 @@ function initDashboard(resolvedRole) {
     name.textContent = g.displayName;
     var online = document.createElement('span');
     online.className = 'group-row-online';
-    online.textContent = g.onlineCount + '/' + g.servers.length;
-    var offlineCount = g.servers.length - g.onlineCount;
-    if (offlineCount > 0) {
-      var offline = document.createElement('span');
-      offline.className = 'group-row-offline';
-      offline.textContent = ' (' + offlineCount + ' off)';
-      online.appendChild(offline);
-    }
     header.appendChild(name);
     header.appendChild(online);
 
     var stats = document.createElement('div');
     stats.className = 'cluster-card-stats';
+    var playersValue = document.createElement('span');
+    var cpuValue = document.createElement('span');
+    var ramValue = document.createElement('span');
     var lines = [
-      ['Players', g.totalPlayers + '/' + g.totalMaxPlayers],
-      ['CPU', g.totalCpu.toFixed(1) + '%'],
-      ['RAM', g.totalMemoryMB + ' MB']
+      ['Players', playersValue],
+      ['CPU', cpuValue],
+      ['RAM', ramValue]
     ];
     lines.forEach(function (pair) {
       var line = document.createElement('div');
       var strong = document.createElement('strong');
       strong.textContent = pair[0] + ': ';
       line.appendChild(strong);
-      line.appendChild(document.createTextNode(pair[1]));
+      line.appendChild(pair[1]);
       stats.appendChild(line);
     });
 
@@ -1576,17 +1575,44 @@ function initDashboard(resolvedRole) {
     card.appendChild(stats);
 
     card.addEventListener('click', function () { openGroupConsole(g.groupName); });
-    return card;
+    return {
+      el: card,
+      onlineEl: online,
+      playersValueEl: playersValue,
+      cpuValueEl: cpuValue,
+      ramValueEl: ramValue,
+      chartEl: null
+    };
   }
+
+  function updateGroupRow(entry, g) {
+    entry.onlineEl.textContent = g.onlineCount + '/' + g.servers.length;
+    var offlineCount = g.servers.length - g.onlineCount;
+    if (offlineCount > 0) {
+      var offline = document.createElement('span');
+      offline.className = 'group-row-offline';
+      offline.textContent = ' (' + offlineCount + ' off)';
+      entry.onlineEl.appendChild(offline);
+    }
+    entry.playersValueEl.textContent = g.totalPlayers + '/' + g.totalMaxPlayers;
+    entry.cpuValueEl.textContent = g.totalCpu.toFixed(1) + '%';
+    entry.ramValueEl.textContent = g.totalMemoryMB + ' MB';
+  }
+
+  // Persists across polls (unlike a local variable inside renderClusterCards) so each poll
+  // can update an existing row's text/chart in place instead of tearing the whole card list
+  // down and rebuilding it from scratch - that used to blank every card (numbers and chart
+  // alike) for the moment between the rebuild and the chart's own re-fetch resolving,
+  // visible as a distracting flicker every 5s poll even though nothing had actually changed.
+  var clusterRowEntries = {};
 
   // Same grouping/ordering as the desktop dashboard: ungrouped servers first, then each
   // named group alphabetically (the already-sorted /api/servers response puts them in
-  // that order already). Plain totals render immediately from data loadServers() already
+  // that order already). Plain totals update immediately from data loadServers() already
   // has; the desktop-only stats chart (same persistent store + 6h/12h/24h/All scales as
-  // the Manager) is fetched per group from /api/groups/:group/stats and appended once it
-  // resolves, so a slow/failed fetch never blocks the totals from showing up.
+  // the Manager) is fetched per group from /api/groups/:group/stats and swapped in once it
+  // resolves, so a slow/failed fetch never blocks the totals from updating.
   function renderClusterCards(servers) {
-    clusterCardsEl.innerHTML = '';
     if (clusterTimeScaleEl) clusterTimeScaleEl.style.display = servers.length > 0 ? '' : 'none';
     var byGroup = {};
     var order = [];
@@ -1595,8 +1621,8 @@ function initDashboard(resolvedRole) {
       if (!byGroup[key]) { byGroup[key] = []; order.push(key); }
       byGroup[key].push(s);
     });
-    var rowEls = {};
     var groups = {};
+    var seenKeys = {};
     order.forEach(function (key) {
       var list = byGroup[key];
       var g = {
@@ -1610,33 +1636,59 @@ function initDashboard(resolvedRole) {
         totalMemoryMB: list.reduce(function (sum, s) { return sum + (s.memoryMB || 0); }, 0)
       };
       groups[key] = g;
-      var row = buildGroupRow(g);
-      rowEls[key] = row;
-      clusterCardsEl.appendChild(row);
+      seenKeys[key] = true;
+      var entry = clusterRowEntries[key];
+      if (!entry) {
+        entry = buildGroupRow(g);
+        clusterRowEntries[key] = entry;
+      }
+      updateGroupRow(entry, g);
+      // appendChild on a node already in the DOM just moves it - cheap, and doesn't blank
+      // or re-flow anything else, so this both adds new rows and keeps existing ones in the
+      // right order as the group list changes.
+      clusterCardsEl.appendChild(entry.el);
     });
 
-    if (window.innerWidth < DESKTOP_CHART_MIN_WIDTH) return;
+    // A group that no longer has any servers in it (last one moved out, or deleted).
+    Object.keys(clusterRowEntries).forEach(function (key) {
+      if (seenKeys[key]) return;
+      clusterRowEntries[key].el.remove();
+      delete clusterRowEntries[key];
+    });
+
+    var belowDesktopWidth = window.innerWidth < DESKTOP_CHART_MIN_WIDTH;
     var now = Date.now();
     var sinceParam = statsScale === null ? 'null' : String(now - statsScale);
     order.forEach(function (key) {
       var g = groups[key];
-      // Nothing running in this group right now - same as the desktop Manager's own
-      // Cluster Dashboard, there's nothing live to show, and an empty chart would just
-      // misrepresent the group as merely idle instead of fully down.
-      if (g.onlineCount === 0) return;
+      var entry = clusterRowEntries[key];
+      // Nothing running in this group right now, or the window has shrunk below the
+      // desktop breakpoint - same as the desktop Manager's own Cluster Dashboard, there's
+      // nothing live to show (or no room to show it), and a stale chart would misrepresent
+      // the group as merely idle instead of fully down.
+      if (belowDesktopWidth || g.onlineCount === 0) {
+        if (entry.chartEl) { entry.chartEl.remove(); entry.chartEl = null; }
+        return;
+      }
       var urlToken = key ? encodeURIComponent(key) : UNGROUPED_TOKEN;
       fetch('/api/groups/' + urlToken + '/stats?since=' + sinceParam + '&maxPoints=' + STATS_MAX_POINTS)
         .then(function (res) { return res.ok ? res.json() : []; })
         .then(function (history) {
           if (!Array.isArray(history) || history.length === 0) return;
-          var row = rowEls[key];
-          if (!row) return;
+          // The group (or its row) may have disappeared while this fetch was in flight.
+          var currentEntry = clusterRowEntries[key];
+          if (!currentEntry) return;
           var windowMs = statsScale !== null ? statsScale : Math.max(1, Date.now() - history[0].time);
           var chart = buildClusterChart(history, windowMs, Date.now());
           chart.addEventListener('click', function (e) { e.stopPropagation(); });
-          row.appendChild(chart);
+          // Swaps the old chart for the new one in a single operation (or just appends if
+          // there wasn't one yet) instead of removing then re-adding, so there's never a
+          // moment where the row has no chart at all.
+          if (currentEntry.chartEl) currentEntry.chartEl.replaceWith(chart);
+          else currentEntry.el.appendChild(chart);
+          currentEntry.chartEl = chart;
         })
-        .catch(function () { /* stats chart is best-effort - totals above already rendered */ });
+        .catch(function () { /* stats chart is best-effort - totals above already updated */ });
     });
   }
 

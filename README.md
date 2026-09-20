@@ -495,7 +495,11 @@ dedicated servers running on the same machine.
   `RichColor` (four 0-1 floats, Unreal Engine's usual color format) converted into a CSS
   `rgb()`/`rgba()` color, then shown as "Official Server Network Status : Online
   (92.25)" in that color. A Refresh button re-fetches on demand.
-- **Settings** (dashboard) — lets you override the "Data files location" (default:
+- **Settings** (dashboard) — laid out as a few labeled cards (Data & Storage, Startup &
+  Safety, Web Dashboard, ...) that wrap across the window instead of one long column of
+  unrelated fields, same treatment as the per-server Settings/Server Management tabs
+  (`.app-settings-view` in `styles.css`). Lets you override the "Data files location"
+  (default:
   Documents/ARK Server Manager), the folder `maps.json`, `customMaps.json`, the managed
   SteamCMD install, per-profile update logs, and any future editable/generated files live
   in. Changing it only affects where the app looks going forward - it doesn't move
@@ -530,7 +534,11 @@ dedicated servers running on the same machine.
     selected scale. That means every viewer of this page, and the desktop Manager, all see
     the exact same recorded history - not a separate per-browser copy - and only servers
     with stats collection enabled (the Analytics tab's toggle) contribute to a group's chart.
-    Only the selected time scale itself is remembered in this browser's `localStorage`.
+    Only the selected time scale itself is remembered in this browser's `localStorage`. Each
+    poll updates a row's numbers and chart in place (existing text/SVG elements, not a torn
+    down and rebuilt card) - rebuilding the whole card list from scratch every 5s used to
+    blank each card for the moment between that rebuild and the chart's own re-fetch
+    resolving, a distracting flicker even though nothing had actually changed.
     Narrower than 701px, the chart and time-scale selector don't render at all, keeping the
     mobile layout to the plain numeric totals. Tapping a row (outside the chart, which has its own click
     handler so it doesn't also trigger this) drills into that group's own **mobile Group
@@ -888,20 +896,29 @@ dedicated servers running on the same machine.
 
 A page (sidebar **Log** button, alongside Dashboard and Cluster Dashboard) recording
 everything the Manager itself does - Start/Stop/Kill/Restart (manual, from either the
-Dashboard or the web dashboard), a scheduled restart's stop/update/start sequence, and a
-backup's save/zip sequence (manual or scheduled) - independent of any one server's own
-ShooterGame.log or SteamCMD update log, and persisted across Manager restarts
-(`src/main/lib/managerLog.ts`, `logs/manager.jsonl` under the Data files location, capped
-at a fixed 5 MB with the oldest entries trimmed automatically once exceeded - not a
-per-server setting like the cluster log archive, since this is Manager-wide activity
-expected to accumulate slowly). A single action (e.g. a plain Start) is one line; a
-multi-step task (the scheduled restart's Stopping/Stopped/Updating/Started sequence, or a
-backup's Started/Completed sequence) shares one `taskId` under the hood so the page groups
-them under one header showing the task's name (e.g. "Scheduled Restart — ServerName") with
-each step listed underneath, rather than as unrelated lines. Refreshes live while the page
-is open - the main process pushes each new entry as it's recorded, the same push pattern as
-the Backups tab's own process log. Entries are set in a smaller, tighter font (rather than
-the app's normal text size) so more of them fit on screen at once, especially on a large
+Dashboard or the web dashboard), a scheduled restart's stop/update/start sequence, a
+backup's save/zip sequence (manual or scheduled) and a restore, a SteamCMD update (manual
+or scheduled, success or failure), and an Anti-Crash Watchdog-triggered restart -
+independent of any one server's own ShooterGame.log or SteamCMD update log, and persisted
+across Manager restarts (`src/main/lib/managerLog.ts`, `logs/manager.jsonl` under the Data
+files location, capped at a fixed 5 MB with the oldest entries trimmed automatically once
+exceeded - not a per-server setting like the cluster log archive, since this is
+Manager-wide activity expected to accumulate slowly). A single action (e.g. a plain Start)
+is one line; a multi-step task (the scheduled restart's Stopping/Stopped/Updating/Started
+sequence, a backup's Started/Completed sequence, or the Watchdog's detected/restarting
+sequence) shares one `taskId` under the hood so the page groups them under one header
+showing the task's name (e.g. "Scheduled Restart — ServerName") with each step listed
+underneath, rather than as unrelated lines. Each group is colored by event category - Start
+green, Stop red, Restart orange, Kill dark red, Update light blue (matching the same colors
+used for those actions elsewhere in the app), Scheduled Restart cyan, Backup purple,
+Restore pink, and Anti-Crash Watchdog red - a left border plus the header text, so the kind
+of event registers at a glance without reading every label. The category is inferred from
+the `taskId`'s own prefix (`start-`, `backup-`, `crash-watch-`, ...) client-side, so it's
+purely a display concern - an older log entry from before this existed, or any other
+prefix, just renders uncolored instead of breaking. Refreshes live while the page is open -
+the main process pushes each new entry as it's recorded, the same push pattern as the
+Backups tab's own process log. Entries are set in a smaller, tighter font (rather than the
+app's normal text size) so more of them fit on screen at once, especially on a large
 monitor. An **Auto-scroll** checkbox next to the page title (unchecked by default) is the
 only thing that scrolls the feed to the newest entry as new ones arrive - left off, new
 entries still append live but the page stays exactly where you scrolled it, so reading
@@ -985,11 +1002,14 @@ tab:
   to fewer (down to one) on a narrower window.
 - Settings groups **Name**, **Install directory**, **Game/RCON ports**, **Server
   Platform**, **Max Players**, **Map**, and **Mod Map** together into one **Server**
-  section, followed by **Extra Settings** (which also holds **Extra launch arguments** at
-  its end, rather than as its own standalone field below every section) and then
-  **Cluster** last - all three sections share the same card treatment, with **Map** and
-  **Mod Map** nested together in their own boxed subgroup within the **Server** section,
-  since a custom map's Workshop mod id only matters alongside the Map it's paired with.
+  section (which also holds the **Export profile...** button at its end, rather than as a
+  separate row below every section), followed by **Extra Settings** (which also holds
+  **Extra launch arguments** at its end, rather than as its own standalone field below every
+  section) and then **Cluster** last - all three sections share the same card treatment,
+  with **Map** and **Mod Map** nested together in their own boxed subgroup within the
+  **Server** section, since a custom map's Workshop mod id only matters alongside the Map
+  it's paired with. **Dashboard group** (Extra Settings) has no explanatory text under it -
+  see "Dashboard" above for what it does.
   **Install directory** is the folder containing `ShooterGame/Binaries/...` for that
   server instance - **Browse...** opens a folder picker; pasting a path works too, and a
   surrounding pair of quotes (e.g. from Windows Explorer's "Copy as path") is stripped

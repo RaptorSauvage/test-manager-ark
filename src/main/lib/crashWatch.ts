@@ -1,6 +1,7 @@
 import type { ServerProfile, ServerRunState, ServerStatus } from '@shared/types'
 import { getProfile } from '../store'
 import { isRunning, serverEvents } from './serverProcess'
+import { logManagerEvent, newTaskId } from './managerLog'
 
 /** How long to wait after a confirmed crash before restarting - gives a moment for
  *  whatever caused the crash (a bad save, a port conflict, antivirus, ...) to clear before
@@ -59,12 +60,22 @@ export function handleStatusForCrashWatch(
   if (!profile || !profile.crashWatchEnabled) return
 
   cancelPendingCrashRestart(status.profileId)
+  const taskId = newTaskId('crash-watch')
+  const taskLabel = `Anti-Crash Watchdog — ${profile.name}`
+  logManagerEvent(taskId, taskLabel, `Crash detected - restarting in ${RESTART_DELAY_MS / 1000}s...`, 'error')
   const timer = setTimeout(() => {
     pendingRestarts.delete(status.profileId)
     const current = lookupProfile(status.profileId)
-    if (!current || !current.crashWatchEnabled) return
-    if (isRunning(status.profileId)) return
+    if (!current || !current.crashWatchEnabled) {
+      logManagerEvent(taskId, taskLabel, 'Restart cancelled - watchdog was disabled before it fired.')
+      return
+    }
+    if (isRunning(status.profileId)) {
+      logManagerEvent(taskId, taskLabel, 'Restart skipped - server was already started by something else.')
+      return
+    }
     console.warn(`${current.name}: restarting automatically after an unexpected crash.`)
+    logManagerEvent(taskId, taskLabel, 'Restarting...')
     startServer(current)
   }, RESTART_DELAY_MS)
   pendingRestarts.set(status.profileId, timer)
