@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { WebDashboardAccessTokenSummary, WebDashboardRole } from '@shared/types'
+import type { ServerProfile, WebDashboardAccessTokenSummary, WebDashboardRole } from '@shared/types'
 
 /**
  * Web dashboard browser access tokens - what replaces logging in. Pasted once into a
@@ -12,8 +12,10 @@ import type { WebDashboardAccessTokenSummary, WebDashboardRole } from '@shared/t
  */
 export default function AccessTokensSection(): JSX.Element {
   const [tokens, setTokens] = useState<WebDashboardAccessTokenSummary[]>([])
+  const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [label, setLabel] = useState('')
   const [role, setRole] = useState<WebDashboardRole>('operator')
+  const [selectedProfileIds, setSelectedProfileIds] = useState<string[]>([])
   const [error, setError] = useState('')
   const [newToken, setNewToken] = useState('')
 
@@ -23,17 +25,27 @@ export default function AccessTokensSection(): JSX.Element {
 
   useEffect(() => {
     reload()
+    window.api.profiles.list().then(setProfiles)
   }, [])
+
+  function profileName(id: string): string {
+    return profiles.find((p) => p.id === id)?.name ?? id
+  }
 
   async function handleCreate(e: FormEvent): Promise<void> {
     e.preventDefault()
     setError('')
     try {
-      const { token, tokens: updated } = await window.api.webDashboardAccessTokens.create(label, role)
+      const { token, tokens: updated } = await window.api.webDashboardAccessTokens.create(
+        label,
+        role,
+        selectedProfileIds.length > 0 ? selectedProfileIds : null
+      )
       setTokens(updated)
       setNewToken(token)
       setLabel('')
       setRole('operator')
+      setSelectedProfileIds([])
     } catch (err) {
       setError((err as Error).message)
     }
@@ -84,18 +96,35 @@ export default function AccessTokensSection(): JSX.Element {
           <option value="operator">Operator</option>
           <option value="readonly">Read-only</option>
         </select>
+        <select
+          multiple
+          className="access-token-server-picker"
+          value={selectedProfileIds}
+          onChange={(e) => setSelectedProfileIds(Array.from(e.target.selectedOptions, (o) => o.value))}
+          title="Ctrl/Cmd-click to select more than one - nothing selected means every server"
+        >
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
         <button type="submit">Create token</button>
       </form>
+      <p className="empty-state">
+        Nothing selected in the server list above gives the token every server, including ones added later.
+      </p>
       {error && <p className="error-message">{error}</p>}
 
       {tokens.length === 0 ? (
         <p className="empty-state">No access tokens yet - create one above before enabling &quot;Require access token&quot;.</p>
       ) : (
-        <table className="accounts-table">
+        <table className="accounts-table access-tokens-table">
           <thead>
             <tr>
               <th>Label</th>
               <th>Role</th>
+              <th>Servers</th>
               <th></th>
             </tr>
           </thead>
@@ -104,6 +133,7 @@ export default function AccessTokensSection(): JSX.Element {
               <tr key={token.id}>
                 <td>{token.label}</td>
                 <td>{token.role}</td>
+                <td>{token.profileIds && token.profileIds.length > 0 ? token.profileIds.map(profileName).join(', ') : 'All'}</td>
                 <td className="accounts-row-actions">
                   <button
                     type="button"

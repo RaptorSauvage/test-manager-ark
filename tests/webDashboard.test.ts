@@ -572,12 +572,20 @@ describe('web dashboard HTTP server, auth enabled', () => {
     const readonlyId = generateApiKeyId()
     const readonlySecret = generateApiKeySecret()
     mockAccessTokens = [
-      { id: adminId, label: 'Admin token', secretHash: await hashPassword(adminSecret), role: 'admin', createdAt: Date.now() },
+      {
+        id: adminId,
+        label: 'Admin token',
+        secretHash: await hashPassword(adminSecret),
+        role: 'admin',
+        profileIds: null,
+        createdAt: Date.now()
+      },
       {
         id: operatorId,
         label: 'Operator token',
         secretHash: await hashPassword(operatorSecret),
         role: 'operator',
+        profileIds: null,
         createdAt: Date.now()
       },
       {
@@ -585,6 +593,7 @@ describe('web dashboard HTTP server, auth enabled', () => {
         label: 'Readonly token',
         secretHash: await hashPassword(readonlySecret),
         role: 'readonly',
+        profileIds: null,
         createdAt: Date.now()
       }
     ]
@@ -748,5 +757,58 @@ describe('web dashboard HTTP server, auth enabled', () => {
   it('401s a malformed Authorization header', async () => {
     const res = await authRequest('/api/servers', { headers: { Authorization: 'not-a-bearer-token' } })
     expect(res.status).toBe(401)
+  })
+
+  describe('a token scoped to a single server', () => {
+    let scopedToken = ''
+
+    beforeAll(async () => {
+      const id = generateApiKeyId()
+      const secret = generateApiKeySecret()
+      mockAccessTokens.push({
+        id,
+        label: 'Scoped to p2',
+        secretHash: await hashPassword(secret),
+        role: 'admin',
+        profileIds: ['p2'],
+        createdAt: Date.now()
+      })
+      scopedToken = buildApiKey(id, secret)
+    })
+
+    afterAll(() => {
+      mockAccessTokens = mockAccessTokens.filter((t) => t.label !== 'Scoped to p2')
+    })
+
+    it('only lists the server it is scoped to via GET /api/servers', async () => {
+      const res = await authRequest('/api/servers', { headers: { Authorization: `Bearer ${scopedToken}` } })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body).map((s: { id: string }) => s.id)).toEqual(['p2'])
+    })
+
+    it('404s an action route for a server outside its scope', async () => {
+      const res = await authRequest('/api/servers/p1/start', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${scopedToken}` }
+      })
+      expect(res.status).toBe(404)
+    })
+
+    it('allows the same action for the server inside its scope', async () => {
+      const res = await authRequest('/api/servers/p2/start', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${scopedToken}` }
+      })
+      expect(res.status).toBe(200)
+    })
+
+    it('excludes the out-of-scope server from a merged group backlog', async () => {
+      const res = await authRequest('/api/groups/_ungrouped_/events', {
+        headers: { Authorization: `Bearer ${scopedToken}` }
+      })
+      expect(res.status).toBe(200)
+      const profileIds = new Set(JSON.parse(res.body).map((e: { profileId: string }) => e.profileId))
+      expect(profileIds.has('p1')).toBe(false)
+    })
   })
 })

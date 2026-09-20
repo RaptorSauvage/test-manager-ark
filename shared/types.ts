@@ -216,6 +216,13 @@ export interface WebDashboardAccessToken {
   /** Never sent to the renderer - see WebDashboardAccessTokenSummary for what it gets instead. */
   secretHash: string
   role: WebDashboardRole
+  /** Which server profiles this token can see/act on - `null` means every profile (the
+   *  default, and the only behavior before this field existed, so older stored tokens with
+   *  no field at all keep working exactly as before). An empty array also means every
+   *  profile, matching the Settings UI's "nothing checked = all servers" picker. Enforced
+   *  server-side on every route that operates on a specific profile or group, not just
+   *  filtered out of the dashboard's own UI. */
+  profileIds: string[] | null
   createdAt: number
 }
 
@@ -607,7 +614,11 @@ export interface Api {
   }
   webDashboardAccessTokens: {
     list: () => Promise<WebDashboardAccessTokenSummary[]>
-    create: (label: string, role: WebDashboardRole) => Promise<{ token: string; tokens: WebDashboardAccessTokenSummary[] }>
+    create: (
+      label: string,
+      role: WebDashboardRole,
+      profileIds: string[] | null
+    ) => Promise<{ token: string; tokens: WebDashboardAccessTokenSummary[] }>
     delete: (id: string) => Promise<WebDashboardAccessTokenSummary[]>
   }
   webDashboardApiKeys: {

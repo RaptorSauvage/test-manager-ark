@@ -764,6 +764,15 @@ dedicated servers running on the same machine.
       Settings, or **Log out** is clicked - unlike a login session, a stored token survives
       a Manager restart or the dashboard being turned off and back on, so a browser only
       has to paste it in once.
+    - Each access token can also be scoped to a chosen subset of servers, via a scrolling
+      multi-select next to the label/role fields when creating one (nothing selected, the
+      default, means every server - including ones added later, same as a token created
+      before this existed). This is enforced on the server for every route that operates on
+      a specific server or group, not just filtered out of what the dashboard page displays
+      - a direct API call for a server outside a token's scope gets the same 404 as a
+      genuinely unknown server, rather than exposing that the server exists at all. The
+      tokens table shows each one's scope as "All" or the list of server names it's
+      restricted to.
     - **API keys** (also managed only from this Settings screen, kept as their own separate
       list from access tokens) are the same idea, but for scripts/bots that call the
       dashboard's HTTP API directly rather than a person's browser - e.g. a Discord bot
@@ -783,9 +792,9 @@ dedicated servers running on the same machine.
   `-culture=en`/`-culture=fr`, omitted entirely when set to None), Disable BattlEye
   (`-NoBattlEye`), RCON Tribe Log (`-servergamelogincludetribelogs` +
   `-ServerRCONOutputTribeLogs`), Force Respawn Wild Dinos (`-ForceRespawnDinos`), and No
-  Sound (`-nosound`). This section also shows an always-on, non-interactive "RCON Enabled"
-  indicator - RCON can't actually be turned off since the Manager depends on it for
-  Stop/Restart and the web dashboard.
+  Sound (`-nosound`). RCON itself is always on (the Manager depends on it for Stop/Restart
+  and the web dashboard) and can't be turned off, so there's no toggle or indicator for it
+  in the UI at all.
 - **Server Management tab** — **Manager Startup**, **Anti-Crash Watchdog**, **Zombie
   Detection**, and **Cluster Console Log Archive** share one **Startup & Watchdog** card
   (in that order, each its own labeled subsection with a one-line description rather than
@@ -908,7 +917,13 @@ is one line; a multi-step task (the scheduled restart's Stopping/Stopped/Updatin
 sequence, a backup's Started/Completed sequence, or the Watchdog's detected/restarting
 sequence) shares one `taskId` under the hood so the page groups them under one header
 showing the task's name (e.g. "Scheduled Restart — ServerName") with each step listed
-underneath, rather than as unrelated lines. Each group is colored by event category - Start
+underneath, rather than as unrelated lines. Grouping looks a `taskId` up across every group
+seen so far, not just the most recently added one - several scheduled backups for different
+servers can fire at the same moment and interleave their Started/Completed lines
+chronologically, so a single backup's two lines are rarely adjacent in the raw log; only
+checking the last group would otherwise split them into separate single-line groups instead
+of merging like an uninterrupted, single-server scheduled restart's steps already do. Each
+group is colored by event category - Start
 green, Stop red, Restart orange, Kill dark red, Update light blue (matching the same colors
 used for those actions elsewhere in the app), Scheduled Restart cyan, Backup purple,
 Restore pink, and Anti-Crash Watchdog red - a left border plus the header text, so the kind

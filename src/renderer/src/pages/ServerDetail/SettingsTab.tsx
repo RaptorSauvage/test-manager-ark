@@ -212,13 +212,6 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
       </section>
       <section className="cluster-section">
         <h3>Extra Settings</h3>
-        <label className="checkbox">
-          <input type="checkbox" checked disabled />
-          RCON Enabled
-        </label>
-        <p className="empty-state">
-          Always on - the Manager needs RCON for Stop/Restart and the RCON tab.
-        </p>
         <label>
           Culture Settings
           <select

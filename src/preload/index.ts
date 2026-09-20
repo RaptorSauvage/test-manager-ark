@@ -114,8 +114,8 @@ const api: Api = {
   },
   webDashboardAccessTokens: {
     list: () => ipcRenderer.invoke(IPC.webDashboardAccessTokensList),
-    create: (label: string, role: WebDashboardRole) =>
-      ipcRenderer.invoke(IPC.webDashboardAccessTokensCreate, label, role),
+    create: (label: string, role: WebDashboardRole, profileIds: string[] | null) =>
+      ipcRenderer.invoke(IPC.webDashboardAccessTokensCreate, label, role, profileIds),
     delete: (id: string) => ipcRenderer.invoke(IPC.webDashboardAccessTokensDelete, id)
   },
   webDashboardApiKeys: {

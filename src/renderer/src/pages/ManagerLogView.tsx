@@ -29,19 +29,27 @@ function categoryForTaskId(taskId: string): string | null {
   return found ? found[1] : null
 }
 
-/** Groups a chronological list of entries into consecutive runs sharing the same taskId -
- *  a single manual action (Start/Stop/Kill/Restart) is a "group" of exactly one entry, while
- *  a scheduled restart or a backup's several steps land together under one header instead of
- *  reading as unrelated lines. Entries always arrive in append order (see managerLog.ts),
- *  so no re-sorting is needed here. */
+/** Groups a chronological list of entries by taskId - a single manual action
+ *  (Start/Stop/Kill/Restart) is a "group" of exactly one entry, while a scheduled restart
+ *  or a backup's several steps land together under one header instead of reading as
+ *  unrelated lines. Looks the taskId up across every group seen so far (not just the most
+ *  recent one): several scheduled backups firing for different servers at the same moment
+ *  interleave their Started/Completed lines chronologically, so a single one's two lines
+ *  are rarely adjacent in `entries` - only checking the last group would otherwise split
+ *  them into separate single-line groups instead of merging like a scheduled restart's
+ *  (single-server, naturally uninterrupted) steps already do. A group keeps the screen
+ *  position of its first entry; later entries for the same task just add lines to it. */
 function groupByTask(entries: ManagerLogEntry[]): TaskGroup[] {
   const groups: TaskGroup[] = []
+  const byTaskId = new Map<string, TaskGroup>()
   for (const entry of entries) {
-    const last = groups[groups.length - 1]
-    if (last && last.taskId === entry.taskId) {
-      last.entries.push(entry)
+    const existing = byTaskId.get(entry.taskId)
+    if (existing) {
+      existing.entries.push(entry)
     } else {
-      groups.push({ taskId: entry.taskId, taskLabel: entry.taskLabel, entries: [entry] })
+      const group: TaskGroup = { taskId: entry.taskId, taskLabel: entry.taskLabel, entries: [entry] }
+      byTaskId.set(entry.taskId, group)
+      groups.push(group)
     }
   }
   return groups

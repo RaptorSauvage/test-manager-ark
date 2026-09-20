@@ -52,6 +52,19 @@ function resolveGroupProfiles(groupParam: string): ServerProfile[] {
   return sortProfilesForDisplay(listProfiles()).filter((p) => p.group.trim() === groupName)
 }
 
+/** `null` or an empty array (including a stored token from before this field existed, or one
+ *  saved with nothing checked) means every profile - matching both the pre-scoping behavior
+ *  and the Settings UI's "nothing checked = all servers" picker. */
+function hasProfileAccess(auth: RequireRoleResult, profileId: string): boolean {
+  return !auth.profileIds || auth.profileIds.length === 0 || auth.profileIds.includes(profileId)
+}
+
+function filterProfilesForAuth(auth: RequireRoleResult, profiles: ServerProfile[]): ServerProfile[] {
+  if (!auth.profileIds || auth.profileIds.length === 0) return profiles
+  const allowed = auth.profileIds
+  return profiles.filter((p) => allowed.includes(p.id))
+}
+
 function getDisabledLabels(): Set<string> {
   return new Set(getSettings().webDashboardDisabledLabels ?? [])
 }
@@ -92,6 +105,13 @@ function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown
   })
 }
 
+interface RequireRoleResult {
+  role: WebDashboardRole
+  /** `null` = every profile (an API key, or an access token with nothing checked in its
+   *  server picker). Only ever restricted for a WebDashboardAccessToken. */
+  profileIds: string[] | null
+}
+
 /**
  * Gate for every route below `minRole`. When the web dashboard's login requirement is off
  * (the default, unchanged from before this feature existed), this always succeeds with a
@@ -102,13 +122,17 @@ function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown
  * (pasted into a browser and kept in its own `localStorage`, never a cookie/session) -
  * sending the 401/403 itself and returning null on failure. Callers must `return`
  * immediately when this returns null.
+ *
+ * A route that operates on one profile or group must additionally check the returned
+ * `profileIds` (via hasProfileAccess/filterProfilesForAuth below) - this only checks role,
+ * not which servers the credential is scoped to.
  */
 async function requireRole(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   minRole: WebDashboardRole
-): Promise<{ role: WebDashboardRole } | null> {
-  if (!getSettings().webDashboardAuthEnabled) return { role: 'admin' }
+): Promise<RequireRoleResult | null> {
+  if (!getSettings().webDashboardAuthEnabled) return { role: 'admin', profileIds: null }
 
   const presented = getBearerTokenFromRequest(req)
   const parsed = presented ? parseApiKey(presented) : null
@@ -117,9 +141,9 @@ async function requireRole(
     return null
   }
 
-  const stored =
-    listWebDashboardApiKeys().find((k) => k.id === parsed.id) ??
-    listWebDashboardAccessTokens().find((t) => t.id === parsed.id)
+  const apiKey = listWebDashboardApiKeys().find((k) => k.id === parsed.id)
+  const accessToken = apiKey ? undefined : listWebDashboardAccessTokens().find((t) => t.id === parsed.id)
+  const stored = apiKey ?? accessToken
   const valid = stored ? await verifyPassword(parsed.secret, stored.secretHash) : false
   if (!valid || !stored) {
     sendJson(res, 401, { error: 'Invalid token' })
@@ -129,7 +153,10 @@ async function requireRole(
     sendJson(res, 403, { error: 'Insufficient permissions' })
     return null
   }
-  return { role: stored.role }
+  // apiKey is never profile-scoped; accessToken may be, but a stored token from before this
+  // field existed has no profileIds at all (undefined, despite the type) - treat that the
+  // same as null (unrestricted).
+  return { role: stored.role, profileIds: accessToken?.profileIds ?? null }
 }
 
 async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -150,8 +177,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 
   if (req.method === 'GET' && path === '/api/servers') {
-    if (!(await requireRole(req, res, 'readonly'))) return
-    const servers = sortProfilesForDisplay(listProfiles()).map((profile) => {
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
+    const servers = filterProfilesForAuth(auth, sortProfilesForDisplay(listProfiles())).map((profile) => {
       const status = getStatus(profile.id)
       return {
         id: profile.id,
@@ -172,17 +200,19 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const eventsMatch = path.match(/^\/api\/servers\/([^/]+)\/events$/)
   if (req.method === 'GET' && eventsMatch) {
-    if (!(await requireRole(req, res, 'readonly'))) return
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(eventsMatch[1]))
-    sendJson(res, 200, profile ? readLogBacklog(profile.installDir, getDisabledLabels()) : [])
+    sendJson(res, 200, profile && hasProfileAccess(auth, profile.id) ? readLogBacklog(profile.installDir, getDisabledLabels()) : [])
     return
   }
 
   const streamMatch = path.match(/^\/api\/servers\/([^/]+)\/events\/stream$/)
   if (req.method === 'GET' && streamMatch) {
-    if (!(await requireRole(req, res, 'readonly'))) return
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(streamMatch[1]))
-    if (!profile) {
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
       res.end('Unknown server')
       return
@@ -244,8 +274,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const groupEventsMatch = path.match(/^\/api\/groups\/([^/]+)\/events$/)
   if (req.method === 'GET' && groupEventsMatch) {
-    if (!(await requireRole(req, res, 'readonly'))) return
-    const profiles = resolveGroupProfiles(decodeURIComponent(groupEventsMatch[1]))
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
+    const profiles = filterProfilesForAuth(auth, resolveGroupProfiles(decodeURIComponent(groupEventsMatch[1])))
     const disabled = getDisabledLabels()
     sendJson(
       res,
@@ -257,8 +288,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const groupStreamMatch = path.match(/^\/api\/groups\/([^/]+)\/events\/stream$/)
   if (req.method === 'GET' && groupStreamMatch) {
-    if (!(await requireRole(req, res, 'readonly'))) return
-    const profiles = resolveGroupProfiles(decodeURIComponent(groupStreamMatch[1]))
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
+    const profiles = filterProfilesForAuth(auth, resolveGroupProfiles(decodeURIComponent(groupStreamMatch[1])))
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache',
@@ -275,8 +307,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const groupStatsMatch = path.match(/^\/api\/groups\/([^/]+)\/stats$/)
   if (req.method === 'GET' && groupStatsMatch) {
-    if (!(await requireRole(req, res, 'readonly'))) return
-    const profiles = resolveGroupProfiles(decodeURIComponent(groupStatsMatch[1]))
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
+    const profiles = filterProfilesForAuth(auth, resolveGroupProfiles(decodeURIComponent(groupStatsMatch[1])))
     const sinceParam = url.searchParams.get('since')
     const sinceMs = sinceParam === null || sinceParam === 'null' ? null : Number(sinceParam)
     const maxPointsParam = url.searchParams.get('maxPoints')
@@ -322,9 +355,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const playersMatch = path.match(/^\/api\/servers\/([^/]+)\/players$/)
   if (req.method === 'GET' && playersMatch) {
-    if (!(await requireRole(req, res, 'readonly'))) return
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(playersMatch[1]))
-    if (!profile) {
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
       sendJson(res, 200, [])
       return
     }
@@ -336,9 +370,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const startMatch = path.match(/^\/api\/servers\/([^/]+)\/start$/)
   if (req.method === 'POST' && startMatch) {
-    if (!(await requireRole(req, res, 'operator'))) return
+    const auth = await requireRole(req, res, 'operator')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(startMatch[1]))
-    if (!profile) {
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
@@ -362,9 +397,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   // a bare "ok" can't mistake "we started stopping it" for "it actually saved first".
   const stopMatch = path.match(/^\/api\/servers\/([^/]+)\/stop$/)
   if (req.method === 'POST' && stopMatch) {
-    if (!(await requireRole(req, res, 'operator'))) return
+    const auth = await requireRole(req, res, 'operator')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopMatch[1]))
-    if (!profile) {
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
@@ -375,9 +411,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const restartMatch = path.match(/^\/api\/servers\/([^/]+)\/restart$/)
   if (req.method === 'POST' && restartMatch) {
-    if (!(await requireRole(req, res, 'operator'))) return
+    const auth = await requireRole(req, res, 'operator')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(restartMatch[1]))
-    if (!profile) {
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
@@ -388,9 +425,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const updateMatch = path.match(/^\/api\/servers\/([^/]+)\/update$/)
   if (req.method === 'POST' && updateMatch) {
-    if (!(await requireRole(req, res, 'operator'))) return
+    const auth = await requireRole(req, res, 'operator')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(updateMatch[1]))
-    if (!profile) {
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
@@ -401,9 +439,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const stopUpdateRestartMatch = path.match(/^\/api\/servers\/([^/]+)\/stop-update-restart$/)
   if (req.method === 'POST' && stopUpdateRestartMatch) {
-    if (!(await requireRole(req, res, 'operator'))) return
+    const auth = await requireRole(req, res, 'operator')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopUpdateRestartMatch[1]))
-    if (!profile) {
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
@@ -416,10 +455,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const rconMatch = path.match(/^\/api\/servers\/([^/]+)\/rcon$/)
   if (req.method === 'POST' && rconMatch) {
-    if (!(await requireRole(req, res, 'operator'))) return
+    const auth = await requireRole(req, res, 'operator')
+    if (!auth) return
     const profileId = decodeURIComponent(rconMatch[1])
     const profile = listProfiles().find((p) => p.id === profileId)
-    if (!profile) {
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
@@ -439,9 +479,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const backupStatusMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/status$/)
   if (req.method === 'GET' && backupStatusMatch) {
-    if (!(await requireRole(req, res, 'readonly'))) return
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupStatusMatch[1]))
-    if (!profile) {
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
       sendJson(res, 404, { error: 'Unknown server' })
       return
     }
@@ -459,16 +500,19 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const backupLogMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/log$/)
   if (req.method === 'GET' && backupLogMatch) {
-    if (!(await requireRole(req, res, 'readonly'))) return
-    sendJson(res, 200, getBackupLog(decodeURIComponent(backupLogMatch[1])))
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
+    const profileId = decodeURIComponent(backupLogMatch[1])
+    sendJson(res, 200, hasProfileAccess(auth, profileId) ? getBackupLog(profileId) : [])
     return
   }
 
   const backupRestoreMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/restore$/)
   if (req.method === 'POST' && backupRestoreMatch) {
-    if (!(await requireRole(req, res, 'admin'))) return
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupRestoreMatch[1]))
-    if (!profile) {
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
@@ -488,7 +532,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const backupDeleteMatch = path.match(/^\/api\/servers\/([^/]+)\/backups\/delete$/)
   if (req.method === 'POST' && backupDeleteMatch) {
-    if (!(await requireRole(req, res, 'admin'))) return
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    if (!hasProfileAccess(auth, decodeURIComponent(backupDeleteMatch[1]))) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
     readJsonBody(req)
       .then((body) => {
         const filePath = typeof body.filePath === 'string' ? body.filePath : ''
@@ -505,15 +554,17 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const backupsMatch = path.match(/^\/api\/servers\/([^/]+)\/backups$/)
   if (req.method === 'GET' && backupsMatch) {
-    if (!(await requireRole(req, res, 'readonly'))) return
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupsMatch[1]))
-    sendJson(res, 200, profile ? listBackups(profile) : [])
+    sendJson(res, 200, profile && hasProfileAccess(auth, profile.id) ? listBackups(profile) : [])
     return
   }
   if (req.method === 'POST' && backupsMatch) {
-    if (!(await requireRole(req, res, 'operator'))) return
+    const auth = await requireRole(req, res, 'operator')
+    if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupsMatch[1]))
-    if (!profile) {
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }

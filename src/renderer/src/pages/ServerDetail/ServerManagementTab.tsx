@@ -160,10 +160,6 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
             days={form.scheduledDinoWipeDays}
             onDaysChange={(days) => update('scheduledDinoWipeDays', days)}
           />
-          <p className="empty-state">
-            Sends the RCON command <code>DestroyWildDinos</code> at the scheduled time, independent of the
-            restart schedule above. Only fires while the server is running.
-          </p>
         </div>
       </section>
 
