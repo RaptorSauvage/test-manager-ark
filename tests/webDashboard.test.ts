@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE } from '../src/main/lib/logEvents'
-import type { WebDashboardAccount, WebDashboardApiKey } from '../shared/types'
+import type { WebDashboardAccessToken, WebDashboardApiKey } from '../shared/types'
 
 const EMPTY_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-empty-${process.pid}`)
 const LOGGED_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-logged-${process.pid}`)
@@ -26,7 +26,7 @@ let mockSettings = {
   webDashboardAuthEnabled: false
 }
 
-let mockAccounts: WebDashboardAccount[] = []
+let mockAccessTokens: WebDashboardAccessToken[] = []
 let mockApiKeys: WebDashboardApiKey[] = []
 
 vi.mock('../src/main/store', () => ({
@@ -61,16 +61,16 @@ vi.mock('../src/main/store', () => ({
     mockSettings = settings
     return mockSettings
   },
-  listWebDashboardAccounts: () => mockAccounts,
-  saveWebDashboardAccount: (account: WebDashboardAccount) => {
-    const idx = mockAccounts.findIndex((a) => a.id === account.id)
-    if (idx >= 0) mockAccounts[idx] = account
-    else mockAccounts.push(account)
-    return mockAccounts
+  listWebDashboardAccessTokens: () => mockAccessTokens,
+  saveWebDashboardAccessToken: (token: WebDashboardAccessToken) => {
+    const idx = mockAccessTokens.findIndex((t) => t.id === token.id)
+    if (idx >= 0) mockAccessTokens[idx] = token
+    else mockAccessTokens.push(token)
+    return mockAccessTokens
   },
-  deleteWebDashboardAccount: (id: string) => {
-    mockAccounts = mockAccounts.filter((a) => a.id !== id)
-    return mockAccounts
+  deleteWebDashboardAccessToken: (id: string) => {
+    mockAccessTokens = mockAccessTokens.filter((t) => t.id !== id)
+    return mockAccessTokens
   },
   listWebDashboardApiKeys: () => mockApiKeys,
   saveWebDashboardApiKey: (key: WebDashboardApiKey) => {
@@ -558,28 +558,40 @@ describe('web dashboard HTTP server', () => {
 
 describe('web dashboard HTTP server, auth enabled', () => {
   const CERTS_DIR = path.join(os.tmpdir(), `web-dashboard-test-certs-${process.pid}`)
-  let adminCookie = ''
-  let operatorCookie = ''
-  let readonlyCookie = ''
+  let adminToken = ''
+  let operatorToken = ''
+  let readonlyToken = ''
   let readonlyApiKey = ''
   let operatorApiKey = ''
 
-  async function login(username: string, password: string): Promise<{ status: number; cookie: string }> {
-    const res = await authRequest('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    })
-    const setCookie = res.headers['set-cookie']?.[0] ?? ''
-    return { status: res.status, cookie: setCookie.split(';')[0] }
-  }
-
   beforeAll(async () => {
-    mockAccounts = [
-      { id: 'a1', username: 'admin', passwordHash: await hashPassword('adminpass'), role: 'admin' },
-      { id: 'a2', username: 'operator', passwordHash: await hashPassword('operatorpass'), role: 'operator' },
-      { id: 'a3', username: 'viewer', passwordHash: await hashPassword('viewerpass'), role: 'readonly' }
+    const adminId = generateApiKeyId()
+    const adminSecret = generateApiKeySecret()
+    const operatorId = generateApiKeyId()
+    const operatorSecret = generateApiKeySecret()
+    const readonlyId = generateApiKeyId()
+    const readonlySecret = generateApiKeySecret()
+    mockAccessTokens = [
+      { id: adminId, label: 'Admin token', secretHash: await hashPassword(adminSecret), role: 'admin', createdAt: Date.now() },
+      {
+        id: operatorId,
+        label: 'Operator token',
+        secretHash: await hashPassword(operatorSecret),
+        role: 'operator',
+        createdAt: Date.now()
+      },
+      {
+        id: readonlyId,
+        label: 'Readonly token',
+        secretHash: await hashPassword(readonlySecret),
+        role: 'readonly',
+        createdAt: Date.now()
+      }
     ]
+    adminToken = buildApiKey(adminId, adminSecret)
+    operatorToken = buildApiKey(operatorId, operatorSecret)
+    readonlyToken = buildApiKey(readonlyId, readonlySecret)
+
     const readonlyKeyId = generateApiKeyId()
     const readonlyKeySecret = generateApiKeySecret()
     const operatorKeyId = generateApiKeyId()
@@ -607,82 +619,104 @@ describe('web dashboard HTTP server, auth enabled', () => {
     // which isn't available outside a real Electron process).
     mockSettings = { ...mockSettings, webDashboardAuthEnabled: true, dataDir: CERTS_DIR }
     startWebDashboard(AUTH_PORT, '127.0.0.1')
-    adminCookie = (await login('admin', 'adminpass')).cookie
-    operatorCookie = (await login('operator', 'operatorpass')).cookie
-    readonlyCookie = (await login('viewer', 'viewerpass')).cookie
   })
 
   afterAll(() => {
     stopWebDashboard()
     mockSettings = { ...mockSettings, webDashboardAuthEnabled: false, dataDir: DATA_DIR }
-    mockAccounts = []
+    mockAccessTokens = []
     mockApiKeys = []
     fs.rmSync(CERTS_DIR, { recursive: true, force: true })
   })
 
-  it('serves the login page when there is no session', async () => {
+  it('always serves the same dashboard page, with window.__authRequired set', async () => {
     const res = await authRequest('/')
     expect(res.status).toBe(200)
-    expect(res.body).toContain('<title>ARK Server Manager - Login</title>')
-  })
-
-  it('rejects a wrong password', async () => {
-    const res = await authRequest('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'wrong' })
-    })
-    expect(res.status).toBe(401)
-  })
-
-  it('serves the dashboard page with the role injected once logged in', async () => {
-    const res = await authRequest('/', { headers: { Cookie: adminCookie } })
-    expect(res.status).toBe(200)
     expect(res.body).toContain('<title>ARK Server Manager - Web Console</title>')
-    expect(res.body).toContain('window.__role = "admin";')
+    expect(res.body).toContain('window.__authRequired = true;')
   })
 
-  it('401s an API route with no session', async () => {
+  it('401s an API route with no token', async () => {
     const res = await authRequest('/api/servers')
     expect(res.status).toBe(401)
   })
 
-  it('allows a readonly session to read /api/servers', async () => {
-    const res = await authRequest('/api/servers', { headers: { Cookie: readonlyCookie } })
+  it('allows a readonly access token to read /api/servers via Authorization: Bearer', async () => {
+    const res = await authRequest('/api/servers', { headers: { Authorization: `Bearer ${readonlyToken}` } })
     expect(res.status).toBe(200)
   })
 
-  it('blocks a readonly session from starting a server', async () => {
-    const res = await authRequest('/api/servers/p1/start', { method: 'POST', headers: { Cookie: readonlyCookie } })
+  it('blocks a readonly access token from starting a server', async () => {
+    const res = await authRequest('/api/servers/p1/start', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${readonlyToken}` }
+    })
     expect(res.status).toBe(403)
   })
 
-  it('allows an operator session to start a server', async () => {
-    const res = await authRequest('/api/servers/p1/start', { method: 'POST', headers: { Cookie: operatorCookie } })
+  it('allows an operator access token to start a server', async () => {
+    const res = await authRequest('/api/servers/p1/start', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${operatorToken}` }
+    })
     expect(res.status).toBe(200)
   })
 
-  it('blocks an operator session from deleting a backup', async () => {
+  it('blocks an operator access token from deleting a backup', async () => {
     const res = await authRequest('/api/servers/p1/backups/delete', {
       method: 'POST',
-      headers: { Cookie: operatorCookie, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${operatorToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filePath: '/tmp/does-not-matter.zip' })
     })
     expect(res.status).toBe(403)
   })
 
-  it('allows an admin session to delete a backup', async () => {
+  it('allows an admin access token to delete a backup', async () => {
     const res = await authRequest('/api/servers/p1/backups/delete', {
       method: 'POST',
-      headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filePath: '/tmp/does-not-matter.zip' })
     })
     expect(res.status).toBe(200)
   })
 
-  it('401s the SSE stream with no session', async () => {
+  it('reports the caller role via GET /api/whoami', async () => {
+    const res = await authRequest('/api/whoami', { headers: { Authorization: `Bearer ${adminToken}` } })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ role: 'admin' })
+  })
+
+  it('401s the SSE stream with no token', async () => {
     const res = await authRequest('/api/servers/p1/events/stream')
     expect(res.status).toBe(401)
+  })
+
+  it('allows the SSE stream via a ?token= query parameter (EventSource cannot set headers)', async () => {
+    // Doesn't use authRequest() - a successful SSE connection never ends on its own (see
+    // openStream() above), so waiting for the response body to finish would hang forever.
+    // Only the status from the initial response is needed here.
+    const status = await new Promise<number | undefined>((resolve, reject) => {
+      const req = https.request(
+        {
+          host: '127.0.0.1',
+          port: AUTH_PORT,
+          path: `/api/servers/p1/events/stream?token=${encodeURIComponent(readonlyToken)}`,
+          rejectUnauthorized: false
+        },
+        (res) => {
+          resolve(res.statusCode)
+          req.destroy()
+        }
+      )
+      req.on('error', (err) => {
+        // Destroying the request after resolving above triggers a benign socket error -
+        // ignore it once the status has already been captured.
+        if (req.destroyed) return
+        reject(err)
+      })
+      req.end()
+    })
+    expect(status).toBe(200)
   })
 
   it('allows a readonly API key to read /api/servers via Authorization: Bearer', async () => {
@@ -706,7 +740,7 @@ describe('web dashboard HTTP server, auth enabled', () => {
     expect(res.status).toBe(200)
   })
 
-  it('401s a made-up API key', async () => {
+  it('401s a made-up token', async () => {
     const res = await authRequest('/api/servers', { headers: { Authorization: 'Bearer ark_deadbeef_deadbeef' } })
     expect(res.status).toBe(401)
   })
@@ -714,30 +748,5 @@ describe('web dashboard HTTP server, auth enabled', () => {
   it('401s a malformed Authorization header', async () => {
     const res = await authRequest('/api/servers', { headers: { Authorization: 'not-a-bearer-token' } })
     expect(res.status).toBe(401)
-  })
-
-  it('logout clears the session', async () => {
-    const logoutRes = await authRequest('/api/logout', { method: 'POST', headers: { Cookie: readonlyCookie } })
-    expect(logoutRes.status).toBe(200)
-    const afterLogout = await authRequest('/api/servers', { headers: { Cookie: readonlyCookie } })
-    expect(afterLogout.status).toBe(401)
-  })
-
-  // Deliberately last: this poisons the shared per-IP rate limiter for the rest of the
-  // suite (it isn't keyed per-username), so nothing after it can log in fresh.
-  it('locks out after repeated failed logins from the same IP', async () => {
-    for (let i = 0; i < 8; i++) {
-      await authRequest('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: 'admin', password: `wrong${i}` })
-      })
-    }
-    const res = await authRequest('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'adminpass' })
-    })
-    expect(res.status).toBe(429)
   })
 })

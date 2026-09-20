@@ -1,5 +1,5 @@
 import Store from 'electron-store'
-import type { ServerProfile, AppSettings, WebDashboardAccount, WebDashboardApiKey } from '@shared/types'
+import type { ServerProfile, AppSettings, WebDashboardAccessToken, WebDashboardApiKey } from '@shared/types'
 import { migrateProfile } from './lib/profileMigration'
 import { reorderProfiles } from './lib/reorder'
 import { stripWrappingQuotes } from './lib/pathSanitize'
@@ -13,8 +13,9 @@ interface StoreSchema {
    *  a re-launched app can still compute an accurate uptime for a server it re-adopts
    *  instead of one that resets to "just started". */
   runningStartedAt: Record<string, number>
-  /** Web dashboard login accounts - only touched from the Manager's own Settings screen. */
-  webDashboardAccounts: WebDashboardAccount[]
+  /** Web dashboard browser access tokens - only touched from the Manager's own Settings
+   *  screen. */
+  webDashboardAccessTokens: WebDashboardAccessToken[]
   /** Web dashboard API keys - only touched from the Manager's own Settings screen. */
   webDashboardApiKeys: WebDashboardApiKey[]
 }
@@ -37,7 +38,7 @@ const store = new Store<StoreSchema>({
     },
     runningPids: {},
     runningStartedAt: {},
-    webDashboardAccounts: [],
+    webDashboardAccessTokens: [],
     webDashboardApiKeys: []
   }
 })
@@ -104,23 +105,23 @@ export function saveSettings(settings: AppSettings): AppSettings {
   return settings
 }
 
-export function listWebDashboardAccounts(): WebDashboardAccount[] {
-  return store.get('webDashboardAccounts') ?? []
+export function listWebDashboardAccessTokens(): WebDashboardAccessToken[] {
+  return store.get('webDashboardAccessTokens') ?? []
 }
 
-export function saveWebDashboardAccount(account: WebDashboardAccount): WebDashboardAccount[] {
-  const accounts = listWebDashboardAccounts()
-  const idx = accounts.findIndex((a) => a.id === account.id)
-  if (idx >= 0) accounts[idx] = account
-  else accounts.push(account)
-  store.set('webDashboardAccounts', accounts)
-  return accounts
+export function saveWebDashboardAccessToken(token: WebDashboardAccessToken): WebDashboardAccessToken[] {
+  const tokens = listWebDashboardAccessTokens()
+  const idx = tokens.findIndex((t) => t.id === token.id)
+  if (idx >= 0) tokens[idx] = token
+  else tokens.push(token)
+  store.set('webDashboardAccessTokens', tokens)
+  return tokens
 }
 
-export function deleteWebDashboardAccount(id: string): WebDashboardAccount[] {
-  const accounts = listWebDashboardAccounts().filter((a) => a.id !== id)
-  store.set('webDashboardAccounts', accounts)
-  return accounts
+export function deleteWebDashboardAccessToken(id: string): WebDashboardAccessToken[] {
+  const tokens = listWebDashboardAccessTokens().filter((t) => t.id !== id)
+  store.set('webDashboardAccessTokens', tokens)
+  return tokens
 }
 
 export function listWebDashboardApiKeys(): WebDashboardApiKey[] {

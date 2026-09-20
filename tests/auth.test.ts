@@ -1,20 +1,14 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import type { IncomingMessage } from 'node:http'
 import {
   hashPassword,
   verifyPassword,
-  createSession,
-  getSession,
-  destroySession,
   roleAtLeast,
-  isRateLimited,
-  recordLoginFailure,
-  recordLoginSuccess,
   generateApiKeyId,
   generateApiKeySecret,
   buildApiKey,
   parseApiKey,
-  getApiKeyFromRequest
+  getBearerTokenFromRequest
 } from '../src/main/lib/auth'
 
 describe('hashPassword / verifyPassword', () => {
@@ -39,27 +33,6 @@ describe('hashPassword / verifyPassword', () => {
   })
 })
 
-describe('sessions', () => {
-  it('creates a session that can be looked up by its token', () => {
-    const token = createSession('alice', 'operator')
-    expect(getSession(token)).toMatchObject({ username: 'alice', role: 'operator' })
-  })
-
-  it('returns null for an unknown token', () => {
-    expect(getSession('does-not-exist')).toBeNull()
-  })
-
-  it('returns null for a null token', () => {
-    expect(getSession(null)).toBeNull()
-  })
-
-  it('destroying a session makes it unresolvable', () => {
-    const token = createSession('bob', 'admin')
-    destroySession(token)
-    expect(getSession(token)).toBeNull()
-  })
-})
-
 describe('roleAtLeast', () => {
   it('ranks readonly < operator < admin', () => {
     expect(roleAtLeast('readonly', 'readonly')).toBe(true)
@@ -71,7 +44,7 @@ describe('roleAtLeast', () => {
   })
 })
 
-describe('API keys', () => {
+describe('API keys / access tokens (shared ark_<id>_<secret> format)', () => {
   it('builds a key from an id and secret, and parses it back out', () => {
     const id = generateApiKeyId()
     const secret = generateApiKeySecret()
@@ -89,54 +62,34 @@ describe('API keys', () => {
     expect(parseApiKey('ark_onlyoneparthere')).toBeNull()
     expect(parseApiKey('')).toBeNull()
   })
-
-  it('reads the key out of an Authorization: Bearer header', () => {
-    const req = { headers: { authorization: 'Bearer ark_abc123_def456' } } as unknown as IncomingMessage
-    expect(getApiKeyFromRequest(req)).toBe('ark_abc123_def456')
-  })
-
-  it('returns null when there is no Authorization header', () => {
-    const req = { headers: {} } as unknown as IncomingMessage
-    expect(getApiKeyFromRequest(req)).toBeNull()
-  })
-
-  it('returns null for a non-Bearer Authorization header', () => {
-    const req = { headers: { authorization: 'Basic dXNlcjpwYXNz' } } as unknown as IncomingMessage
-    expect(getApiKeyFromRequest(req)).toBeNull()
-  })
 })
 
-describe('login rate limiting', () => {
-  const ip = '203.0.113.7'
-
-  beforeEach(() => {
-    vi.useFakeTimers()
+describe('getBearerTokenFromRequest', () => {
+  it('reads the token out of an Authorization: Bearer header', () => {
+    const req = { headers: { authorization: 'Bearer ark_abc123_def456' }, url: '/api/servers' } as unknown as IncomingMessage
+    expect(getBearerTokenFromRequest(req)).toBe('ark_abc123_def456')
   })
 
-  afterEach(() => {
-    recordLoginSuccess(ip)
-    vi.useRealTimers()
+  it('falls back to a ?token= query parameter when there is no header', () => {
+    const req = { headers: {}, url: '/api/servers/p1/events/stream?token=ark_abc123_def456' } as unknown as IncomingMessage
+    expect(getBearerTokenFromRequest(req)).toBe('ark_abc123_def456')
   })
 
-  it('is not limited before any failures', () => {
-    expect(isRateLimited(ip)).toBe(false)
+  it('prefers the header over a query parameter when both are present', () => {
+    const req = {
+      headers: { authorization: 'Bearer ark_header_secret' },
+      url: '/api/servers?token=ark_query_secret'
+    } as unknown as IncomingMessage
+    expect(getBearerTokenFromRequest(req)).toBe('ark_header_secret')
   })
 
-  it('locks out after enough failures within the window', () => {
-    for (let i = 0; i < 8; i++) recordLoginFailure(ip)
-    expect(isRateLimited(ip)).toBe(true)
+  it('returns null when there is neither a header nor a query parameter', () => {
+    const req = { headers: {}, url: '/api/servers' } as unknown as IncomingMessage
+    expect(getBearerTokenFromRequest(req)).toBeNull()
   })
 
-  it('a success clears previous failures', () => {
-    for (let i = 0; i < 7; i++) recordLoginFailure(ip)
-    recordLoginSuccess(ip)
-    expect(isRateLimited(ip)).toBe(false)
-  })
-
-  it('the lockout expires after the window passes', () => {
-    for (let i = 0; i < 8; i++) recordLoginFailure(ip)
-    expect(isRateLimited(ip)).toBe(true)
-    vi.advanceTimersByTime(16 * 60 * 1000)
-    expect(isRateLimited(ip)).toBe(false)
+  it('returns null for a non-Bearer Authorization header with no query fallback', () => {
+    const req = { headers: { authorization: 'Basic dXNlcjpwYXNz' }, url: '/api/servers' } as unknown as IncomingMessage
+    expect(getBearerTokenFromRequest(req)).toBeNull()
   })
 })

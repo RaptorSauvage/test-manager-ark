@@ -112,14 +112,11 @@ const api: Api = {
     getStatus: () => ipcRenderer.invoke(IPC.webDashboardStatus),
     getLocalIps: () => ipcRenderer.invoke(IPC.webDashboardLocalIps)
   },
-  webDashboardAccounts: {
-    list: () => ipcRenderer.invoke(IPC.webDashboardAccountsList),
-    create: (username: string, password: string, role: WebDashboardRole) =>
-      ipcRenderer.invoke(IPC.webDashboardAccountsCreate, username, password, role),
-    setRole: (id: string, role: WebDashboardRole) => ipcRenderer.invoke(IPC.webDashboardAccountsSetRole, id, role),
-    resetPassword: (id: string, newPassword: string) =>
-      ipcRenderer.invoke(IPC.webDashboardAccountsResetPassword, id, newPassword),
-    delete: (id: string) => ipcRenderer.invoke(IPC.webDashboardAccountsDelete, id)
+  webDashboardAccessTokens: {
+    list: () => ipcRenderer.invoke(IPC.webDashboardAccessTokensList),
+    create: (label: string, role: WebDashboardRole) =>
+      ipcRenderer.invoke(IPC.webDashboardAccessTokensCreate, label, role),
+    delete: (id: string) => ipcRenderer.invoke(IPC.webDashboardAccessTokensDelete, id)
   },
   webDashboardApiKeys: {
     list: () => ipcRenderer.invoke(IPC.webDashboardApiKeysList),

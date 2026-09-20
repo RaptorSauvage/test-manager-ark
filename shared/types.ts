@@ -175,9 +175,10 @@ export interface AppSettings {
   /** Whether the Manager registers itself to launch automatically when you log into
    *  Windows (or the equivalent on macOS/Linux), via Electron's own login-item API. */
   launchOnStartup: boolean
-  /** When true, the web dashboard requires a login (see WebDashboardAccount) and switches
-   *  to HTTPS with a self-signed certificate - meant for exposing it outside the LAN.
-   *  When false (default), it behaves exactly as before: no auth, plain HTTP. */
+  /** When true, the web dashboard requires a valid access token (see
+   *  WebDashboardAccessToken) and switches to HTTPS with a self-signed certificate - meant
+   *  for exposing it outside the LAN. When false (default), it behaves exactly as before:
+   *  no auth, plain HTTP. */
   webDashboardAuthEnabled: boolean
   /** Delay, in seconds, between two servers auto-starting at Manager launch (see
    *  ServerProfile.startOnManagerLaunch). Only affects profiles that opt in - the first one
@@ -197,20 +198,29 @@ export interface AppSettings {
 
 export type WebDashboardRole = 'admin' | 'operator' | 'readonly'
 
-/** A web dashboard login account. Managed only from the Manager's own Settings screen -
- *  the dashboard page itself never creates/edits/deletes accounts, only logs in/out with
- *  one. Keeping account management desktop-only means it always requires local access to
- *  the machine running the Manager, never just a web session. */
-export interface WebDashboardAccount {
+/**
+ * A browser access token for the web dashboard page itself - pasted once into the browser
+ * (stored in that browser's own localStorage, never a cookie/session) and sent back as
+ * `Authorization: Bearer ark_<id>_<secret>` on every request from then on, exactly like a
+ * WebDashboardApiKey but kept in its own separate list: this is what a *person* pastes into
+ * their browser, an API key is what a *script/bot* is configured with. Managed only from
+ * the Manager's own Settings screen - the dashboard page itself never creates/edits/deletes
+ * tokens, only presents one. Keeping token management desktop-only means granting/revoking
+ * browser access always requires local access to the machine running the Manager, never
+ * just a web session.
+ */
+export interface WebDashboardAccessToken {
   id: string
-  username: string
-  /** Never sent to the renderer - see WebDashboardAccountSummary for what it gets instead. */
-  passwordHash: string
+  /** Free-form label so more than one token stays identifiable (e.g. "My laptop"). */
+  label: string
+  /** Never sent to the renderer - see WebDashboardAccessTokenSummary for what it gets instead. */
+  secretHash: string
   role: WebDashboardRole
+  createdAt: number
 }
 
-/** WebDashboardAccount with the password hash stripped out, for the renderer/Settings UI. */
-export type WebDashboardAccountSummary = Omit<WebDashboardAccount, 'passwordHash'>
+/** WebDashboardAccessToken with the secret hash stripped out, for the renderer/Settings UI. */
+export type WebDashboardAccessTokenSummary = Omit<WebDashboardAccessToken, 'secretHash'>
 
 /**
  * A programmatic credential for the web dashboard's HTTP API - meant for scripts/bots
@@ -381,11 +391,9 @@ export const IPC = {
   webDashboardStatus: 'web-dashboard:status',
   webDashboardLocalIps: 'web-dashboard:local-ips',
 
-  webDashboardAccountsList: 'web-dashboard-accounts:list',
-  webDashboardAccountsCreate: 'web-dashboard-accounts:create',
-  webDashboardAccountsSetRole: 'web-dashboard-accounts:set-role',
-  webDashboardAccountsResetPassword: 'web-dashboard-accounts:reset-password',
-  webDashboardAccountsDelete: 'web-dashboard-accounts:delete',
+  webDashboardAccessTokensList: 'web-dashboard-access-tokens:list',
+  webDashboardAccessTokensCreate: 'web-dashboard-access-tokens:create',
+  webDashboardAccessTokensDelete: 'web-dashboard-access-tokens:delete',
 
   webDashboardApiKeysList: 'web-dashboard-api-keys:list',
   webDashboardApiKeysCreate: 'web-dashboard-api-keys:create',
@@ -597,12 +605,10 @@ export interface Api {
     getStatus: () => Promise<{ running: boolean; error: string | null; host: string | null }>
     getLocalIps: () => Promise<string[]>
   }
-  webDashboardAccounts: {
-    list: () => Promise<WebDashboardAccountSummary[]>
-    create: (username: string, password: string, role: WebDashboardRole) => Promise<WebDashboardAccountSummary[]>
-    setRole: (id: string, role: WebDashboardRole) => Promise<WebDashboardAccountSummary[]>
-    resetPassword: (id: string, newPassword: string) => Promise<WebDashboardAccountSummary[]>
-    delete: (id: string) => Promise<WebDashboardAccountSummary[]>
+  webDashboardAccessTokens: {
+    list: () => Promise<WebDashboardAccessTokenSummary[]>
+    create: (label: string, role: WebDashboardRole) => Promise<{ token: string; tokens: WebDashboardAccessTokenSummary[] }>
+    delete: (id: string) => Promise<WebDashboardAccessTokenSummary[]>
   }
   webDashboardApiKeys: {
     list: () => Promise<WebDashboardApiKeySummary[]>

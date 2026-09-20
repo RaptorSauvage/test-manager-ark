@@ -2,7 +2,7 @@ import http from 'node:http'
 import https from 'node:https'
 import os from 'node:os'
 import type { AppSettings, ServerProfile, ServerStatus, WebDashboardRole } from '@shared/types'
-import { listProfiles, getSettings, saveSettings, listWebDashboardAccounts, listWebDashboardApiKeys } from '../store'
+import { listProfiles, getSettings, saveSettings, listWebDashboardAccessTokens, listWebDashboardApiKeys } from '../store'
 import { getStatus, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches, readLogBacklog } from './logEvents'
@@ -19,21 +19,7 @@ import { createBackup, listBackups, deleteBackup, restoreBackup, getBackupLog } 
 import { getBackupScheduleStatus } from './schedule'
 import { getCachedGameVersion } from './serverVersion'
 import { getOrCreateCert } from './tlsCert'
-import {
-  verifyPassword,
-  createSession,
-  getSession,
-  destroySession,
-  roleAtLeast,
-  getSessionTokenFromRequest,
-  buildSessionCookie,
-  buildExpiredSessionCookie,
-  isRateLimited,
-  recordLoginFailure,
-  recordLoginSuccess,
-  getApiKeyFromRequest,
-  parseApiKey
-} from './auth'
+import { verifyPassword, roleAtLeast, getBearerTokenFromRequest, parseApiKey } from './auth'
 
 let server: http.Server | https.Server | null = null
 let lastError: string | null = null
@@ -106,52 +92,44 @@ function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown
   })
 }
 
-function getClientIp(req: http.IncomingMessage): string {
-  return req.socket.remoteAddress ?? 'unknown'
-}
-
 /**
  * Gate for every route below `minRole`. When the web dashboard's login requirement is off
  * (the default, unchanged from before this feature existed), this always succeeds with a
- * synthetic full-access session - every route behaves exactly as it did previously. When
- * login is required, it accepts either an `Authorization: Bearer <key>` API key (for
- * scripts/bots that can't drive a login form) or the session cookie, sending the 401/403
- * itself and returning null on failure - callers must `return` immediately when this
- * returns null.
+ * synthetic full-access role - every route behaves exactly as it did previously. When it's
+ * required, the caller must present a valid Bearer credential (`Authorization` header, or a
+ * `?token=` query parameter for the two `EventSource` connections that can't set custom
+ * headers) matching either a WebDashboardApiKey (bots/scripts) or a WebDashboardAccessToken
+ * (pasted into a browser and kept in its own `localStorage`, never a cookie/session) -
+ * sending the 401/403 itself and returning null on failure. Callers must `return`
+ * immediately when this returns null.
  */
 async function requireRole(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   minRole: WebDashboardRole
-): Promise<{ username: string; role: WebDashboardRole } | null> {
-  if (!getSettings().webDashboardAuthEnabled) return { username: '', role: 'admin' }
+): Promise<{ role: WebDashboardRole } | null> {
+  if (!getSettings().webDashboardAuthEnabled) return { role: 'admin' }
 
-  const presentedKey = getApiKeyFromRequest(req)
-  if (presentedKey !== null) {
-    const parsed = parseApiKey(presentedKey)
-    const stored = parsed ? listWebDashboardApiKeys().find((k) => k.id === parsed.id) : undefined
-    const valid = parsed && stored ? await verifyPassword(parsed.secret, stored.secretHash) : false
-    if (!valid || !stored) {
-      sendJson(res, 401, { error: 'Invalid API key' })
-      return null
-    }
-    if (!roleAtLeast(stored.role, minRole)) {
-      sendJson(res, 403, { error: 'Insufficient permissions' })
-      return null
-    }
-    return { username: `api:${stored.label}`, role: stored.role }
-  }
-
-  const session = getSession(getSessionTokenFromRequest(req))
-  if (!session) {
+  const presented = getBearerTokenFromRequest(req)
+  const parsed = presented ? parseApiKey(presented) : null
+  if (!parsed) {
     sendJson(res, 401, { error: 'Not authenticated' })
     return null
   }
-  if (!roleAtLeast(session.role, minRole)) {
+
+  const stored =
+    listWebDashboardApiKeys().find((k) => k.id === parsed.id) ??
+    listWebDashboardAccessTokens().find((t) => t.id === parsed.id)
+  const valid = stored ? await verifyPassword(parsed.secret, stored.secretHash) : false
+  if (!valid || !stored) {
+    sendJson(res, 401, { error: 'Invalid token' })
+    return null
+  }
+  if (!roleAtLeast(stored.role, minRole)) {
     sendJson(res, 403, { error: 'Insufficient permissions' })
     return null
   }
-  return session
+  return { role: stored.role }
 }
 
 async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -159,43 +137,15 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   const path = url.pathname
 
   if (req.method === 'GET' && path === '/') {
-    const authEnabled = getSettings().webDashboardAuthEnabled
-    const session = authEnabled ? getSession(getSessionTokenFromRequest(req)) : null
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-    res.end(authEnabled && !session ? LOGIN_HTML : renderDashboardHtml(session?.role ?? null))
+    res.end(renderDashboardHtml(getSettings().webDashboardAuthEnabled))
     return
   }
 
-  if (req.method === 'POST' && path === '/api/login') {
-    const ip = getClientIp(req)
-    if (isRateLimited(ip)) {
-      sendJson(res, 429, { ok: false, error: 'Too many failed attempts. Try again later.' })
-      return
-    }
-    readJsonBody(req)
-      .then(async (body) => {
-        const username = typeof body.username === 'string' ? body.username.trim() : ''
-        const password = typeof body.password === 'string' ? body.password : ''
-        const account = listWebDashboardAccounts().find((a) => a.username.toLowerCase() === username.toLowerCase())
-        const valid = account ? await verifyPassword(password, account.passwordHash) : false
-        if (!account || !valid) {
-          recordLoginFailure(ip)
-          sendJson(res, 401, { ok: false, error: 'Invalid username or password' })
-          return
-        }
-        recordLoginSuccess(ip)
-        const token = createSession(account.username, account.role)
-        res.setHeader('Set-Cookie', buildSessionCookie(token))
-        sendJson(res, 200, { ok: true, role: account.role })
-      })
-      .catch(() => sendJson(res, 400, { ok: false, error: 'Invalid request body' }))
-    return
-  }
-
-  if (req.method === 'POST' && path === '/api/logout') {
-    destroySession(getSessionTokenFromRequest(req))
-    res.setHeader('Set-Cookie', buildExpiredSessionCookie())
-    sendJson(res, 200, { ok: true })
+  if (req.method === 'GET' && path === '/api/whoami') {
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
+    sendJson(res, 200, { role: auth.role })
     return
   }
 
@@ -591,16 +541,16 @@ export function stopWebDashboard(): void {
  *  from this machine only; '0.0.0.0' or a specific local IP makes it reachable from other
  *  devices on the LAN. By default this page has no authentication of its own (same posture
  *  as the standalone Python dashboard it replaces), so widening the host is a deliberate
- *  choice made in Settings, never a default - unless "Require login" is also turned on, in
- *  which case every route is gated behind a session and the server switches to HTTPS with
- *  a self-signed certificate, since login credentials shouldn't travel in the clear. */
+ *  choice made in Settings, never a default - unless "Require access token" is also turned
+ *  on, in which case every route is gated behind a valid token and the server switches to
+ *  HTTPS with a self-signed certificate, since a token shouldn't travel in the clear. */
 export function startWebDashboard(port: number, host: string): void {
   stopWebDashboard()
   lastError = null
   lastHost = host
   const authEnabled = getSettings().webDashboardAuthEnabled
-  if (authEnabled && listWebDashboardAccounts().length === 0) {
-    lastError = 'Add at least one account in Settings before enabling login.'
+  if (authEnabled && listWebDashboardAccessTokens().length === 0) {
+    lastError = 'Add at least one access token in Settings before enabling it.'
     return
   }
   if (authEnabled) {
@@ -637,85 +587,19 @@ export function getLocalNetworkIps(): string[] {
   return ips
 }
 
-/** Splices the caller's role into the dashboard page as `window.__role`, so the client JS
- *  can hide controls it isn't allowed to use (the real boundary is the server-side route
- *  guards above - this is UX only). `role` is null when login isn't required at all, in
- *  which case nothing is injected and the page behaves exactly as it did before this
- *  feature existed - `window.__role` stays undefined. */
-function renderDashboardHtml(role: WebDashboardRole | null): string {
-  if (!role) return DASHBOARD_HTML
-  return DASHBOARD_HTML.replace('<script>', `<script>window.__role = ${JSON.stringify(role)};</script>\n<script>`)
+/** Splices whether an access token is required at all into the page as
+ *  `window.__authRequired` - unlike the old session-cookie design, the server can't know
+ *  up front whether *this* browser already has a valid token (it lives only in that
+ *  browser's own `localStorage`, never sent until the client's own JS attaches it), so the
+ *  same page is always served either way; the client validates any stored token itself via
+ *  `GET /api/whoami` once loaded (see the token-gate logic in the client `<script>` below)
+ *  and only then learns its role. This flag is not sensitive - it's just "does this
+ *  dashboard require a token", not a credential. */
+function renderDashboardHtml(authRequired: boolean): string {
+  if (!authRequired) return DASHBOARD_HTML
+  return DASHBOARD_HTML.replace('<script>', '<script>window.__authRequired = true;</script>\n<script>')
 }
 
-const LOGIN_HTML = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ARK Server Manager - Login</title>
-<style>
-  :root {
-    color-scheme: dark;
-    --bg: #14161a; --panel: #1d2027; --border: #2c303a; --text: #e6e8ec; --muted: #9aa0ab;
-    --accent: #4f8cff; --danger: #e0555b;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    height: 100vh; display: flex; align-items: center; justify-content: center;
-  }
-  form { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 28px; width: 280px; display: flex; flex-direction: column; gap: 12px; }
-  h1 { font-size: 1.05rem; margin: 0 0 4px; }
-  input, button { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font-size: 0.95rem; }
-  button { cursor: pointer; background: var(--accent); border-color: var(--accent); color: #fff; }
-  button:disabled { opacity: 0.6; cursor: not-allowed; }
-  #login-error { color: var(--danger); font-size: 0.85rem; min-height: 1.1em; }
-</style>
-</head>
-<body>
-<form id="login-form">
-  <h1>ARK Server Manager</h1>
-  <input id="login-username" placeholder="Username" autocomplete="username" autofocus />
-  <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" />
-  <div id="login-error"></div>
-  <button type="submit">Log in</button>
-</form>
-<script>
-(function () {
-  var form = document.getElementById('login-form');
-  var usernameEl = document.getElementById('login-username');
-  var passwordEl = document.getElementById('login-password');
-  var errorEl = document.getElementById('login-error');
-  var submitBtn = form.querySelector('button');
-  form.addEventListener('submit', function (e) {
-    e.preventDefault();
-    errorEl.textContent = '';
-    submitBtn.disabled = true;
-    fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: usernameEl.value, password: passwordEl.value })
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (result) {
-        if (result.ok) {
-          location.reload();
-          return;
-        }
-        errorEl.textContent = result.error || 'Login failed';
-        submitBtn.disabled = false;
-      })
-      .catch(function () {
-        errorEl.textContent = 'Request failed';
-        submitBtn.disabled = false;
-      });
-  });
-})();
-</script>
-</body>
-</html>
-`
 
 const DASHBOARD_HTML = `<!doctype html>
 <html lang="en">
@@ -737,6 +621,16 @@ const DASHBOARD_HTML = `<!doctype html>
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     display: flex; height: 100vh; overflow: hidden;
   }
+  #token-gate {
+    display: none; position: fixed; inset: 0; z-index: 1000; background: var(--bg);
+    align-items: center; justify-content: center;
+  }
+  #token-gate form { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 28px; width: 320px; display: flex; flex-direction: column; gap: 12px; }
+  #token-gate h1 { font-size: 1.05rem; margin: 0 0 4px; }
+  #token-gate input, #token-gate button { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 10px; font-size: 0.95rem; }
+  #token-gate button { cursor: pointer; background: var(--accent); border-color: var(--accent); color: #fff; }
+  #token-gate button:disabled { opacity: 0.6; cursor: not-allowed; }
+  #token-gate-error { color: var(--danger); font-size: 0.85rem; min-height: 1.1em; }
   #sidebar { width: 190px; flex-shrink: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 16px 10px; gap: 4px; overflow-y: auto; }
   #sidebar h1 { font-size: 0.95rem; margin: 0 6px 12px; }
   .nav-btn { text-align: left; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 9px 10px; font-size: 0.88rem; }
@@ -960,6 +854,14 @@ const DASHBOARD_HTML = `<!doctype html>
 </style>
 </head>
 <body>
+<div id="token-gate">
+  <form id="token-gate-form">
+    <h1>ARK Server Manager</h1>
+    <input id="token-gate-input" placeholder="Access token" autocomplete="off" autofocus />
+    <div id="token-gate-error"></div>
+    <button type="submit">Continue</button>
+  </form>
+</div>
 <nav id="sidebar">
   <h1>ARK Manager</h1>
   <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
@@ -1084,13 +986,88 @@ const DASHBOARD_HTML = `<!doctype html>
   </section>
 </div>
 <script>
-(function () {
-  // Set by the server (see renderDashboardHtml in webDashboard.ts) only when "Require
-  // login" is on; stays undefined otherwise, in which case every role check below is a
-  // no-op and the page behaves exactly as it did before this feature existed. The real
-  // enforcement is server-side (every route checks this same role) - hiding controls here
-  // is just so a role never sees a button that would 401/403 if clicked.
-  var role = typeof window.__role !== 'undefined' ? window.__role : null;
+// True only when "Require access token" is on (see renderDashboardHtml in webDashboard.ts);
+// stays undefined/false otherwise, in which case the token gate below is skipped entirely
+// and the page behaves exactly as it did before this feature existed. Not sensitive - just
+// a "does this dashboard require a token" flag, not a credential.
+var authRequired = typeof window.__authRequired !== 'undefined' && window.__authRequired;
+var ACCESS_TOKEN_KEY = 'ark-dashboard-access-token';
+var accessToken = null;
+try { accessToken = localStorage.getItem(ACCESS_TOKEN_KEY); } catch (err) { /* storage unavailable - not fatal */ }
+
+// Every fetch call in initDashboard() below goes through window.fetch, so wrapping it here
+// once - rather than threading the token through every one of those call sites - is enough
+// to authenticate all of them. EventSource can't set custom headers at all, so its two call
+// sites append the token as a ?token= query parameter instead (requireRole on the server
+// accepts either - see src/main/lib/auth.ts's getBearerTokenFromRequest).
+var nativeFetch = window.fetch.bind(window);
+window.fetch = function (input, init) {
+  init = init || {};
+  if (accessToken) {
+    var headers = new Headers(init.headers || {});
+    headers.set('Authorization', 'Bearer ' + accessToken);
+    init.headers = headers;
+  }
+  return nativeFetch(input, init);
+};
+
+function validateAccessToken() {
+  return fetch('/api/whoami').then(function (res) {
+    if (!res.ok) throw new Error('Invalid token');
+    return res.json();
+  });
+}
+
+var tokenGateEl = document.getElementById('token-gate');
+var tokenGateFormEl = document.getElementById('token-gate-form');
+var tokenGateInputEl = document.getElementById('token-gate-input');
+var tokenGateErrorEl = document.getElementById('token-gate-error');
+
+function showTokenGate(message) {
+  tokenGateEl.style.display = 'flex';
+  tokenGateErrorEl.textContent = message || '';
+}
+
+tokenGateFormEl.addEventListener('submit', function (e) {
+  e.preventDefault();
+  var value = tokenGateInputEl.value.trim();
+  if (!value) return;
+  accessToken = value;
+  validateAccessToken()
+    .then(function (data) {
+      try { localStorage.setItem(ACCESS_TOKEN_KEY, accessToken); } catch (err) { /* storage unavailable - not fatal */ }
+      tokenGateEl.style.display = 'none';
+      initDashboard(data.role);
+    })
+    .catch(function () {
+      accessToken = null;
+      tokenGateErrorEl.textContent = 'Invalid access token';
+    });
+});
+
+if (!authRequired) {
+  initDashboard(null);
+} else if (accessToken) {
+  validateAccessToken()
+    .then(function (data) { initDashboard(data.role); })
+    .catch(function () {
+      accessToken = null;
+      try { localStorage.removeItem(ACCESS_TOKEN_KEY); } catch (err) { /* storage unavailable - not fatal */ }
+      showTokenGate('Saved access token is no longer valid.');
+    });
+} else {
+  showTokenGate();
+}
+
+/** Everything the dashboard page actually does, deferred until we know the caller's role -
+ *  either immediately with null (no token required at all) or after a stored/just-entered
+ *  access token validates via GET /api/whoami above. role drives the same UI-hiding checks
+ *  as before this feature existed (roughly: full access when role is null, otherwise hide
+ *  what canOperate/canAdmin don't allow) - the real enforcement is server-side (every route
+ *  checks this same role); hiding controls here is just so a role never sees a button that
+ *  would 401/403 if clicked. */
+function initDashboard(resolvedRole) {
+  var role = resolvedRole;
   var canOperate = role === 'operator' || role === 'admin';
   var canAdmin = role === 'admin';
 
@@ -1334,7 +1311,9 @@ const DASHBOARD_HTML = `<!doctype html>
     logoutBtn.type = 'button';
     logoutBtn.textContent = 'Log out (' + role + ')';
     logoutBtn.addEventListener('click', function () {
-      fetch('/api/logout', { method: 'POST' }).then(function () { location.reload(); });
+      accessToken = null;
+      try { localStorage.removeItem(ACCESS_TOKEN_KEY); } catch (err) { /* storage unavailable - not fatal */ }
+      location.reload();
     });
     sidebarEl.appendChild(logoutBtn);
   }
@@ -1950,7 +1929,9 @@ const DASHBOARD_HTML = `<!doctype html>
       .then(function (events) { events.forEach(addClusterEvent); });
 
     if (clusterEs) { clusterEs.close(); clusterEs = null; }
-    clusterEs = new EventSource('/api/groups/' + urlToken + '/events/stream');
+    var clusterEsUrl = '/api/groups/' + urlToken + '/events/stream';
+    if (accessToken) clusterEsUrl += '?token=' + encodeURIComponent(accessToken);
+    clusterEs = new EventSource(clusterEsUrl);
     clusterEs.onmessage = function (msg) { addClusterEvent(JSON.parse(msg.data)); };
   }
 
@@ -2413,7 +2394,9 @@ const DASHBOARD_HTML = `<!doctype html>
     fetch('/api/servers/' + encodeURIComponent(id) + '/events')
       .then(function (r) { return r.json(); })
       .then(function (events) { events.forEach(addEvent); });
-    es = new EventSource('/api/servers/' + encodeURIComponent(id) + '/events/stream');
+    var esUrl = '/api/servers/' + encodeURIComponent(id) + '/events/stream';
+    if (accessToken) esUrl += '?token=' + encodeURIComponent(accessToken);
+    es = new EventSource(esUrl);
     es.onmessage = function (msg) { addEvent(JSON.parse(msg.data)); };
     es.addEventListener('reset', function () { consoleEl.innerHTML = ''; });
   }
@@ -2487,7 +2470,7 @@ const DASHBOARD_HTML = `<!doctype html>
   loadLabelSettings();
   setInterval(loadServers, 5000);
   setInterval(loadPlayers, 5000);
-})();
+}
 </script>
 </body>
 </html>

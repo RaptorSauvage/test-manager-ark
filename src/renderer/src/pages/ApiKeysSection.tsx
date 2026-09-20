@@ -52,7 +52,8 @@ export default function ApiKeysSection(): JSX.Element {
       <p className="empty-state">
         For scripts/bots that call the web dashboard&apos;s HTTP API directly and can&apos;t log in through a
         browser - send <code>Authorization: Bearer &lt;key&gt;</code> with each request instead of logging in. Only
-        matters while &quot;Require login&quot; above is on; keys grant access per the same three roles as accounts.
+        matters while &quot;Require access token&quot; above is on; keys grant access per the same three roles as the
+        access tokens above.
       </p>
 
       {newKey && (

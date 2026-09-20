@@ -1,5 +1,5 @@
 import type { IncomingMessage } from 'node:http'
-import { randomBytes, randomUUID, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto'
+import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto'
 import type { WebDashboardRole } from '@shared/types'
 
 const SCRYPT_N = 16384
@@ -19,8 +19,9 @@ function scryptAsync(password: string, salt: string, keylen: number, options: Sc
   })
 }
 
-/** Hashes a password with a random salt. The cost parameters are baked into the stored
- *  string so they can be tuned later without stranding existing accounts. */
+/** Hashes a secret (an API key's or access token's random half) with a random salt. The
+ *  cost parameters are baked into the stored string so they can be tuned later without
+ *  stranding existing keys/tokens. */
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString('hex')
   const derived = await scryptAsync(password, salt, KEY_LENGTH, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P })
@@ -39,109 +40,15 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return derived.length === expected.length && timingSafeEqual(derived, expected)
 }
 
-interface Session {
-  username: string
-  role: WebDashboardRole
-  expiresAt: number
-}
-
-const SESSION_COOKIE = 'ark_session'
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
-
-const sessions = new Map<string, Session>()
-
-export function createSession(username: string, role: WebDashboardRole): string {
-  const token = randomUUID() + randomBytes(16).toString('hex')
-  sessions.set(token, { username, role, expiresAt: Date.now() + SESSION_TTL_MS })
-  return token
-}
-
-/** Looks up a session by token, dropping and returning null if it's expired - otherwise
- *  slides its expiry forward so an actively-used session doesn't log out mid-session. */
-export function getSession(token: string | null): Session | null {
-  if (!token) return null
-  const session = sessions.get(token)
-  if (!session) return null
-  if (session.expiresAt < Date.now()) {
-    sessions.delete(token)
-    return null
-  }
-  session.expiresAt = Date.now() + SESSION_TTL_MS
-  return session
-}
-
-export function destroySession(token: string | null): void {
-  if (token) sessions.delete(token)
-}
-
 const ROLE_RANK: Record<WebDashboardRole, number> = { readonly: 0, operator: 1, admin: 2 }
 
 export function roleAtLeast(role: WebDashboardRole, min: WebDashboardRole): boolean {
   return ROLE_RANK[role] >= ROLE_RANK[min]
 }
 
-export function parseCookies(req: IncomingMessage): Record<string, string> {
-  const header = req.headers.cookie
-  if (!header) return {}
-  const result: Record<string, string> = {}
-  for (const pair of header.split(';')) {
-    const idx = pair.indexOf('=')
-    if (idx === -1) continue
-    const key = pair.slice(0, idx).trim()
-    const value = pair.slice(idx + 1).trim()
-    if (key) result[key] = decodeURIComponent(value)
-  }
-  return result
-}
-
-export function getSessionTokenFromRequest(req: IncomingMessage): string | null {
-  return parseCookies(req)[SESSION_COOKIE] ?? null
-}
-
-export function buildSessionCookie(token: string): string {
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`
-}
-
-export function buildExpiredSessionCookie(): string {
-  return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`
-}
-
-const RATE_LIMIT_MAX_FAILURES = 8
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
-
-interface RateLimitEntry {
-  failures: number
-  windowStart: number
-}
-
-const loginAttempts = new Map<string, RateLimitEntry>()
-
-/** True if this IP has failed to log in too many times recently and should be blocked
- *  before even checking credentials - a lightweight brute-force mitigation now that the
- *  dashboard may be reachable from outside the LAN. */
-export function isRateLimited(ip: string): boolean {
-  const entry = loginAttempts.get(ip)
-  if (!entry) return false
-  if (Date.now() - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    loginAttempts.delete(ip)
-    return false
-  }
-  return entry.failures >= RATE_LIMIT_MAX_FAILURES
-}
-
-export function recordLoginFailure(ip: string): void {
-  const entry = loginAttempts.get(ip)
-  if (!entry || Date.now() - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    loginAttempts.set(ip, { failures: 1, windowStart: Date.now() })
-  } else {
-    entry.failures += 1
-  }
-}
-
-export function recordLoginSuccess(ip: string): void {
-  loginAttempts.delete(ip)
-}
-
+/** Shared `ark_<id>_<secret>` credential format for both WebDashboardApiKey (bots/scripts)
+ *  and WebDashboardAccessToken (pasted into a browser) - cryptographically and structurally
+ *  identical, just looked up against two separate stored lists by whoever presents one. */
 const API_KEY_PREFIX = 'ark'
 
 /** Random id embedded in the key itself so a presented key can be looked up directly (by
@@ -164,10 +71,20 @@ export function parseApiKey(key: string): { id: string; secret: string } | null 
   return match ? { id: match[1], secret: match[2] } : null
 }
 
-/** Reads the presented API key from an `Authorization: Bearer <key>` header, if any. */
-export function getApiKeyFromRequest(req: IncomingMessage): string | null {
+/** Reads a presented Bearer credential (an API key or an access token) from the request -
+ *  from an `Authorization: Bearer <token>` header if present, otherwise from a `?token=`
+ *  query parameter. The query fallback exists only for the browser's `EventSource`
+ *  connections, which can't set custom headers - everything else uses the header. */
+export function getBearerTokenFromRequest(req: IncomingMessage): string | null {
   const header = req.headers.authorization
-  if (!header) return null
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim())
-  return match ? match[1] : null
+  if (header) {
+    const match = /^Bearer\s+(.+)$/i.exec(header.trim())
+    if (match) return match[1]
+  }
+  try {
+    const url = new URL(req.url ?? '/', 'http://localhost')
+    return url.searchParams.get('token')
+  } catch {
+    return null
+  }
 }

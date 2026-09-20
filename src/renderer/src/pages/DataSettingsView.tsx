@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AppSettings, AppUpdateStatus } from '@shared/types'
-import AccountsSection from './AccountsSection'
+import AccessTokensSection from './AccessTokensSection'
 import ApiKeysSection from './ApiKeysSection'
 
 interface DataSettingsViewProps {
@@ -224,7 +224,7 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
           reachable from this machine only. Set it to <code>0.0.0.0</code> to accept connections on every network
           interface, or to one specific local IP below to accept connections on just that one - either way, that
           means anyone on your local network can reach it, so only do this on a network you trust unless
-          &quot;Require login&quot; below is also on.
+          &quot;Require access token&quot; below is also on.
           {localIps.length > 0 && (
             <>
               {' '}
@@ -242,7 +242,7 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
         {isLan && !settings.webDashboardAuthEnabled && (
           <p className="error-message">
             Web dashboard host is set to {settings.webDashboardHost} - reachable from other devices on your
-            network with no login required.
+            network with no access token required.
           </p>
         )}
 
@@ -253,16 +253,17 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
             onChange={(e) => setSettings({ ...settings, webDashboardAuthEnabled: e.target.checked })}
             disabled={!settings.webDashboardEnabled}
           />
-          Require login (HTTPS)
+          Require access token (HTTPS)
         </label>
         <p className="empty-state">
           Switches the dashboard to <code>https://</code> with a self-signed certificate (browsers will show a
           &quot;not trusted&quot; warning the first time - that&apos;s expected, click through or install the
           certificate from <code>{defaultDataDir || 'the data folder'}/certs/cert.pem</code> if you want to avoid
-          it) and requires logging in with one of the accounts below for every page and action. This is what makes
-          it reasonably safe to expose outside your LAN (e.g. via router port forwarding) - without it, anyone who
-          can reach the address has full unauthenticated control. Sessions don&apos;t survive a Manager restart or
-          the dashboard being turned off and back on - everyone has to log in again.
+          it) and requires pasting one of the access tokens below into every browser that opens the dashboard. This
+          is what makes it reasonably safe to expose outside your LAN (e.g. via router port forwarding) - without
+          it, anyone who can reach the address has full unauthenticated control. A token is remembered by that
+          browser (its own localStorage) until it&apos;s cleared or the token is revoked from here - unlike a login
+          session, it survives a Manager restart or the dashboard being turned off and back on.
         </p>
         <p className="empty-state">Save this form to apply a change immediately, no restart needed.</p>
         {settings.webDashboardEnabled && (
@@ -281,7 +282,7 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
         </div>
       </form>
 
-      <AccountsSection />
+      <AccessTokensSection />
       <ApiKeysSection />
 
       <section className="managed-steamcmd">

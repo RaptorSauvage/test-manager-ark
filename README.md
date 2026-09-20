@@ -718,49 +718,52 @@ dedicated servers running on the same machine.
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
     reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one
     specific local IP makes it reachable from other devices on your local network, which
-    Settings shows a warning for once set unless **Require login** (below) is also on: by
-    default the page has no login of its own, so that's full RCON/admin control of your
-    servers available to anyone who can reach that address - only do this on a network you
-    trust. Settings lists this machine's own local IPs as a hint for what to type in.
-    Enabling/disabling, or changing the host or port, takes effect immediately on Save, no
-    restart needed.
-  - **Require login (HTTPS)** - a checkbox in Settings, off by default (nothing changes for
-    existing setups unless you turn it on). Turning it on does two things: switches the
-    dashboard from plain HTTP to `https://` using a self-signed certificate the Manager
-    generates and caches itself (`<data folder>/certs/`, regenerated automatically if this
-    machine's local IPs change; browsers will show a "not trusted" warning the first time
-    you visit - that's expected for a self-signed cert, click through, or install
+    Settings shows a warning for once set unless **Require access token** (below) is also
+    on: by default the page has no authentication of its own, so that's full RCON/admin
+    control of your servers available to anyone who can reach that address - only do this
+    on a network you trust. Settings lists this machine's own local IPs as a hint for what
+    to type in. Enabling/disabling, or changing the host or port, takes effect immediately
+    on Save, no restart needed.
+  - **Require access token (HTTPS)** - a checkbox in Settings, off by default (nothing
+    changes for existing setups unless you turn it on). Turning it on does two things:
+    switches the dashboard from plain HTTP to `https://` using a self-signed certificate the
+    Manager generates and caches itself (`<data folder>/certs/`, regenerated automatically
+    if this machine's local IPs change; browsers will show a "not trusted" warning the first
+    time you visit - that's expected for a self-signed cert, click through, or install
     `certs/cert.pem` as trusted on a device if you'd rather not see it again), and requires
-    logging in with one of the accounts configured just below the checkbox before the page
-    or any of its API routes respond to anything. This is what makes it reasonable to
-    expose the dashboard outside your LAN (e.g. via router port forwarding) - without it,
-    anyone who can reach the address has full control, login or not.
-    - **Accounts** are managed only from this Settings screen, never from the dashboard
-      page itself - so being able to log in as an admin over the web never grants the
-      ability to create or change accounts, that always requires being at the machine
-      running the Manager. Each account has a username, password, and one of three roles:
-      **Admin** (everything), **Operator** (start/stop/restart/update a server, send RCON
-      commands, create backups - but not restore or delete them, and not the event-label
-      filter checkboxes, which are shared/global rather than per-user), and **Read-only**
-      (Cluster Dashboard plus a server's console feed and online players list, with every
-      action hidden - no Backup section, no Start/Stop/RCON, no Kick, nothing that writes).
-      Role checks happen on the server for every route regardless of what the page shows -
-      the client-side hiding is just so a role never sees a button that would fail if
-      clicked. The last remaining admin account can't be demoted or deleted, so you can't
-      lock yourself out by accident. Logging in sets a cookie-based session (7-day sliding
-      expiry) that doesn't survive the Manager restarting or the dashboard being turned off
-      and back on - everyone has to log in again after that. Repeated failed logins from
-      the same address are temporarily locked out (8 attempts / 15 minutes) as a basic
-      brute-force guard now that the dashboard may be reachable from the internet.
-    - **API keys** (also managed only from this Settings screen) are the same idea as
-      accounts, but for scripts/bots that call the dashboard's HTTP API directly and can't
-      drive a login form - e.g. a Discord bot posting server status. Each key has a label
-      (just for telling keys apart), a role (same three as accounts), and is sent as
-      `Authorization: Bearer <key>` instead of logging in - either that header or a valid
-      session satisfies a route's role check, so existing browser sessions keep working
-      unchanged. A key's full value (`ark_<id>_<secret>`) is shown exactly once, right
-      after creating it - only its hash is ever stored, so a lost key can't be recovered,
-      only revoked and replaced with a new one.
+    every browser to present a valid access token before the page or any of its API routes
+    respond to anything. This is what makes it reasonable to expose the dashboard outside
+    your LAN (e.g. via router port forwarding) - without it, anyone who can reach the
+    address has full control either way. There are no accounts, usernames, or passwords
+    anywhere in this app - just tokens.
+    - **Access tokens** are managed only from this Settings screen, never from the
+      dashboard page itself - so having a token never grants the ability to create or
+      revoke tokens, that always requires being at the machine running the Manager. Each
+      token has a label (just for telling tokens apart, e.g. "My laptop") and one of three
+      roles: **Admin** (everything), **Operator** (start/stop/restart/update a server, send
+      RCON commands, create backups - but not restore or delete them, and not the
+      event-label filter checkboxes, which are shared/global rather than per-token), and
+      **Read-only** (Cluster Dashboard plus a server's console feed and online players
+      list, with every action hidden - no Backup section, no Start/Stop/RCON, no Kick,
+      nothing that writes). Role checks happen on the server for every route regardless of
+      what the page shows - the client-side hiding is just so a role never sees a button
+      that would fail if clicked. A token's full value (`ark_<id>_<secret>`) is shown
+      exactly once, right after creating it - only its hash is ever stored, so a lost token
+      can't be recovered, only revoked and replaced with a new one. To use one, paste it
+      into the small prompt the dashboard page shows the first time a browser opens it
+      without a token; that browser then remembers it (in its own `localStorage`, never a
+      cookie or server-side session) until it's cleared, the token is revoked from
+      Settings, or **Log out** is clicked - unlike a login session, a stored token survives
+      a Manager restart or the dashboard being turned off and back on, so a browser only
+      has to paste it in once.
+    - **API keys** (also managed only from this Settings screen, kept as their own separate
+      list from access tokens) are the same idea, but for scripts/bots that call the
+      dashboard's HTTP API directly rather than a person's browser - e.g. a Discord bot
+      posting server status. Each key has a label, a role (same three as access tokens), and
+      is sent as `Authorization: Bearer <key>` exactly like an access token is - the server
+      checks a presented Bearer credential against both lists, so either kind works
+      anywhere the other does. A key's full value is shown exactly once at creation, same
+      as an access token.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), No Transfer From Filtering (`-NoTransferFromFiltering`), and External IP
@@ -1034,27 +1037,31 @@ Everything the web dashboard page itself calls is plain JSON over HTTP - nothing
 dashboard-page-specific about it, so any other local process (a Discord bot, a script,
 `curl`) on the same machine can call it too, once **Settings → Enable web dashboard** is
 on. Base URL is `http://<host>:<port>` using whatever Host/Port you set there (defaults
-to `http://127.0.0.1:8090`) - or `https://` if **Require login** is also on. With login
-off (the default), there's no authentication at all - the same posture as RCON itself,
-appropriate for `127.0.0.1` or a trusted LAN, never the open internet. With login on,
-every route below except `/api/login` needs either a valid session cookie or an API key,
-with enough role to match the table in the Settings section above:
-- **API key** (the simpler option for a bot/script) - create one in **Settings → API
-  keys**, then send `Authorization: Bearer <key>` on every request. No login step, no
-  cookie handling, and it keeps working across Manager restarts (unlike a session).
-- **Session cookie** (what the dashboard page itself uses) - `POST` `{ username, password
-  }` to `/api/login`, which responds with `Set-Cookie` on success, then send that cookie
-  (`-b`/`--cookie` with `curl`, a cookie jar in most HTTP client libraries) on every
-  subsequent request. Only really worth it for a bot if it's already reusing one of the
-  human-facing accounts.
+to `http://127.0.0.1:8090`) - or `https://` if **Require access token** is also on. With
+that off (the default), there's no authentication at all - the same posture as RCON
+itself, appropriate for `127.0.0.1` or a trusted LAN, never the open internet. With it on,
+every route below needs a valid Bearer credential, with enough role to match the table in
+the Settings section above:
+- **API key** (the option meant for a bot/script) - create one in **Settings → API keys**,
+  then send `Authorization: Bearer <key>` on every request. Keeps working across Manager
+  restarts.
+- **Access token** (what a browser uses, but works identically for a script) - create one
+  in **Settings → Web dashboard access tokens**, then send it the same way:
+  `Authorization: Bearer <token>`. There's no separate login step or cookie for either
+  kind - the server checks a presented Bearer credential against both lists, so an access
+  token works anywhere an API key does and vice versa; they're only kept as separate lists
+  for organizing who has what.
+- `GET /api/whoami` - what the dashboard page itself calls right after a browser pastes in
+  a token, to learn its role. Returns `{ "role": "admin" | "operator" | "readonly" }` for
+  any valid credential, 401 for an invalid or missing one - useful for a script to sanity-check
+  a key/token before using it for anything else.
 
 | Method | Path | Body | Response | Notes |
 | --- | --- | --- | --- | --- |
-| POST | `/api/login` | `{ "username": "...", "password": "..." }` | `{ ok, role? , error? }` | Only meaningful with **Require login** on; sets the session cookie on success. 401 on bad credentials, 429 if this address has failed too many times recently |
-| POST | `/api/logout` | — | `{ ok: true }` | Clears the session cookie |
+| GET | `/api/whoami` | — | `{ role }` | 401 if the presented key/token is missing or invalid |
 | GET | `/api/servers` | — | `[{ id, name, group, maxPlayers, state, players, cpu, memoryMB, startedAt, gameVersion }]` | `id` is what every other endpoint below expects; `group` is the Manager's dashboard group name (empty string when ungrouped); `startedAt` (epoch ms, or `null`) feeds the Status panel's live Uptime field |
 | GET | `/api/groups/:group/events` | — | Same shape as `/api/servers/:id/events` below, plus `profileId`/`profileName` on each event | Merged, date+time-sorted backlog across every server in the group. `:group` is the group name, or the literal `_ungrouped_` for the ungrouped bucket |
-| GET | `/api/groups/:group/events/stream` | — | `text/event-stream`, one `data:` line per merged event (same shape as the backlog above) | Only tails servers in the group that are actually running, starting/stopping individual tailers live as they start/stop while the connection is open |
+| GET | `/api/groups/:group/events/stream` | — | `text/event-stream`, one `data:` line per merged event (same shape as the backlog above) | Only tails servers in the group that are actually running, starting/stopping individual tailers live as they start/stop while the connection is open. With auth on, `EventSource` can't set an `Authorization` header, so this route (and the per-server one below) also accepts the credential as a `?token=` query parameter |
 | POST | `/api/servers/:id/start` | — | `{ ok, error? }` | 400 with `error` if it can't start right now (e.g. an update is running) |
 | POST | `/api/servers/:id/stop` | — | `{ ok: true, saved: boolean }` | Waits for SaveWorld's RCON outcome (`saved`) before responding, then returns - the rest of the shutdown keeps running in the background; state changes (`stopping` → `stopped`) show up in the next `GET /api/servers` poll. `saved: false` means RCON was unreachable or the save failed, so it skipped straight to the grace-period/force-kill fallback |
 | POST | `/api/servers/:id/restart` | — | `{ ok: true, saved: boolean }` | Same as stop above, for the shutdown half - responds once `saved` is known, then the restart (including starting back up) continues in the background |
