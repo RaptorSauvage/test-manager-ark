@@ -107,6 +107,20 @@ textarea {
   font-family: inherit;
 }
 
+/* The rule above sizes text inputs, but a checkbox/radio inherits its border+padding too -
+   with no fixed width, that padded box is free to grow into any leftover space in a flex
+   row (e.g. a wide, left-aligned label), and the browser paints the actual glyph centered
+   inside that grown box - so the visible checkbox appears to drift depending on how much
+   room its sibling label text leaves. Pinning it to a small fixed box keeps the glyph in
+   the same spot on every row regardless of label length. */
+input[type='checkbox'],
+input[type='radio'] {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+}
+
 label {
   display: flex;
   flex-direction: column;
@@ -1135,7 +1149,7 @@ label.checkbox {
   flex-wrap: wrap;
 }
 
-.accounts-add-form input {
+.accounts-add-form > input {
   flex: 1;
   min-width: 120px;
 }
@@ -1162,6 +1176,7 @@ label.checkbox {
   z-index: 50;
   top: calc(100% + 4px);
   left: 0;
+  width: max-content;
   min-width: 200px;
   max-height: 220px;
   overflow-y: auto;
@@ -1172,10 +1187,14 @@ label.checkbox {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 2px;
 }
 
 .server-picker-option {
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: flex-start;
   padding: 6px 8px;
   border-radius: 6px;
   white-space: nowrap;
