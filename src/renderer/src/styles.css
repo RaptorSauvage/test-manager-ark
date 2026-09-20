@@ -740,9 +740,10 @@ label.checkbox {
 
 .server-grid {
   display: grid;
-  /* Wide enough that Start/Stop/Restart/Update/Kill fit on one row (see
-     .server-card-actions-primary) instead of Update wrapping onto its own line. */
-  grid-template-columns: repeat(auto-fit, minmax(260px, 440px));
+  /* Wide enough that Start/Stop/Restart/Update/Kill still fit on one row (see
+     .server-card-actions-primary's own tighter padding/font-size below) without the card
+     needing to be as wide as an untightened row would require. */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 380px));
   gap: 16px;
 }
 
@@ -768,10 +769,10 @@ label.checkbox {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 16px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .server-card-header {
@@ -935,11 +936,13 @@ label.checkbox {
 .server-card-actions-secondary {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .server-card-actions-primary button {
   flex: 1 1 0;
+  padding: 6px 4px;
+  font-size: 0.8rem;
 }
 
 .log-output {
@@ -1366,6 +1369,16 @@ label.checkbox {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+}
+
+/* All 7 day checkboxes as their own row, separate from the enable checkbox + time input
+   above - kept together as one group instead of some days trailing after the time input on
+   its row and the rest spilling onto a second row misaligned with the first. */
+.schedule-days-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
 }
 
 .schedule-day {

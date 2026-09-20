@@ -299,7 +299,6 @@ export default function AnalyticsTab({ profile, onProfileChange }: AnalyticsTabP
         ) : history.length > 0 ? (
           <ServerStatsChart
             history={history}
-            maxPlayers={profile.maxPlayers}
             windowMs={statsScale ?? Math.max(1, now - history[0].time)}
             now={now}
           />

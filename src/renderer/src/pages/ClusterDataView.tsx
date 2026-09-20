@@ -137,7 +137,6 @@ export default function ClusterDataView({ profiles, onOpenGroup }: ClusterDataVi
                   <div className="cluster-data-chart" onClick={(e) => e.stopPropagation()}>
                     <ServerStatsChart
                       history={history}
-                      maxPlayers={Math.max(g.totalMaxPlayers, 1)}
                       windowMs={statsScale ?? Math.max(1, now - history[0].time)}
                       now={now}
                     />

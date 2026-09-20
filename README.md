@@ -182,10 +182,11 @@ dedicated servers running on the same machine.
   dashboard loads and shows "-" if nothing's been detected yet for that server (it doesn't
   actively poll/"Detect" here the way the Analytics tab does). The Map/Port/Version/
   Players/CPU/RAM fields sit in their own slightly darker inset panel within the card
-  (rather than blending into the card's own background), and the card is wide enough
-  (440px max, up from 340px) that Start/Stop/Restart/Update/Kill all fit on one row
-  instead of Update wrapping onto its own line - Manage/Hide/Delete sit on a second row
-  below.
+  (rather than blending into the card's own background). The card is wide enough (380px
+  max, up from the original 340px) that Start/Stop/Restart/Update/Kill all fit on one row
+  instead of Update wrapping onto its own line - that row's buttons use tighter padding/
+  font-size than buttons elsewhere so the row still fits at that width - with Manage/Hide/
+  Delete on a second row below.
 - **No native File/Edit/View/Window/Help menu bar** — this app never intentionally set one
   up; `Menu.setApplicationMenu(null)` (`src/main/index.ts`) removes Electron's unused
   default instead of leaving it to show up unasked for.
@@ -390,7 +391,11 @@ dedicated servers running on the same machine.
     instead of hugging the bottom - RAM already worked this way. Not capped at 100%: CPU
     usage is measured per-process across all cores, so a multi-threaded server can
     legitimately read well above 100%, and every row's points are clamped to stay within
-    the chart's own height regardless of scale, so nothing ever draws outside its row. A
+    the chart's own height regardless of scale, so nothing ever draws outside its row. The
+    Players row scales the same way, to the highest player count actually seen in the
+    window - never to the server's configured max slot count, which against a 70-slot cap
+    made 0 vs 1 connected player an invisible 1/70th blip regardless of how full the chart
+    otherwise looked. A
     gap large enough to represent several missing points in a row (server stopped for a
     while, stats disabled and re-enabled, ...) - scaled to how far apart points actually are
     at the current resolution, not a fixed threshold, since "All" over weeks and "6h" sample
@@ -773,10 +778,13 @@ dedicated servers running on the same machine.
 - **Server Management tab** — **Manager Startup**, **Anti-Crash Watchdog**, **Zombie
   Detection**, and **Cluster Console Log Archive** share one **Startup & Watchdog** card
   (in that order, each its own labeled subsection with a one-line description rather than
-  a full paragraph), and the schedule renamed to **Advanced Schedule: Restart** (previously
-  "Advanced Schedule: Server Shutdown, Update, and Startup") gets its own card placed right
-  after that Watchdog group, ahead of **Advanced Schedule: Dino Wipe**. None of the
-  underlying behavior changed - just how it's grouped and worded on the page. An
+  a full paragraph). The two schedules - **Restart** (renamed from "Server Shutdown,
+  Update, and Startup") and **Dino Wipe** - share their own **Advanced Schedule** card
+  right after the Watchdog group, again as labeled subsections rather than two separate
+  cards. None of the underlying behavior changed - just how it's grouped and worded on the
+  page. Each schedule's day-of-week checkboxes (Sun-Sat) sit on their own row below the
+  enable checkbox + time input, rather than sharing a row with them and wrapping onto a
+  second, misaligned row once the card isn't wide enough for all nine controls at once. An
   **Anti-Crash Watchdog** checkbox, independent per profile:
   when enabled, if this server is found to have gone from `running` (i.e. fully Started, not
   merely `starting`) straight to `stopped` with no deliberate action in between, it's

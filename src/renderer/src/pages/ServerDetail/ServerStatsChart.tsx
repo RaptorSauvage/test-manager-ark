@@ -73,7 +73,6 @@ function Sparkline({ label, unit, current, samples, windowMs, now, color, max, m
 
 interface ServerStatsChartProps {
   history: StatSample[]
-  maxPlayers: number
   windowMs: number
   now: number
 }
@@ -88,7 +87,7 @@ interface ServerStatsChartProps {
  * the cursor. Only ever mounted while the Analytics tab itself is active (see
  * ServerDetail/index.tsx, which unmounts inactive tabs entirely).
  */
-export default function ServerStatsChart({ history, maxPlayers, windowMs, now }: ServerStatsChartProps): JSX.Element {
+export default function ServerStatsChart({ history, windowMs, now }: ServerStatsChartProps): JSX.Element {
   const latest = history[history.length - 1]
 
   const cpuSamples = history.map((h) => ({ time: h.time, value: h.cpu }))
@@ -101,6 +100,10 @@ export default function ServerStatsChart({ history, maxPlayers, windowMs, now }:
   // multi-threaded server can legitimately read well above 100%.
   const cpuMax = Math.max(10, ...cpuSamples.map((s) => s.value))
   const memoryMax = Math.max(100, ...memorySamples.map((s) => s.value))
+  // Scaled to the highest player count actually seen (never the server's configured max
+  // slot count) - against a 70-slot cap, 0 vs 1 connected player is a 1/70th blip that reads
+  // as a flat line either way. A floor of 1 keeps an all-zero window from dividing by zero.
+  const playersMax = Math.max(1, ...playerSamples.map((s) => s.value))
   // History arrives pre-bucketed at a resolution that depends on the selected scale/window
   // (see computeBucketWidth in statsHistory.ts) - a fixed 60s gap threshold would constantly
   // (mis)fire at coarser resolutions (e.g. "All" over weeks, where consecutive real points can
@@ -140,7 +143,7 @@ export default function ServerStatsChart({ history, maxPlayers, windowMs, now }:
         windowMs={windowMs}
         now={now}
         color="var(--warn)"
-        max={Math.max(maxPlayers, 1)}
+        max={playersMax}
         maxGapMs={maxGapMs}
       />
     </div>

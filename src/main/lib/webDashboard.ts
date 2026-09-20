@@ -1492,13 +1492,17 @@ const DASHBOARD_HTML = `<!doctype html>
     return wrap;
   }
 
-  function buildClusterChart(history, maxPlayers, windowMs, now) {
+  function buildClusterChart(history, windowMs, now) {
     var latest = history[history.length - 1];
     var cpuSamples = history.map(function (h) { return { time: h.time, value: h.cpu }; });
     var memorySamples = history.map(function (h) { return { time: h.time, value: h.memoryMB }; });
     var playerSamples = history.map(function (h) { return { time: h.time, value: h.players }; });
     var cpuMax = Math.max(10, cpuSamples.reduce(function (m, s) { return Math.max(m, s.value); }, 0));
     var memoryMax = Math.max(100, memorySamples.reduce(function (m, s) { return Math.max(m, s.value); }, 0));
+    // Scaled to the highest player count actually seen (never the group's combined slot
+    // count) - against a large combined cap, 0 vs 1 connected player is an imperceptible
+    // blip. A floor of 1 keeps an all-zero window from dividing by zero.
+    var playersMax = Math.max(1, playerSamples.reduce(function (m, s) { return Math.max(m, s.value); }, 0));
     var maxGapMs = Math.max(MAX_CONTINUOUS_GAP_MS, (windowMs / Math.max(history.length, 1)) * 3);
 
     var container = document.createElement('div');
@@ -1518,7 +1522,7 @@ const DASHBOARD_HTML = `<!doctype html>
         windowMs,
         now,
         'var(--warn)',
-        Math.max(maxPlayers, 1),
+        playersMax,
         maxGapMs
       )
     );
@@ -1649,7 +1653,7 @@ const DASHBOARD_HTML = `<!doctype html>
           var row = rowEls[key];
           if (!row) return;
           var windowMs = statsScale !== null ? statsScale : Math.max(1, Date.now() - history[0].time);
-          var chart = buildClusterChart(history, Math.max(g.totalMaxPlayers, 1), windowMs, Date.now());
+          var chart = buildClusterChart(history, windowMs, Date.now());
           chart.addEventListener('click', function (e) { e.stopPropagation(); });
           row.appendChild(chart);
         })

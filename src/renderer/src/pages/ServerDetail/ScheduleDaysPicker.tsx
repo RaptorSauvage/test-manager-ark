@@ -50,6 +50,8 @@ export default function ScheduleDaysPicker({
           {label}
         </label>
         <input type="time" value={time} onChange={(e) => onTimeChange(e.target.value)} disabled={!enabled} />
+      </div>
+      <div className="schedule-days-row">
         {DAY_LABELS.map((dayLabel, index) => (
           <label key={dayLabel} className="checkbox schedule-day">
             <input
