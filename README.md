@@ -764,10 +764,12 @@ dedicated servers running on the same machine.
       Settings, or **Log out** is clicked - unlike a login session, a stored token survives
       a Manager restart or the dashboard being turned off and back on, so a browser only
       has to paste it in once.
-    - Each access token can also be scoped to a chosen subset of servers, via a scrolling
-      multi-select next to the label/role fields when creating one (nothing selected, the
+    - Each access token can also be scoped to a chosen subset of servers, via a dropdown
+      next to the label/role fields when creating one - a button showing the current
+      selection ("All servers", one name, or a count) opens a scrollable checklist, one
+      checkbox per server, rather than requiring Ctrl/Cmd-click. Nothing checked, the
       default, means every server - including ones added later, same as a token created
-      before this existed). This is enforced on the server for every route that operates on
+      before this existed. This is enforced on the server for every route that operates on
       a specific server or group, not just filtered out of what the dashboard page displays
       - a direct API call for a server outside a token's scope gets the same 404 as a
       genuinely unknown server, rather than exposing that the server exists at all. The

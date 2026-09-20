@@ -1140,9 +1140,49 @@ label.checkbox {
   min-width: 120px;
 }
 
-.access-token-server-picker {
+.server-picker {
+  position: relative;
+}
+
+.server-picker-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 160px;
-  height: 76px;
+  justify-content: space-between;
+}
+
+.server-picker-caret {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.server-picker-menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 200px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.server-picker-option {
+  padding: 6px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.server-picker-option:hover {
+  background: var(--bg);
 }
 
 .accounts-table {

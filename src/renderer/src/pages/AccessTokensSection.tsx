@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ServerProfile, WebDashboardAccessTokenSummary, WebDashboardRole } from '@shared/types'
 
 /**
@@ -16,8 +16,10 @@ export default function AccessTokensSection(): JSX.Element {
   const [label, setLabel] = useState('')
   const [role, setRole] = useState<WebDashboardRole>('operator')
   const [selectedProfileIds, setSelectedProfileIds] = useState<string[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [error, setError] = useState('')
   const [newToken, setNewToken] = useState('')
+  const pickerRef = useRef<HTMLDivElement>(null)
 
   function reload(): void {
     window.api.webDashboardAccessTokens.list().then(setTokens)
@@ -28,9 +30,29 @@ export default function AccessTokensSection(): JSX.Element {
     window.api.profiles.list().then(setProfiles)
   }, [])
 
+  useEffect(() => {
+    if (!pickerOpen) return
+    function onOutsideClick(e: MouseEvent): void {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setPickerOpen(false)
+    }
+    document.addEventListener('mousedown', onOutsideClick)
+    return () => document.removeEventListener('mousedown', onOutsideClick)
+  }, [pickerOpen])
+
   function profileName(id: string): string {
     return profiles.find((p) => p.id === id)?.name ?? id
   }
+
+  function toggleProfileSelected(id: string): void {
+    setSelectedProfileIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]))
+  }
+
+  const pickerSummary =
+    selectedProfileIds.length === 0
+      ? 'All servers'
+      : selectedProfileIds.length === 1
+        ? profileName(selectedProfileIds[0])
+        : `${selectedProfileIds.length} servers`
 
   async function handleCreate(e: FormEvent): Promise<void> {
     e.preventDefault()
@@ -46,6 +68,7 @@ export default function AccessTokensSection(): JSX.Element {
       setLabel('')
       setRole('operator')
       setSelectedProfileIds([])
+      setPickerOpen(false)
     } catch (err) {
       setError((err as Error).message)
     }
@@ -96,19 +119,30 @@ export default function AccessTokensSection(): JSX.Element {
           <option value="operator">Operator</option>
           <option value="readonly">Read-only</option>
         </select>
-        <select
-          multiple
-          className="access-token-server-picker"
-          value={selectedProfileIds}
-          onChange={(e) => setSelectedProfileIds(Array.from(e.target.selectedOptions, (o) => o.value))}
-          title="Ctrl/Cmd-click to select more than one - nothing selected means every server"
-        >
-          {profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        <div className="server-picker" ref={pickerRef}>
+          <button type="button" className="server-picker-toggle" onClick={() => setPickerOpen((prev) => !prev)}>
+            {pickerSummary}
+            <span className="server-picker-caret">▾</span>
+          </button>
+          {pickerOpen && (
+            <div className="server-picker-menu">
+              {profiles.length === 0 ? (
+                <p className="empty-state">No servers yet.</p>
+              ) : (
+                profiles.map((p) => (
+                  <label key={p.id} className="checkbox server-picker-option">
+                    <input
+                      type="checkbox"
+                      checked={selectedProfileIds.includes(p.id)}
+                      onChange={() => toggleProfileSelected(p.id)}
+                    />
+                    {p.name}
+                  </label>
+                ))
+              )}
+            </div>
+          )}
+        </div>
         <button type="submit">Create token</button>
       </form>
       <p className="empty-state">
