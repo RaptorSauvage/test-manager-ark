@@ -209,7 +209,12 @@ dedicated servers running on the same machine.
   `src/main/lib/statsHistory.ts`'s `readClusterStatsHistory`, the same query the web
   dashboard's own Cluster Dashboard chart uses - rather than the group's own separate
   client-side sampling; only servers with stats enabled (Analytics tab) contribute to a
-  group's chart, and a group with none of its servers opted in simply shows no chart. A
+  group's chart, and a group with none of its servers opted in simply shows no chart. When
+  some but not all of a group's currently-running servers have it on, a note above the chart
+  spells out how many of the running servers it actually reflects - otherwise the chart (and
+  the bold current-value numbers above each of its sparklines, which are simply that
+  history's own last point) reading noticeably lower than the live CPU/Memory/Players totals
+  in the row's own header looks like a bug rather than the servers that just aren't opted in. A
   single **Time Scale** selector at the top of the page (**1m/5m/15m/1h/6h/12h/24h/All**, same
   options and same main-process downsampling as the per-server chart) applies to every
   group's chart at once and re-queries every group when changed. A group with no history

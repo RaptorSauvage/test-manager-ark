@@ -105,6 +105,15 @@ export default function ClusterDataView({ profiles, onOpenGroup }: ClusterDataVi
         <div className="cluster-data-list">
           {groupStats.map((g) => {
             const history = historyFor(g)
+            // The chart is fed persisted history, which only ever contains samples from
+            // profiles with Stats collection enabled (Analytics tab) - a live-running
+            // profile with it off never contributes a single sample, so the chart (and its
+            // "current" numbers, drawn from that same history) can legitimately sit well
+            // below the live totals above with no bug involved. Surfacing the gap here
+            // turns a confusing mismatch into an explained, actionable one.
+            const statsRunningCount = g.profiles.filter(
+              (p) => statuses[p.id]?.state === 'running' && p.statsEnabled
+            ).length
             return (
               <div
                 className="cluster-data-row clickable"
@@ -135,6 +144,12 @@ export default function ClusterDataView({ profiles, onOpenGroup }: ClusterDataVi
                 </div>
                 {history.length > 0 && (
                   <div className="cluster-data-chart" onClick={(e) => e.stopPropagation()}>
+                    {statsRunningCount < g.runningCount && (
+                      <p className="cluster-data-chart-note">
+                        Chart reflects {statsRunningCount} of {g.runningCount} running servers - the rest have
+                        stats collection off (Analytics tab), so the totals above will read higher than the chart.
+                      </p>
+                    )}
                     <ServerStatsChart
                       history={history}
                       windowMs={statsScale ?? Math.max(1, now - history[0].time)}

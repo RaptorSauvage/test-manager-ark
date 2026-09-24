@@ -273,6 +273,12 @@ label.checkbox {
   width: 100%;
 }
 
+.cluster-data-chart-note {
+  color: var(--warn);
+  font-size: 0.8rem;
+  margin: 0 0 6px;
+}
+
 .manager-log-page {
   display: flex;
   flex-direction: column;
