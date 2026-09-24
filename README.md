@@ -214,7 +214,15 @@ dedicated servers running on the same machine.
   options and same main-process downsampling as the per-server chart) applies to every
   group's chart at once and re-queries every group when changed. A group with no history
   in the selected window (nothing enabled, or a fully-stopped group with nothing recorded
-  recently) shows no chart at all rather than a flat line of zeroes.
+  recently) shows no chart at all rather than a flat line of zeroes. `readClusterStatsHistory`
+  drops its own newest time bucket whenever it has contributions from fewer servers than the
+  bucket right before it - each server's own stats-recording tick fires on an independent
+  timer, so the very latest bucket can otherwise be read before every currently-running
+  server has landed a sample in it yet, understating the combined total and showing a
+  misleading dip right at the chart's leading edge (and in the bold current-value number
+  above each sparkline, which is simply that history's own last point) until the next poll
+  catches it up. A settled bucket further back is never dropped this way, so a genuine drop
+  (a server actually stopping) still shows up normally.
 
   Clicking anywhere on a row other than its chart opens that group's **Group Console**,
   filling the full page: a live log feed merging every server in the group into one
@@ -871,7 +879,10 @@ dedicated servers running on the same machine.
   the server or the Manager for a change to take effect.
 - **Update / install via SteamCMD** — a per-server button runs
   `steamcmd +force_install_dir <install dir> +login anonymous +app_update 2430930 validate +quit`.
-  Works for a first-time install into an empty folder too - the button reads **Install**
+  A **Beta** field in the Settings tab's Server block (a checkbox plus a branch-name text
+  entry, right under Install directory) inserts `-beta <name>` right before `validate` when
+  checked and a name is given, targeting that beta branch instead of the default/public one -
+  same command otherwise. Works for a first-time install into an empty folder too - the button reads **Install**
   instead of **Update** until the server executable is actually found in the install
   directory, then switches over automatically. Disabled while the server is running or
   already updating. The dashboard's own **SteamCMD** menu can either download and

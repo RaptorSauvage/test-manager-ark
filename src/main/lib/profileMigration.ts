@@ -40,6 +40,7 @@ interface LegacyProfileFields {
  *   `zombieDetectionTimeoutMinutes` is new and defaults to 10
  * - `clusterLogArchiveMaxSizeMB` is new and defaults to 10
  * - `statsEnabled` is new and defaults to false
+ * - `steamBetaEnabled`/`steamBetaName` are new and default to false/''
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -100,6 +101,8 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     zombieDetectionTimeoutMinutes: rest.zombieDetectionTimeoutMinutes ?? 10,
     zombieDetectionAutoRestart: rest.zombieDetectionAutoRestart ?? false,
     clusterLogArchiveMaxSizeMB: rest.clusterLogArchiveMaxSizeMB ?? 10,
-    statsEnabled: rest.statsEnabled ?? false
+    statsEnabled: rest.statsEnabled ?? false,
+    steamBetaEnabled: rest.steamBetaEnabled ?? false,
+    steamBetaName: rest.steamBetaName ?? ''
   }
 }

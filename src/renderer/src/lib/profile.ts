@@ -5,6 +5,8 @@ export function createDefaultProfile(name: string): ServerProfile {
     id: crypto.randomUUID(),
     name,
     installDir: '',
+    steamBetaEnabled: false,
+    steamBetaName: '',
     map: 'TheIsland_WP',
     moddedMapEnabled: false,
     moddedMapId: '',

@@ -104,6 +104,29 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
             </button>
           </div>
         </label>
+        <div className="field-block">
+          <span>Beta</span>
+          <div className="path-input-row">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={form.steamBetaEnabled}
+                onChange={(e) => update('steamBetaEnabled', e.target.checked)}
+              />
+              Enabled
+            </label>
+            <input
+              value={form.steamBetaName}
+              onChange={(e) => update('steamBetaName', e.target.value)}
+              placeholder="Beta branch name"
+              disabled={!form.steamBetaEnabled}
+            />
+          </div>
+          <p className="empty-state">
+            Adds <code>-beta &lt;name&gt;</code> to the SteamCMD update command, right before{' '}
+            <code>validate</code>, targeting that beta branch instead of the default/public one.
+          </p>
+        </div>
         <div className="settings-grid">
           <label>
             Game port

@@ -17,8 +17,12 @@ const ARK_ASA_DEDICATED_SERVER_APP_ID = '2430930'
 /**
  * Builds the SteamCMD arguments to install/update the dedicated server into
  * `installDir`. Also works for a first-time install into an empty folder.
+ * When `beta.enabled` and `beta.name` (trimmed) are both set, inserts
+ * `-beta <name>` right before `validate`, targeting that beta branch instead of the
+ * default/public one - same install otherwise.
  */
-export function buildUpdateArgs(installDir: string): string[] {
+export function buildUpdateArgs(installDir: string, beta?: { enabled: boolean; name: string }): string[] {
+  const betaName = beta?.enabled ? beta.name.trim() : ''
   return [
     '+force_install_dir',
     installDir,
@@ -26,6 +30,7 @@ export function buildUpdateArgs(installDir: string): string[] {
     'anonymous',
     '+app_update',
     ARK_ASA_DEDICATED_SERVER_APP_ID,
+    ...(betaName ? ['-beta', betaName] : []),
     'validate',
     '+quit'
   ]
@@ -168,7 +173,7 @@ function runUpdateAttempt(profile: ServerProfile, steamCmdPath: string, logStrea
   return new Promise((resolve, reject) => {
     clearStuckManifest(profile.installDir)
 
-    const args = buildUpdateArgs(profile.installDir)
+    const args = buildUpdateArgs(profile.installDir, { enabled: profile.steamBetaEnabled, name: profile.steamBetaName })
     const previousContentLogSize = contentLogSize(steamCmdPath)
 
     // Pipe stdout/stderr into a log file instead of 'ignore' - SteamCMD's own console

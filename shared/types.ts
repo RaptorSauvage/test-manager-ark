@@ -7,6 +7,12 @@ export interface ServerProfile {
   name: string
   /** Root install directory, containing ShooterGame/Binaries/... */
   installDir: string
+  /** Whether the SteamCMD update/install below targets a beta branch instead of the
+   *  default/public one. */
+  steamBetaEnabled: boolean
+  /** Beta branch name, passed as `-beta <name>` right before `validate` in the SteamCMD
+   *  update command when steamBetaEnabled is on. */
+  steamBetaName: string
   /** Map identifier passed on the command line, e.g. "TheIsland_WP" */
   map: string
   /** Whether a modded map overrides the map above */

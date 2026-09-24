@@ -68,6 +68,8 @@ export function registerProfileHandlers(): void {
       id: randomUUID(),
       name: uniqueProfileName(detected.suggestedName, existing.map((p) => p.name)),
       installDir,
+      steamBetaEnabled: false,
+      steamBetaName: '',
       map: detected.map,
       moddedMapEnabled: false,
       moddedMapId: '',

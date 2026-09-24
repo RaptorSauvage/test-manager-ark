@@ -22,6 +22,8 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     id: 'test',
     name: 'Test',
     installDir: '/tmp/ark',
+    steamBetaEnabled: false,
+    steamBetaName: '',
     map: 'TheIsland_WP',
     moddedMapEnabled: false,
     moddedMapId: '',
@@ -79,6 +81,38 @@ describe('buildUpdateArgs', () => {
       'validate',
       '+quit'
     ])
+  })
+
+  it('inserts -beta <name> right before validate when a beta branch is enabled', () => {
+    const args = buildUpdateArgs('/servers/my-ark', { enabled: true, name: 'testing' })
+    expect(args).toEqual([
+      '+force_install_dir',
+      '/servers/my-ark',
+      '+login',
+      'anonymous',
+      '+app_update',
+      '2430930',
+      '-beta',
+      'testing',
+      'validate',
+      '+quit'
+    ])
+  })
+
+  it('trims the beta branch name', () => {
+    const args = buildUpdateArgs('/servers/my-ark', { enabled: true, name: '  testing  ' })
+    expect(args).toContain('testing')
+    expect(args).not.toContain('  testing  ')
+  })
+
+  it('omits -beta when the beta toggle is off, even with a name set', () => {
+    const args = buildUpdateArgs('/servers/my-ark', { enabled: false, name: 'testing' })
+    expect(args).not.toContain('-beta')
+  })
+
+  it('omits -beta when enabled but the name is blank/whitespace-only', () => {
+    const args = buildUpdateArgs('/servers/my-ark', { enabled: true, name: '   ' })
+    expect(args).not.toContain('-beta')
   })
 })
 

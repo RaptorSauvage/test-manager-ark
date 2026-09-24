@@ -135,6 +135,21 @@ label.checkbox {
   gap: 8px;
 }
 
+/* Same look as `label` above, for a field made of more than one control (e.g. a checkbox
+ *  plus a text input) - a real <label> can't wrap another <label> without breaking which
+ *  control a click actually targets, so this is a plain block styled to match instead. */
+.field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.field-block .checkbox {
+  flex: 0 0 auto;
+}
+
 .loading {
   padding: 40px;
   text-align: center;

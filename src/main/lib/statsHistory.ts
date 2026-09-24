@@ -159,7 +159,10 @@ export function readClusterStatsHistory(
     perProfile.set(s.profileId, arr)
   }
 
-  const combined = new Map<number, { cpuSum: number; memSum: number; playersSum: number; lastTime: number }>()
+  const combined = new Map<
+    number,
+    { cpuSum: number; memSum: number; playersSum: number; lastTime: number; profileCount: number }
+  >()
   for (const samples of perProfile.values()) {
     for (const [idx, b] of bucketizeOne(samples, start, bucketWidth)) {
       const avg = bucketAverage(b)
@@ -169,18 +172,39 @@ export function readClusterStatsHistory(
         existing.memSum += avg.memoryMB
         existing.playersSum += avg.players
         existing.lastTime = Math.max(existing.lastTime, avg.time)
+        existing.profileCount += 1
       } else {
-        combined.set(idx, { cpuSum: avg.cpu, memSum: avg.memoryMB, playersSum: avg.players, lastTime: avg.time })
+        combined.set(idx, {
+          cpuSum: avg.cpu,
+          memSum: avg.memoryMB,
+          playersSum: avg.players,
+          lastTime: avg.time,
+          profileCount: 1
+        })
       }
     }
   }
 
-  return Array.from(combined.entries())
-    .sort(([a], [b]) => a - b)
-    .map(([, c]) => ({
-      time: c.lastTime,
-      cpu: Math.round(c.cpuSum * 10) / 10,
-      memoryMB: Math.round(c.memSum),
-      players: Math.round(c.playersSum)
-    }))
+  const sortedEntries = Array.from(combined.entries()).sort(([a], [b]) => a - b)
+
+  // Each profile's own stats-recording tick fires on its own independent timer (see
+  // monitor.ts), so by the moment this is read, some still-running profiles can easily not
+  // have landed a sample in the newest bucket yet even though the bucket right before it
+  // already has contributions from all of them (it had a full bucketWidth to settle before
+  // anyone read it). Summing the newest bucket as-is would understate the total and show a
+  // misleading dip right at the chart's leading edge - drop it once it has fewer
+  // contributors than the settled bucket before it, since a fresh read a few seconds later
+  // (the client polls this on an interval) will have it filled in properly anyway.
+  if (sortedEntries.length >= 2) {
+    const last = sortedEntries[sortedEntries.length - 1][1]
+    const prev = sortedEntries[sortedEntries.length - 2][1]
+    if (last.profileCount < prev.profileCount) sortedEntries.pop()
+  }
+
+  return sortedEntries.map(([, c]) => ({
+    time: c.lastTime,
+    cpu: Math.round(c.cpuSum * 10) / 10,
+    memoryMB: Math.round(c.memSum),
+    players: Math.round(c.playersSum)
+  }))
 }

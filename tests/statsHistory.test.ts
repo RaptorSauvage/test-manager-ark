@@ -88,6 +88,38 @@ describe('statsHistory', () => {
     expect(combined).toEqual([{ time: 1000, cpu: 10, memoryMB: 100, players: 1 }])
   })
 
+  it('drops a trailing bucket that only some profiles have reported into yet, rather than understating the total', () => {
+    // Both profiles land a sample in every 1000ms bucket up through t=3000 - a settled,
+    // fully-populated tail. Only server-a has reported into the newest bucket (t=4000) by
+    // the time this is read; server-b's own recording tick just hasn't fired yet. Without
+    // dropping that partial bucket, the combined series would end on a bogus dip (10+100
+    // instead of the true, about-to-arrive ~30+300).
+    for (const time of [1000, 2000, 3000]) {
+      recordStatSample('server-a', { time, cpu: 10, memoryMB: 100, players: 1 })
+      recordStatSample('server-b', { time, cpu: 20, memoryMB: 200, players: 2 })
+    }
+    recordStatSample('server-a', { time: 4000, cpu: 10, memoryMB: 100, players: 1 })
+
+    const combined = readClusterStatsHistory(['server-a', 'server-b'], null, 4, 4000)
+    expect(combined).toHaveLength(3)
+    expect(combined[combined.length - 1]).toMatchObject({ time: 3000, cpu: 30, memoryMB: 300, players: 3 })
+  })
+
+  it('keeps a trailing bucket once every profile that is still reporting has landed a sample in it', () => {
+    for (const time of [1000, 2000]) {
+      recordStatSample('server-a', { time, cpu: 10, memoryMB: 100, players: 1 })
+      recordStatSample('server-b', { time, cpu: 20, memoryMB: 200, players: 2 })
+    }
+    // The newest bucket has full coverage (both profiles reported), same as the one before
+    // it - nothing here looks partial, so it must not be dropped.
+    recordStatSample('server-a', { time: 3000, cpu: 10, memoryMB: 100, players: 1 })
+    recordStatSample('server-b', { time: 3000, cpu: 20, memoryMB: 200, players: 2 })
+
+    const combined = readClusterStatsHistory(['server-a', 'server-b'], null, 3, 3000)
+    expect(combined).toHaveLength(3)
+    expect(combined[combined.length - 1]).toMatchObject({ time: 3000, cpu: 30, memoryMB: 300, players: 3 })
+  })
+
   it('trims the oldest content once the global size cap is exceeded, regardless of which profile it belongs to', () => {
     mockSettings.statsHistoryMaxSizeMB = 1
     recordStatSample('server-a', { time: 1, cpu: 1, memoryMB: 1, players: 1 })

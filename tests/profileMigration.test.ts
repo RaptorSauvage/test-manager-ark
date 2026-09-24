@@ -7,6 +7,8 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     id: 'test',
     name: 'Test',
     installDir: '/tmp/ark',
+    steamBetaEnabled: false,
+    steamBetaName: '',
     map: 'TheIsland_WP',
     moddedMapEnabled: false,
     moddedMapId: '',
