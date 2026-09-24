@@ -96,6 +96,22 @@ function bucketAverage(b: Bucket): StatSample {
   }
 }
 
+/** `Math.min(...samples.map(s => s.time))` looks equivalent but spreads every element as
+ *  its own function argument - past roughly 65k-130k samples (engine-dependent) that throws
+ *  "Maximum call stack size exceeded" instead of returning a value. A profile with stats
+ *  enabled records one sample roughly every 5s, so a single busy day already produces on the
+ *  order of 17,000 samples per profile; a modest cluster comfortably blows past the spread
+ *  limit within days once "All" (sinceMs === null) is queried, which is exactly when this
+ *  runs - every other time scale supplies a concrete sinceMs and skips it entirely. A plain
+ *  loop has no such limit regardless of how large `samples` gets. */
+function earliestTime(samples: ReadonlyArray<{ time: number }>): number {
+  let min = Infinity
+  for (const s of samples) {
+    if (s.time < min) min = s.time
+  }
+  return min
+}
+
 /** Bucket width so a query spanning any amount of history still returns at most `maxPoints`
  *  points - a chart doesn't benefit from more points than it has pixels for, and returning
  *  every raw ~5s sample over weeks of "All" history would be slow to transfer and render for
@@ -123,7 +139,7 @@ export function readStatsHistory(
     .map(({ time, cpu, memoryMB, players }) => ({ time, cpu, memoryMB, players }))
   if (filtered.length === 0) return []
 
-  const start = sinceMs ?? Math.min(...filtered.map((s) => s.time))
+  const start = sinceMs ?? earliestTime(filtered)
   const bucketWidth = computeBucketWidth(start, now, maxPoints)
   return Array.from(bucketizeOne(filtered, start, bucketWidth).entries())
     .sort(([a], [b]) => a - b)
@@ -148,7 +164,7 @@ function combineClusterHistory(
     .map((s) => ({ profileId: s.profileId, time: s.time, cpu: s.cpu, memoryMB: s.memoryMB, players: s.players }))
   if (filtered.length === 0) return []
 
-  const start = sinceMs ?? Math.min(...filtered.map((s) => s.time))
+  const start = sinceMs ?? earliestTime(filtered)
   const bucketWidth = computeBucketWidth(start, now, maxPoints)
 
   const perProfile = new Map<string, StatSample[]>()

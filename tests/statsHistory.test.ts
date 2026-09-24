@@ -76,6 +76,34 @@ describe('statsHistory', () => {
     }
   })
 
+  it('does not stack-overflow finding the earliest sample on a large "All" query', () => {
+    // A naive Math.min(...samples.map(s => s.time)) spreads every element as its own
+    // function argument, which throws "Maximum call stack size exceeded" well before this
+    // many samples - a single profile with stats enabled reaches six figures of recorded
+    // samples within days (one roughly every 5s). Written directly rather than through
+    // recordStatSample (which does a stat+read on every single call) so the test itself
+    // stays fast.
+    const SAMPLE_COUNT = 200_000
+    const lines: string[] = []
+    for (let i = 0; i < SAMPLE_COUNT; i++) {
+      lines.push(JSON.stringify({ profileId: 'server-a', time: i, cpu: 1, memoryMB: 1, players: 0 }))
+    }
+    fs.mkdirSync(path.dirname(logPath()), { recursive: true })
+    fs.writeFileSync(logPath(), lines.join('\n') + '\n')
+
+    expect(() => readStatsHistory('server-a', null, 500, SAMPLE_COUNT)).not.toThrow()
+    const history = readStatsHistory('server-a', null, 500, SAMPLE_COUNT)
+    expect(history.length).toBeGreaterThan(0)
+    // The first bucket's own reported time is its *last* sample (see bucketAverage) - just
+    // confirm it's the earliest bucket, not that the whole 200,000-sample range got lost.
+    expect(history[0].time).toBeLessThan(SAMPLE_COUNT / 100)
+
+    expect(() => readClusterStatsHistory(['server-a'], null, 500, SAMPLE_COUNT)).not.toThrow()
+    expect(() =>
+      readClusterStatsHistoryForGroups({ SomeGroup: ['server-a'] }, null, 500, SAMPLE_COUNT)
+    ).not.toThrow()
+  })
+
   it('sums CPU/RAM/players across multiple profiles per time bucket for a group query', () => {
     recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
     recordStatSample('server-b', { time: 1000, cpu: 20, memoryMB: 200, players: 2 })

@@ -223,9 +223,16 @@ dedicated servers running on the same machine.
   in a single IPC round trip (`statsHistory.getForGroups`) that reads and parses the shared
   stats-history file exactly once no matter how many groups exist, rather than once per
   group - that file can grow up to `AppSettings.statsHistoryMaxSizeMB` (1GB by default), and
-  re-parsing all of it from scratch for every single group on every 5-second poll could make
-  the very first load's charts noticeably slow to appear (or never resolve at all before some
-  other action, like touching the Time Scale selector, forced a fresh request in). Each
+  re-parsing all of it from scratch for every single group on every 5-second poll multiplied
+  that cost by the group count for no reason. Finding the earliest recorded sample for the
+  **All** scale (`sinceMs === null`) is a plain loop rather than
+  `Math.min(...samples.map(...))` - spreading every element as its own function argument
+  throws "Maximum call stack size exceeded" once there are roughly 65k-130k of them
+  (engine-dependent), and a single profile with stats enabled reaches six figures of recorded
+  samples within days at one sample per ~5s. That crash was silent (an unhandled rejection in
+  the renderer), so **All** could fail on every single poll indefinitely - only querying a
+  narrower time scale (a concrete `sinceMs`, which skips that code path entirely) would ever
+  get a chart to appear at all once a group's history grew large enough to trigger it. Each
   group's own combine pass (`readClusterStatsHistory`) drops its newest time bucket whenever
   it has contributions from fewer servers than the
   bucket right before it - each server's own stats-recording tick fires on an independent
