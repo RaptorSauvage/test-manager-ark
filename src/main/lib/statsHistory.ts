@@ -32,6 +32,50 @@ let cachedSamples: StoredStatSample[] | null = null
  *  left over from an earlier test in the same file. Never called from production code. */
 export function __resetStatsHistoryCacheForTests(): void {
   cachedSamples = null
+  lastAgeTrimCheckAt = 0
+}
+
+/** How often maybeTrimByAge actually does any work, at most - checked on essentially every
+ *  recordStatSample call (one per running stats-enabled profile roughly every 5s), so
+ *  without a throttle a file holding close to a full day of samples would get fully
+ *  rewritten on nearly every single one of those calls once the retention window is full
+ *  (each new sample ages another back out of it). Every 5 minutes keeps the actual
+ *  retention window within a few minutes of the configured setting - plenty precise for a
+ *  stats chart - while keeping the rewrite itself a rare background cost instead of a
+ *  constant one. */
+const AGE_TRIM_CHECK_INTERVAL_MS = 5 * 60 * 1000
+let lastAgeTrimCheckAt = 0
+
+/**
+ * Drops any cached (and therefore on-disk) sample older than
+ * AppSettings.statsHistoryMaxAgeHours (default 24), independent of the size cap in
+ * recordStatSample below - a long-running Manager would otherwise keep accumulating
+ * history, and therefore keep growing the read/parse cost of ever touching the file, for as
+ * long as nothing happens to bump into the byte budget. Only ever called from
+ * recordStatSample, and only acts on an already-loaded cache (see readAllSamples's own "not
+ * loaded yet" doc comment) - if nothing has read the file yet there's no cheap way to know
+ * the oldest sample's age without reading it, and the next thing that does read it will
+ * itself go on to call recordStatSample soon after in practice (a profile's own stats tick
+ * fires roughly every 5s while it's running, which is the only way the file grows large
+ * enough for this to matter to begin with). `now` is the caller's own notion of the current
+ * time (the sample's own timestamp) rather than a fresh Date.now() taken in here, so this
+ * stays consistent with whatever produced the data it's comparing against - including a
+ * test's synthetic clock, not just production's real one.
+ */
+function maybeTrimByAge(now: number): void {
+  if (!cachedSamples) return
+  if (now - lastAgeTrimCheckAt < AGE_TRIM_CHECK_INTERVAL_MS) return
+  lastAgeTrimCheckAt = now
+
+  const maxAgeHours = getSettings().statsHistoryMaxAgeHours
+  if (!(maxAgeHours > 0)) return // 0 or negative (or an unset legacy setting) disables this
+  const cutoff = now - maxAgeHours * 60 * 60 * 1000
+  const kept = cachedSamples.filter((s) => s.time >= cutoff)
+  if (kept.length === cachedSamples.length) return // nothing has aged out yet
+
+  cachedSamples = kept
+  const logPath = getStatsHistoryPath()
+  fs.writeFileSync(logPath, kept.length > 0 ? kept.map((s) => JSON.stringify(s)).join('\n') + '\n' : '')
 }
 
 /**
@@ -51,6 +95,7 @@ export function recordStatSample(profileId: string, sample: StatSample): void {
   // actually loaded it once; if nothing has queried yet there's nothing to keep in sync,
   // and the eventual first read picks up everything written so far straight from disk.
   if (cachedSamples) cachedSamples.push(entry)
+  maybeTrimByAge(entry.time)
 
   const maxBytes = Math.max(1, getSettings().statsHistoryMaxSizeMB) * 1024 * 1024
   const { size } = fs.statSync(logPath)

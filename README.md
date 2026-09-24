@@ -409,8 +409,9 @@ dedicated servers running on the same machine.
     whether this tab - or the Manager itself - is even open. That's a real behavior change
     from a per-browser-tab feature: history now survives closing the tab, switching
     profiles, and restarting the Manager, and every server sharing this toggle draws from
-    one combined disk budget (**Stats history size limit (MB)** in the app-wide Settings
-    view, default 1024/1GB - see below) rather than each keeping its own separate quota.
+    one combined disk budget (**Stats history size limit (MB)** and **Stats history
+    retention (hours)** in the app-wide Settings view, defaults 1024/1GB and 24h - see
+    below) rather than each keeping its own separate quota.
     A **Time Scale** selector (**1m/5m/15m/1h/6h/12h/24h/All**) picks how far back to query -
     "All" means every sample ever recorded for this server, no lower bound. Whichever scale
     is picked, the Analytics tab asks the main process for at most 500 points spanning that
@@ -543,8 +544,16 @@ dedicated servers running on the same machine.
   (default 1024 / 1GB) caps the combined size of every server's persisted CPU/RAM/player
   history (`src/main/lib/statsHistory.ts`, see Analytics tab below) - one shared budget
   across every server with stats collection enabled, not a per-server quota; the oldest
-  samples, from whichever server they belong to, are trimmed first once it's exceeded. This
-  is also where the **web dashboard** is
+  samples, from whichever server they belong to, are trimmed first once it's exceeded.
+  Alongside it, a **Stats history retention (hours)** field (`AppSettings.statsHistoryMaxAgeHours`,
+  default 24) independently drops any sample older than that many hours regardless of how
+  much of the size budget above is still free - this is what actually bounds how much a
+  long-running Manager ever has to read and parse to answer a stats query, since the size
+  cap alone still lets the file (and the in-memory cache mirroring it) grow arbitrarily
+  large if nothing ever collects enough data to hit it. The check only runs at most once
+  every 5 minutes (and only once something has actually been read into memory), so it
+  doesn't rewrite the file on every single sample. Set it to 0 to disable age-based
+  trimming and fall back to the size cap alone. This is also where the **web dashboard** is
   enabled - the only place in this app for a live console feed and RCON, on purpose (the
   desktop app itself has no console/RCON tab). It's a plain HTTP server built into the
   Manager (no separate process), serving a page with a sidebar switching between three

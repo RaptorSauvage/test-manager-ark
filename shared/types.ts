@@ -200,6 +200,11 @@ export interface AppSettings {
    *  ServerProfile.statsEnabled on - not a per-server quota. Once exceeded, the oldest
    *  samples (from whichever profile they belong to) are trimmed first. Default 1024 (1GB). */
   statsHistoryMaxSizeMB: number
+  /** Global age cap (hours) on the same persisted CPU/RAM/player history - a sample older
+   *  than this is trimmed regardless of how far the size cap above still has to go. Keeps
+   *  a long-running Manager's stats file (and the read/parse cost of ever touching it) from
+   *  growing indefinitely just because nothing has hit the byte budget yet. Default 24. */
+  statsHistoryMaxAgeHours: number
 }
 
 export type WebDashboardRole = 'admin' | 'operator' | 'readonly'

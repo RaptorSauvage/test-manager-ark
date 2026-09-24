@@ -38,7 +38,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     webDashboardAuthEnabled: false,
     serverAutoStartStaggerSeconds: 10,
     iniLockEnabled: true,
-    statsHistoryMaxSizeMB: 1024
+    statsHistoryMaxSizeMB: 1024,
+    statsHistoryMaxAgeHours: 24
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
   const [status, setStatus] = useState('')
@@ -112,18 +113,31 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
               Where <code>maps.json</code>, <code>customMaps.json</code>, and other config live - blank uses{' '}
               {defaultDataDir || 'Documents/ARK Server Manager'}.
             </p>
-            <label>
-              Stats history size limit (MB)
-              <input
-                type="number"
-                min={1}
-                value={settings.statsHistoryMaxSizeMB}
-                onChange={(e) => setSettings({ ...settings, statsHistoryMaxSizeMB: Number(e.target.value) })}
-              />
-            </label>
+            <div className="settings-grid">
+              <label>
+                Stats history size limit (MB)
+                <input
+                  type="number"
+                  min={1}
+                  value={settings.statsHistoryMaxSizeMB}
+                  onChange={(e) => setSettings({ ...settings, statsHistoryMaxSizeMB: Number(e.target.value) })}
+                />
+              </label>
+              <label>
+                Stats history retention (hours)
+                <input
+                  type="number"
+                  min={0}
+                  value={settings.statsHistoryMaxAgeHours}
+                  onChange={(e) => setSettings({ ...settings, statsHistoryMaxAgeHours: Number(e.target.value) })}
+                />
+              </label>
+            </div>
             <p className="empty-state">
               Combined cap on every server&apos;s CPU/RAM/player history (Analytics tab) - oldest samples trimmed
-              first once it&apos;s full.
+              first once either limit is hit. Retention defaults to 24h, keeping a long-running Manager from
+              re-parsing an ever-growing file every time a stats chart is open. Set retention to 0 to keep history
+              bounded by size alone, however long that ends up spanning.
             </p>
             <label>
               Server profiles
