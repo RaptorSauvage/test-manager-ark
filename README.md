@@ -879,10 +879,10 @@ dedicated servers running on the same machine.
   the server or the Manager for a change to take effect.
 - **Update / install via SteamCMD** — a per-server button runs
   `steamcmd +force_install_dir <install dir> +login anonymous +app_update 2430930 validate +quit`.
-  A **Beta** field in the Settings tab's Server block (a checkbox plus a branch-name text
-  entry, right under Install directory) inserts `-beta <name>` right before `validate` when
-  checked and a name is given, targeting that beta branch instead of the default/public one -
-  same command otherwise. Works for a first-time install into an empty folder too - the button reads **Install**
+  A **Beta** field at the end of the Settings tab's Server block (a checkbox plus a
+  branch-name text entry) inserts `-beta <name>` right before `validate` when checked and a
+  name is given, targeting that beta branch instead of the default/public one - same command
+  otherwise. Works for a first-time install into an empty folder too - the button reads **Install**
   instead of **Update** until the server executable is actually found in the install
   directory, then switches over automatically. Disabled while the server is running or
   already updating. The dashboard's own **SteamCMD** menu can either download and
