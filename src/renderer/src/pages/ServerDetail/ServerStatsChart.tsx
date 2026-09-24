@@ -4,6 +4,19 @@ import { buildTimeSeriesPath, MAX_CONTINUOUS_GAP_MS, type StatSample } from '../
 const CHART_WIDTH = 1000
 const CHART_HEIGHT = 60
 
+/** The tooltip is normally centered on the hovered point (`translateX(-50%)`), but that
+ *  pushes it half its own width past the chart's edge - and off the edge of whatever clips
+ *  it (a rounded card, in the Cluster Dashboard's case) - when hovering close to either
+ *  side. Past these thresholds it anchors to the near edge instead, growing inward, so it
+ *  stays fully visible right up to x=0% and x=100%. */
+const TOOLTIP_EDGE_PERCENT = 12
+
+function tooltipTransform(xPercent: number): string {
+  if (xPercent < TOOLTIP_EDGE_PERCENT) return 'translateX(0)'
+  if (xPercent > 100 - TOOLTIP_EDGE_PERCENT) return 'translateX(-100%)'
+  return 'translateX(-50%)'
+}
+
 interface HoverState {
   xPercent: number
   time: number
@@ -60,7 +73,10 @@ function Sparkline({ label, unit, current, samples, windowMs, now, color, max, m
         {hover && (
           <>
             <div className="stats-chart-hover-line" style={{ left: `${hover.xPercent}%` }} />
-            <div className="stats-chart-tooltip" style={{ left: `${hover.xPercent}%` }}>
+            <div
+              className="stats-chart-tooltip"
+              style={{ left: `${hover.xPercent}%`, transform: tooltipTransform(hover.xPercent) }}
+            >
               {new Date(hover.time).toLocaleTimeString()} · {Math.round(hover.value)}
               {unit}
             </div>

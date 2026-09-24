@@ -1390,7 +1390,8 @@ label.checkbox {
 .stats-chart-tooltip {
   position: absolute;
   top: 6px;
-  transform: translateX(-50%);
+  /* transform is set inline per-hover (see tooltipTransform in ServerStatsChart.tsx) so it
+     can anchor to the near edge instead of overflowing past it close to x=0%/100%. */
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 4px;
