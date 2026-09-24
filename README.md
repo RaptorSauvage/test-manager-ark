@@ -219,8 +219,15 @@ dedicated servers running on the same machine.
   options and same main-process downsampling as the per-server chart) applies to every
   group's chart at once and re-queries every group when changed. A group with no history
   in the selected window (nothing enabled, or a fully-stopped group with nothing recorded
-  recently) shows no chart at all rather than a flat line of zeroes. `readClusterStatsHistory`
-  drops its own newest time bucket whenever it has contributions from fewer servers than the
+  recently) shows no chart at all rather than a flat line of zeroes. Every group is queried
+  in a single IPC round trip (`statsHistory.getForGroups`) that reads and parses the shared
+  stats-history file exactly once no matter how many groups exist, rather than once per
+  group - that file can grow up to `AppSettings.statsHistoryMaxSizeMB` (1GB by default), and
+  re-parsing all of it from scratch for every single group on every 5-second poll could make
+  the very first load's charts noticeably slow to appear (or never resolve at all before some
+  other action, like touching the Time Scale selector, forced a fresh request in). Each
+  group's own combine pass (`readClusterStatsHistory`) drops its newest time bucket whenever
+  it has contributions from fewer servers than the
   bucket right before it - each server's own stats-recording tick fires on an independent
   timer, so the very latest bucket can otherwise be read before every currently-running
   server has landed a sample in it yet, understating the combined total and showing a

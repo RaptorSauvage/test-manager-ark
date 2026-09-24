@@ -438,7 +438,8 @@ export const IPC = {
   managerLogChanged: 'manager-log:changed',
 
   statsHistoryGet: 'stats-history:get',
-  statsHistoryGetForGroup: 'stats-history:get-for-group'
+  statsHistoryGetForGroup: 'stats-history:get-for-group',
+  statsHistoryGetForGroups: 'stats-history:get-for-groups'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -674,5 +675,13 @@ export interface Api {
     /** `sinceMs: null` means "since the earliest recorded sample" (the "All" time scale). */
     get: (profileId: string, sinceMs: number | null, maxPoints?: number) => Promise<StatSample[]>
     getForGroup: (profileIds: string[], sinceMs: number | null, maxPoints?: number) => Promise<StatSample[]>
+    /** Same as getForGroup, but for every dashboard group in one call - reads and parses
+     *  the shared stats-history file once for all of them instead of once per group. Keyed
+     *  by the same group name (trimmed ServerProfile.group, '' for ungrouped) passed in. */
+    getForGroups: (
+      groupProfileIds: Record<string, string[]>,
+      sinceMs: number | null,
+      maxPoints?: number
+    ) => Promise<Record<string, StatSample[]>>
   }
 }

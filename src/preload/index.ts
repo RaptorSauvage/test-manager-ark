@@ -172,7 +172,9 @@ const api: Api = {
     get: (profileId: string, sinceMs: number | null, maxPoints?: number) =>
       ipcRenderer.invoke(IPC.statsHistoryGet, profileId, sinceMs, maxPoints),
     getForGroup: (profileIds: string[], sinceMs: number | null, maxPoints?: number) =>
-      ipcRenderer.invoke(IPC.statsHistoryGetForGroup, profileIds, sinceMs, maxPoints)
+      ipcRenderer.invoke(IPC.statsHistoryGetForGroup, profileIds, sinceMs, maxPoints),
+    getForGroups: (groupProfileIds: Record<string, string[]>, sinceMs: number | null, maxPoints?: number) =>
+      ipcRenderer.invoke(IPC.statsHistoryGetForGroups, groupProfileIds, sinceMs, maxPoints)
   }
 }
 

@@ -131,20 +131,19 @@ export function readStatsHistory(
 }
 
 /**
- * Same as readStatsHistory, but for several profiles at once, summed together per time
- * bucket - each profile's own samples are bucketed (and averaged within a bucket)
- * independently first, then the resulting per-profile values are summed per bucket index.
- * This mirrors the live Cluster Dashboard's own "combined CPU/RAM/players across running
- * servers" aggregation, just applied to history instead of a single live snapshot.
+ * Shared by readClusterStatsHistory and readClusterStatsHistoryForGroups - everything past
+ * "read the file" (parsing every line of stats-history.jsonl is the expensive part, and by
+ * far the only part worth sharing across a batch of groups queried together).
  */
-export function readClusterStatsHistory(
+function combineClusterHistory(
+  allSamples: StoredStatSample[],
   profileIds: string[],
   sinceMs: number | null,
-  maxPoints = 500,
-  now = Date.now()
+  maxPoints: number,
+  now: number
 ): StatSample[] {
   const idSet = new Set(profileIds)
-  const filtered = readAllSamples()
+  const filtered = allSamples
     .filter((s) => idSet.has(s.profileId) && (sinceMs === null || s.time >= sinceMs))
     .map((s) => ({ profileId: s.profileId, time: s.time, cpu: s.cpu, memoryMB: s.memoryMB, players: s.players }))
   if (filtered.length === 0) return []
@@ -207,4 +206,43 @@ export function readClusterStatsHistory(
     memoryMB: Math.round(c.memSum),
     players: Math.round(c.playersSum)
   }))
+}
+
+/**
+ * Same as readStatsHistory, but for several profiles at once, summed together per time
+ * bucket - each profile's own samples are bucketed (and averaged within a bucket)
+ * independently first, then the resulting per-profile values are summed per bucket index.
+ * This mirrors the live Cluster Dashboard's own "combined CPU/RAM/players across running
+ * servers" aggregation, just applied to history instead of a single live snapshot.
+ */
+export function readClusterStatsHistory(
+  profileIds: string[],
+  sinceMs: number | null,
+  maxPoints = 500,
+  now = Date.now()
+): StatSample[] {
+  return combineClusterHistory(readAllSamples(), profileIds, sinceMs, maxPoints, now)
+}
+
+/**
+ * Same as readClusterStatsHistory, but for every dashboard group at once, reading and
+ * parsing stats-history.jsonl exactly once and reusing that same in-memory data for every
+ * group's own combine pass - instead of one full read per group. The Cluster Dashboard
+ * queries every group on the same poll tick, and this file can grow up to
+ * AppSettings.statsHistoryMaxSizeMB (1GB by default): re-parsing all of it from scratch for
+ * each group multiplied that cost by the group count on every single poll, for no benefit
+ * over doing it once.
+ */
+export function readClusterStatsHistoryForGroups(
+  groupProfileIds: Record<string, string[]>,
+  sinceMs: number | null,
+  maxPoints = 500,
+  now = Date.now()
+): Record<string, StatSample[]> {
+  const allSamples = readAllSamples()
+  const result: Record<string, StatSample[]> = {}
+  for (const [group, profileIds] of Object.entries(groupProfileIds)) {
+    result[group] = combineClusterHistory(allSamples, profileIds, sinceMs, maxPoints, now)
+  }
+  return result
 }

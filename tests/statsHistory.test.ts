@@ -17,7 +17,12 @@ vi.mock('../src/main/lib/dataDir', () => ({ getDataDir: () => mockDataDir }))
 const { mockSettings } = vi.hoisted(() => ({ mockSettings: { statsHistoryMaxSizeMB: 1024 } }))
 vi.mock('../src/main/store', () => ({ getSettings: () => mockSettings }))
 
-import { recordStatSample, readStatsHistory, readClusterStatsHistory } from '../src/main/lib/statsHistory'
+import {
+  recordStatSample,
+  readStatsHistory,
+  readClusterStatsHistory,
+  readClusterStatsHistoryForGroups
+} from '../src/main/lib/statsHistory'
 
 function logPath(): string {
   return path.join(mockDataDir, 'logs', 'stats-history.jsonl')
@@ -86,6 +91,39 @@ describe('statsHistory', () => {
 
     const combined = readClusterStatsHistory(['server-a'], null, 1, 1000)
     expect(combined).toEqual([{ time: 1000, cpu: 10, memoryMB: 100, players: 1 }])
+  })
+
+  it('readClusterStatsHistoryForGroups returns the same result per group as readClusterStatsHistory would individually', () => {
+    recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
+    recordStatSample('server-b', { time: 1000, cpu: 20, memoryMB: 200, players: 2 })
+    recordStatSample('server-c', { time: 1000, cpu: 5, memoryMB: 50, players: 0 })
+
+    const byGroup = readClusterStatsHistoryForGroups(
+      { GroupOne: ['server-a', 'server-b'], GroupTwo: ['server-c'] },
+      null,
+      1,
+      1000
+    )
+    expect(byGroup.GroupOne).toEqual(readClusterStatsHistory(['server-a', 'server-b'], null, 1, 1000))
+    expect(byGroup.GroupTwo).toEqual(readClusterStatsHistory(['server-c'], null, 1, 1000))
+    expect(byGroup.GroupOne[0]).toMatchObject({ cpu: 30, memoryMB: 300, players: 3 })
+  })
+
+  it('readClusterStatsHistoryForGroups only reads the history file once regardless of group count', () => {
+    const readFileSyncSpy = vi.spyOn(fs, 'readFileSync')
+    recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
+    recordStatSample('server-b', { time: 1000, cpu: 20, memoryMB: 200, players: 2 })
+    readFileSyncSpy.mockClear()
+
+    readClusterStatsHistoryForGroups(
+      { GroupOne: ['server-a'], GroupTwo: ['server-b'], GroupThree: ['server-a', 'server-b'] },
+      null,
+      1,
+      1000
+    )
+
+    expect(readFileSyncSpy).toHaveBeenCalledTimes(1)
+    readFileSyncSpy.mockRestore()
   })
 
   it('drops a trailing bucket that only some profiles have reported into yet, rather than understating the total', () => {

@@ -54,13 +54,9 @@ export default function ClusterDataView({ profiles, onOpenGroup }: ClusterDataVi
         byGroup.set(key, ids)
       }
       const sinceMs = statsScale === null ? null : Date.now() - statsScale
-      const entries = await Promise.all(
-        Array.from(byGroup.entries()).map(async ([group, ids]) => {
-          const history = await window.api.statsHistory.getForGroup(ids, sinceMs, STATS_MAX_POINTS)
-          return [group, history] as const
-        })
-      )
-      if (!cancelled) setHistoryByGroup(Object.fromEntries(entries))
+      const byGroupObject = Object.fromEntries(byGroup)
+      const result = await window.api.statsHistory.getForGroups(byGroupObject, sinceMs, STATS_MAX_POINTS)
+      if (!cancelled) setHistoryByGroup(result)
     }
     refresh()
     const interval = setInterval(refresh, STATS_POLL_INTERVAL_MS)
