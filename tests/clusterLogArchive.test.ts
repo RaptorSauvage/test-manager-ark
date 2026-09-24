@@ -266,6 +266,21 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
     expect(backlog).toContainEqual(expect.objectContaining({ label: 'STOP', cls: 'stop', text: `${profile.name} stopped` }))
   })
 
+  it('archives an UPDATE event (not a second STOP) when an update finishes without restarting', () => {
+    const profile = makeNotifyProfile()
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopping' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopped' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'updating' } as ServerStatus, lookup(profile))
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopped' } as ServerStatus, lookup(profile))
+
+    const backlog = readClusterLogArchiveBacklog(profile.id)
+    expect(backlog).toContainEqual(expect.objectContaining({ label: 'STOP', cls: 'stop', text: `${profile.name} stopped` }))
+    expect(backlog).toContainEqual(expect.objectContaining({ label: 'UPDATE', cls: 'update', text: `${profile.name} updated` }))
+    expect(backlog.filter((e) => e.label === 'STOP')).toHaveLength(1)
+  })
+
   it('never fires on a profile\'s very first observed status, even if it is already running or stopped', () => {
     const profile = makeNotifyProfile()
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { ServerProfile, ServerStatus } from '@shared/types'
+import type { ServerProfile, ServerRunState, ServerStatus } from '@shared/types'
 import { watchLogFile, serverEvents } from './serverProcess'
 import { getDataDir } from './dataDir'
 import { createLogEventCaches, parseLogChunkWithDate, readFileTail, type DatedLogEvent } from './logEvents'
@@ -102,24 +102,25 @@ function nowAsLogDateTime(): { date: string; ts: string } {
   }
 }
 
-const lastKnownRunState = new Map<string, 'running' | 'stopped' | 'other'>()
+const lastKnownRunState = new Map<string, ServerRunState>()
 
 /**
- * Archives a synthetic START/STOP event the moment a profile's status actually transitions
- * into `running` or `stopped` - edge-triggered off `lastKnownRunState`, so a profile's
- * first-ever observed status never counts as a transition, and the in-between
- * starting/stopping/updating/restarting states are never mistaken for one either (only
- * entering running or stopped counts, matching the desktop Group Console's own
- * `nowAsLogDateTime`/toast logic). Independent of whether any console is currently open to
- * show it live - this is what makes Start/Stop/Restart show up in a *future* backlog even
- * if nobody was watching when they happened.
+ * Archives a synthetic START/STOP/UPDATE event the moment a profile's status actually
+ * transitions into `running` or `stopped` - edge-triggered off `lastKnownRunState` (which
+ * tracks every state, not just running/stopped, so it can tell a real stop from an update
+ * finishing - see isUpdateFinish below), so a profile's first-ever observed status never
+ * counts as a transition, and the in-between starting/stopping/restarting states are never
+ * mistaken for one either (only entering running or stopped counts, matching the desktop
+ * Group Console's own `nowAsLogDateTime`/toast logic). Independent of whether any console is
+ * currently open to show it live - this is what makes Start/Stop/Restart/Update show up in a
+ * *future* backlog even if nobody was watching when they happened.
  */
 export function handleStatusForClusterLogArchiveNotification(
   status: ServerStatus,
   lookupProfile: (id: string) => ServerProfile | undefined = getProfile
 ): void {
   const previous = lastKnownRunState.get(status.profileId)
-  const current = status.state === 'running' || status.state === 'stopped' ? status.state : 'other'
+  const current = status.state
   lastKnownRunState.set(status.profileId, current)
 
   if (previous === undefined || previous === current) return
@@ -128,11 +129,19 @@ export function handleStatusForClusterLogArchiveNotification(
   const profile = lookupProfile(status.profileId)
   if (!profile) return
 
+  // An update that didn't restart the server ends by going 'updating' -> 'stopped', same as
+  // a real stop - without this it'd archive as a spurious extra STOP right after whichever
+  // STOP (or none, if it wasn't running) actually preceded the update.
+  const isUpdateFinish = current === 'stopped' && previous === 'updating'
+  const label = current === 'running' ? 'START' : isUpdateFinish ? 'UPDATE' : 'STOP'
+  const cls = current === 'running' ? 'start' : isUpdateFinish ? 'update' : 'stop'
+  const verb = current === 'running' ? 'started' : isUpdateFinish ? 'updated' : 'stopped'
+
   const event: DatedLogEvent = {
     ...nowAsLogDateTime(),
-    label: current === 'running' ? 'START' : 'STOP',
-    cls: current === 'running' ? 'start' : 'stop',
-    text: `${profile.name} ${current === 'running' ? 'started' : 'stopped'}`
+    label,
+    cls,
+    text: `${profile.name} ${verb}`
   }
   appendEventsToArchive(profile.id, [event], Math.max(1, profile.clusterLogArchiveMaxSizeMB) * 1024 * 1024)
 }

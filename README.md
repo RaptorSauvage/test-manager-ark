@@ -298,11 +298,13 @@ dedicated servers running on the same machine.
   growing forever: each server has its own **Max archive size (MB)** setting (Server
   Management tab, 1-100, default 10) past which the oldest events are trimmed automatically,
   always on with no separate enable toggle - this is passive background logging, not an
-  automated action. The same **START**/**STOP** events the live Group Console injects for
-  itself (see below) are also archived directly by the main process the moment they happen -
-  `handleStatusForClusterLogArchiveNotification`, wired off the same status events as the
-  tailer above - so a Start/Stop/Restart shows up in a *future* backlog even if no console
-  was open to see it live and even across a Manager restart, independent of the renderer's
+  automated action. The same **START**/**STOP**/**UPDATE** events the live Group Console
+  injects for itself (see below) are also archived directly by the main process the moment
+  they happen - `handleStatusForClusterLogArchiveNotification`, wired off the same status
+  events as the tailer above, with its own copy of the same 'updating' -> 'stopped'
+  exception (an update finishing without a restart archives as UPDATE, not a second STOP) -
+  so a Start/Stop/Restart/Update shows up in a *future* backlog even if no console was open
+  to see it live and even across a Manager restart, independent of the renderer's
   own copy of this logic.
 
   Each log line also shows its date as
