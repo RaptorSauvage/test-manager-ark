@@ -650,6 +650,11 @@ label.checkbox {
   color: var(--status-stopped);
 }
 
+.log-event-update .label,
+.log-event-update .text {
+  color: var(--status-updating);
+}
+
 .log-event-save .label {
   color: var(--muted);
 }

@@ -739,6 +739,7 @@ const DASHBOARD_HTML = `<!doctype html>
   .log-event .server-tag { color: #2dd4bf; margin-right: 8px; }
   .log-event-start .label, .log-event-start .text { color: var(--status-running); }
   .log-event-stop .label, .log-event-stop .text { color: var(--status-stopped); }
+  .log-event-update .label, .log-event-update .text { color: var(--status-updating); }
   .cluster-console-rcon-form { display: flex; gap: 8px; margin-top: 8px; }
   .cluster-console-rcon-form input, .cluster-console-rcon-form button, .cluster-console-rcon-form select { padding: 10px 14px; font-size: 1rem; border-radius: 8px; }
   .cluster-console-rcon-form select { flex: 0 0 auto; max-width: 40%; }
@@ -1746,7 +1747,7 @@ function initDashboard(resolvedRole) {
   // ---- Mobile Group Console (drills down from a group row above) ----------------------
 
   var UNGROUPED_TOKEN = '_ungrouped_';
-  var CLUSTER_ALL_LABELS = ['JOIN', 'LEFT', 'CHAT', 'WARN', 'KILL', 'TAME', 'CMD', 'SAVE', 'CRYO', 'MISSION', 'READY', 'START', 'STOP'];
+  var CLUSTER_ALL_LABELS = ['JOIN', 'LEFT', 'CHAT', 'WARN', 'KILL', 'TAME', 'CMD', 'SAVE', 'CRYO', 'MISSION', 'READY', 'START', 'STOP', 'UPDATE'];
   var CLUSTER_VISIBLE_LABELS_KEY = 'ark-dashboard-cluster-visible-labels';
   var CLUSTER_AUTOSCROLL_KEY = 'ark-dashboard-cluster-autoscroll';
   var clusterAutoScroll = false;
@@ -1835,7 +1836,7 @@ function initDashboard(resolvedRole) {
     tag.textContent = '[' + ev.profileName + ']';
     div.appendChild(ts);
     div.appendChild(tag);
-    if (ev.label !== 'START' && ev.label !== 'STOP') {
+    if (ev.label !== 'START' && ev.label !== 'STOP' && ev.label !== 'UPDATE') {
       var label = document.createElement('span');
       label.className = 'label';
       label.textContent = ev.label;
@@ -2095,16 +2096,22 @@ function initDashboard(resolvedRole) {
       if (prevState === undefined || prevState === server.state) return;
       if (server.state !== 'running' && server.state !== 'stopped') return;
 
-      var type = server.state === 'running' ? 'start' : 'stop';
-      showToast(server.name + (type === 'start' ? ' started' : ' stopped'));
+      // An update that didn't restart the server ends by going 'updating' -> 'stopped',
+      // same as a real stop - without this it'd show/toast as a spurious extra stop right
+      // after whichever stop (or none, if it wasn't running) actually preceded the update.
+      var isUpdateFinish = server.state === 'stopped' && prevState === 'updating';
+      var type = isUpdateFinish ? 'update' : (server.state === 'running' ? 'start' : 'stop');
+      var label = type === 'start' ? 'START' : (type === 'update' ? 'UPDATE' : 'STOP');
+      var text = server.name + (type === 'start' ? ' started' : (type === 'update' ? ' updated' : ' stopped'));
+      showToast(text);
 
       if (clusterConsoleGroup !== null && (server.group || '') === clusterConsoleGroup) {
         var now = new Date();
         var pad = function (n) { return (n < 10 ? '0' : '') + n; };
         addClusterEvent({
-          label: type === 'start' ? 'START' : 'STOP',
+          label: label,
           cls: type,
-          text: server.name + (type === 'start' ? ' started' : ' stopped'),
+          text: text,
           ts: pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()),
           date: now.getFullYear() + '.' + pad(now.getMonth() + 1) + '.' + pad(now.getDate()),
           profileId: server.id,

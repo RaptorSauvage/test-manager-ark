@@ -256,13 +256,17 @@ dedicated servers running on the same machine.
   visual language (checkboxes to show/hide event categories:
   JOIN/LEFT/CHAT/WARN/KILL/TAME/CMD/SAVE/CRYO/MISSION/READY, colored labels) as the
   standalone web dashboard's own console, but merging every server in the group instead of
-  showing just one, plus two categories the web dashboard doesn't have: **START** and
-  **STOP**, synthetic lines this page injects itself (not parsed from the log - there's no
-  log line for "the Manager noticed this server is now running/stopped") whenever a
-  server's live status actually transitions, colored green/red - the line has no visible
-  label tag (unlike every other category), it's just the colored "&lt;name&gt;
-  started"/"&lt;name&gt; stopped" text, though the label still exists under the hood for the
-  Show filter checkboxes above. Its filter checkboxes are independent of the web dashboard's own
+  showing just one, plus three categories the web dashboard doesn't have: **START**,
+  **STOP**, and **UPDATE**, synthetic lines this page injects itself (not parsed from the
+  log - there's no log line for "the Manager noticed this server is now
+  running/stopped/updated") whenever a server's live status actually transitions, colored
+  green/red/blue - the line has no visible label tag (unlike every other category), it's
+  just the colored "&lt;name&gt; started"/"&lt;name&gt; stopped"/"&lt;name&gt; updated" text,
+  though the label still exists under the hood for the Show filter checkboxes above. A
+  server going 'updating' -> 'stopped' (a plain Update that wasn't paired with a restart)
+  logs as UPDATE rather than STOP - without that distinction it would misleadingly look like
+  the server stopped twice in a row (once for the STOP that may have preceded the update,
+  once more when the update itself finished). Its filter checkboxes are independent of the web dashboard's own
   persisted per-label setting (toggling one here doesn't affect the other) and, unlike that
   setting, persist across sessions on their own. An **Auto-scroll** checkbox sits alongside
   the Show filters (unchecked by default) - only when checked does a new event jump the feed
@@ -328,8 +332,8 @@ dedicated servers running on the same machine.
   it stops the server first if it's running, runs the SteamCMD update, then starts it back
   up if it was running before. Whenever a server in the group actually transitions to
   running or stopped (not for the in-between starting/stopping/updating/restarting states),
-  the matching START/STOP line described above lands in the log feed - no separate toast
-  popup, just that permanent feed entry. Each profile's last-seen status is tracked at
+  the matching START/STOP/UPDATE line described above lands in the log feed - no separate
+  toast popup, just that permanent feed entry. Each profile's last-seen status is tracked at
   module scope rather than tied to this page being mounted, so starting or stopping a
   server from the Dashboard while the Group Console isn't open still produces that log line
   the next time you open the console for that group - only each profile's very first status
@@ -604,11 +608,13 @@ dedicated servers running on the same machine.
       single-server Dashboard view's own console already uses below 700px, so more history
       fits without either view feeling inconsistent.
     - A "Show:" row of checkboxes (persisted in this device's `localStorage`, independent of
-      the page's own admin-controlled per-label setting) includes two categories no real log
-      line produces - **START** and **STOP** - synthetic lines this page injects itself the
-      moment a group member's live status actually transitions to running/stopped, colored
-      green/red, with no visible label tag (just the colored text) though the label still
-      exists for the filter checkboxes. A **Show ▾** button next to the group name
+      the page's own admin-controlled per-label setting) includes three categories no real
+      log line produces - **START**, **STOP**, and **UPDATE** - synthetic lines this page
+      injects itself the moment a group member's live status actually transitions to
+      running/stopped, colored green/red/blue, with no visible label tag (just the colored
+      text) though the label still exists for the filter checkboxes. A plain Update finishing
+      (no restart) goes 'updating' -> 'stopped' and logs as UPDATE rather than STOP, so it
+      doesn't read as the server stopping twice in a row. A **Show ▾** button next to the group name
       collapses/expands the whole checkbox row - same collapse-to-`localStorage` pattern as
       the single-server Dashboard view's own **Events ▾** toggle, independent key so
       collapsing one doesn't affect the other. That same row ends with an **Auto-scroll**
@@ -618,8 +624,9 @@ dedicated servers running on the same machine.
     - Whenever any server's status transitions to running or stopped - not just a member of
       the currently-open group, and not for the in-between
       starting/stopping/updating/restarting states - a toast pops (green "started" / red
-      "stopped"), and if that server belongs to the group whose console is currently open,
-      the matching START/STOP line lands in its feed at the same moment. Each server's
+      "stopped" / blue "updated"), and if that server belongs to the group whose console is
+      currently open, the matching START/STOP/UPDATE line lands in its feed at the same
+      moment. Each server's
       last-seen state is tracked for as long as the tab stays open (not tied to which view
       is active), so a transition that happens while you're looking at a different tab still
       gets caught the moment you look back.

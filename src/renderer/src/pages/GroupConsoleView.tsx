@@ -23,7 +23,8 @@ const ALL_EVENT_LABELS = [
   'MISSION',
   'READY',
   'START',
-  'STOP'
+  'STOP',
+  'UPDATE'
 ]
 
 /** Cap on how many merged events are kept/rendered - this is a live "what's happening right
@@ -198,6 +199,21 @@ export default function GroupConsoleView({
       if (prevState === undefined || prevState === state) continue
       if (state !== 'running' && state !== 'stopped') continue
 
+      // An update that didn't restart the server ends by going 'updating' -> 'stopped',
+      // same as a real stop - without this it'd show as a spurious extra STOP right after
+      // whichever STOP (or none, if it wasn't running) actually preceded the update.
+      if (state === 'stopped' && prevState === 'updating') {
+        logEvents.push({
+          ...nowAsLogDateTime(),
+          label: 'UPDATE',
+          cls: 'update',
+          text: `${profile.name} updated`,
+          profileId: profile.id,
+          profileName: profile.name
+        })
+        continue
+      }
+
       const type = state === 'running' ? 'start' : 'stop'
       logEvents.push({
         ...nowAsLogDateTime(),
@@ -337,7 +353,9 @@ export default function GroupConsoleView({
                 <span className="date">{formatDateDDMM(event.date)}</span>
                 <span className="ts">{event.ts}</span>
                 <span className="server-tag">[{event.profileName}]</span>
-                {event.label !== 'START' && event.label !== 'STOP' && <span className="label">{event.label}</span>}
+                {event.label !== 'START' && event.label !== 'STOP' && event.label !== 'UPDATE' && (
+                  <span className="label">{event.label}</span>
+                )}
                 <span className="text">{renderEventText(event.text)}</span>
               </div>
             ))}
