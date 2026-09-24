@@ -13,6 +13,28 @@ function getStatsHistoryPath(): string {
 }
 
 /**
+ * In-memory mirror of the on-disk file, once loaded - every read (a Cluster Dashboard or
+ * Analytics tab chart polls every 5s while open) used to re-read and re-parse the *entire*
+ * file from scratch, every time, which for a file that can grow up to
+ * AppSettings.statsHistoryMaxSizeMB (1GB by default) meant a multi-second synchronous,
+ * main-process-blocking stall - repeating on every single poll for as long as any stats
+ * view stayed open, freezing the whole app's UI each time (IPC, window events, everything
+ * else share this same thread). `null` means "not loaded yet" (distinct from `[]`, an
+ * empty-but-loaded file) - the first read after app start still pays that one-time parse
+ * cost, but recordStatSample keeps this in sync incrementally from then on, so every
+ * subsequent read is an in-memory slice instead of a fresh disk read.
+ */
+let cachedSamples: StoredStatSample[] | null = null
+
+/** Test-only escape hatch - a test that writes directly to the stats-history file on disk
+ *  (bypassing recordStatSample, which is the only thing that otherwise keeps the cache
+ *  in sync) needs this to make readAllSamples see it instead of a stale in-memory copy
+ *  left over from an earlier test in the same file. Never called from production code. */
+export function __resetStatsHistoryCacheForTests(): void {
+  cachedSamples = null
+}
+
+/**
  * Appends one sample for `profileId` to the shared, global stats history file, then trims
  * the oldest lines (from any profile) once the file exceeds the configured global size cap
  * (AppSettings.statsHistoryMaxSizeMB, default 1024 = 1GB) - a single shared budget across
@@ -25,6 +47,10 @@ export function recordStatSample(profileId: string, sample: StatSample): void {
   fs.mkdirSync(path.dirname(logPath), { recursive: true })
   const entry: StoredStatSample = { profileId, ...sample }
   fs.appendFileSync(logPath, JSON.stringify(entry) + '\n')
+  // Keeps the cache warm without re-reading the file - only meaningful once something has
+  // actually loaded it once; if nothing has queried yet there's nothing to keep in sync,
+  // and the eventual first read picks up everything written so far straight from disk.
+  if (cachedSamples) cachedSamples.push(entry)
 
   const maxBytes = Math.max(1, getSettings().statsHistoryMaxSizeMB) * 1024 * 1024
   const { size } = fs.statSync(logPath)
@@ -41,11 +67,23 @@ export function recordStatSample(profileId: string, sample: StatSample): void {
   const firstNewline = text.indexOf('\n')
   if (firstNewline >= 0) text = text.slice(firstNewline + 1)
   fs.writeFileSync(logPath, text)
+  // The trim above rewrote the file, dropping whichever oldest lines no longer fit - the
+  // cache (if any) no longer matches it. Rather than replaying the same trim in memory,
+  // just drop it; the next read reloads fresh from the now-trimmed file. Trimming only ever
+  // happens once the file is already at its size cap, so this full reload is rare.
+  cachedSamples = null
 }
 
+/** Callers only ever .filter()/.map() this into a new array, never mutate it in place, so
+ *  handing back the cached array by reference (once loaded) is safe. */
 function readAllSamples(): StoredStatSample[] {
+  if (cachedSamples) return cachedSamples
+
   const logPath = getStatsHistoryPath()
-  if (!fs.existsSync(logPath)) return []
+  if (!fs.existsSync(logPath)) {
+    cachedSamples = []
+    return cachedSamples
+  }
   const samples: StoredStatSample[] = []
   for (const line of fs.readFileSync(logPath, 'utf-8').split('\n')) {
     if (!line.trim()) continue
@@ -58,6 +96,7 @@ function readAllSamples(): StoredStatSample[] {
       // Skip a corrupt/truncated line rather than losing the whole history to it.
     }
   }
+  cachedSamples = samples
   return samples
 }
 

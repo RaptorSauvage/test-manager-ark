@@ -224,7 +224,14 @@ dedicated servers running on the same machine.
   stats-history file exactly once no matter how many groups exist, rather than once per
   group - that file can grow up to `AppSettings.statsHistoryMaxSizeMB` (1GB by default), and
   re-parsing all of it from scratch for every single group on every 5-second poll multiplied
-  that cost by the group count for no reason. Finding the earliest recorded sample for the
+  that cost by the group count for no reason. The parsed result is also cached in memory
+  (`src/main/lib/statsHistory.ts`) and kept in sync incrementally as new samples are
+  recorded, rather than re-reading the file from disk on every poll while any stats view
+  stays open - that read is synchronous and runs on the same thread as every other Electron
+  main-process job (IPC, window events, all of it), so repeating it every 5 seconds for a
+  large file stalled the whole app noticeably each time, not just the chart. Only the very
+  first read after the Manager starts still pays that one-time cost; every poll after that is
+  an in-memory slice. Finding the earliest recorded sample for the
   **All** scale (`sinceMs === null`) is a plain loop rather than
   `Math.min(...samples.map(...))` - spreading every element as its own function argument
   throws "Maximum call stack size exceeded" once there are roughly 65k-130k of them

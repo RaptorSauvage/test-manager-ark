@@ -21,7 +21,8 @@ import {
   recordStatSample,
   readStatsHistory,
   readClusterStatsHistory,
-  readClusterStatsHistoryForGroups
+  readClusterStatsHistoryForGroups,
+  __resetStatsHistoryCacheForTests
 } from '../src/main/lib/statsHistory'
 
 function logPath(): string {
@@ -32,6 +33,7 @@ describe('statsHistory', () => {
   afterEach(() => {
     fs.rmSync(logPath(), { force: true })
     mockSettings.statsHistoryMaxSizeMB = 1024
+    __resetStatsHistoryCacheForTests()
   })
 
   it('reports no history before anything has ever been recorded', () => {
@@ -43,6 +45,34 @@ describe('statsHistory', () => {
 
     const history = readStatsHistory('server-a', null)
     expect(history).toEqual([{ time: 1000, cpu: 10, memoryMB: 500, players: 2 }])
+  })
+
+  it('keeps the in-memory cache in sync with a sample recorded after an earlier read warmed it', () => {
+    recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
+    expect(readStatsHistory('server-a', null, 500, 1000)).toHaveLength(1) // warms the cache
+
+    recordStatSample('server-a', { time: 2000, cpu: 20, memoryMB: 200, players: 2 })
+    expect(readStatsHistory('server-a', null, 500, 2000)).toEqual([
+      { time: 1000, cpu: 10, memoryMB: 100, players: 1 },
+      { time: 2000, cpu: 20, memoryMB: 200, players: 2 }
+    ])
+  })
+
+  it('reflects a trim even when an earlier read had already warmed the cache beforehand', () => {
+    mockSettings.statsHistoryMaxSizeMB = 1
+    recordStatSample('server-a', { time: 1, cpu: 1, memoryMB: 1, players: 1 })
+    expect(readStatsHistory('server-a', null)).toHaveLength(1) // warms the cache pre-trim
+
+    const filler = 'x'.repeat(2000)
+    for (let i = 0; i < 1000; i++) {
+      fs.appendFileSync(logPath(), filler + '\n')
+      recordStatSample('server-b', { time: 1000 + i, cpu: 1, memoryMB: 1, players: 1 })
+    }
+
+    // A cache left stale from the pre-trim read would still have server-a's long-gone
+    // sample; the trim must invalidate it so this reflects the file as it is now.
+    expect(readStatsHistory('server-a', null)).toEqual([])
+    expect(fs.statSync(logPath()).size).toBeLessThanOrEqual(1024 * 1024)
   })
 
   it('only returns samples belonging to the requested profile', () => {
