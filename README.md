@@ -598,10 +598,15 @@ dedicated servers running on the same machine.
   is a deliberate gate, not just a first-load default: a plain `selectView('console')` call
   still works even while its nav button is hidden (so drilling in via a card always works),
   but nothing pre-selects a server on load the way earlier versions of this page did - every
-  one of these views starts genuinely empty until you choose a server yourself, and once
-  shown, the whole group stays in the sidebar for the rest of that page's session even if the
-  server it was showing later disappears (e.g. that profile gets deleted), falling back to
-  Cluster Dashboard rather than hiding the tabs again. Every one of the eight tabs carries an
+  one of these views starts genuinely empty until you choose a server yourself. These eight
+  tabs are only ever in the sidebar while you're actually looking at one of them - navigating
+  back to **Dashboard** or **Cluster Dashboard** hides them again rather than leaving them
+  parked in the sidebar for the rest of the page's session, so those two overview tabs stay
+  focused on servers in general rather than whichever one you last drilled into. Clicking a
+  card again (from either overview) reselects that server and reveals the eight tabs once
+  more, landing on Console. Losing the currently-selected server out from under you (e.g.
+  that profile gets deleted) falls back to Cluster Dashboard the same way, which also hides
+  the tabs. Every one of the eight tabs carries an
   identical **server picker** dropdown at the top-right of its own header (`.server-picker` -
   `margin-left: auto` pushes it to the far right of the flex header row), listing every
   server by plain name only (no "(running)"/state suffix cluttering it up - that's what each

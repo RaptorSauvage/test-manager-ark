@@ -2004,41 +2004,27 @@ function initDashboard(resolvedRole) {
   });
 
   // The Dashboard tab (card grid, admin-only) is always visible like Cluster Dashboard - not
-  // gated behind first server selection like the per-server tabs below.
+  // tied to a specific server the way the per-server tabs below are.
   if (role && !canAdmin) navDashboardBtn.style.display = 'none';
-  if (role === 'readonly') navBackupBtn.style.display = 'none';
   // Settings/Mods/Map Management/Update Log stay admin+ only. Server Management is its own,
   // wider tier (moderator+) since moderators are meant to see it per the role's definition.
   var adminNavBtns = [navSettingsBtn, navModsBtn, navMapManagementBtn, navUpdateLogBtn];
   var moderatorNavBtns = [navServerManagementBtn];
-  if (role && !canAdmin) {
-    adminNavBtns.forEach(function (btn) { btn.style.display = 'none'; });
-  }
-  if (role && !canOperate) {
-    moderatorNavBtns.forEach(function (btn) { btn.style.display = 'none'; });
-  }
-  // Cluster Dashboard is the main tab now - Dashboard/Backup (and the admin-only/moderator+
-  // tabs above) are only relevant once you've actually drilled into a specific server, so they
-  // stay out of the sidebar until selectServer() below has been called at least once with a
-  // real id (clicking a card in the Cluster Dashboard's group console, or picking one from
-  // the Dashboard view's own dropdown once that's reachable some other way). Once shown,
-  // they stay shown for the rest of this page's lifetime rather than hiding again if the
-  // selection is later cleared (e.g. that server got deleted) - the point is gating first
-  // contact, not hiding a tab whose view still works fine with "no server selected".
-  var serverEverSelected = false;
-  navConsoleBtn.style.display = 'none';
-  navAnalyticsBtn.style.display = 'none';
-  navBackupBtn.style.display = 'none';
-  adminNavBtns.forEach(function (btn) { btn.style.display = 'none'; });
-  moderatorNavBtns.forEach(function (btn) { btn.style.display = 'none'; });
-  function revealServerScopedNav() {
-    if (serverEverSelected) return;
-    serverEverSelected = true;
-    navConsoleBtn.style.display = '';
-    navAnalyticsBtn.style.display = '';
-    if (role !== 'readonly') navBackupBtn.style.display = '';
-    if (!role || canAdmin) adminNavBtns.forEach(function (btn) { btn.style.display = ''; });
-    if (!role || canOperate) moderatorNavBtns.forEach(function (btn) { btn.style.display = ''; });
+
+  // The eight per-server tabs (Console/Analytics/Backup/the admin-only/moderator+ ones) only
+  // belong in the sidebar while you're actually looking at one of them - on Dashboard or
+  // Cluster Dashboard they'd just be dead weight for a server that isn't even on screen
+  // anymore. Recomputed on every view change (see applyActiveView below) against
+  // SERVER_SCOPED_VIEWS, rather than a one-time reveal that used to stick around for the
+  // rest of the page's session even after navigating back to an overview tab.
+  var SERVER_SCOPED_VIEWS = ['console', 'analytics', 'backup', 'settings', 'mods', 'mapmanagement', 'servermanagement', 'updatelog'];
+  function updateServerScopedNavVisibility() {
+    var show = SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1;
+    navConsoleBtn.style.display = show ? '' : 'none';
+    navAnalyticsBtn.style.display = show ? '' : 'none';
+    navBackupBtn.style.display = show && role !== 'readonly' ? '' : 'none';
+    adminNavBtns.forEach(function (btn) { btn.style.display = show && (!role || canAdmin) ? '' : 'none'; });
+    moderatorNavBtns.forEach(function (btn) { btn.style.display = show && (!role || canOperate) ? '' : 'none'; });
   }
   if (role && !canOperate) {
     startBtn.style.display = 'none';
@@ -2068,6 +2054,7 @@ function initDashboard(resolvedRole) {
   var activeView = 'cluster';
 
   function applyActiveView() {
+    updateServerScopedNavVisibility();
     navDashboardBtn.classList.toggle('active', activeView === 'dashboard');
     navClusterBtn.classList.toggle('active', activeView === 'cluster');
     navConsoleBtn.classList.toggle('active', activeView === 'console');
@@ -4332,8 +4319,6 @@ function initDashboard(resolvedRole) {
     postServerAction('stop-update-restart');
   });
 
-  var SERVER_SCOPED_VIEWS = ['console', 'analytics', 'backup', 'settings', 'mods', 'mapmanagement', 'servermanagement', 'updatelog'];
-
   // Every per-server view carries its own server picker in its header (top-right, via the
   // .server-picker CSS class) - not just the Console view's original one - so switching
   // servers never requires going back to Cluster Dashboard first. All 8 always show the same
@@ -4393,7 +4378,6 @@ function initDashboard(resolvedRole) {
     if (id === currentId) return;
     currentId = id;
     syncServerPickers();
-    if (id) revealServerScopedNav();
     backupShowAll = false;
     if (activeView === 'analytics') loadAnalyticsView();
     if (activeView === 'backup') loadBackupView();
@@ -4428,10 +4412,11 @@ function initDashboard(resolvedRole) {
       checkClusterStateTransitions(servers);
       populateServerPickers(servers);
       // A server that was selected can vanish out from under us (profile deleted, or
-      // filtered out by Hidden) - treat that the same as never having selected one. Unlike
-      // before, this never auto-picks a replacement: Dashboard/Backup/the admin tabs only
-      // ever get a server through an explicit click (see revealServerScopedNav), never a
-      // silent default - so losing the selection just falls back to Cluster Dashboard.
+      // filtered out by Hidden) - treat that the same as never having selected one. This
+      // never auto-picks a replacement: Dashboard/Backup/the admin tabs only ever get a
+      // server through an explicit click, never a silent default - so losing the selection
+      // just falls back to Cluster Dashboard (which also hides the per-server nav buttons
+      // again, via updateServerScopedNavVisibility inside applyActiveView).
       if (currentId && !servers.some(function (s) { return s.id === currentId; })) {
         currentId = null;
         if (SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1) selectView('cluster');
