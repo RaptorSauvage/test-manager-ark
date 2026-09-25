@@ -24,7 +24,10 @@ import {
   doStopUpdateRestart
 } from './serverActions'
 import { createBackup, listBackups, deleteBackup, restoreBackup, getBackupLog } from './backup'
-import { getBackupScheduleStatus } from './schedule'
+import { listPlayerBackupFolders, listPlayerBackups } from './playerBackup'
+import { getBackupScheduleStatus, applyBackupSchedule } from './schedule'
+import { applyScheduledRestart, applyScheduledDinoWipe } from './scheduledActions'
+import { syncPlayerBackupWatch } from './playerBackupWatch'
 import { getCachedGameVersion } from './serverVersion'
 import { getOrCreateCert } from './tlsCert'
 import { verifyPassword, roleAtLeast, getBearerTokenFromRequest, parseApiKey } from './auth'
@@ -32,6 +35,19 @@ import { readUpdateLog } from './steamcmd'
 import { listMapFolders, createMapFolder, deleteMapFolder } from './mapManagement'
 import { listMaps } from './maps'
 import { listCustomMaps } from './customMaps'
+
+/** Same side effects the desktop Manager's own IPC profile-save handler applies
+ *  (src/main/ipc/profiles.ts) - re-arming the backup/restart/dino-wipe schedules and the
+ *  player-backup log watcher against whatever the save just changed. Every web dashboard
+ *  route that calls saveProfile() must call this too, or an edit made there (e.g. toggling
+ *  a schedule on, or changing its cron/time) silently has no effect until the Manager is
+ *  next restarted or the same profile happens to get saved from the desktop UI too. */
+function applyProfileSideEffects(profile: ServerProfile): void {
+  applyBackupSchedule(profile)
+  syncPlayerBackupWatch(profile)
+  applyScheduledRestart(profile)
+  applyScheduledDinoWipe(profile)
+}
 
 let server: http.Server | https.Server | null = null
 let lastError: string | null = null
@@ -616,6 +632,30 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  // Player Profile Backups - read-only (same tier as the world backup list above); restoring
+  // or deleting one reuses the exact same /backups/restore and /backups/delete routes above,
+  // since restoreBackup/deleteBackup only ever take a file path and don't care which kind of
+  // backup it came from. No remote equivalent for the desktop tab's "Open backup folder"
+  // button, same as everywhere else a local file-system dialog would be needed.
+  const playerBackupFoldersMatch = path.match(/^\/api\/servers\/([^/]+)\/playerbackups\/folders$/)
+  if (req.method === 'GET' && playerBackupFoldersMatch) {
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(playerBackupFoldersMatch[1]))
+    sendJson(res, 200, profile && hasProfileAccess(auth, profile.id) ? listPlayerBackupFolders(profile) : [])
+    return
+  }
+
+  const playerBackupsMatch = path.match(/^\/api\/servers\/([^/]+)\/playerbackups$/)
+  if (req.method === 'GET' && playerBackupsMatch) {
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(playerBackupsMatch[1]))
+    const folderKey = url.searchParams.get('folder') ?? ''
+    sendJson(res, 200, profile && folderKey && hasProfileAccess(auth, profile.id) ? listPlayerBackups(profile, folderKey) : [])
+    return
+  }
+
   // ---- Admin-only remote control: Settings/Mods/Map Management/Update Log - lets an
   // admin-scoped token do everything the desktop Manager's own per-server tabs can, without
   // local file-system access (no directory/file picker dialogs, no "open folder" - those are
@@ -649,6 +689,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         // tabs can already do to this same profile via profiles.save.
         const updated = saveProfile({ ...profile, ...body, id: profile.id } as ServerProfile)
         const saved = updated.find((p) => p.id === profile.id)
+        if (saved) applyProfileSideEffects(saved)
         sendJson(res, 200, { ok: true, profile: saved })
       })
       .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
@@ -712,6 +753,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         }
         const updated = saveProfile({ ...profile, ...patch, id: profile.id } as ServerProfile)
         const saved = updated.find((p) => p.id === profile.id)
+        if (saved) applyProfileSideEffects(saved)
         sendJson(res, 200, { ok: true, profile: saved && pickServerManagementFields(saved) })
       })
       .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
@@ -1076,8 +1118,9 @@ const DASHBOARD_HTML = `<!doctype html>
   #backup-table .backup-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
   #backup-table .backup-row-actions button { font-size: 0.78rem; padding: 4px 8px; }
   #btn-backup-show-more { display: none; width: 100%; margin-top: 10px; font-size: 0.8rem; }
-  .backup-table-panel { flex: 0 1 60%; }
-  .backup-log-panel { flex: 0 1 40%; min-width: 220px; }
+  .backup-table-panel { flex: 0 1 45%; }
+  .player-backup-panel { flex: 0 1 30%; min-width: 260px; }
+  .backup-log-panel { flex: 0 1 25%; min-width: 220px; }
   #backup-log { flex: 1; overflow-y: auto; font-size: 0.85rem; }
   .backup-log-line { padding: 3px 0; color: var(--muted); }
   .backup-log-line.error { color: var(--danger); }
@@ -1110,6 +1153,7 @@ const DASHBOARD_HTML = `<!doctype html>
   .data-table tbody tr.selected { background: var(--bg); }
   .data-table tbody tr.selectable { cursor: pointer; }
   .data-table td.mod-disabled-row { color: var(--muted); }
+  .playerbackup-select-col { width: 28px; }
   .log-output { flex: 1; overflow: auto; font-size: 0.8rem; font-family: Consolas, Menlo, monospace; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 0; }
   @media (max-width: 700px) {
     /* The desktop layout is a fixed-viewport "app" (body: height:100vh + overflow:hidden)
@@ -1161,8 +1205,8 @@ const DASHBOARD_HTML = `<!doctype html>
     .cluster-console-rcon-form select, .cluster-console-rcon-form input { flex: 1 1 auto; max-width: none; }
     .form-actions { flex-wrap: wrap; }
     .form-actions button { flex: 1 1 auto; }
-    .backup-table-panel, .backup-log-panel { flex: none; width: 100%; min-width: 0; }
-    .backup-table-panel { overflow-x: auto; }
+    .backup-table-panel, .player-backup-panel, .backup-log-panel { flex: none; width: 100%; min-width: 0; }
+    .backup-table-panel, .player-backup-panel { overflow-x: auto; }
     #backup-table { font-size: 0.78rem; }
     .admin-tab-content, .settings-form { overflow-y: visible; }
     .settings-grid2 { grid-template-columns: 1fr; }
@@ -1362,6 +1406,7 @@ const DASHBOARD_HTML = `<!doctype html>
         </div>
         <div class="content-row">
           <section class="panel backup-table-panel">
+            <h3>World Backups</h3>
             <table id="backup-table">
               <thead>
                 <tr><th>File Name</th><th>Size</th><th>Creation Time</th><th></th></tr>
@@ -1369,6 +1414,27 @@ const DASHBOARD_HTML = `<!doctype html>
               <tbody id="backup-table-body"></tbody>
             </table>
             <button id="btn-backup-show-more" type="button"></button>
+          </section>
+          <section class="panel player-backup-panel">
+            <h3>Player Profile Backups</h3>
+            <div class="form-actions">
+              <select id="playerbackup-folder-select"></select>
+              <button id="btn-playerbackup-refresh-folders" type="button">Refresh</button>
+            </div>
+            <div class="form-actions">
+              <button id="btn-playerbackup-restore" type="button" disabled>Restore selected backup</button>
+              <button id="btn-playerbackup-delete" type="button" disabled>Delete selected backup</button>
+            </div>
+            <table id="playerbackup-table" class="data-table">
+              <thead>
+                <tr>
+                  <th class="playerbackup-select-col"><input id="playerbackup-selectall" type="checkbox" /></th>
+                  <th>File Name</th>
+                  <th>Creation Time</th>
+                </tr>
+              </thead>
+              <tbody id="playerbackup-table-body"></tbody>
+            </table>
           </section>
           <aside class="panel backup-log-panel">
             <h3>Backup Process Log</h3>
@@ -2823,6 +2889,18 @@ function initDashboard(resolvedRole) {
   var refreshBackupBtn = document.getElementById('btn-backup-refresh');
   if (role && !canOperate) createBackupBtn.style.display = 'none';
 
+  // Player Profile Backups - same panel as the desktop Backups tab's own, restore/delete
+  // reusing the exact same /backups/restore and /backups/delete routes as world backups.
+  var playerBackupFolderSelectEl = document.getElementById('playerbackup-folder-select');
+  var playerBackupRefreshFoldersBtn = document.getElementById('btn-playerbackup-refresh-folders');
+  var playerBackupTableBody = document.getElementById('playerbackup-table-body');
+  var playerBackupSelectAllEl = document.getElementById('playerbackup-selectall');
+  var playerBackupRestoreBtn = document.getElementById('btn-playerbackup-restore');
+  var playerBackupDeleteBtn = document.getElementById('btn-playerbackup-delete');
+  var playerBackupSelectedFolder = '';
+  var playerBackupSelectedPaths = [];
+  var playerBackupBackups = [];
+
   // Backup directory/retention/schedule editing - same function as the desktop Manager's own
   // Backups tab, admin+ only (it goes through the same admin-gated /profile route Settings
   // uses), unlike create/restore/delete above which stay at their own, lower tiers.
@@ -2992,6 +3070,163 @@ function initDashboard(resolvedRole) {
     backupLogEl.scrollTop = backupLogEl.scrollHeight;
   }
 
+  if (role && !canAdmin) {
+    playerBackupRestoreBtn.style.display = 'none';
+    playerBackupDeleteBtn.style.display = 'none';
+  }
+
+  function updatePlayerBackupActionButtons() {
+    playerBackupRestoreBtn.disabled = playerBackupSelectedPaths.length !== 1;
+    playerBackupDeleteBtn.disabled = playerBackupSelectedPaths.length === 0;
+    playerBackupDeleteBtn.textContent = playerBackupSelectedPaths.length > 1
+      ? 'Delete selected backups (' + playerBackupSelectedPaths.length + ')'
+      : 'Delete selected backup';
+  }
+
+  function togglePlayerBackupSelected(filePath) {
+    var idx = playerBackupSelectedPaths.indexOf(filePath);
+    if (idx === -1) playerBackupSelectedPaths.push(filePath);
+    else playerBackupSelectedPaths.splice(idx, 1);
+    renderPlayerBackupTable(playerBackupBackups);
+  }
+
+  function renderPlayerBackupTable(backups) {
+    playerBackupBackups = backups;
+    playerBackupSelectedPaths = playerBackupSelectedPaths.filter(function (p) {
+      return backups.some(function (b) { return b.filePath === p; });
+    });
+    playerBackupTableBody.innerHTML = '';
+    if (backups.length === 0) {
+      var emptyRow = document.createElement('tr');
+      var emptyCell = document.createElement('td');
+      emptyCell.colSpan = 3;
+      emptyCell.className = 'empty-state';
+      emptyCell.textContent = playerBackupSelectedFolder ? 'No backups yet.' : 'No player has been backed up yet.';
+      emptyRow.appendChild(emptyCell);
+      playerBackupTableBody.appendChild(emptyRow);
+    } else {
+      backups.forEach(function (b) {
+        var row = document.createElement('tr');
+        row.className = 'selectable' + (playerBackupSelectedPaths.indexOf(b.filePath) !== -1 ? ' selected' : '');
+        row.addEventListener('click', function () { togglePlayerBackupSelected(b.filePath); });
+        var selectCell = document.createElement('td');
+        selectCell.className = 'playerbackup-select-col';
+        var checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = playerBackupSelectedPaths.indexOf(b.filePath) !== -1;
+        checkbox.addEventListener('click', function (e) { e.stopPropagation(); });
+        checkbox.addEventListener('change', function () { togglePlayerBackupSelected(b.filePath); });
+        selectCell.appendChild(checkbox);
+        var nameCell = document.createElement('td');
+        nameCell.textContent = b.fileName;
+        var timeCell = document.createElement('td');
+        timeCell.textContent = new Date(b.createdAt).toLocaleString();
+        row.appendChild(selectCell);
+        row.appendChild(nameCell);
+        row.appendChild(timeCell);
+        playerBackupTableBody.appendChild(row);
+      });
+    }
+    playerBackupSelectAllEl.checked = backups.length > 0 && playerBackupSelectedPaths.length === backups.length;
+    playerBackupSelectAllEl.disabled = backups.length === 0;
+    updatePlayerBackupActionButtons();
+  }
+
+  function loadPlayerBackups() {
+    var id = currentId;
+    var folder = playerBackupSelectedFolder;
+    if (!id || !folder) {
+      renderPlayerBackupTable([]);
+      return;
+    }
+    fetch('/api/servers/' + encodeURIComponent(id) + '/playerbackups?folder=' + encodeURIComponent(folder))
+      .then(function (r) { return r.json(); })
+      .then(function (backups) {
+        if (id !== currentId || folder !== playerBackupSelectedFolder) return;
+        renderPlayerBackupTable(backups);
+      });
+  }
+
+  function loadPlayerBackupFolders() {
+    var id = currentId;
+    if (!id) return;
+    fetch('/api/servers/' + encodeURIComponent(id) + '/playerbackups/folders')
+      .then(function (r) { return r.json(); })
+      .then(function (folders) {
+        if (id !== currentId) return;
+        playerBackupFolderSelectEl.innerHTML = '';
+        if (folders.length === 0) {
+          var opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'No players backed up yet';
+          playerBackupFolderSelectEl.appendChild(opt);
+          playerBackupFolderSelectEl.disabled = true;
+          playerBackupSelectedFolder = '';
+          renderPlayerBackupTable([]);
+          return;
+        }
+        playerBackupFolderSelectEl.disabled = false;
+        folders.forEach(function (f) {
+          var opt = document.createElement('option');
+          opt.value = f.key;
+          opt.textContent = f.playerName;
+          playerBackupFolderSelectEl.appendChild(opt);
+        });
+        if (!folders.some(function (f) { return f.key === playerBackupSelectedFolder; })) {
+          playerBackupSelectedFolder = folders[0].key;
+        }
+        playerBackupFolderSelectEl.value = playerBackupSelectedFolder;
+        loadPlayerBackups();
+      });
+  }
+
+  playerBackupFolderSelectEl.addEventListener('change', function () {
+    playerBackupSelectedFolder = playerBackupFolderSelectEl.value;
+    playerBackupSelectedPaths = [];
+    loadPlayerBackups();
+  });
+
+  playerBackupRefreshFoldersBtn.addEventListener('click', function () { loadPlayerBackupFolders(); });
+
+  playerBackupSelectAllEl.addEventListener('change', function () {
+    playerBackupSelectedPaths = playerBackupSelectAllEl.checked
+      ? playerBackupBackups.map(function (b) { return b.filePath; })
+      : [];
+    renderPlayerBackupTable(playerBackupBackups);
+  });
+
+  function playerBackupAction(actionPath, filePath) {
+    return fetch('/api/servers/' + encodeURIComponent(currentId) + actionPath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath: filePath })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showToast('Error: ' + result.error); return; }
+        loadPlayerBackups();
+      })
+      .catch(function () { showToast('Request failed'); });
+  }
+
+  playerBackupRestoreBtn.addEventListener('click', function () {
+    if (playerBackupSelectedPaths.length !== 1) return;
+    var backup = playerBackupBackups.filter(function (b) { return b.filePath === playerBackupSelectedPaths[0]; })[0];
+    if (!backup || !confirm('Restore ' + backup.fileName + "? This overwrites this player's current profile.")) return;
+    void playerBackupAction('/backups/restore', backup.filePath);
+  });
+
+  playerBackupDeleteBtn.addEventListener('click', function () {
+    if (playerBackupSelectedPaths.length === 0) return;
+    var label = playerBackupSelectedPaths.length === 1
+      ? playerBackupBackups.filter(function (b) { return b.filePath === playerBackupSelectedPaths[0]; })[0].fileName
+      : playerBackupSelectedPaths.length + ' backups';
+    if (!confirm('Delete ' + label + '?')) return;
+    var paths = playerBackupSelectedPaths.slice();
+    var chain = Promise.resolve();
+    paths.forEach(function (p) { chain = chain.then(function () { return playerBackupAction('/backups/delete', p); }); });
+  });
+
   // The Backup view has no server picker of its own - it always follows whichever server
   // is selected in the Dashboard view (currentId).
   function loadBackupView() {
@@ -3035,6 +3270,7 @@ function initDashboard(resolvedRole) {
     fetch('/api/servers/' + encodeURIComponent(id) + '/backups/log')
       .then(function (r) { return r.json(); })
       .then(function (entries) { if (id === currentId) renderBackupLog(entries); });
+    loadPlayerBackupFolders();
   }
 
   createBackupBtn.addEventListener('click', function () {

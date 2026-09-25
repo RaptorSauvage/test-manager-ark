@@ -21,7 +21,7 @@ import { registerManagerLogHandlers } from './managerLog'
 import { registerStatsHistoryHandlers } from './statsHistory'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
-  registerProfileHandlers()
+  registerProfileHandlers(mainWindow.webContents)
   registerServerProcessHandlers(mainWindow.webContents)
   registerModsHandlers()
   registerBackupHandlers(mainWindow.webContents)

@@ -848,18 +848,29 @@ dedicated servers running on the same machine.
     took). Every other role sees that summary line only, exactly as before - everything the
     rest of this view's own routes can do is act on backups that already exist
     (create/restore/delete), not reconfigure how they're taken. A **Create backup now** button
-    and **Refresh**
-    button sit above a table of existing backups (file name, size, creation time) each
-    with **Restore** and **Delete** actions (both confirm before acting), and a **Backup
-    Process Log** panel alongside it - taking 40% of that row's width to the table's 60%,
-    since log lines run longer than file names - polling every 5s while this view is
-    active. On a phone, the backup table only shows the 10 most recent by default (however
-    many the Backups tab's retention setting actually keeps could be a lot more than that,
-    and scrolling through all of them just to reach the log below gets old fast) - a
-    **Show all N backups** button underneath reveals the rest, toggling back to **Show
-    fewer**; desktop always shows the full list, no cap. All of it backed by the same
-    `backup.ts`/`schedule.ts` functions the desktop Backups tab uses, reused directly
-    since the web dashboard runs in the same process.
+    and **Refresh** button sit above a three-column row - matching the desktop Backups tab's
+    own World Backups/Player Profile Backups/Backup Process Log layout (45%/30%/25% of the
+    row's width, since world backup file names run longer than the other two columns need):
+    **World Backups** (file name, size, creation time, each row with its own **Restore** and
+    **Delete** actions, both confirming before acting), **Player Profile Backups** (a
+    dropdown of every player who has at least one backup, with its own **Refresh** button,
+    next to a checkbox-selectable table of that player's backups and **Restore
+    selected backup**/**Delete selected backup(s)** buttons above it - restoring or deleting
+    a player backup reuses the exact same `/backups/restore`/`/backups/delete` routes as
+    World Backups, since both are just a file path to either function), and **Backup Process
+    Log** - polling every 5s while this view is active. Restore/Delete on both backup tables
+    are admin/globalAdmin only, same as the desktop app's own equivalent actions; every other
+    role sees the tables read-only. On a phone, the World Backups table only shows the 10
+    most recent by default (however many the retention setting actually keeps could be a lot
+    more than that, and scrolling through all of them just to reach the log below gets old
+    fast) - a **Show all N backups** button underneath reveals the rest, toggling back to
+    **Show fewer**; desktop always shows the full list, no cap (the Player Profile Backups
+    table has no such cap - a single player's own backup count rarely gets that large). All
+    of it backed by the same `backup.ts`/`schedule.ts`/`playerBackup.ts` functions the
+    desktop Backups tab uses, reused directly since the web dashboard runs in the same
+    process. No remote equivalent for the desktop tab's **Open backup folder** button on
+    either table, same as everywhere else on this page a local file-system dialog would be
+    needed.
   - **Settings**, **Mods**, **Map Management**, and **Update Log** - admin-only tabs (role
     `admin`/`globalAdmin`, or no login requirement at all) that let an admin token do
     essentially everything the desktop Manager's own per-server Settings/Mods/Map
@@ -894,6 +905,18 @@ dedicated servers running on the same machine.
     edits, so a moderator-tier credential reaching it can never read or write anything else
     on the profile (install directory, ports, mods, backup settings, etc. all stay behind the
     admin-only `/profile` route). Saves immediately on change, same as the other tabs.
+  - Every one of these routes - `/profile`, `/servermanagement`, and the Backup tab's own
+    settings fields - keeps the desktop Manager itself fully in sync with an edit made here,
+    the same two ways an edit made in the desktop app itself already does: any restart/dino
+    wipe/backup schedule or the player-profile-backup watcher gets re-armed against the new
+    values immediately (not just on the Manager's next restart), and every open desktop
+    window's own profile list updates live too - a field changed from a phone shows up in the
+    Manager's Settings/Server Management/Backups tab (if it's open to that same server)
+    without needing a manual refresh. The second part is a small dedicated event
+    (`profileEvents` in `store.ts`, forwarded to every renderer window as `IPC.profilesChanged`)
+    that fires on every profile save regardless of what triggered it, specifically so this
+    doesn't require the web dashboard's HTTP routes to know anything about the desktop UI at
+    all.
   - Cluster Dashboard is always the tab this page opens on - there's no remembered-last-view
     restore across reloads the way earlier versions of this page had. The eight per-server
     tabs above only ever enter the sidebar through an explicit click on a card in a group's

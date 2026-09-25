@@ -31,6 +31,19 @@ export default function App(): JSX.Element {
     })
   }, [])
 
+  // Keeps this window's profile list live even when a change came from outside it - most
+  // notably the web dashboard's own HTTP routes, which save profiles directly without going
+  // through this window's IPC calls at all, so without this an edit made there would only
+  // ever show up here after a restart. Uses the functional setSelectedId form rather than
+  // reading selectedId directly, since this effect's closure is fixed at mount and a direct
+  // read would go stale the moment a server is actually selected.
+  useEffect(() => {
+    return window.api.profiles.onChanged((updated) => {
+      setProfiles(updated)
+      setSelectedId((prev) => (prev && !updated.some((p) => p.id === prev) ? null : prev))
+    })
+  }, [])
+
   if (!loaded) {
     return <div className="loading">Loading...</div>
   }

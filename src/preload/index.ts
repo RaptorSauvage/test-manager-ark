@@ -26,7 +26,12 @@ const api: Api = {
     copy: (profileId: string, destInstallDir: string, newName: string) =>
       ipcRenderer.invoke(IPC.profilesCopy, profileId, destInstallDir, newName),
     move: (profileId: string, destInstallDir: string, newName: string) =>
-      ipcRenderer.invoke(IPC.profilesMove, profileId, destInstallDir, newName)
+      ipcRenderer.invoke(IPC.profilesMove, profileId, destInstallDir, newName),
+    onChanged: (callback: (profiles: ServerProfile[]) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, profiles: ServerProfile[]): void => callback(profiles)
+      ipcRenderer.on(IPC.profilesChanged, listener)
+      return () => ipcRenderer.removeListener(IPC.profilesChanged, listener)
+    }
   },
   dialog: {
     selectDirectory: () => ipcRenderer.invoke(IPC.dialogSelectDirectory),

@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { ipcMain } from 'electron'
+import { ipcMain, type WebContents } from 'electron'
 import { IPC, type ServerProfile } from '@shared/types'
-import { listProfiles, saveProfile, deleteProfile, setProfileOrder } from '../store'
+import { listProfiles, saveProfile, deleteProfile, setProfileOrder, profileEvents } from '../store'
 import { applyBackupSchedule, clearBackupSchedule } from '../lib/schedule'
 import {
   applyScheduledRestart,
@@ -21,7 +21,11 @@ function requireProfile(profileId: string): ServerProfile {
   return profile
 }
 
-export function registerProfileHandlers(): void {
+export function registerProfileHandlers(webContents: WebContents): void {
+  profileEvents.on('changed', (profiles: ServerProfile[]) => {
+    if (!webContents.isDestroyed()) webContents.send(IPC.profilesChanged, profiles)
+  })
+
   ipcMain.handle(IPC.profilesList, () => listProfiles())
 
   ipcMain.handle(IPC.profilesSave, (_event, profile: ServerProfile) => {

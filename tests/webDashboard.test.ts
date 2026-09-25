@@ -484,6 +484,30 @@ describe('web dashboard HTTP server', () => {
     expect(JSON.parse(res.body)).toEqual([])
   })
 
+  it('lists no player backup folders when no backup directory is configured', async () => {
+    const res = await request('/api/servers/p1/playerbackups/folders')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([])
+  })
+
+  it('lists no player backup folders for an unknown server', async () => {
+    const res = await request('/api/servers/nope/playerbackups/folders')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([])
+  })
+
+  it('lists no player backups when no folder is given', async () => {
+    const res = await request('/api/servers/p1/playerbackups')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([])
+  })
+
+  it('lists no player backups for a folder that does not exist', async () => {
+    const res = await request('/api/servers/p1/playerbackups?folder=SomePlayer_deadbeef')
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([])
+  })
+
   it('returns an empty backup process log by default', async () => {
     const res = await request('/api/servers/p1/backups/log')
     expect(res.status).toBe(200)

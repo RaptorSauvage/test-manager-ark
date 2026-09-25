@@ -365,6 +365,12 @@ export const IPC = {
   profilesImportFromFile: 'profiles:import-from-file',
   profilesCopy: 'profiles:copy',
   profilesMove: 'profiles:move',
+  /** Pushed to every renderer window whenever the stored profile list actually changes -
+   *  regardless of what triggered it (this window's own IPC calls, or a write from the web
+   *  dashboard's HTTP API, which never goes through IPC at all) - so an edit made from the
+   *  web dashboard shows up live in the desktop app without needing a restart or manual
+   *  refresh. */
+  profilesChanged: 'profiles:changed',
 
   dialogSelectDirectory: 'dialog:select-directory',
   dialogSelectFile: 'dialog:select-file',
@@ -559,6 +565,10 @@ export interface Api {
     importFromFile: (filePath: string) => Promise<ImportResult>
     copy: (profileId: string, destInstallDir: string, newName: string) => Promise<ImportResult>
     move: (profileId: string, destInstallDir: string, newName: string) => Promise<ImportResult>
+    /** Fires with the full, current profile list whenever it changes for any reason,
+     *  including a save made through the web dashboard's HTTP API rather than this window's
+     *  own IPC calls. */
+    onChanged: (callback: (profiles: ServerProfile[]) => void) => () => void
   }
   dialog: {
     selectDirectory: () => Promise<string | null>

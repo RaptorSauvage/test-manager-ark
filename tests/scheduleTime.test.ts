@@ -19,6 +19,11 @@ describe('parseScheduleTime', () => {
     expect(parseScheduleTime('5:30')).toBeNull()
     expect(parseScheduleTime('not a time')).toBeNull()
   })
+
+  it('returns null rather than throwing when time is empty/undefined at runtime', () => {
+    expect(parseScheduleTime('')).toBeNull()
+    expect(parseScheduleTime(undefined as unknown as string)).toBeNull()
+  })
 })
 
 describe('buildDayOfWeekCron', () => {
@@ -36,6 +41,14 @@ describe('buildDayOfWeekCron', () => {
 
   it('returns null for an invalid time', () => {
     expect(buildDayOfWeekCron('bad', [0])).toBeNull()
+  })
+
+  it('returns null rather than throwing when days is undefined at runtime', () => {
+    // ServerProfile.scheduledRestartDays/scheduledDinoWipeDays are typed as always an array,
+    // but a profile from before that field existed, or a partial merge that never touched
+    // it, can still reach here with it actually undefined - this must degrade to "no
+    // schedule" instead of crashing the caller (see applyScheduledRestart/DinoWipe).
+    expect(buildDayOfWeekCron('05:30', undefined as unknown as number[])).toBeNull()
   })
 })
 
@@ -62,6 +75,10 @@ describe('computeNextOccurrence', () => {
   it('returns null when no days are selected or the time is invalid', () => {
     expect(computeNextOccurrence(new Date(), '05:30', [])).toBeNull()
     expect(computeNextOccurrence(new Date(), 'nope', [0])).toBeNull()
+  })
+
+  it('returns null rather than throwing when days is undefined at runtime', () => {
+    expect(computeNextOccurrence(new Date(), '05:30', undefined as unknown as number[])).toBeNull()
   })
 })
 

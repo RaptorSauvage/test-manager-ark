@@ -2,25 +2,33 @@
 // expression that actually drives node-cron) and the renderer (the live countdown
 // display) - kept in one place so the two can never quietly disagree.
 
-/** Parses a 24h "HH:MM" string into hour/minute, or null if malformed. */
+/** Parses a 24h "HH:MM" string into hour/minute, or null if malformed or missing - see
+ *  buildDayOfWeekCron below for why a value the type says is always a string still needs a
+ *  runtime guard. */
 export function parseScheduleTime(time: string): { hour: number; minute: number } | null {
+  if (!time) return null
   const match = time.match(/^([01]\d|2[0-3]):([0-5]\d)$/)
   if (!match) return null
   return { hour: Number(match[1]), minute: Number(match[2]) }
 }
 
-/** Builds a 5-field cron expression firing at `time` on the given days (0=Sunday..6=Saturday). */
+/** Builds a 5-field cron expression firing at `time` on the given days (0=Sunday..6=Saturday).
+ *  `days` is optional-in-practice even though the type says otherwise - a profile that
+ *  predates this field, or a partial patch that never touched it, can still reach here with
+ *  it `undefined` at runtime, so this treats that the same as "no days selected" (no
+ *  schedule) rather than throwing. */
 export function buildDayOfWeekCron(time: string, days: number[]): string | null {
   const parsed = parseScheduleTime(time)
-  if (!parsed || days.length === 0) return null
+  if (!parsed || !days || days.length === 0) return null
   const sortedDays = [...new Set(days)].sort((a, b) => a - b)
   return `${parsed.minute} ${parsed.hour} * * ${sortedDays.join(',')}`
 }
 
-/** The next Date, strictly after `now`, that matches `time` on one of `days`. */
+/** The next Date, strictly after `now`, that matches `time` on one of `days`. See
+ *  buildDayOfWeekCron above for why `days` is guarded despite its non-optional type. */
 export function computeNextOccurrence(now: Date, time: string, days: number[]): Date | null {
   const parsed = parseScheduleTime(time)
-  if (!parsed || days.length === 0) return null
+  if (!parsed || !days || days.length === 0) return null
 
   for (let offset = 0; offset <= 7; offset++) {
     const candidate = new Date(now)

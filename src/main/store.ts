@@ -1,9 +1,18 @@
+import { EventEmitter } from 'node:events'
 import Store from 'electron-store'
 import type { ServerProfile, AppSettings, WebDashboardAccessToken, WebDashboardApiKey } from '@shared/types'
 import { migrateProfile } from './lib/profileMigration'
 import { reorderProfiles } from './lib/reorder'
 import { stripWrappingQuotes } from './lib/pathSanitize'
 import { migrateLegacyRole } from './lib/auth'
+
+/** Emits 'changed' with the full, current profile list after every save/delete/reorder,
+ *  regardless of caller - the desktop app's own IPC handlers and the web dashboard's HTTP
+ *  routes both end up calling saveProfile/deleteProfile/setProfileOrder below, so this is
+ *  the one place that can notify every open renderer window without either caller needing
+ *  to remember to do it itself. See src/main/ipc/profiles.ts for where this gets forwarded
+ *  to the renderer as IPC.profilesChanged. */
+export const profileEvents = new EventEmitter()
 
 interface StoreSchema {
   profiles: ServerProfile[]
@@ -65,12 +74,14 @@ export function saveProfile(profile: ServerProfile): ServerProfile[] {
   if (idx >= 0) profiles[idx] = sanitized
   else profiles.push(sanitized)
   store.set('profiles', profiles)
+  profileEvents.emit('changed', profiles)
   return profiles
 }
 
 export function setProfileOrder(orderedIds: string[]): ServerProfile[] {
   const profiles = reorderProfiles(listProfiles(), orderedIds)
   store.set('profiles', profiles)
+  profileEvents.emit('changed', profiles)
   return profiles
 }
 
@@ -79,6 +90,7 @@ export function deleteProfile(id: string): ServerProfile[] {
   store.set('profiles', profiles)
   setRunningPid(id, null)
   setRunningStartedAt(id, null)
+  profileEvents.emit('changed', profiles)
   return profiles
 }
 
