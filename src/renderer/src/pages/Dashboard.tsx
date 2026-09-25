@@ -417,7 +417,6 @@ export default function Dashboard({
             <div className="official-status-header">
               <h3>Performance</h3>
             </div>
-            <p className="empty-state">Combined totals across every visible server, running or not.</p>
             <dl className="group-console-cluster-stats">
               <div>
                 <dt>Servers running</dt>

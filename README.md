@@ -572,20 +572,22 @@ dedicated servers running on the same machine.
   desktop app itself has no console/RCON tab). It's a plain HTTP server built into the
   Manager (no separate process), serving a page with a sidebar that starts with just
   **Cluster Dashboard** - the main/landing view every page load opens on, with nothing else
-  in the sidebar yet. **Dashboard** and **Backup** (grouped together since Backup always
-  follows whatever server is selected in Dashboard), plus a second separator and five
-  admin-only remote-control tabs - **Settings**, **Mods**, **Map Management**, **Server
-  Management**, **Update Log** - only appear in the sidebar once a server has actually been
-  clicked (a card inside a group's mobile Group Console, or the single-server dropdown once
-  Dashboard itself is reachable); the five admin tabs additionally require the connecting
-  token/key to be role `admin` (or no login requirement at all, in which case every route is
-  effectively admin). This is a deliberate gate, not just a first-load default: a plain
-  `selectView('console')` call still works even while its nav button is hidden (so drilling
-  in via a card always works), but nothing pre-selects a server on load the way earlier
-  versions of this page did - every one of these views starts genuinely empty until you
-  choose a server yourself, and once shown, a tab stays in the sidebar for the rest of that
-  page's session even if the server it was showing later disappears (e.g. that profile gets
-  deleted), falling back to Cluster Dashboard rather than hiding the tab again:
+  in the sidebar yet. A single separator, then one flat group of eight per-server tabs, in
+  this order - **Dashboard**, **Analytics**, **Settings**, **Mods**, **Backup**, **Map
+  Management**, **Server Management**, **Update Log** - only appears in the sidebar once a
+  server has actually been clicked (a card inside a group's mobile Group Console, or the
+  single-server dropdown once Dashboard itself is reachable). Of those eight, **Settings**,
+  **Mods**, **Map Management**, **Server Management**, and **Update Log** additionally
+  require the connecting token/key to be role `admin` (or no login requirement at all, in
+  which case every route is effectively admin) - **Dashboard**, **Analytics**, and
+  **Backup** stay available to any role, same as before. This is a deliberate gate, not
+  just a first-load default: a plain `selectView('console')` call still works even while
+  its nav button is hidden (so drilling in via a card always works), but nothing
+  pre-selects a server on load the way earlier versions of this page did - every one of
+  these views starts genuinely empty until you choose a server yourself, and once shown,
+  the whole group stays in the sidebar for the rest of that page's session even if the
+  server it was showing later disappears (e.g. that profile gets deleted), falling back to
+  Cluster Dashboard rather than hiding the tabs again:
   - **Cluster Dashboard** - a mobile-adapted version of the desktop Manager's own Cluster
     Dashboard page, not just a per-server card grid: one summary row per Dashboard group
     (ungrouped servers get their own "Ungrouped" row), same shape as the desktop version -
@@ -772,6 +774,24 @@ dedicated servers running on the same machine.
     also a size smaller there than on desktop, so a long line (a lot of the ARK log's own
     lines run long) wraps across fewer rows and more of the recent history fits in that
     fixed-height box at once.
+  - **Analytics** - the same CPU/RAM/Players sparkline chart as the Cluster Dashboard's own
+    per-group chart above, just fed one server's own history instead of several summed
+    together - literally the same `buildClusterChart`/`buildSparkline` drawing code, reused
+    rather than reimplemented. An **Enable stats collection for this server** checkbox
+    mirrors the desktop Analytics tab's own toggle (`ServerProfile.statsEnabled`); unlike
+    that checkbox, toggling it here is itself a profile write, so it goes through the same
+    admin-gated `POST /api/servers/:id/profile` route as Settings/Mods/Server Management and
+    is disabled client-side for any role below admin (the tab itself stays open to every
+    role, same as Dashboard/Backup - viewing an already-enabled server's history needs no
+    special permission). A `GET /api/servers/:id/stats` route (`readonly`, backed by the
+    same `readStatsHistory` the desktop Manager's own IPC channel calls) feeds the chart,
+    downsampled to the same 500-point budget and polled every 5s while the tab is open. Its
+    own **Time Scale** row (1m through All) is a separate button set and a separate
+    per-profile `localStorage` key from the Cluster Dashboard's, so picking a scale here
+    doesn't change what a group's own chart shows. Unlike the desktop tab, there's no
+    uptime/build-id/backup-schedule/mods-count summary here - those already live in
+    Dashboard's own Status box, Backup, and Mods respectively, so Analytics stays focused on
+    the one thing that's actually unique to it: the history chart.
   - **Backup** - a read-only-settings backup menu similar to the desktop app's Backups
     tab, always showing the server currently selected in Dashboard (no picker of its own -
     switching servers in Dashboard, including via a Cluster Dashboard card click, updates
@@ -812,9 +832,12 @@ dedicated servers running on the same machine.
     checkboxes, name, and mod ID table as the desktop tab, add/remove included. **Map
     Management** creates/lists/deletes `SavedArks/<folder>/<file>` placeholders. **Server
     Management** covers the startup/crash-watchdog/zombie-detection toggles, the cluster
-    console archive size, and the scheduled Restart/Dino Wipe day-and-time pickers (without
-    the desktop tab's live countdown - the checkboxes and time are what actually matter
-    remotely). **Update Log** is a read-only view of the last SteamCMD run's output,
+    console archive size, and the scheduled Restart/Dino Wipe day-and-time pickers, including
+    the same live "Next shutdown/dinowipe in: DD:HH:MM:SS" countdown as the desktop tab -
+    `computeNextOccurrence`/`formatCountdown` (`shared/scheduleTime.ts`) hand-ported into
+    this page's own vanilla-JS client script (which has no module system to import the real
+    ones from) and ticking once a second while this tab is open, same cadence as desktop.
+    **Update Log** is a read-only view of the last SteamCMD run's output,
     refreshing every few seconds while open, same as the desktop tab's live-updating
     version. Every field saves immediately on change (no separate Save button), each
     through its own `POST /api/servers/:id/profile` call (Mods and Server Management reuse
@@ -824,14 +847,14 @@ dedicated servers running on the same machine.
     what the sidebar does or doesn't show client-side, and still scoped by a token's
     per-profile access list the same as every other per-server route on this page.
   - Cluster Dashboard is always the tab this page opens on - there's no remembered-last-view
-    restore across reloads the way earlier versions of this page had. Dashboard, Backup, and
-    the five admin tabs above only ever enter the sidebar through an explicit click (a card
-    in a group's mobile Group Console, or the Dashboard view's own server dropdown once
-    that's reachable some other way) - nothing pre-selects a server on load, unlike before.
-    Once a server has been selected at least once this session, those tabs stay in the
-    sidebar even if the selection is later cleared (e.g. that profile got deleted or
-    hidden out from under the page) - only the currently active view falls back to Cluster
-    Dashboard in that case, not the whole sidebar collapsing back to just Cluster Dashboard.
+    restore across reloads the way earlier versions of this page had. The eight per-server
+    tabs above only ever enter the sidebar through an explicit click (a card in a group's
+    mobile Group Console, or the Dashboard view's own server dropdown once that's reachable
+    some other way) - nothing pre-selects a server on load, unlike before. Once a server has
+    been selected at least once this session, those tabs stay in the sidebar even if the
+    selection is later cleared (e.g. that profile got deleted or hidden out from under the
+    page) - only the currently active view falls back to Cluster Dashboard in that case, not
+    the whole sidebar collapsing back to just Cluster Dashboard.
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
     reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one
     specific local IP makes it reachable from other devices on your local network, which

@@ -15,7 +15,7 @@ import { getStatus, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches, readLogBacklog } from './logEvents'
 import { getGroupConsoleBacklog, watchGroupConsole } from './groupConsole'
-import { readClusterStatsHistory } from './statsHistory'
+import { readClusterStatsHistory, readStatsHistory } from './statsHistory'
 import {
   doStartServer,
   doStopServerConfirmSave,
@@ -203,7 +203,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         cpu: status.cpu ?? null,
         memoryMB: status.memoryMB ?? null,
         startedAt: status.startedAt ?? null,
-        gameVersion: getCachedGameVersion(profile.id)
+        gameVersion: getCachedGameVersion(profile.id),
+        statsEnabled: profile.statsEnabled
       }
     })
     sendJson(res, 200, servers)
@@ -335,6 +336,23 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         maxPoints
       )
     )
+    return
+  }
+
+  const serverStatsMatch = path.match(/^\/api\/servers\/([^/]+)\/stats$/)
+  if (req.method === 'GET' && serverStatsMatch) {
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
+    const profileId = decodeURIComponent(serverStatsMatch[1])
+    if (!listProfiles().some((p) => p.id === profileId) || !hasProfileAccess(auth, profileId)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    const sinceParam = url.searchParams.get('since')
+    const sinceMs = sinceParam === null || sinceParam === 'null' ? null : Number(sinceParam)
+    const maxPointsParam = url.searchParams.get('maxPoints')
+    const maxPoints = maxPointsParam !== null ? Number(maxPointsParam) : undefined
+    sendJson(res, 200, readStatsHistory(profileId, Number.isFinite(sinceMs) ? sinceMs : null, maxPoints))
     return
   }
 
@@ -1082,10 +1100,10 @@ const DASHBOARD_HTML = `<!doctype html>
   <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
   <hr class="nav-sep" />
   <button id="nav-console" class="nav-btn" type="button">Dashboard</button>
-  <button id="nav-backup" class="nav-btn" type="button">Backup</button>
-  <hr class="nav-sep" />
+  <button id="nav-analytics" class="nav-btn" type="button">Analytics</button>
   <button id="nav-settings" class="nav-btn" type="button">Settings</button>
   <button id="nav-mods" class="nav-btn" type="button">Mods</button>
+  <button id="nav-backup" class="nav-btn" type="button">Backup</button>
   <button id="nav-mapmanagement" class="nav-btn" type="button">Map Management</button>
   <button id="nav-servermanagement" class="nav-btn" type="button">Server Management</button>
   <button id="nav-updatelog" class="nav-btn" type="button">Update Log</button>
@@ -1174,6 +1192,35 @@ const DASHBOARD_HTML = `<!doctype html>
       </div>
     </main>
   </section>
+  <section id="view-analytics" class="view">
+    <header>
+      <h1>Analytics</h1>
+      <span id="analytics-server-name"></span>
+    </header>
+    <main>
+      <p id="analytics-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <div id="analytics-content" class="admin-tab-content">
+        <label class="checkbox">
+          <input id="analytics-statsenabled" type="checkbox" /> Enable stats collection for this server
+        </label>
+        <div id="analytics-time-scale" class="cluster-time-scale">
+          <span>Time Scale</span>
+          <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="60000">1m</button>
+          <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="300000">5m</button>
+          <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="900000">15m</button>
+          <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="3600000">1h</button>
+          <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="21600000">6h</button>
+          <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="43200000">12h</button>
+          <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="86400000">24h</button>
+          <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="null">All</button>
+        </div>
+        <p id="analytics-disabled-note" class="empty-state" style="display: none">
+          Stats collection is off for this server - enable it above to start recording CPU/RAM/player history.
+        </p>
+        <div id="analytics-chart"></div>
+      </div>
+    </main>
+  </section>
   <section id="view-backup" class="view">
     <header>
       <h1>Backup</h1>
@@ -1221,7 +1268,7 @@ const DASHBOARD_HTML = `<!doctype html>
           </label>
           <label>
             Install directory
-            <input id="settings-installdir" placeholder="C:\ARK\Server" />
+            <input id="settings-installdir" placeholder="C:\\ARK\\Server" />
           </label>
           <div class="settings-grid2">
             <label>
@@ -1407,6 +1454,7 @@ const DASHBOARD_HTML = `<!doctype html>
           <div id="sm-restart-days" class="settings-days-row"></div>
           <label class="checkbox"><input id="sm-restart-updateafter" type="checkbox" /> Update server from steam after shutdown</label>
           <label class="checkbox"><input id="sm-restart-startafter" type="checkbox" /> Start server after shutdown</label>
+          <p id="sm-restart-countdown" class="empty-state">Next shutdown in: --:--:--:--</p>
         </section>
         <section class="settings-section">
           <h3>Dino Wipe</h3>
@@ -1415,6 +1463,7 @@ const DASHBOARD_HTML = `<!doctype html>
             <input id="sm-dinowipe-time" type="time" />
           </div>
           <div id="sm-dinowipe-days" class="settings-days-row"></div>
+          <p id="sm-dinowipe-countdown" class="empty-state">Next dinowipe in: --:--:--:--</p>
         </section>
         <p id="servermanagement-error" class="error-message" style="display: none"></p>
       </form>
@@ -1690,6 +1739,7 @@ function initDashboard(resolvedRole) {
 
   var navClusterBtn = document.getElementById('nav-cluster');
   var navConsoleBtn = document.getElementById('nav-console');
+  var navAnalyticsBtn = document.getElementById('nav-analytics');
   var navBackupBtn = document.getElementById('nav-backup');
   var navSettingsBtn = document.getElementById('nav-settings');
   var navModsBtn = document.getElementById('nav-mods');
@@ -1698,6 +1748,7 @@ function initDashboard(resolvedRole) {
   var navUpdateLogBtn = document.getElementById('nav-updatelog');
   var viewClusterEl = document.getElementById('view-cluster');
   var viewConsoleEl = document.getElementById('view-console');
+  var viewAnalyticsEl = document.getElementById('view-analytics');
   var viewBackupEl = document.getElementById('view-backup');
   var viewSettingsEl = document.getElementById('view-settings');
   var viewModsEl = document.getElementById('view-mods');
@@ -1772,12 +1823,14 @@ function initDashboard(resolvedRole) {
   // contact, not hiding a tab whose view still works fine with "no server selected".
   var serverEverSelected = false;
   navConsoleBtn.style.display = 'none';
+  navAnalyticsBtn.style.display = 'none';
   navBackupBtn.style.display = 'none';
   adminNavBtns.forEach(function (btn) { btn.style.display = 'none'; });
   function revealServerScopedNav() {
     if (serverEverSelected) return;
     serverEverSelected = true;
     navConsoleBtn.style.display = '';
+    navAnalyticsBtn.style.display = '';
     if (role !== 'readonly') navBackupBtn.style.display = '';
     if (!role || canAdmin) adminNavBtns.forEach(function (btn) { btn.style.display = ''; });
   }
@@ -1811,6 +1864,7 @@ function initDashboard(resolvedRole) {
   function applyActiveView() {
     navClusterBtn.classList.toggle('active', activeView === 'cluster');
     navConsoleBtn.classList.toggle('active', activeView === 'console');
+    navAnalyticsBtn.classList.toggle('active', activeView === 'analytics');
     navBackupBtn.classList.toggle('active', activeView === 'backup');
     navSettingsBtn.classList.toggle('active', activeView === 'settings');
     navModsBtn.classList.toggle('active', activeView === 'mods');
@@ -1819,12 +1873,14 @@ function initDashboard(resolvedRole) {
     navUpdateLogBtn.classList.toggle('active', activeView === 'updatelog');
     viewClusterEl.classList.toggle('active', activeView === 'cluster');
     viewConsoleEl.classList.toggle('active', activeView === 'console');
+    viewAnalyticsEl.classList.toggle('active', activeView === 'analytics');
     viewBackupEl.classList.toggle('active', activeView === 'backup');
     viewSettingsEl.classList.toggle('active', activeView === 'settings');
     viewModsEl.classList.toggle('active', activeView === 'mods');
     viewMapManagementEl.classList.toggle('active', activeView === 'mapmanagement');
     viewServerManagementEl.classList.toggle('active', activeView === 'servermanagement');
     viewUpdateLogEl.classList.toggle('active', activeView === 'updatelog');
+    if (activeView === 'analytics') loadAnalyticsView();
     if (activeView === 'backup') loadBackupView();
     if (activeView === 'settings') loadSettingsView();
     if (activeView === 'mods') loadModsView();
@@ -1839,6 +1895,7 @@ function initDashboard(resolvedRole) {
   }
   navClusterBtn.addEventListener('click', function () { selectView('cluster'); });
   navConsoleBtn.addEventListener('click', function () { selectView('console'); });
+  navAnalyticsBtn.addEventListener('click', function () { selectView('analytics'); });
   navBackupBtn.addEventListener('click', function () { selectView('backup'); });
   navSettingsBtn.addEventListener('click', function () { selectView('settings'); });
   navModsBtn.addEventListener('click', function () { selectView('mods'); });
@@ -2776,6 +2833,133 @@ function initDashboard(resolvedRole) {
     return select.options[select.selectedIndex] ? select.options[select.selectedIndex].textContent : '';
   }
 
+  // -- Analytics ------------------------------------------------------------------------
+  // Per-server CPU/RAM/Players history chart - same GET /api/servers/:id/stats route (backed
+  // by src/main/lib/statsHistory.ts's readStatsHistory) and the same buildClusterChart/
+  // buildSparkline drawing code the Cluster Dashboard's own combined chart already uses
+  // above, just fed one server's own samples instead of several summed together. Available
+  // to any role (like Dashboard/Backup) - only toggling "Enable stats" itself requires admin,
+  // since that's a profile field change going through the same admin-gated
+  // POST /api/servers/:id/profile route as Settings/Mods/Server Management.
+  var analyticsServerNameEl = document.getElementById('analytics-server-name');
+  var analyticsNoServerEl = document.getElementById('analytics-no-server');
+  var analyticsContentEl = document.getElementById('analytics-content');
+  var analyticsStatsEnabledInput = document.getElementById('analytics-statsenabled');
+  var analyticsDisabledNoteEl = document.getElementById('analytics-disabled-note');
+  var analyticsChartEl = document.getElementById('analytics-chart');
+  var analyticsScaleButtons = Array.prototype.slice.call(document.querySelectorAll('.analytics-scale-btn'));
+  if (role && !canAdmin) analyticsStatsEnabledInput.disabled = true;
+
+  function analyticsScaleKey(id) {
+    return 'web-dashboard-analytics-stats-scale:' + id;
+  }
+
+  function loadStoredAnalyticsScale(id) {
+    var raw = null;
+    try { raw = localStorage.getItem(analyticsScaleKey(id)); } catch (err) { /* storage unavailable */ }
+    if (raw === null) return STATS_DEFAULT_SCALE_MS;
+    var parsed = raw === 'null' ? null : Number(raw);
+    var known = STATS_TIME_SCALES.some(function (s) { return s.ms === parsed; });
+    return known ? parsed : STATS_DEFAULT_SCALE_MS;
+  }
+
+  function saveStoredAnalyticsScale(id, ms) {
+    try { localStorage.setItem(analyticsScaleKey(id), ms === null ? 'null' : String(ms)); } catch (err) { /* storage unavailable - not fatal */ }
+  }
+
+  var analyticsScale = STATS_DEFAULT_SCALE_MS;
+
+  function updateAnalyticsScaleButtons() {
+    analyticsScaleButtons.forEach(function (btn) {
+      btn.classList.toggle('active', scaleFromButton(btn) === analyticsScale);
+    });
+  }
+
+  analyticsScaleButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (!currentId) return;
+      analyticsScale = scaleFromButton(btn);
+      saveStoredAnalyticsScale(currentId, analyticsScale);
+      updateAnalyticsScaleButtons();
+      refreshAnalyticsChart();
+    });
+  });
+
+  function refreshAnalyticsChart() {
+    var id = currentId;
+    if (!id) return;
+    var sinceMs = analyticsScale === null ? null : Date.now() - analyticsScale;
+    var url = '/api/servers/' + encodeURIComponent(id) + '/stats?maxPoints=' + STATS_MAX_POINTS;
+    url += '&since=' + (sinceMs === null ? 'null' : sinceMs);
+    fetch(url)
+      .then(function (r) { return r.json(); })
+      .then(function (history) {
+        if (id !== currentId || activeView !== 'analytics') return;
+        analyticsChartEl.innerHTML = '';
+        if (history.length === 0) {
+          var empty = document.createElement('p');
+          empty.className = 'empty-state';
+          empty.textContent = 'Collecting data... check back in a few seconds.';
+          analyticsChartEl.appendChild(empty);
+          return;
+        }
+        var windowMs = analyticsScale !== null ? analyticsScale : Math.max(1, Date.now() - history[0].time);
+        analyticsChartEl.appendChild(buildClusterChart(history, windowMs, Date.now()));
+      });
+  }
+
+  function loadAnalyticsView() {
+    var id = currentId;
+    if (!id) {
+      analyticsServerNameEl.textContent = '';
+      analyticsNoServerEl.style.display = '';
+      analyticsContentEl.classList.remove('active');
+      return;
+    }
+    analyticsNoServerEl.style.display = 'none';
+    analyticsContentEl.classList.add('active');
+    analyticsServerNameEl.textContent = currentServerLabel();
+    analyticsScale = loadStoredAnalyticsScale(id);
+    updateAnalyticsScaleButtons();
+    var server = latestServers.filter(function (s) { return s.id === id; })[0];
+    var statsEnabled = server ? !!server.statsEnabled : false;
+    analyticsStatsEnabledInput.checked = statsEnabled;
+    analyticsDisabledNoteEl.style.display = statsEnabled ? 'none' : '';
+    analyticsChartEl.innerHTML = '';
+    if (statsEnabled) refreshAnalyticsChart();
+  }
+
+  analyticsStatsEnabledInput.addEventListener('change', function () {
+    if (!currentId) return;
+    var id = currentId;
+    var checked = analyticsStatsEnabledInput.checked;
+    fetch('/api/servers/' + encodeURIComponent(id) + '/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ statsEnabled: checked })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) {
+          analyticsStatsEnabledInput.checked = !checked;
+          showToast('Error: ' + (result.error || 'Save failed'));
+          return;
+        }
+        if (id !== currentId) return;
+        analyticsDisabledNoteEl.style.display = checked ? 'none' : '';
+        analyticsChartEl.innerHTML = '';
+        if (checked) refreshAnalyticsChart();
+      })
+      .catch(function () {
+        analyticsStatsEnabledInput.checked = !checked;
+        showToast('Request failed');
+      });
+  });
+
+  setInterval(function () {
+    if (activeView === 'analytics' && currentId && analyticsStatsEnabledInput.checked) refreshAnalyticsChart();
+  }, 5000);
+
   // -- Update Log --------------------------------------------------------------------
   var updatelogServerNameEl = document.getElementById('updatelog-server-name');
   var updatelogNoServerEl = document.getElementById('updatelog-no-server');
@@ -3063,7 +3247,68 @@ function initDashboard(resolvedRole) {
   var smDinoWipeEnabled = document.getElementById('sm-dinowipe-enabled');
   var smDinoWipeTime = document.getElementById('sm-dinowipe-time');
   var smDinoWipeDaysEl = document.getElementById('sm-dinowipe-days');
+  var smRestartCountdownEl = document.getElementById('sm-restart-countdown');
+  var smDinoWipeCountdownEl = document.getElementById('sm-dinowipe-countdown');
   var smProfile = null;
+
+  // Ported from shared/scheduleTime.ts - the client script here is plain JS with no module
+  // imports, so this stays a hand-kept copy rather than sharing the source file; the tests
+  // for the real one (tests/scheduleTime.test.ts) are the source of truth for the math.
+  // NOTE: this whole client script is itself the *value* of a JS template literal
+  // (DASHBOARD_HTML, back in the outer main-process source) - an unescaped backslash-d,
+  // backslash-w, backslash-s etc. here gets its backslash silently stripped by THAT outer
+  // template literal's own string parsing before this text ever reaches the browser (a
+  // template literal containing just backslash-d evaluates to the plain string "d" in JS),
+  // so every backslash in a regex below must be doubled to survive that one extra layer of
+  // parsing intact.
+  function parseScheduleTime(time) {
+    var match = /^([01]\\d|2[0-3]):([0-5]\\d)$/.exec(time || '');
+    if (!match) return null;
+    return { hour: Number(match[1]), minute: Number(match[2]) };
+  }
+
+  function computeNextOccurrence(now, time, days) {
+    var parsed = parseScheduleTime(time);
+    if (!parsed || !days || days.length === 0) return null;
+    for (var offset = 0; offset <= 7; offset++) {
+      var candidate = new Date(now);
+      candidate.setDate(now.getDate() + offset);
+      candidate.setHours(parsed.hour, parsed.minute, 0, 0);
+      if (candidate <= now) continue;
+      if (days.indexOf(candidate.getDay()) !== -1) return candidate;
+    }
+    return null;
+  }
+
+  function formatCountdown(ms) {
+    var clamped = Math.max(0, ms);
+    var totalSeconds = Math.floor(clamped / 1000);
+    var seconds = totalSeconds % 60;
+    var totalMinutes = Math.floor(totalSeconds / 60);
+    var minutes = totalMinutes % 60;
+    var totalHours = Math.floor(totalMinutes / 60);
+    var hours = totalHours % 24;
+    var days = Math.floor(totalHours / 24);
+    function pad(n) { return String(n).padStart(2, '0'); }
+    return pad(days) + ':' + pad(hours) + ':' + pad(minutes) + ':' + pad(seconds);
+  }
+
+  function updateSmCountdowns() {
+    if (!smProfile) return;
+    var now = new Date();
+    var restartNext = smProfile.scheduledRestartEnabled
+      ? computeNextOccurrence(now, smProfile.scheduledRestartTime, smProfile.scheduledRestartDays)
+      : null;
+    smRestartCountdownEl.textContent = 'Next shutdown in: ' + (restartNext ? formatCountdown(restartNext.getTime() - now.getTime()) : '--:--:--:--');
+    var dinoWipeNext = smProfile.scheduledDinoWipeEnabled
+      ? computeNextOccurrence(now, smProfile.scheduledDinoWipeTime, smProfile.scheduledDinoWipeDays)
+      : null;
+    smDinoWipeCountdownEl.textContent = 'Next dinowipe in: ' + (dinoWipeNext ? formatCountdown(dinoWipeNext.getTime() - now.getTime()) : '--:--:--:--');
+  }
+
+  setInterval(function () {
+    if (activeView === 'servermanagement') updateSmCountdowns();
+  }, 1000);
 
   function buildDayCheckboxes(container, days, onChange) {
     container.innerHTML = '';
@@ -3141,6 +3386,7 @@ function initDashboard(resolvedRole) {
       days.sort(function (a, b) { return a - b; });
       saveSmField('scheduledDinoWipeDays', days);
     });
+    updateSmCountdowns();
   }
 
   function loadServerManagementView() {
@@ -3540,13 +3786,14 @@ function initDashboard(resolvedRole) {
     postServerAction('stop-update-restart');
   });
 
-  var SERVER_SCOPED_VIEWS = ['console', 'backup', 'settings', 'mods', 'mapmanagement', 'servermanagement', 'updatelog'];
+  var SERVER_SCOPED_VIEWS = ['console', 'analytics', 'backup', 'settings', 'mods', 'mapmanagement', 'servermanagement', 'updatelog'];
 
   function selectServer(id) {
     if (id === currentId) return;
     currentId = id;
     if (id) revealServerScopedNav();
     backupShowAll = false;
+    if (activeView === 'analytics') loadAnalyticsView();
     if (activeView === 'backup') loadBackupView();
     if (activeView === 'settings') loadSettingsView();
     if (activeView === 'mods') loadModsView();

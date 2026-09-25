@@ -278,7 +278,8 @@ describe('web dashboard HTTP server', () => {
         cpu: 12.3,
         memoryMB: 512,
         startedAt: null,
-        gameVersion: null
+        gameVersion: null,
+        statsEnabled: undefined
       },
       {
         id: 'p2',
@@ -289,7 +290,8 @@ describe('web dashboard HTTP server', () => {
         cpu: 12.3,
         memoryMB: 512,
         startedAt: null,
-        gameVersion: '92.28'
+        gameVersion: '92.28',
+        statsEnabled: undefined
       }
     ])
   })
@@ -665,6 +667,20 @@ describe('web dashboard HTTP server', () => {
 
       const listedAfter = await request('/api/servers/p1/mapfolders')
       expect(JSON.parse(listedAfter.body)).toEqual([])
+    })
+
+    // Unlike its siblings above, this route only requires 'readonly' - the Analytics tab
+    // that reads it is available to any role, not just admin (only toggling Enable Stats
+    // itself, a profile field change, goes through the admin-gated /profile route).
+    it('GET /api/servers/:id/stats returns an empty array before any samples are recorded', async () => {
+      const res = await request('/api/servers/p1/stats')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual([])
+    })
+
+    it('GET /api/servers/:id/stats 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/stats')
+      expect(res.status).toBe(404)
     })
   })
 })

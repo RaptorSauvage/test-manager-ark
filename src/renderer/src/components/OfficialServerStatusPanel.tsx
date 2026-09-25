@@ -30,7 +30,6 @@ export default function OfficialServerStatusPanel(): JSX.Element {
           {loading ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
-      <p className="empty-state">Live status feed from Wildcard&apos;s official ARK:SA servers.</p>
       {error && <p className="error-message">{error}</p>}
       {data && (
         <p className="official-status-line">
