@@ -43,6 +43,21 @@ export function registerWebDashboardAccessTokensHandlers(): void {
     }
   )
 
+  ipcMain.handle(
+    IPC.webDashboardAccessTokensUpdate,
+    (_event, id: string, updates: { label?: string; role?: WebDashboardRole; profileIds?: string[] | null }) => {
+      const existing = listWebDashboardAccessTokens().find((t) => t.id === id)
+      if (!existing) throw new Error('Unknown access token')
+      const label = updates.label !== undefined ? updates.label.trim() : existing.label
+      if (!label) throw new Error('Label is required')
+      const role = updates.role ?? existing.role
+      const profileIds = updates.profileIds !== undefined ? updates.profileIds : existing.profileIds
+      const normalizedProfileIds = profileIds && profileIds.length > 0 ? profileIds : null
+      saveWebDashboardAccessToken({ ...existing, label, role, profileIds: normalizedProfileIds })
+      return listSummaries()
+    }
+  )
+
   ipcMain.handle(IPC.webDashboardAccessTokensDelete, (_event, id: string) => {
     return deleteWebDashboardAccessToken(id).map(toSummary)
   })

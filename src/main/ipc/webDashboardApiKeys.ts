@@ -27,6 +27,19 @@ export function registerWebDashboardApiKeysHandlers(): void {
     return { key: buildApiKey(id, secret), keys: listSummaries() }
   })
 
+  ipcMain.handle(
+    IPC.webDashboardApiKeysUpdate,
+    (_event, id: string, updates: { label?: string; role?: WebDashboardRole }) => {
+      const existing = listWebDashboardApiKeys().find((k) => k.id === id)
+      if (!existing) throw new Error('Unknown API key')
+      const label = updates.label !== undefined ? updates.label.trim() : existing.label
+      if (!label) throw new Error('Label is required')
+      const role = updates.role ?? existing.role
+      saveWebDashboardApiKey({ ...existing, label, role })
+      return listSummaries()
+    }
+  )
+
   ipcMain.handle(IPC.webDashboardApiKeysDelete, (_event, id: string) => {
     return deleteWebDashboardApiKey(id).map(toSummary)
   })

@@ -121,11 +121,15 @@ const api: Api = {
     list: () => ipcRenderer.invoke(IPC.webDashboardAccessTokensList),
     create: (label: string, role: WebDashboardRole, profileIds: string[] | null) =>
       ipcRenderer.invoke(IPC.webDashboardAccessTokensCreate, label, role, profileIds),
+    update: (id: string, updates: { label?: string; role?: WebDashboardRole; profileIds?: string[] | null }) =>
+      ipcRenderer.invoke(IPC.webDashboardAccessTokensUpdate, id, updates),
     delete: (id: string) => ipcRenderer.invoke(IPC.webDashboardAccessTokensDelete, id)
   },
   webDashboardApiKeys: {
     list: () => ipcRenderer.invoke(IPC.webDashboardApiKeysList),
     create: (label: string, role: WebDashboardRole) => ipcRenderer.invoke(IPC.webDashboardApiKeysCreate, label, role),
+    update: (id: string, updates: { label?: string; role?: WebDashboardRole }) =>
+      ipcRenderer.invoke(IPC.webDashboardApiKeysUpdate, id, updates),
     delete: (id: string) => ipcRenderer.invoke(IPC.webDashboardApiKeysDelete, id)
   },
   system: {

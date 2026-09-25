@@ -28,6 +28,13 @@ interface StoreSchema {
   webDashboardAccessTokens: WebDashboardAccessToken[]
   /** Web dashboard API keys - only touched from the Manager's own Settings screen. */
   webDashboardApiKeys: WebDashboardApiKey[]
+  /** Set once the pre-4-tier-role migration (legacy 'admin' -> globalAdmin, 'operator' ->
+   *  moderator) has actually been written back to the two lists above. Must run at most
+   *  once, ever: 'admin' is now also the current, intentional value for the new scoped
+   *  Admin tier, so re-running this migration on every read (as an earlier version of this
+   *  code did) would keep silently promoting every freshly-created Admin token to Global
+   *  Admin forever, which is exactly backwards. */
+  webDashboardRolesMigrated: boolean
 }
 
 const store = new Store<StoreSchema>({
@@ -50,9 +57,23 @@ const store = new Store<StoreSchema>({
     runningPids: {},
     runningStartedAt: {},
     webDashboardAccessTokens: [],
-    webDashboardApiKeys: []
+    webDashboardApiKeys: [],
+    webDashboardRolesMigrated: false
   }
 })
+
+/** Runs the legacy-role migration exactly once, persisting the result immediately so it
+ *  never runs again - see the webDashboardRolesMigrated doc comment above for why running
+ *  it more than once would be actively harmful. Safe to call from both list functions
+ *  below; the stored flag makes every call after the first a no-op. */
+function migrateStoredRolesOnce(): void {
+  if (store.get('webDashboardRolesMigrated')) return
+  const tokens = (store.get('webDashboardAccessTokens') ?? []).map((t) => ({ ...t, role: migrateLegacyRole(t.role) }))
+  const keys = (store.get('webDashboardApiKeys') ?? []).map((k) => ({ ...k, role: migrateLegacyRole(k.role) }))
+  store.set('webDashboardAccessTokens', tokens)
+  store.set('webDashboardApiKeys', keys)
+  store.set('webDashboardRolesMigrated', true)
+}
 
 export function listProfiles(): ServerProfile[] {
   return store.get('profiles').map(migrateProfile)
@@ -121,7 +142,8 @@ export function saveSettings(settings: AppSettings): AppSettings {
 }
 
 export function listWebDashboardAccessTokens(): WebDashboardAccessToken[] {
-  return (store.get('webDashboardAccessTokens') ?? []).map((t) => ({ ...t, role: migrateLegacyRole(t.role) }))
+  migrateStoredRolesOnce()
+  return store.get('webDashboardAccessTokens') ?? []
 }
 
 export function saveWebDashboardAccessToken(token: WebDashboardAccessToken): WebDashboardAccessToken[] {
@@ -140,7 +162,8 @@ export function deleteWebDashboardAccessToken(id: string): WebDashboardAccessTok
 }
 
 export function listWebDashboardApiKeys(): WebDashboardApiKey[] {
-  return (store.get('webDashboardApiKeys') ?? []).map((k) => ({ ...k, role: migrateLegacyRole(k.role) }))
+  migrateStoredRolesOnce()
+  return store.get('webDashboardApiKeys') ?? []
 }
 
 export function saveWebDashboardApiKey(key: WebDashboardApiKey): WebDashboardApiKey[] {

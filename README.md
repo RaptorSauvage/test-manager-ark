@@ -567,7 +567,11 @@ dedicated servers running on the same machine.
   large if nothing ever collects enough data to hit it. The check only runs at most once
   every 5 minutes (and only once something has actually been read into memory), so it
   doesn't rewrite the file on every single sample. Set it to 0 to disable age-based
-  trimming and fall back to the size cap alone. This is also where the **web dashboard** is
+  trimming and fall back to the size cap alone. The app-wide Settings screen itself is
+  organized into four sub-tabs - **General** (Data & Storage, Startup & Safety), **Web
+  Dashboard**, **Access Tokens** (both the access token and API key lists, described below),
+  and **Updates** - rather than one long scrolling page, so a specific setting is a click
+  away instead of a scroll. This is also where the **web dashboard** is
   enabled - the only place in this app for a live console feed and RCON, on purpose (the
   desktop app itself has no console/RCON tab). It's a plain HTTP server built into the
   Manager (no separate process), serving a page with a sidebar that starts with, in order,
@@ -970,8 +974,13 @@ dedicated servers running on the same machine.
       A token created before this four-tier split existed keeps working exactly as it did:
       a stored `admin` role becomes **Global Admin** (it already meant unrestricted access
       before per-server scoping existed) and a stored `operator` role becomes **Moderator**,
-      both migrated automatically the moment the Manager reads them, no action needed. Role
-      checks happen on the server for every route regardless of what the page shows - the
+      migrated automatically the first time the Manager reads the stored lists after
+      updating, no action needed - and, critically, only that once, ever: a token created
+      afterward with the (also now-legitimate) `admin` role is never itself touched by this
+      migration, so creating a new **Admin** token keeps it exactly that, not silently
+      promoted to Global Admin the way an earlier version of this migration incorrectly did
+      on every single read. Role checks happen on the server for every route regardless of
+      what the page shows - the
       client-side hiding is just so a role never sees a button that would fail if clicked. A
       token's full value (`ark_<id>_<secret>`) is shown exactly once, right after creating it
       - only its hash is ever stored, so a lost token can't be recovered, only revoked and
@@ -995,6 +1004,14 @@ dedicated servers running on the same machine.
       token's scope gets the same 404 as a genuinely unknown server, rather than exposing
       that the server exists at all. The tokens table shows each one's scope as "All" or the
       list of server names it's restricted to.
+    - An existing token's role and server scope (and an API key's role) can be changed any
+      time via **Edit** in its table row, which swaps that row for the same role/scope
+      picker the create form uses, with **Save**/**Cancel** in place of the label/Create
+      button - no need to delete and recreate a token just to widen or narrow what it can
+      do. Saving only ever changes the role/scope fields; the token's own secret (and so the
+      value already pasted into a browser, or configured into a bot) is untouched, so editing
+      permissions never logs anyone out or breaks an existing integration the way
+      delete-and-recreate would.
     - **API keys** (also managed only from this Settings screen, kept as their own separate
       list from access tokens) are the same idea, but for scripts/bots that call the
       dashboard's HTTP API directly rather than a person's browser - e.g. a Discord bot
@@ -1003,7 +1020,8 @@ dedicated servers running on the same machine.
       servers the way access tokens can be), and is sent as `Authorization: Bearer <key>`
       exactly like an access token is - the server checks a presented Bearer credential
       against both lists, so either kind works anywhere the other does. A key's full value is
-      shown exactly once at creation, same as an access token.
+      shown exactly once at creation, same as an access token, and its role can likewise be
+      changed any time via **Edit** without touching its secret.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), No Transfer From Filtering (`-NoTransferFromFiltering`), and External IP

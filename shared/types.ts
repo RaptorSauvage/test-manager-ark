@@ -426,10 +426,12 @@ export const IPC = {
 
   webDashboardAccessTokensList: 'web-dashboard-access-tokens:list',
   webDashboardAccessTokensCreate: 'web-dashboard-access-tokens:create',
+  webDashboardAccessTokensUpdate: 'web-dashboard-access-tokens:update',
   webDashboardAccessTokensDelete: 'web-dashboard-access-tokens:delete',
 
   webDashboardApiKeysList: 'web-dashboard-api-keys:list',
   webDashboardApiKeysCreate: 'web-dashboard-api-keys:create',
+  webDashboardApiKeysUpdate: 'web-dashboard-api-keys:update',
   webDashboardApiKeysDelete: 'web-dashboard-api-keys:delete',
 
   appOpenProfilesFolder: 'app:open-profiles-folder',
@@ -650,6 +652,13 @@ export interface Api {
       role: WebDashboardRole,
       profileIds: string[] | null
     ) => Promise<{ token: string; tokens: WebDashboardAccessTokenSummary[] }>
+    /** Changes an existing token's role/label/server scope in place - the token's own
+     *  secret (and so the value already pasted into a browser) is untouched, so this never
+     *  logs anyone out the way delete-and-recreate would. */
+    update: (
+      id: string,
+      updates: { label?: string; role?: WebDashboardRole; profileIds?: string[] | null }
+    ) => Promise<WebDashboardAccessTokenSummary[]>
     delete: (id: string) => Promise<WebDashboardAccessTokenSummary[]>
   }
   webDashboardApiKeys: {
@@ -657,6 +666,9 @@ export interface Api {
     /** Resolves with the full plaintext key, shown to the user exactly once - only its
      *  hash is ever stored, so it can't be retrieved again after this. */
     create: (label: string, role: WebDashboardRole) => Promise<{ key: string; keys: WebDashboardApiKeySummary[] }>
+    /** Same idea as webDashboardAccessTokens.update - changes role/label without touching
+     *  the key's own secret. */
+    update: (id: string, updates: { label?: string; role?: WebDashboardRole }) => Promise<WebDashboardApiKeySummary[]>
     delete: (id: string) => Promise<WebDashboardApiKeySummary[]>
   }
   system: {

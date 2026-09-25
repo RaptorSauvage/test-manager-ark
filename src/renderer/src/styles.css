@@ -1276,6 +1276,19 @@ label.checkbox {
   justify-content: flex-end;
 }
 
+.accounts-row-editing td {
+  vertical-align: top;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.accounts-row-edit-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .cluster-section {
   background: var(--panel);
   border: 1px solid var(--border);

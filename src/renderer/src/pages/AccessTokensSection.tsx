@@ -1,6 +1,83 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ServerProfile, WebDashboardAccessTokenSummary, WebDashboardRole } from '@shared/types'
 
+const ROLE_LABELS: Record<WebDashboardRole, string> = {
+  globalAdmin: 'Global Admin',
+  admin: 'Admin',
+  moderator: 'Moderator',
+  readonly: 'Read-only'
+}
+
+const ROLE_OPTIONS: WebDashboardRole[] = ['globalAdmin', 'admin', 'moderator', 'readonly']
+
+/**
+ * A reusable role + per-server-scope picker - the same two controls used both when creating
+ * a token and when editing an existing one's permissions, so the two forms can't drift out
+ * of sync with each other.
+ */
+function RoleAndScopePicker({
+  role,
+  onRoleChange,
+  selectedProfileIds,
+  onToggleProfile,
+  profiles,
+  pickerOpen,
+  onTogglePicker,
+  pickerRef
+}: {
+  role: WebDashboardRole
+  onRoleChange: (role: WebDashboardRole) => void
+  selectedProfileIds: string[]
+  onToggleProfile: (id: string) => void
+  profiles: ServerProfile[]
+  pickerOpen: boolean
+  onTogglePicker: () => void
+  pickerRef: React.RefObject<HTMLDivElement>
+}): JSX.Element {
+  function profileName(id: string): string {
+    return profiles.find((p) => p.id === id)?.name ?? id
+  }
+
+  const pickerSummary =
+    selectedProfileIds.length === 0
+      ? 'All servers'
+      : selectedProfileIds.length === 1
+        ? profileName(selectedProfileIds[0])
+        : `${selectedProfileIds.length} servers`
+
+  return (
+    <>
+      <select value={role} onChange={(e) => onRoleChange(e.target.value as WebDashboardRole)}>
+        {ROLE_OPTIONS.map((r) => (
+          <option key={r} value={r}>
+            {ROLE_LABELS[r]}
+          </option>
+        ))}
+      </select>
+      <div className="server-picker" ref={pickerRef}>
+        <button type="button" className="server-picker-toggle" disabled={role === 'globalAdmin'} onClick={onTogglePicker}>
+          {role === 'globalAdmin' ? 'All servers' : pickerSummary}
+          <span className="server-picker-caret">▾</span>
+        </button>
+        {pickerOpen && role !== 'globalAdmin' && (
+          <div className="server-picker-menu">
+            {profiles.length === 0 ? (
+              <p className="empty-state">No servers yet.</p>
+            ) : (
+              profiles.map((p) => (
+                <label key={p.id} className="checkbox server-picker-option">
+                  <input type="checkbox" checked={selectedProfileIds.includes(p.id)} onChange={() => onToggleProfile(p.id)} />
+                  {p.name}
+                </label>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
 /**
  * Web dashboard browser access tokens - what replaces logging in. Pasted once into a
  * browser (stored in that browser's own localStorage, never a cookie/session), then sent
@@ -8,7 +85,9 @@ import type { ServerProfile, WebDashboardAccessTokenSummary, WebDashboardRole } 
  * screen, never from the dashboard page itself - kept as its own separate list from the
  * API keys below, which are for scripts/bots rather than a person's browser. A newly
  * created token's full value is shown exactly once (only its hash is ever stored, so it
- * can't be retrieved again) - a lost token has to be revoked and recreated.
+ * can't be retrieved again) - a lost token has to be revoked and recreated. An existing
+ * token's role/server scope can be changed in place (Edit) without touching its secret, so
+ * changing what a token can do never logs out whoever already has it pasted in.
  */
 export default function AccessTokensSection(): JSX.Element {
   const [tokens, setTokens] = useState<WebDashboardAccessTokenSummary[]>([])
@@ -20,6 +99,14 @@ export default function AccessTokensSection(): JSX.Element {
   const [error, setError] = useState('')
   const [newToken, setNewToken] = useState('')
   const pickerRef = useRef<HTMLDivElement>(null)
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editRole, setEditRole] = useState<WebDashboardRole>('moderator')
+  const [editProfileIds, setEditProfileIds] = useState<string[]>([])
+  const [editPickerOpen, setEditPickerOpen] = useState(false)
+  const [editError, setEditError] = useState('')
+  const [editBusy, setEditBusy] = useState(false)
+  const editPickerRef = useRef<HTMLDivElement>(null)
 
   function reload(): void {
     window.api.webDashboardAccessTokens.list().then(setTokens)
@@ -39,6 +126,15 @@ export default function AccessTokensSection(): JSX.Element {
     return () => document.removeEventListener('mousedown', onOutsideClick)
   }, [pickerOpen])
 
+  useEffect(() => {
+    if (!editPickerOpen) return
+    function onOutsideClick(e: MouseEvent): void {
+      if (editPickerRef.current && !editPickerRef.current.contains(e.target as Node)) setEditPickerOpen(false)
+    }
+    document.addEventListener('mousedown', onOutsideClick)
+    return () => document.removeEventListener('mousedown', onOutsideClick)
+  }, [editPickerOpen])
+
   function profileName(id: string): string {
     return profiles.find((p) => p.id === id)?.name ?? id
   }
@@ -46,20 +142,6 @@ export default function AccessTokensSection(): JSX.Element {
   function toggleProfileSelected(id: string): void {
     setSelectedProfileIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]))
   }
-
-  const ROLE_LABELS: Record<WebDashboardRole, string> = {
-    globalAdmin: 'Global Admin',
-    admin: 'Admin',
-    moderator: 'Moderator',
-    readonly: 'Read-only'
-  }
-
-  const pickerSummary =
-    selectedProfileIds.length === 0
-      ? 'All servers'
-      : selectedProfileIds.length === 1
-        ? profileName(selectedProfileIds[0])
-        : `${selectedProfileIds.length} servers`
 
   async function handleCreate(e: FormEvent): Promise<void> {
     e.preventDefault()
@@ -89,8 +171,44 @@ export default function AccessTokensSection(): JSX.Element {
     setError('')
     try {
       setTokens(await window.api.webDashboardAccessTokens.delete(id))
+      if (editingId === id) setEditingId(null)
     } catch (err) {
       setError((err as Error).message)
+    }
+  }
+
+  function startEdit(token: WebDashboardAccessTokenSummary): void {
+    setEditingId(token.id)
+    setEditRole(token.role)
+    setEditProfileIds(token.profileIds ?? [])
+    setEditPickerOpen(false)
+    setEditError('')
+  }
+
+  function cancelEdit(): void {
+    setEditingId(null)
+    setEditPickerOpen(false)
+  }
+
+  function toggleEditProfileSelected(id: string): void {
+    setEditProfileIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]))
+  }
+
+  async function saveEdit(): Promise<void> {
+    if (!editingId) return
+    setEditBusy(true)
+    setEditError('')
+    try {
+      const updated = await window.api.webDashboardAccessTokens.update(editingId, {
+        role: editRole,
+        profileIds: editRole !== 'globalAdmin' && editProfileIds.length > 0 ? editProfileIds : null
+      })
+      setTokens(updated)
+      setEditingId(null)
+    } catch (err) {
+      setEditError((err as Error).message)
+    } finally {
+      setEditBusy(false)
     }
   }
 
@@ -105,7 +223,8 @@ export default function AccessTokensSection(): JSX.Element {
         authorized for. <strong>Moderator</strong> can see and edit Server Management, start/stop/restart servers,
         send RCON commands, and create backups, but can&apos;t change Settings/Mods/Map Management/Update Log or
         restore/delete backups. <strong>Read-only</strong> can only view the Cluster Dashboard and a
-        server&apos;s console/players, with no action buttons at all.
+        server&apos;s console/players, with no action buttons at all. A token&apos;s role and server scope can be
+        changed any time from the table below (<strong>Edit</strong>) without invalidating it.
       </p>
 
       {newToken && (
@@ -127,41 +246,16 @@ export default function AccessTokensSection(): JSX.Element {
           onChange={(e) => setLabel(e.target.value)}
           autoComplete="off"
         />
-        <select value={role} onChange={(e) => setRole(e.target.value as WebDashboardRole)}>
-          <option value="globalAdmin">Global Admin</option>
-          <option value="admin">Admin</option>
-          <option value="moderator">Moderator</option>
-          <option value="readonly">Read-only</option>
-        </select>
-        <div className="server-picker" ref={pickerRef}>
-          <button
-            type="button"
-            className="server-picker-toggle"
-            disabled={role === 'globalAdmin'}
-            onClick={() => setPickerOpen((prev) => !prev)}
-          >
-            {role === 'globalAdmin' ? 'All servers' : pickerSummary}
-            <span className="server-picker-caret">▾</span>
-          </button>
-          {pickerOpen && role !== 'globalAdmin' && (
-            <div className="server-picker-menu">
-              {profiles.length === 0 ? (
-                <p className="empty-state">No servers yet.</p>
-              ) : (
-                profiles.map((p) => (
-                  <label key={p.id} className="checkbox server-picker-option">
-                    <input
-                      type="checkbox"
-                      checked={selectedProfileIds.includes(p.id)}
-                      onChange={() => toggleProfileSelected(p.id)}
-                    />
-                    {p.name}
-                  </label>
-                ))
-              )}
-            </div>
-          )}
-        </div>
+        <RoleAndScopePicker
+          role={role}
+          onRoleChange={setRole}
+          selectedProfileIds={selectedProfileIds}
+          onToggleProfile={toggleProfileSelected}
+          profiles={profiles}
+          pickerOpen={pickerOpen}
+          onTogglePicker={() => setPickerOpen((prev) => !prev)}
+          pickerRef={pickerRef}
+        />
         <button type="submit">Create token</button>
       </form>
       <p className="empty-state">
@@ -182,26 +276,56 @@ export default function AccessTokensSection(): JSX.Element {
             </tr>
           </thead>
           <tbody>
-            {tokens.map((token) => (
-              <tr key={token.id}>
-                <td>{token.label}</td>
-                <td>{ROLE_LABELS[token.role] ?? token.role}</td>
-                <td>
-                  {token.role !== 'globalAdmin' && token.profileIds && token.profileIds.length > 0
-                    ? token.profileIds.map(profileName).join(', ')
-                    : 'All'}
-                </td>
-                <td className="accounts-row-actions">
-                  <button
-                    type="button"
-                    className="btn-delete-backup"
-                    onClick={() => void handleDelete(token.id, token.label)}
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {tokens.map((token) =>
+              editingId === token.id ? (
+                <tr key={token.id} className="accounts-row-editing">
+                  <td>{token.label}</td>
+                  <td colSpan={3}>
+                    <div className="accounts-row-edit-controls">
+                      <RoleAndScopePicker
+                        role={editRole}
+                        onRoleChange={setEditRole}
+                        selectedProfileIds={editProfileIds}
+                        onToggleProfile={toggleEditProfileSelected}
+                        profiles={profiles}
+                        pickerOpen={editPickerOpen}
+                        onTogglePicker={() => setEditPickerOpen((prev) => !prev)}
+                        pickerRef={editPickerRef}
+                      />
+                      <button type="button" onClick={() => void saveEdit()} disabled={editBusy}>
+                        {editBusy ? 'Saving...' : 'Save'}
+                      </button>
+                      <button type="button" onClick={cancelEdit} disabled={editBusy}>
+                        Cancel
+                      </button>
+                    </div>
+                    {editError && <p className="error-message">{editError}</p>}
+                  </td>
+                </tr>
+              ) : (
+                <tr key={token.id}>
+                  <td>{token.label}</td>
+                  <td>{ROLE_LABELS[token.role] ?? token.role}</td>
+                  <td>
+                    {token.role !== 'globalAdmin' && token.profileIds && token.profileIds.length > 0
+                      ? token.profileIds.map(profileName).join(', ')
+                      : 'All'}
+                  </td>
+                  <td className="accounts-row-actions">
+                    <button type="button" onClick={() => startEdit(token)}>
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-delete-backup"
+                      onClick={() => void handleDelete(token.id, token.label)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              )
+            )}
           </tbody>
         </table>
       )}
