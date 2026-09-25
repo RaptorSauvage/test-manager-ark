@@ -530,7 +530,7 @@ dedicated servers running on the same machine.
   allow rules (inbound + outbound) for whichever `steamcmd.exe` is configured above, useful
   if update failures turn out to be network-related. Prompts once for admin rights (UAC)
   just for that action - the app itself keeps running unelevated the rest of the time.
-- **Performance** (dashboard sidebar, above Official Server Status) — a compact stats card
+- **Global Performance** (dashboard sidebar, above Official Server Status) — a compact stats card
   showing totals across every visible (non-hidden) server: **Servers running** (with the
   total server count alongside it), **Players**, **CPU**, and **RAM** - the same
   `useServerStatuses` live-status data every server card already renders, just summed
@@ -573,27 +573,35 @@ dedicated servers running on the same machine.
   Manager (no separate process), serving a page with a sidebar that starts with just
   **Cluster Dashboard** - the main/landing view every page load opens on, with nothing else
   in the sidebar yet. A single separator, then one flat group of eight per-server tabs, in
-  this order - **Dashboard**, **Analytics**, **Settings**, **Mods**, **Backup**, **Map
+  this order - **Console**, **Analytics**, **Settings**, **Mods**, **Backup**, **Map
   Management**, **Server Management**, **Update Log** - only appears in the sidebar once a
-  server has actually been clicked (a card inside a group's mobile Group Console, or the
-  single-server dropdown once Dashboard itself is reachable). Of those eight, **Settings**,
-  **Mods**, **Map Management**, **Server Management**, and **Update Log** additionally
-  require the connecting token/key to be role `admin` (or no login requirement at all, in
-  which case every route is effectively admin) - **Dashboard**, **Analytics**, and
-  **Backup** stay available to any role, same as before. This is a deliberate gate, not
-  just a first-load default: a plain `selectView('console')` call still works even while
-  its nav button is hidden (so drilling in via a card always works), but nothing
-  pre-selects a server on load the way earlier versions of this page did - every one of
-  these views starts genuinely empty until you choose a server yourself, and once shown,
-  the whole group stays in the sidebar for the rest of that page's session even if the
-  server it was showing later disappears (e.g. that profile gets deleted), falling back to
-  Cluster Dashboard rather than hiding the tabs again:
+  server has actually been clicked (a card inside a group's mobile Group Console, or any of
+  these eight tabs' own server picker, top-right of the header, once one of them is
+  reachable some other way). Of those eight, **Settings**, **Mods**, **Map Management**,
+  **Server Management**, and **Update Log** additionally require the connecting token/key
+  to be role `admin` (or no login requirement at all, in which case every route is
+  effectively admin) - **Console**, **Analytics**, and **Backup** stay available to any
+  role, same as before. This is a deliberate gate, not just a first-load default: a plain
+  `selectView('console')` call still works even while its nav button is hidden (so drilling
+  in via a card always works), but nothing pre-selects a server on load the way earlier
+  versions of this page did - every one of these views starts genuinely empty until you
+  choose a server yourself, and once shown, the whole group stays in the sidebar for the
+  rest of that page's session even if the server it was showing later disappears (e.g. that
+  profile gets deleted), falling back to Cluster Dashboard rather than hiding the tabs
+  again. Every one of the eight tabs carries an identical **server picker** dropdown at the
+  top-right of its own header (`.server-picker` - `margin-left: auto` pushes it to the far
+  right of the flex header row), listing every server by plain name only (no "(running)"/
+  state suffix cluttering it up - that's what each tab's own content already shows).
+  Switching it on any one of the eight instantly switches all the others to the same server
+  too (`syncServerPickers`), so hopping from, say, Analytics straight to that same server's
+  Mods tab, or over to a completely different server's Settings, never requires detouring
+  back through Cluster Dashboard first:
   - **Cluster Dashboard** - a mobile-adapted version of the desktop Manager's own Cluster
     Dashboard page, not just a per-server card grid: one summary row per Dashboard group
     (ungrouped servers get their own "Ungrouped" row), same shape as the desktop version -
     how many of the group's servers are online (offline count in parens, green), combined
     players/max, combined CPU%, combined RAM - computed client-side from the same
-    `/api/servers` poll the Dashboard view already uses, no separate request. Hidden
+    `/api/servers` poll the Console view already uses, no separate request. Hidden
     profiles never appear here, same as everywhere else in this page. On a screen at least
     701px wide (the same breakpoint the rest of this page's mobile layout switches on), each
     row with at least one server online also gets the same **Server Statistics** chart as
@@ -630,7 +638,7 @@ dedicated servers running on the same machine.
       segment invites double-slash URL edge cases). Each line shows its date as **DD/MM**
       next to the timestamp, same as the desktop version, since a merged feed can span more
       than a day. On a phone, the feed's text drops to the same smaller size the
-      single-server Dashboard view's own console already uses below 700px, so more history
+      single-server Console view's own console already uses below 700px, so more history
       fits without either view feeling inconsistent.
     - A "Show:" row of checkboxes (persisted in this device's `localStorage`, independent of
       the page's own admin-controlled per-label setting) includes three categories no real
@@ -641,7 +649,7 @@ dedicated servers running on the same machine.
       (no restart) goes 'updating' -> 'stopped' and logs as UPDATE rather than STOP, so it
       doesn't read as the server stopping twice in a row. A **Show ▾** button next to the group name
       collapses/expands the whole checkbox row - same collapse-to-`localStorage` pattern as
-      the single-server Dashboard view's own **Events ▾** toggle, independent key so
+      the single-server Console view's own **Events ▾** toggle, independent key so
       collapsing one doesn't affect the other. That same row ends with an **Auto-scroll**
       checkbox (unchecked by default, persisted the same way) - only when checked does a new
       merged event jump the feed to the bottom; opening the group console always jumps to the
@@ -659,7 +667,7 @@ dedicated servers running on the same machine.
       the same numbers as that group's row on the list above); smaller padding and text on a
       phone, where screen space is tighter, than on desktop.
     - The feed and RCON bar sit in the same `.panel.console-panel`/`.content-row`/`.side-col`
-      layout the single-server Dashboard view already uses: a wide console column that
+      layout the single-server Console view already uses: a wide console column that
       actually gets the room (flex-grown to fill the available height on desktop, a fixed
       generous fraction of the screen on mobile, same as that view), next to a **Servers ▾**
       column of one card per server (live status badge, Game Version, players/max, CPU/RAM)
@@ -669,14 +677,14 @@ dedicated servers running on the same machine.
       itself when you don't need the per-server detail. On desktop this reproduces the
       Manager's own Group Console shape (console on the left, a divider, server info on the
       right); on mobile the column stacks below the console instead, same responsive
-      behavior the single-server Dashboard view already has for its own side column.
-      Tapping a card opens that server's own Dashboard view (same place the row's click used
+      behavior the single-server Console view already has for its own side column.
+      Tapping a card opens that server's own Console view (same place the row's click used
       to go before this feature); tapping the **⋮** button on a card instead opens a small
       action sheet - **Start**, **Stop**, **Restart**, **Update**, and **Update Restart**,
       the same five actions, enabled/disabled rules, and color coding (green/red/amber/blue/
       cyan) as the desktop Manager's own Group Console context menu - reusing the exact
       same `/api/servers/:id/start|stop|restart|update|stop-update-restart` routes the
-      single-server Dashboard view's own buttons already call. There's no right-click on a
+      single-server Console view's own buttons already call. There's no right-click on a
       phone, so a button is the mobile equivalent; the sheet is positioned from wherever
       that button is, clamped to stay within the screen so a card near the bottom edge never
       opens a menu that's partly or fully unreachable (`position: fixed` doesn't respond to
@@ -687,16 +695,20 @@ dedicated servers running on the same machine.
       fans the same command out to every server in the group at once (one
       `/api/servers/:id/rcon` call per server, same as the desktop version's fan-out), with
       each server's individual result shown above the bar.
-  - **Dashboard** - the per-server console/RCON view (what this page originally was, and
-    still reachable directly once a server is selected, just no longer the tab this page
-    opens on). Its Status box shows **State** as the same colored
+  - **Console** - the per-server console/RCON view (what this page originally was, and what
+    the sidebar button used to be labeled **Dashboard** - renamed since "Dashboard" already
+    means the desktop app's own main page, and this view has nothing to do with that one).
+    Still reachable directly once a server is selected, just no longer the tab this page
+    opens on. Its Status box shows **State** as the same colored
     pill badge as the Group Console's own server cards instead of plain text, plus **Version** (the
     Game Version, e.g. "92.28") alongside Players/CPU/RAM - both boxes pull from the same
-    `/api/servers` response, so they always agree.
-  - A server picker at the top, listing profiles in the same order as the desktop
-    dashboard (ungrouped profiles first in their reordered position, then each group
-    alphabetically) and leaving out anything marked **Hidden** there - it mirrors what
-    you'd see on the desktop dashboard, not just the raw stored profile list.
+    `/api/servers` response, so they always agree. Its server picker (top-right of the
+    header, listing profiles in the same order as the desktop dashboard - ungrouped first in
+    their reordered position, then each group alphabetically, leaving out anything marked
+    **Hidden** - options show the plain server name only, no "(running)"/state suffix, since
+    every tab that has one already shows state some other way) is the same shared
+    `.server-picker` every one of the eight per-server tabs carries, not something unique to
+    this view.
   - A live, color-coded event feed - only the event label is colored (plus the player's
     name specifically for JOIN/LEFT), not the whole line. It tails the server's
     `ShooterGame.log` file directly on every page load/reconnect (the same per-connection
@@ -774,28 +786,33 @@ dedicated servers running on the same machine.
     also a size smaller there than on desktop, so a long line (a lot of the ARK log's own
     lines run long) wraps across fewer rows and more of the recent history fits in that
     fixed-height box at once.
-  - **Analytics** - the same CPU/RAM/Players sparkline chart as the Cluster Dashboard's own
-    per-group chart above, just fed one server's own history instead of several summed
-    together - literally the same `buildClusterChart`/`buildSparkline` drawing code, reused
-    rather than reimplemented. An **Enable stats collection for this server** checkbox
-    mirrors the desktop Analytics tab's own toggle (`ServerProfile.statsEnabled`); unlike
-    that checkbox, toggling it here is itself a profile write, so it goes through the same
-    admin-gated `POST /api/servers/:id/profile` route as Settings/Mods/Server Management and
-    is disabled client-side for any role below admin (the tab itself stays open to every
-    role, same as Dashboard/Backup - viewing an already-enabled server's history needs no
+  - **Analytics** - a **Server Status** box first (State as the same colored pill badge
+    used elsewhere/Players/CPU/RAM/Version/Uptime, live-ticking every second off `startedAt`
+    exactly like Console's own Status box/Backup task status and Next backup in, reusing the
+    exact same `GET /api/servers/:id/backups/status` route the Backup tab itself calls,
+    rather than a separate endpoint) - the same fields the desktop Manager's own Analytics
+    tab shows under its own "Server Status" heading, minus PID/build ID/the file-shortcut
+    buttons/the update-check panel, none of which have a meaningful remote equivalent. Below
+    that, the same CPU/RAM/Players sparkline chart as the Cluster Dashboard's own per-group
+    chart above, just fed one server's own history instead of several summed together -
+    literally the same `buildClusterChart`/`buildSparkline` drawing code, reused rather than
+    reimplemented. An **Enable stats collection for this server** checkbox mirrors the
+    desktop Analytics tab's own toggle (`ServerProfile.statsEnabled`); unlike that checkbox,
+    toggling it here is itself a profile write, so it goes through the same admin-gated
+    `POST /api/servers/:id/profile` route as Settings/Mods/Server Management and is disabled
+    client-side for any role below admin (the tab itself stays open to every role, same as
+    Console/Backup - viewing an already-enabled server's history, or its Status box, needs no
     special permission). A `GET /api/servers/:id/stats` route (`readonly`, backed by the
     same `readStatsHistory` the desktop Manager's own IPC channel calls) feeds the chart,
     downsampled to the same 500-point budget and polled every 5s while the tab is open. Its
     own **Time Scale** row (1m through All) is a separate button set and a separate
     per-profile `localStorage` key from the Cluster Dashboard's, so picking a scale here
-    doesn't change what a group's own chart shows. Unlike the desktop tab, there's no
-    uptime/build-id/backup-schedule/mods-count summary here - those already live in
-    Dashboard's own Status box, Backup, and Mods respectively, so Analytics stays focused on
-    the one thing that's actually unique to it: the history chart.
+    doesn't change what a group's own chart shows.
   - **Backup** - a read-only-settings backup menu similar to the desktop app's Backups
-    tab, always showing the server currently selected in Dashboard (no picker of its own -
-    switching servers in Dashboard, including via a Cluster Dashboard card click, updates
-    this view too). Shows the configured backup directory, retention count, and schedule
+    tab, always showing whichever server its own picker (or any of the other seven tabs'
+    pickers, kept in sync) currently has selected - switching servers anywhere, including
+    via a Cluster Dashboard card click, updates this view too. Shows the configured backup
+    directory, retention count, and schedule
     (cron + next run) as plain info text - editing the backup directory/retention/schedule
     itself stays a desktop-only setting; everything this view's own routes can do is act on
     backups that already exist (create/restore/delete), not reconfigure how they're taken.
@@ -811,20 +828,14 @@ dedicated servers running on the same machine.
     **Show all N backups** button underneath reveals the rest, toggling back to **Show
     fewer**; desktop always shows the full list, no cap. All of it backed by the same
     `backup.ts`/`schedule.ts` functions the desktop Backups tab uses, reused directly
-    since the web dashboard runs in the same process. Reloading the page while it was on
-    this view (the active view is remembered, see above) used to leave it stuck showing
-    "Select a server in the Dashboard view first." forever, even once the server list had
-    loaded: the very first render pass ran before the Backup view's own DOM elements were
-    looked up, so it threw and silently aborted the rest of the page's startup script -
-    including the part that fetches the server list in the first place. Fixed by running
-    that first render pass after everything it depends on is set up.
+    since the web dashboard runs in the same process.
   - **Settings**, **Mods**, **Map Management**, **Server Management**, and **Update Log** -
     admin-only tabs (role `admin`, or no login requirement at all) that let an admin token
     do essentially everything the desktop Manager's own per-server Settings/Mods/Map
     Management/Server Management/Update Log tabs can, without any local file-system access
     (no directory/file picker, no "open folder" button - those stay desktop-only, they have
     no remote equivalent). Each follows whatever server is currently selected exactly like
-    Backup above, with the same "select a server in the Dashboard view first" fallback.
+    Backup above, with the same "No server selected - choose one above." fallback.
     **Settings** covers Name/Install directory/ports/Platform/Max Players/Map (official +
     custom, from the same `maps.json`/`customMaps.json` the desktop Manager reads)/Mod
     Map/Beta/culture/BattlEye/RCON Tribe Log/Force Respawn Dinos/No Sound/Dashboard
@@ -848,12 +859,12 @@ dedicated servers running on the same machine.
     per-profile access list the same as every other per-server route on this page.
   - Cluster Dashboard is always the tab this page opens on - there's no remembered-last-view
     restore across reloads the way earlier versions of this page had. The eight per-server
-    tabs above only ever enter the sidebar through an explicit click (a card in a group's
-    mobile Group Console, or the Dashboard view's own server dropdown once that's reachable
-    some other way) - nothing pre-selects a server on load, unlike before. Once a server has
-    been selected at least once this session, those tabs stay in the sidebar even if the
-    selection is later cleared (e.g. that profile got deleted or hidden out from under the
-    page) - only the currently active view falls back to Cluster Dashboard in that case, not
+    tabs above only ever enter the sidebar through an explicit click on a card in a group's
+    mobile Group Console - nothing pre-selects a server on load, unlike before. Once a
+    server has been selected at least once this session, those tabs (and their shared
+    server pickers) stay in the sidebar even if the selection is later cleared (e.g. that
+    profile got deleted or hidden out from under the page) - only the currently active view
+    falls back to Cluster Dashboard in that case, not
     the whole sidebar collapsing back to just Cluster Dashboard.
   - **Host** controls who can reach the page at all - `127.0.0.1` (default) keeps it
     reachable from this machine only. Setting it to `0.0.0.0` (all interfaces) or one

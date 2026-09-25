@@ -918,6 +918,8 @@ const DASHBOARD_HTML = `<!doctype html>
   .action-sheet button.info { color: var(--accent); }
   .action-sheet button.cyan { color: var(--cyan); }
   header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  header h1 { flex-shrink: 0; }
+  .server-picker { margin-left: auto; min-width: 140px; }
   header h1 { font-size: 1rem; margin: 0; }
   select, input, button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 0.9rem; }
   button { cursor: pointer; }
@@ -1047,6 +1049,7 @@ const DASHBOARD_HTML = `<!doctype html>
     header { padding: 10px 12px; gap: 8px; }
     main { padding: 8px 10px; overflow: visible; }
     select, #server-actions button { flex: 1 1 auto; }
+    .server-picker { margin-left: 0; flex: 1 1 100%; }
     .content-row { flex-direction: column; }
     /* flex:1 turned out not to reliably bound this on real mobile browsers - a chain of
        nested flex-grow containers several levels deep (main-area > view > main >
@@ -1099,7 +1102,7 @@ const DASHBOARD_HTML = `<!doctype html>
   <h1>ARK Manager</h1>
   <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
   <hr class="nav-sep" />
-  <button id="nav-console" class="nav-btn" type="button">Dashboard</button>
+  <button id="nav-console" class="nav-btn" type="button">Console</button>
   <button id="nav-analytics" class="nav-btn" type="button">Analytics</button>
   <button id="nav-settings" class="nav-btn" type="button">Settings</button>
   <button id="nav-mods" class="nav-btn" type="button">Mods</button>
@@ -1154,7 +1157,6 @@ const DASHBOARD_HTML = `<!doctype html>
   <section id="view-console" class="view">
     <header>
       <h1>ARK Server Manager</h1>
-      <select id="server-select"></select>
       <div id="server-actions">
         <button id="btn-start" class="ok">Start</button>
         <button id="btn-stop" class="danger">Stop</button>
@@ -1163,6 +1165,7 @@ const DASHBOARD_HTML = `<!doctype html>
       </div>
       <button id="btn-toggle-filters" type="button">Events ▾</button>
       <button id="btn-toggle-sidecol" type="button">Status ▾</button>
+      <select id="server-select" class="server-picker"></select>
     </header>
     <main>
       <div id="filters-bar">
@@ -1195,11 +1198,15 @@ const DASHBOARD_HTML = `<!doctype html>
   <section id="view-analytics" class="view">
     <header>
       <h1>Analytics</h1>
-      <span id="analytics-server-name"></span>
+      <select id="analytics-server-select" class="server-picker"></select>
     </header>
     <main>
-      <p id="analytics-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <p id="analytics-no-server" class="empty-state">No server selected - choose one above.</p>
       <div id="analytics-content" class="admin-tab-content">
+        <section class="settings-section">
+          <h3>Server Status</h3>
+          <dl id="analytics-status-grid" class="cluster-console-stats"></dl>
+        </section>
         <label class="checkbox">
           <input id="analytics-statsenabled" type="checkbox" /> Enable stats collection for this server
         </label>
@@ -1224,10 +1231,10 @@ const DASHBOARD_HTML = `<!doctype html>
   <section id="view-backup" class="view">
     <header>
       <h1>Backup</h1>
-      <span id="backup-server-name"></span>
+      <select id="backup-server-select" class="server-picker"></select>
     </header>
     <main>
-      <p id="backup-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <p id="backup-no-server" class="empty-state">No server selected - choose one above.</p>
       <div id="backup-content">
         <p id="backup-info" class="empty-state"></p>
         <div class="form-actions">
@@ -1255,10 +1262,10 @@ const DASHBOARD_HTML = `<!doctype html>
   <section id="view-settings" class="view">
     <header>
       <h1>Settings</h1>
-      <span id="settings-server-name"></span>
+      <select id="settings-server-select" class="server-picker"></select>
     </header>
     <main>
-      <p id="settings-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <p id="settings-no-server" class="empty-state">No server selected - choose one above.</p>
       <form id="settings-content" class="settings-form" onsubmit="return false;">
         <section class="settings-section">
           <h3>Server</h3>
@@ -1359,10 +1366,10 @@ const DASHBOARD_HTML = `<!doctype html>
   <section id="view-mods" class="view">
     <header>
       <h1>Mods</h1>
-      <span id="mods-server-name"></span>
+      <select id="mods-server-select" class="server-picker"></select>
     </header>
     <main>
-      <p id="mods-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <p id="mods-no-server" class="empty-state">No server selected - choose one above.</p>
       <div id="mods-content" class="admin-tab-content">
         <p class="empty-state">
           Mod IDs, applied in this order. Enabled mods are passed via -mods= at the next start, unless Passive is
@@ -1386,10 +1393,10 @@ const DASHBOARD_HTML = `<!doctype html>
   <section id="view-mapmanagement" class="view">
     <header>
       <h1>Map Management</h1>
-      <span id="mapmanagement-server-name"></span>
+      <select id="mapmanagement-server-select" class="server-picker"></select>
     </header>
     <main>
-      <p id="mapmanagement-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <p id="mapmanagement-no-server" class="empty-state">No server selected - choose one above.</p>
       <div id="mapmanagement-content" class="admin-tab-content">
         <div class="form-actions">
           <input id="mapmanagement-folder" placeholder="Folder name (e.g. Svartalfheim)" />
@@ -1415,10 +1422,10 @@ const DASHBOARD_HTML = `<!doctype html>
   <section id="view-servermanagement" class="view">
     <header>
       <h1>Server Management</h1>
-      <span id="servermanagement-server-name"></span>
+      <select id="servermanagement-server-select" class="server-picker"></select>
     </header>
     <main>
-      <p id="servermanagement-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <p id="servermanagement-no-server" class="empty-state">No server selected - choose one above.</p>
       <form id="servermanagement-content" class="settings-form" onsubmit="return false;">
         <section class="settings-section">
           <h3>Startup &amp; Watchdog</h3>
@@ -1472,10 +1479,10 @@ const DASHBOARD_HTML = `<!doctype html>
   <section id="view-updatelog" class="view">
     <header>
       <h1>Update Log</h1>
-      <span id="updatelog-server-name"></span>
+      <select id="updatelog-server-select" class="server-picker"></select>
     </header>
     <main>
-      <p id="updatelog-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <p id="updatelog-no-server" class="empty-state">No server selected - choose one above.</p>
       <div id="updatelog-content" class="admin-tab-content">
         <p class="empty-state">
           Output of this server's last SteamCMD install/update run - manual or scheduled. Refreshes every few
@@ -2486,7 +2493,6 @@ function initDashboard(resolvedRole) {
     card.appendChild(header);
     card.appendChild(stats);
     card.addEventListener('click', function () {
-      select.value = server.id;
       selectServer(server.id);
       selectView('console');
     });
@@ -2631,7 +2637,7 @@ function initDashboard(resolvedRole) {
     });
   }
 
-  var backupServerNameEl = document.getElementById('backup-server-name');
+  var backupServerSelectEl = document.getElementById('backup-server-select');
   var backupNoServerEl = document.getElementById('backup-no-server');
   var backupContentEl = document.getElementById('backup-content');
   var backupInfoEl = document.getElementById('backup-info');
@@ -2763,14 +2769,12 @@ function initDashboard(resolvedRole) {
   function loadBackupView() {
     var id = currentId;
     if (!id) {
-      backupServerNameEl.textContent = '';
       backupNoServerEl.style.display = '';
       backupContentEl.classList.remove('active');
       return;
     }
     backupNoServerEl.style.display = 'none';
     backupContentEl.classList.add('active');
-    backupServerNameEl.textContent = select.options[select.selectedIndex] ? select.options[select.selectedIndex].textContent : '';
 
     fetch('/api/servers/' + encodeURIComponent(id) + '/backups/status')
       .then(function (r) { return r.json(); })
@@ -2825,13 +2829,11 @@ function initDashboard(resolvedRole) {
   }, 5000);
 
   // ---- Admin-only remote control tabs: Update Log, Mods, Map Management, Server
-  // Management, Settings - each follows currentId exactly like the Backup view above (no
-  // server picker of its own), and every write goes through requireRole('admin') server-
-  // side regardless of what this client-side hiding does or doesn't show.
-
-  function currentServerLabel() {
-    return select.options[select.selectedIndex] ? select.options[select.selectedIndex].textContent : '';
-  }
+  // Management, Settings - each follows currentId exactly like the Backup view above. Every
+  // one of these views now also carries its own server picker in its header (see
+  // populateServerPickers/syncServerPickers below), and every write still goes through
+  // requireRole('admin') server-side regardless of what this client-side hiding does or
+  // doesn't show.
 
   // -- Analytics ------------------------------------------------------------------------
   // Per-server CPU/RAM/Players history chart - same GET /api/servers/:id/stats route (backed
@@ -2841,14 +2843,90 @@ function initDashboard(resolvedRole) {
   // to any role (like Dashboard/Backup) - only toggling "Enable stats" itself requires admin,
   // since that's a profile field change going through the same admin-gated
   // POST /api/servers/:id/profile route as Settings/Mods/Server Management.
-  var analyticsServerNameEl = document.getElementById('analytics-server-name');
+  var analyticsServerSelectEl = document.getElementById('analytics-server-select');
   var analyticsNoServerEl = document.getElementById('analytics-no-server');
   var analyticsContentEl = document.getElementById('analytics-content');
+  var analyticsStatusGridEl = document.getElementById('analytics-status-grid');
   var analyticsStatsEnabledInput = document.getElementById('analytics-statsenabled');
   var analyticsDisabledNoteEl = document.getElementById('analytics-disabled-note');
   var analyticsChartEl = document.getElementById('analytics-chart');
   var analyticsScaleButtons = Array.prototype.slice.call(document.querySelectorAll('.analytics-scale-btn'));
   if (role && !canAdmin) analyticsStatsEnabledInput.disabled = true;
+
+  // Same Server Status box as the desktop Manager's own Analytics tab - State/Version/
+  // Players/CPU/RAM come straight from the /api/servers poll loadServers() already runs
+  // (renderAnalyticsStatus is just called from there whenever this tab is the active one,
+  // same as the Console view's own renderStatus), Uptime ticks locally off startedAt every
+  // second like Console's does, and Backup task status/Next backup in reuse the exact same
+  // GET /api/servers/:id/backups/status route the Backup tab itself calls.
+  var analyticsUptimeValueEl = null;
+  var analyticsUptimeStartedAt = null;
+  var analyticsUptimeRunning = false;
+
+  function statPair(dt, dd) {
+    var wrap = document.createElement('div');
+    var dtEl = document.createElement('dt');
+    dtEl.textContent = dt;
+    var ddEl = document.createElement('dd');
+    if (typeof dd === 'string') ddEl.textContent = dd;
+    else ddEl.appendChild(dd);
+    wrap.appendChild(dtEl);
+    wrap.appendChild(ddEl);
+    return { wrap: wrap, dd: ddEl };
+  }
+
+  function renderAnalyticsStatus() {
+    var id = currentId;
+    if (!id || activeView !== 'analytics') return;
+    var server = latestServers.filter(function (s) { return s.id === id; })[0];
+    analyticsStatusGridEl.innerHTML = '';
+    if (!server) return;
+
+    var stateBadge = document.createElement('span');
+    stateBadge.className = 'cluster-card-state state-' + server.state;
+    stateBadge.textContent = server.state;
+    analyticsStatusGridEl.appendChild(statPair('State', stateBadge).wrap);
+
+    var playerCount = server.players ? server.players.length : 0;
+    analyticsStatusGridEl.appendChild(statPair('Players', playerCount + ' / ' + server.maxPlayers).wrap);
+    analyticsStatusGridEl.appendChild(statPair('CPU', server.cpu != null ? server.cpu + '%' : '-').wrap);
+    analyticsStatusGridEl.appendChild(statPair('RAM', server.memoryMB != null ? server.memoryMB + ' MB' : '-').wrap);
+    analyticsStatusGridEl.appendChild(statPair('Version', server.gameVersion || '-').wrap);
+
+    analyticsUptimeRunning = server.state === 'running';
+    analyticsUptimeStartedAt = server.startedAt || null;
+    var uptimeValueEl = document.createElement('span');
+    uptimeValueEl.textContent = analyticsUptimeRunning && analyticsUptimeStartedAt
+      ? formatUptime(Date.now() - analyticsUptimeStartedAt)
+      : '-';
+    analyticsUptimeValueEl = uptimeValueEl;
+    analyticsStatusGridEl.appendChild(statPair('Uptime', uptimeValueEl).wrap);
+
+    fetch('/api/servers/' + encodeURIComponent(id) + '/backups/status')
+      .then(function (r) { return r.json(); })
+      .then(function (status) {
+        if (id !== currentId || activeView !== 'analytics') return;
+        var taskText = !analyticsUptimeRunning
+          ? 'Offline'
+          : !status.scheduleEnabled
+            ? 'Deactivate'
+            : status.scheduleActive
+              ? 'Started'
+              : 'Stopped';
+        analyticsStatusGridEl.appendChild(statPair('Backup task status', taskText).wrap);
+        if (analyticsUptimeRunning && status.scheduleEnabled) {
+          analyticsStatusGridEl.appendChild(
+            statPair('Next backup in', status.nextRunAt !== null ? formatCountdown(status.nextRunAt - Date.now()) : '--:--:--:--').wrap
+          );
+        }
+      });
+  }
+
+  setInterval(function () {
+    if (analyticsUptimeValueEl && analyticsUptimeRunning && analyticsUptimeStartedAt) {
+      analyticsUptimeValueEl.textContent = formatUptime(Date.now() - analyticsUptimeStartedAt);
+    }
+  }, 1000);
 
   function analyticsScaleKey(id) {
     return 'web-dashboard-analytics-stats-scale:' + id;
@@ -2911,16 +2989,15 @@ function initDashboard(resolvedRole) {
   function loadAnalyticsView() {
     var id = currentId;
     if (!id) {
-      analyticsServerNameEl.textContent = '';
       analyticsNoServerEl.style.display = '';
       analyticsContentEl.classList.remove('active');
       return;
     }
     analyticsNoServerEl.style.display = 'none';
     analyticsContentEl.classList.add('active');
-    analyticsServerNameEl.textContent = currentServerLabel();
     analyticsScale = loadStoredAnalyticsScale(id);
     updateAnalyticsScaleButtons();
+    renderAnalyticsStatus();
     var server = latestServers.filter(function (s) { return s.id === id; })[0];
     var statsEnabled = server ? !!server.statsEnabled : false;
     analyticsStatsEnabledInput.checked = statsEnabled;
@@ -2961,7 +3038,7 @@ function initDashboard(resolvedRole) {
   }, 5000);
 
   // -- Update Log --------------------------------------------------------------------
-  var updatelogServerNameEl = document.getElementById('updatelog-server-name');
+  var updatelogServerSelectEl = document.getElementById('updatelog-server-select');
   var updatelogNoServerEl = document.getElementById('updatelog-no-server');
   var updatelogContentEl = document.getElementById('updatelog-content');
   var updatelogOutputEl = document.getElementById('updatelog-output');
@@ -2969,14 +3046,12 @@ function initDashboard(resolvedRole) {
   function loadUpdateLogView() {
     var id = currentId;
     if (!id) {
-      updatelogServerNameEl.textContent = '';
       updatelogNoServerEl.style.display = '';
       updatelogContentEl.classList.remove('active');
       return;
     }
     updatelogNoServerEl.style.display = 'none';
     updatelogContentEl.classList.add('active');
-    updatelogServerNameEl.textContent = currentServerLabel();
     fetch('/api/servers/' + encodeURIComponent(id) + '/update-log')
       .then(function (r) { return r.json(); })
       .then(function (result) {
@@ -2990,7 +3065,7 @@ function initDashboard(resolvedRole) {
   }, 4000);
 
   // -- Mods ---------------------------------------------------------------------------
-  var modsServerNameEl = document.getElementById('mods-server-name');
+  var modsServerSelectEl = document.getElementById('mods-server-select');
   var modsNoServerEl = document.getElementById('mods-no-server');
   var modsContentEl = document.getElementById('mods-content');
   var modsNewIdInput = document.getElementById('mods-new-id');
@@ -3091,7 +3166,6 @@ function initDashboard(resolvedRole) {
   function loadModsView() {
     var id = currentId;
     if (!id) {
-      modsServerNameEl.textContent = '';
       modsNoServerEl.style.display = '';
       modsContentEl.classList.remove('active');
       return;
@@ -3099,7 +3173,6 @@ function initDashboard(resolvedRole) {
     showModsError('');
     modsNoServerEl.style.display = 'none';
     modsContentEl.classList.add('active');
-    modsServerNameEl.textContent = currentServerLabel();
     fetch('/api/servers/' + encodeURIComponent(id) + '/profile')
       .then(function (r) { return r.json(); })
       .then(function (profile) {
@@ -3117,7 +3190,7 @@ function initDashboard(resolvedRole) {
   });
 
   // -- Map Management -------------------------------------------------------------------
-  var mapmanagementServerNameEl = document.getElementById('mapmanagement-server-name');
+  var mapmanagementServerSelectEl = document.getElementById('mapmanagement-server-select');
   var mapmanagementNoServerEl = document.getElementById('mapmanagement-no-server');
   var mapmanagementContentEl = document.getElementById('mapmanagement-content');
   var mapmanagementFolderInput = document.getElementById('mapmanagement-folder');
@@ -3168,7 +3241,6 @@ function initDashboard(resolvedRole) {
   function loadMapManagementView() {
     var id = currentId;
     if (!id) {
-      mapmanagementServerNameEl.textContent = '';
       mapmanagementNoServerEl.style.display = '';
       mapmanagementContentEl.classList.remove('active');
       return;
@@ -3176,7 +3248,6 @@ function initDashboard(resolvedRole) {
     showMapManagementError('');
     mapmanagementNoServerEl.style.display = 'none';
     mapmanagementContentEl.classList.add('active');
-    mapmanagementServerNameEl.textContent = currentServerLabel();
     mapManagementSelected = '';
     btnMapManagementDelete.disabled = true;
     fetch('/api/servers/' + encodeURIComponent(id) + '/mapfolders')
@@ -3229,7 +3300,7 @@ function initDashboard(resolvedRole) {
 
   // -- Server Management ---------------------------------------------------------------
   var DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var smServerNameEl = document.getElementById('servermanagement-server-name');
+  var smServerSelectEl = document.getElementById('servermanagement-server-select');
   var smNoServerEl = document.getElementById('servermanagement-no-server');
   var smContentEl = document.getElementById('servermanagement-content');
   var smErrorEl = document.getElementById('servermanagement-error');
@@ -3392,7 +3463,6 @@ function initDashboard(resolvedRole) {
   function loadServerManagementView() {
     var id = currentId;
     if (!id) {
-      smServerNameEl.textContent = '';
       smNoServerEl.style.display = '';
       smContentEl.classList.remove('active');
       return;
@@ -3400,7 +3470,6 @@ function initDashboard(resolvedRole) {
     showSmError('');
     smNoServerEl.style.display = 'none';
     smContentEl.classList.add('active');
-    smServerNameEl.textContent = currentServerLabel();
     fetch('/api/servers/' + encodeURIComponent(id) + '/profile')
       .then(function (r) { return r.json(); })
       .then(function (profile) {
@@ -3424,7 +3493,7 @@ function initDashboard(resolvedRole) {
   smDinoWipeTime.addEventListener('change', function () { saveSmField('scheduledDinoWipeTime', smDinoWipeTime.value); });
 
   // -- Settings ---------------------------------------------------------------------------
-  var settingsServerNameEl = document.getElementById('settings-server-name');
+  var settingsServerSelectEl = document.getElementById('settings-server-select');
   var settingsNoServerEl = document.getElementById('settings-no-server');
   var settingsContentEl = document.getElementById('settings-content');
   var settingsStatusEl = document.getElementById('settings-status');
@@ -3562,7 +3631,6 @@ function initDashboard(resolvedRole) {
   function loadSettingsView() {
     var id = currentId;
     if (!id) {
-      settingsServerNameEl.textContent = '';
       settingsNoServerEl.style.display = '';
       settingsContentEl.classList.remove('active');
       return;
@@ -3570,7 +3638,6 @@ function initDashboard(resolvedRole) {
     showSettingsError('');
     settingsNoServerEl.style.display = 'none';
     settingsContentEl.classList.add('active');
-    settingsServerNameEl.textContent = currentServerLabel();
     loadSettingsMaps();
     fetch('/api/servers/' + encodeURIComponent(id) + '/profile')
       .then(function (r) { return r.json(); })
@@ -3788,9 +3855,46 @@ function initDashboard(resolvedRole) {
 
   var SERVER_SCOPED_VIEWS = ['console', 'analytics', 'backup', 'settings', 'mods', 'mapmanagement', 'servermanagement', 'updatelog'];
 
+  // Every per-server view carries its own server picker in its header (top-right, via the
+  // .server-picker CSS class) - not just the Console view's original one - so switching
+  // servers never requires going back to Cluster Dashboard first. All 8 always show the same
+  // options and stay in sync with each other and with currentId.
+  var SERVER_PICKERS = [
+    select,
+    analyticsServerSelectEl,
+    settingsServerSelectEl,
+    modsServerSelectEl,
+    backupServerSelectEl,
+    mapmanagementServerSelectEl,
+    smServerSelectEl,
+    updatelogServerSelectEl
+  ];
+
+  function populateServerPickers(servers) {
+    SERVER_PICKERS.forEach(function (picker) {
+      picker.innerHTML = '';
+      servers.forEach(function (s) {
+        var opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name;
+        picker.appendChild(opt);
+      });
+    });
+  }
+
+  function syncServerPickers() {
+    if (!currentId) return;
+    SERVER_PICKERS.forEach(function (picker) { picker.value = currentId; });
+  }
+
+  SERVER_PICKERS.forEach(function (picker) {
+    picker.addEventListener('change', function () { selectServer(picker.value); });
+  });
+
   function selectServer(id) {
     if (id === currentId) return;
     currentId = id;
+    syncServerPickers();
     if (id) revealServerScopedNav();
     backupShowAll = false;
     if (activeView === 'analytics') loadAnalyticsView();
@@ -3824,17 +3928,7 @@ function initDashboard(resolvedRole) {
     fetch('/api/servers').then(function (r) { return r.json(); }).then(function (servers) {
       latestServers = servers;
       checkClusterStateTransitions(servers);
-      var previousValue = select.value;
-      select.innerHTML = '';
-      servers.forEach(function (s) {
-        var opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = s.name + ' (' + s.state + ')';
-        select.appendChild(opt);
-      });
-      if (previousValue && servers.some(function (s) { return s.id === previousValue; })) {
-        select.value = previousValue;
-      }
+      populateServerPickers(servers);
       // A server that was selected can vanish out from under us (profile deleted, or
       // filtered out by Hidden) - treat that the same as never having selected one. Unlike
       // before, this never auto-picks a replacement: Dashboard/Backup/the admin tabs only
@@ -3844,13 +3938,13 @@ function initDashboard(resolvedRole) {
         currentId = null;
         if (SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1) selectView('cluster');
       }
-      renderStatus(servers.find(function (s) { return s.id === select.value; }));
+      syncServerPickers();
+      renderStatus(servers.find(function (s) { return s.id === currentId; }));
+      renderAnalyticsStatus();
       renderClusterCards(servers);
       refreshClusterConsoleServers();
     });
   }
-
-  select.addEventListener('change', function () { selectServer(select.value); });
 
   rconForm.addEventListener('submit', function (e) {
     e.preventDefault();

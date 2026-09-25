@@ -415,7 +415,7 @@ export default function Dashboard({
         <aside className="dashboard-sidebar">
           <section className="official-status-panel">
             <div className="official-status-header">
-              <h3>Performance</h3>
+              <h3>Global Performance</h3>
             </div>
             <dl className="group-console-cluster-stats">
               <div>
