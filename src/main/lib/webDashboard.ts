@@ -66,12 +66,16 @@ function resolveGroupProfiles(groupParam: string): ServerProfile[] {
 
 /** `null` or an empty array (including a stored token from before this field existed, or one
  *  saved with nothing checked) means every profile - matching both the pre-scoping behavior
- *  and the Settings UI's "nothing checked = all servers" picker. */
+ *  and the Settings UI's "nothing checked = all servers" picker. A `globalAdmin` credential
+ *  always has access regardless of `profileIds` - it's the one role scoping was never meant
+ *  to apply to; use `admin` for a token that should be restricted to specific servers. */
 function hasProfileAccess(auth: RequireRoleResult, profileId: string): boolean {
+  if (auth.role === 'globalAdmin') return true
   return !auth.profileIds || auth.profileIds.length === 0 || auth.profileIds.includes(profileId)
 }
 
 function filterProfilesForAuth(auth: RequireRoleResult, profiles: ServerProfile[]): ServerProfile[] {
+  if (auth.role === 'globalAdmin') return profiles
   if (!auth.profileIds || auth.profileIds.length === 0) return profiles
   const allowed = auth.profileIds
   return profiles.filter((p) => allowed.includes(p.id))
@@ -144,7 +148,7 @@ async function requireRole(
   res: http.ServerResponse,
   minRole: WebDashboardRole
 ): Promise<RequireRoleResult | null> {
-  if (!getSettings().webDashboardAuthEnabled) return { role: 'admin', profileIds: null }
+  if (!getSettings().webDashboardAuthEnabled) return { role: 'globalAdmin', profileIds: null }
 
   const presented = getBearerTokenFromRequest(req)
   const parsed = presented ? parseApiKey(presented) : null
@@ -400,7 +404,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const startMatch = path.match(/^\/api\/servers\/([^/]+)\/start$/)
   if (req.method === 'POST' && startMatch) {
-    const auth = await requireRole(req, res, 'operator')
+    const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(startMatch[1]))
     if (!profile || !hasProfileAccess(auth, profile.id)) {
@@ -427,7 +431,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   // a bare "ok" can't mistake "we started stopping it" for "it actually saved first".
   const stopMatch = path.match(/^\/api\/servers\/([^/]+)\/stop$/)
   if (req.method === 'POST' && stopMatch) {
-    const auth = await requireRole(req, res, 'operator')
+    const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopMatch[1]))
     if (!profile || !hasProfileAccess(auth, profile.id)) {
@@ -441,7 +445,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const restartMatch = path.match(/^\/api\/servers\/([^/]+)\/restart$/)
   if (req.method === 'POST' && restartMatch) {
-    const auth = await requireRole(req, res, 'operator')
+    const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(restartMatch[1]))
     if (!profile || !hasProfileAccess(auth, profile.id)) {
@@ -455,7 +459,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const updateMatch = path.match(/^\/api\/servers\/([^/]+)\/update$/)
   if (req.method === 'POST' && updateMatch) {
-    const auth = await requireRole(req, res, 'operator')
+    const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(updateMatch[1]))
     if (!profile || !hasProfileAccess(auth, profile.id)) {
@@ -469,7 +473,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const stopUpdateRestartMatch = path.match(/^\/api\/servers\/([^/]+)\/stop-update-restart$/)
   if (req.method === 'POST' && stopUpdateRestartMatch) {
-    const auth = await requireRole(req, res, 'operator')
+    const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopUpdateRestartMatch[1]))
     if (!profile || !hasProfileAccess(auth, profile.id)) {
@@ -485,7 +489,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   const rconMatch = path.match(/^\/api\/servers\/([^/]+)\/rcon$/)
   if (req.method === 'POST' && rconMatch) {
-    const auth = await requireRole(req, res, 'operator')
+    const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
     const profileId = decodeURIComponent(rconMatch[1])
     const profile = listProfiles().find((p) => p.id === profileId)
@@ -523,7 +527,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       scheduleEnabled: profile.backupScheduleEnabled,
       scheduleCron: profile.backupSchedule ?? '',
       scheduleActive: schedule.active,
-      nextRunAt: schedule.nextRunAt
+      nextRunAt: schedule.nextRunAt,
+      // Only rendered into an editable form for an admin+ token (see the Backup tab's
+      // backup-settings-section) - readonly-gated like the rest of this route since these two
+      // fields on their own aren't sensitive, same as everything else already returned here.
+      playerProfileBackupEnabled: profile.playerProfileBackupEnabled,
+      playerProfileBackupMaxPerPlayer: profile.playerProfileBackupMaxPerPlayer
     })
     return
   }
@@ -591,7 +600,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
   if (req.method === 'POST' && backupsMatch) {
-    const auth = await requireRole(req, res, 'operator')
+    const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
     const profile = listProfiles().find((p) => p.id === decodeURIComponent(backupsMatch[1]))
     if (!profile || !hasProfileAccess(auth, profile.id)) {
@@ -607,10 +616,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
-  // ---- Admin-only remote control: Settings/Mods/Map Management/Server Management/Update
-  // Log - lets an admin-scoped token do everything the desktop Manager's own per-server
-  // tabs can, without local file-system access (no directory/file picker dialogs, no
-  // "open folder" - those are desktop-only conveniences with no remote equivalent).
+  // ---- Admin-only remote control: Settings/Mods/Map Management/Update Log - lets an
+  // admin-scoped token do everything the desktop Manager's own per-server tabs can, without
+  // local file-system access (no directory/file picker dialogs, no "open folder" - those are
+  // desktop-only conveniences with no remote equivalent). Server Management has its own
+  // narrower, moderator-accessible route pair further down.
 
   const profileMatch = path.match(/^\/api\/servers\/([^/]+)\/profile$/)
   if (req.method === 'GET' && profileMatch) {
@@ -640,6 +650,69 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         const updated = saveProfile({ ...profile, ...body, id: profile.id } as ServerProfile)
         const saved = updated.find((p) => p.id === profile.id)
         sendJson(res, 200, { ok: true, profile: saved })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  // ---- Moderator-accessible remote control: Server Management only - a narrow whitelist of
+  // the same ServerProfile fields the Server Management tab edits, kept as its own route (not
+  // the admin-only /profile route above) so a moderator token gets this one tab without also
+  // reaching Settings/Mods/Map Management/Update Log, which stay admin+.
+  const SERVER_MANAGEMENT_FIELDS = [
+    'startOnManagerLaunch',
+    'crashWatchEnabled',
+    'zombieDetectionEnabled',
+    'zombieDetectionTimeoutMinutes',
+    'zombieDetectionAutoRestart',
+    'clusterLogArchiveMaxSizeMB',
+    'scheduledRestartEnabled',
+    'scheduledRestartTime',
+    'scheduledRestartDays',
+    'scheduledRestartUpdateAfter',
+    'scheduledRestartStartAfter',
+    'scheduledDinoWipeEnabled',
+    'scheduledDinoWipeTime',
+    'scheduledDinoWipeDays'
+  ] as const
+  function pickServerManagementFields(profile: ServerProfile): Record<string, unknown> {
+    const picked: Record<string, unknown> = {}
+    for (const field of SERVER_MANAGEMENT_FIELDS) picked[field] = profile[field]
+    return picked
+  }
+
+  const serverManagementMatch = path.match(/^\/api\/servers\/([^/]+)\/servermanagement$/)
+  if (req.method === 'GET' && serverManagementMatch) {
+    const auth = await requireRole(req, res, 'moderator')
+    if (!auth) return
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(serverManagementMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    sendJson(res, 200, pickServerManagementFields(profile))
+    return
+  }
+  if (req.method === 'POST' && serverManagementMatch) {
+    const auth = await requireRole(req, res, 'moderator')
+    if (!auth) return
+    const profile = getProfile(decodeURIComponent(serverManagementMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        // Only the whitelisted Server Management fields are accepted here, regardless of what
+        // else the body contains - everything else stays reachable only through the admin-only
+        // /profile route above.
+        const patch: Record<string, unknown> = {}
+        for (const field of SERVER_MANAGEMENT_FIELDS) {
+          if (field in body) patch[field] = body[field]
+        }
+        const updated = saveProfile({ ...profile, ...patch, id: profile.id } as ServerProfile)
+        const saved = updated.find((p) => p.id === profile.id)
+        sendJson(res, 200, { ok: true, profile: saved && pickServerManagementFields(saved) })
       })
       .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
     return
@@ -863,9 +936,13 @@ const DASHBOARD_HTML = `<!doctype html>
   .cluster-card-stats { display: flex; flex-direction: column; gap: 6px; font-size: 0.92rem; color: var(--muted); }
   .cluster-card-stats strong { color: var(--text); font-weight: 600; }
   .group-row-online { color: var(--status-running); font-weight: 700; }
+  .status-ok { color: var(--status-running); }
+  .status-warn { color: var(--danger); }
+  .status-offline { color: var(--status-stopping); }
   .group-row-online .group-row-offline { color: var(--muted); font-weight: 400; }
   #cluster-groups.hidden { display: none; }
   .cluster-time-scale { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 0.85rem; color: var(--muted); }
+  .analytics-stats-toggle { margin-left: auto; }
   .time-scale-btn { padding: 3px 10px; font-size: 0.8rem; }
   .time-scale-btn.active { color: var(--ok); border-color: var(--ok); }
   .cluster-card-chart { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -909,6 +986,10 @@ const DASHBOARD_HTML = `<!doctype html>
   .server-card-mobile-menu-btn { flex-shrink: 0; padding: 6px 11px; font-size: 1.1rem; line-height: 1; }
   .server-card-mobile-stats { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
   .server-card-mobile-stats strong { color: var(--text); font-weight: 600; }
+  #dashboard-cards { display: flex; flex-direction: column; gap: 20px; }
+  .dashboard-group-label { margin: 0 0 8px; font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .dashboard-group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .dashboard-group-grid .server-card-mobile { cursor: pointer; }
   .action-sheet { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px; z-index: 1000; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); min-width: 170px; }
   .action-sheet button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 9px 12px; border-radius: 6px; font-size: 0.9rem; }
   .action-sheet button:hover:not(:disabled) { background: var(--bg); }
@@ -1100,6 +1181,7 @@ const DASHBOARD_HTML = `<!doctype html>
 </div>
 <nav id="sidebar">
   <h1>ARK Manager</h1>
+  <button id="nav-dashboard" class="nav-btn" type="button">Dashboard</button>
   <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
   <hr class="nav-sep" />
   <button id="nav-console" class="nav-btn" type="button">Console</button>
@@ -1112,6 +1194,14 @@ const DASHBOARD_HTML = `<!doctype html>
   <button id="nav-updatelog" class="nav-btn" type="button">Update Log</button>
 </nav>
 <div id="main-area">
+  <section id="view-dashboard" class="view">
+    <header>
+      <h1>Dashboard</h1>
+    </header>
+    <main>
+      <div id="dashboard-cards"></div>
+    </main>
+  </section>
   <section id="view-cluster" class="view">
     <div id="cluster-groups">
       <div id="cluster-time-scale" class="cluster-time-scale">
@@ -1207,9 +1297,6 @@ const DASHBOARD_HTML = `<!doctype html>
           <h3>Server Status</h3>
           <dl id="analytics-status-grid" class="cluster-console-stats"></dl>
         </section>
-        <label class="checkbox">
-          <input id="analytics-statsenabled" type="checkbox" /> Enable stats collection for this server
-        </label>
         <div id="analytics-time-scale" class="cluster-time-scale">
           <span>Time Scale</span>
           <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="60000">1m</button>
@@ -1220,6 +1307,9 @@ const DASHBOARD_HTML = `<!doctype html>
           <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="43200000">12h</button>
           <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="86400000">24h</button>
           <button type="button" class="time-scale-btn analytics-scale-btn" data-ms="null">All</button>
+          <label class="checkbox analytics-stats-toggle">
+            <input id="analytics-statsenabled" type="checkbox" /> Enable stats collection
+          </label>
         </div>
         <p id="analytics-disabled-note" class="empty-state" style="display: none">
           Stats collection is off for this server - enable it above to start recording CPU/RAM/player history.
@@ -1236,6 +1326,35 @@ const DASHBOARD_HTML = `<!doctype html>
     <main>
       <p id="backup-no-server" class="empty-state">No server selected - choose one above.</p>
       <div id="backup-content">
+        <section id="backup-settings-section" class="settings-section">
+          <h3>Backup Settings</h3>
+          <label>
+            Backup directory
+            <input id="backup-dir" placeholder="C:\\ARK\\Backups" />
+          </label>
+          <div class="settings-grid2">
+            <label>
+              Max backups to keep
+              <input id="backup-maxbackups" type="number" min="1" />
+            </label>
+            <label class="checkbox">
+              <input id="backup-schedule-enabled" type="checkbox" /> Enable scheduled automatic backups
+            </label>
+          </div>
+          <label>
+            Backup schedule (cron expression)
+            <input id="backup-schedule-cron" placeholder="every 6 hours: 0 */6 * * *" />
+          </label>
+          <label class="checkbox">
+            <input id="backup-playerprofile-enabled" type="checkbox" /> Back up player profiles on join/leave
+          </label>
+          <label>
+            Backups to keep per player
+            <input id="backup-playerprofile-maxperplayer" type="number" min="1" />
+          </label>
+          <p id="backup-settings-status" class="empty-state" style="display: none"></p>
+          <p id="backup-settings-error" class="error-message" style="display: none"></p>
+        </section>
         <p id="backup-info" class="empty-state"></p>
         <div class="form-actions">
           <button id="btn-backup-create">Create backup now</button>
@@ -1576,8 +1695,8 @@ if (!authRequired) {
  *  would 401/403 if clicked. */
 function initDashboard(resolvedRole) {
   var role = resolvedRole;
-  var canOperate = role === 'operator' || role === 'admin';
-  var canAdmin = role === 'admin';
+  var canOperate = role === 'moderator' || role === 'admin' || role === 'globalAdmin';
+  var canAdmin = role === 'admin' || role === 'globalAdmin';
 
   var currentId = null;
   var es = null;
@@ -1744,6 +1863,7 @@ function initDashboard(resolvedRole) {
     applySideColCollapsed();
   });
 
+  var navDashboardBtn = document.getElementById('nav-dashboard');
   var navClusterBtn = document.getElementById('nav-cluster');
   var navConsoleBtn = document.getElementById('nav-console');
   var navAnalyticsBtn = document.getElementById('nav-analytics');
@@ -1753,6 +1873,8 @@ function initDashboard(resolvedRole) {
   var navMapManagementBtn = document.getElementById('nav-mapmanagement');
   var navServerManagementBtn = document.getElementById('nav-servermanagement');
   var navUpdateLogBtn = document.getElementById('nav-updatelog');
+  var viewDashboardEl = document.getElementById('view-dashboard');
+  var dashboardCardsEl = document.getElementById('dashboard-cards');
   var viewClusterEl = document.getElementById('view-cluster');
   var viewConsoleEl = document.getElementById('view-console');
   var viewAnalyticsEl = document.getElementById('view-analytics');
@@ -1815,13 +1937,22 @@ function initDashboard(resolvedRole) {
     applyClusterSidecolCollapsed();
   });
 
+  // The Dashboard tab (card grid, admin-only) is always visible like Cluster Dashboard - not
+  // gated behind first server selection like the per-server tabs below.
+  if (role && !canAdmin) navDashboardBtn.style.display = 'none';
   if (role === 'readonly') navBackupBtn.style.display = 'none';
-  var adminNavBtns = [navSettingsBtn, navModsBtn, navMapManagementBtn, navServerManagementBtn, navUpdateLogBtn];
+  // Settings/Mods/Map Management/Update Log stay admin+ only. Server Management is its own,
+  // wider tier (moderator+) since moderators are meant to see it per the role's definition.
+  var adminNavBtns = [navSettingsBtn, navModsBtn, navMapManagementBtn, navUpdateLogBtn];
+  var moderatorNavBtns = [navServerManagementBtn];
   if (role && !canAdmin) {
     adminNavBtns.forEach(function (btn) { btn.style.display = 'none'; });
   }
-  // Cluster Dashboard is the main tab now - Dashboard/Backup (and the admin-only tabs
-  // above) are only relevant once you've actually drilled into a specific server, so they
+  if (role && !canOperate) {
+    moderatorNavBtns.forEach(function (btn) { btn.style.display = 'none'; });
+  }
+  // Cluster Dashboard is the main tab now - Dashboard/Backup (and the admin-only/moderator+
+  // tabs above) are only relevant once you've actually drilled into a specific server, so they
   // stay out of the sidebar until selectServer() below has been called at least once with a
   // real id (clicking a card in the Cluster Dashboard's group console, or picking one from
   // the Dashboard view's own dropdown once that's reachable some other way). Once shown,
@@ -1833,6 +1964,7 @@ function initDashboard(resolvedRole) {
   navAnalyticsBtn.style.display = 'none';
   navBackupBtn.style.display = 'none';
   adminNavBtns.forEach(function (btn) { btn.style.display = 'none'; });
+  moderatorNavBtns.forEach(function (btn) { btn.style.display = 'none'; });
   function revealServerScopedNav() {
     if (serverEverSelected) return;
     serverEverSelected = true;
@@ -1840,6 +1972,7 @@ function initDashboard(resolvedRole) {
     navAnalyticsBtn.style.display = '';
     if (role !== 'readonly') navBackupBtn.style.display = '';
     if (!role || canAdmin) adminNavBtns.forEach(function (btn) { btn.style.display = ''; });
+    if (!role || canOperate) moderatorNavBtns.forEach(function (btn) { btn.style.display = ''; });
   }
   if (role && !canOperate) {
     startBtn.style.display = 'none';
@@ -1869,6 +2002,7 @@ function initDashboard(resolvedRole) {
   var activeView = 'cluster';
 
   function applyActiveView() {
+    navDashboardBtn.classList.toggle('active', activeView === 'dashboard');
     navClusterBtn.classList.toggle('active', activeView === 'cluster');
     navConsoleBtn.classList.toggle('active', activeView === 'console');
     navAnalyticsBtn.classList.toggle('active', activeView === 'analytics');
@@ -1878,6 +2012,7 @@ function initDashboard(resolvedRole) {
     navMapManagementBtn.classList.toggle('active', activeView === 'mapmanagement');
     navServerManagementBtn.classList.toggle('active', activeView === 'servermanagement');
     navUpdateLogBtn.classList.toggle('active', activeView === 'updatelog');
+    viewDashboardEl.classList.toggle('active', activeView === 'dashboard');
     viewClusterEl.classList.toggle('active', activeView === 'cluster');
     viewConsoleEl.classList.toggle('active', activeView === 'console');
     viewAnalyticsEl.classList.toggle('active', activeView === 'analytics');
@@ -1887,6 +2022,7 @@ function initDashboard(resolvedRole) {
     viewMapManagementEl.classList.toggle('active', activeView === 'mapmanagement');
     viewServerManagementEl.classList.toggle('active', activeView === 'servermanagement');
     viewUpdateLogEl.classList.toggle('active', activeView === 'updatelog');
+    if (activeView === 'dashboard') renderDashboardCards(latestServers);
     if (activeView === 'analytics') loadAnalyticsView();
     if (activeView === 'backup') loadBackupView();
     if (activeView === 'settings') loadSettingsView();
@@ -1900,6 +2036,7 @@ function initDashboard(resolvedRole) {
     activeView = view;
     applyActiveView();
   }
+  navDashboardBtn.addEventListener('click', function () { selectView('dashboard'); });
   navClusterBtn.addEventListener('click', function () { selectView('cluster'); });
   navConsoleBtn.addEventListener('click', function () { selectView('console'); });
   navAnalyticsBtn.addEventListener('click', function () { selectView('analytics'); });
@@ -2499,6 +2636,44 @@ function initDashboard(resolvedRole) {
     return card;
   }
 
+  // Admin-only Dashboard tab: the same per-server card as the mobile Cluster Dashboard
+  // fallback above (click a card to select that profile and jump to its Console, same "⋮"
+  // action menu, no separate Manage button), just laid out as a full grid instead of a single
+  // mobile column, and grouped like the Settings map dropdown/server pickers - a run of
+  // consecutive same-group servers (servers already arrive pre-sorted ungrouped-first-then-
+  // alphabetical-by-group) becomes one labeled grid section.
+  function renderDashboardCards(servers) {
+    dashboardCardsEl.innerHTML = '';
+    if (servers.length === 0) {
+      var empty = document.createElement('p');
+      empty.className = 'empty-state';
+      empty.textContent = 'No servers yet.';
+      dashboardCardsEl.appendChild(empty);
+      return;
+    }
+    var openGroupName = null;
+    var openGroupGrid = null;
+    servers.forEach(function (server) {
+      var group = server.group || '';
+      if (group !== openGroupName || !openGroupGrid) {
+        openGroupName = group;
+        var section = document.createElement('div');
+        section.className = 'dashboard-group';
+        if (group) {
+          var label = document.createElement('h3');
+          label.className = 'dashboard-group-label';
+          label.textContent = group;
+          section.appendChild(label);
+        }
+        openGroupGrid = document.createElement('div');
+        openGroupGrid.className = 'dashboard-group-grid';
+        section.appendChild(openGroupGrid);
+        dashboardCardsEl.appendChild(section);
+      }
+      openGroupGrid.appendChild(buildServerCardMobile(server));
+    });
+  }
+
   function renderClusterConsoleCards(servers) {
     clusterConsoleCardsEl.innerHTML = '';
     servers.forEach(function (server) { clusterConsoleCardsEl.appendChild(buildServerCardMobile(server)); });
@@ -2648,6 +2823,59 @@ function initDashboard(resolvedRole) {
   var refreshBackupBtn = document.getElementById('btn-backup-refresh');
   if (role && !canOperate) createBackupBtn.style.display = 'none';
 
+  // Backup directory/retention/schedule editing - same function as the desktop Manager's own
+  // Backups tab, admin+ only (it goes through the same admin-gated /profile route Settings
+  // uses), unlike create/restore/delete above which stay at their own, lower tiers.
+  var backupSettingsSectionEl = document.getElementById('backup-settings-section');
+  var backupDirInput = document.getElementById('backup-dir');
+  var backupMaxBackupsInput = document.getElementById('backup-maxbackups');
+  var backupScheduleEnabledInput = document.getElementById('backup-schedule-enabled');
+  var backupScheduleCronInput = document.getElementById('backup-schedule-cron');
+  var backupPlayerProfileEnabledInput = document.getElementById('backup-playerprofile-enabled');
+  var backupPlayerProfileMaxInput = document.getElementById('backup-playerprofile-maxperplayer');
+  var backupSettingsStatusEl = document.getElementById('backup-settings-status');
+  var backupSettingsErrorEl = document.getElementById('backup-settings-error');
+  if (role && !canAdmin) backupSettingsSectionEl.style.display = 'none';
+
+  function showBackupSettingsError(message) {
+    backupSettingsErrorEl.textContent = message || '';
+    backupSettingsErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function showBackupSettingsStatus(message) {
+    backupSettingsStatusEl.textContent = message || '';
+    backupSettingsStatusEl.style.display = message ? '' : 'none';
+    if (message) setTimeout(function () { showBackupSettingsStatus(''); }, 2000);
+  }
+
+  function saveBackupSettingsField(field, value) {
+    if (!currentId) return;
+    var id = currentId;
+    var body = {};
+    body[field] = value;
+    showBackupSettingsError('');
+    fetch('/api/servers/' + encodeURIComponent(id) + '/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showBackupSettingsError(result.error || 'Save failed'); return; }
+        if (id !== currentId) return;
+        showBackupSettingsStatus('Saved');
+        loadBackupView();
+      })
+      .catch(function () { showBackupSettingsError('Request failed'); });
+  }
+
+  backupDirInput.addEventListener('change', function () { saveBackupSettingsField('backupDir', backupDirInput.value); });
+  backupMaxBackupsInput.addEventListener('change', function () { saveBackupSettingsField('maxBackups', Number(backupMaxBackupsInput.value)); });
+  backupScheduleEnabledInput.addEventListener('change', function () { saveBackupSettingsField('backupScheduleEnabled', backupScheduleEnabledInput.checked); });
+  backupScheduleCronInput.addEventListener('change', function () { saveBackupSettingsField('backupSchedule', backupScheduleCronInput.value); });
+  backupPlayerProfileEnabledInput.addEventListener('change', function () { saveBackupSettingsField('playerProfileBackupEnabled', backupPlayerProfileEnabledInput.checked); });
+  backupPlayerProfileMaxInput.addEventListener('change', function () { saveBackupSettingsField('playerProfileBackupMaxPerPlayer', Number(backupPlayerProfileMaxInput.value)); });
+
   // On a phone, a long backup list (whatever the Backups tab's retention setting keeps -
   // could be well beyond 10) is a lot of scrolling just to reach the process log below it.
   // Cap it there by default, with a button to see the rest. Desktop always shows everything.
@@ -2781,15 +3009,25 @@ function initDashboard(resolvedRole) {
       .then(function (status) {
         if (id !== currentId) return;
         if (!status.backupDir) {
-          backupInfoEl.textContent = "No backup directory set - configure it in the Manager's Backups tab first.";
-          return;
+          backupInfoEl.textContent = (!role || canAdmin)
+            ? 'No backup directory set - configure it below.'
+            : "No backup directory set - configure it in the Manager's Backups tab first.";
+        } else {
+          var scheduleText = !status.scheduleEnabled
+            ? 'no schedule'
+            : status.scheduleActive
+              ? 'scheduled (' + status.scheduleCron + ')'
+              : 'scheduled but not currently armed';
+          backupInfoEl.textContent = 'Directory: ' + status.backupDir + ' - keeping last ' + status.maxBackups + ' - ' + scheduleText;
         }
-        var scheduleText = !status.scheduleEnabled
-          ? 'no schedule'
-          : status.scheduleActive
-            ? 'scheduled (' + status.scheduleCron + ')'
-            : 'scheduled but not currently armed';
-        backupInfoEl.textContent = 'Directory: ' + status.backupDir + ' - keeping last ' + status.maxBackups + ' - ' + scheduleText;
+        backupDirInput.value = status.backupDir || '';
+        backupMaxBackupsInput.value = status.maxBackups;
+        backupScheduleEnabledInput.checked = !!status.scheduleEnabled;
+        backupScheduleCronInput.value = status.scheduleCron || '';
+        backupScheduleCronInput.disabled = !status.scheduleEnabled;
+        backupPlayerProfileEnabledInput.checked = !!status.playerProfileBackupEnabled;
+        backupPlayerProfileMaxInput.value = status.playerProfileBackupMaxPerPlayer;
+        backupPlayerProfileMaxInput.disabled = !status.playerProfileBackupEnabled;
       });
     fetch('/api/servers/' + encodeURIComponent(id) + '/backups')
       .then(function (r) { return r.json(); })
@@ -2913,7 +3151,10 @@ function initDashboard(resolvedRole) {
             : status.scheduleActive
               ? 'Started'
               : 'Stopped';
-        analyticsStatusGridEl.appendChild(statPair('Backup task status', taskText).wrap);
+        var taskClass = !analyticsUptimeRunning ? 'status-offline' : status.scheduleActive ? 'status-ok' : 'status-warn';
+        var taskPair = statPair('Backup task status', taskText);
+        taskPair.dd.className = taskClass;
+        analyticsStatusGridEl.appendChild(taskPair.wrap);
         if (analyticsUptimeRunning && status.scheduleEnabled) {
           analyticsStatusGridEl.appendChild(
             statPair('Next backup in', status.nextRunAt !== null ? formatCountdown(status.nextRunAt - Date.now()) : '--:--:--:--').wrap
@@ -2975,9 +3216,11 @@ function initDashboard(resolvedRole) {
         if (id !== currentId || activeView !== 'analytics') return;
         analyticsChartEl.innerHTML = '';
         if (history.length === 0) {
+          var server = latestServers.filter(function (s) { return s.id === id; })[0];
+          var isRunning = server ? server.state === 'running' : false;
           var empty = document.createElement('p');
           empty.className = 'empty-state';
-          empty.textContent = 'Collecting data... check back in a few seconds.';
+          empty.textContent = isRunning ? 'Collecting data... check back in a few seconds.' : "Server isn't running - start it to see live stats.";
           analyticsChartEl.appendChild(empty);
           return;
         }
@@ -3406,7 +3649,7 @@ function initDashboard(resolvedRole) {
     var id = currentId;
     var body = {};
     body[field] = value;
-    fetch('/api/servers/' + encodeURIComponent(id) + '/profile', {
+    fetch('/api/servers/' + encodeURIComponent(id) + '/servermanagement', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -3470,7 +3713,7 @@ function initDashboard(resolvedRole) {
     showSmError('');
     smNoServerEl.style.display = 'none';
     smContentEl.classList.add('active');
-    fetch('/api/servers/' + encodeURIComponent(id) + '/profile')
+    fetch('/api/servers/' + encodeURIComponent(id) + '/servermanagement')
       .then(function (r) { return r.json(); })
       .then(function (profile) {
         if (id !== currentId) return;
@@ -3870,14 +4113,33 @@ function initDashboard(resolvedRole) {
     updatelogServerSelectEl
   ];
 
+  // servers arrives already ordered ungrouped-first-then-alphabetical-by-group (server-side
+  // sortProfilesForDisplay), so a run of consecutive same-group entries can just be wrapped in
+  // one optgroup as it's encountered - same idea as populateSettingsMapOptions' Official/Custom
+  // optgroups, but grouped by each server's own Dashboard group instead of a fixed pair.
   function populateServerPickers(servers) {
     SERVER_PICKERS.forEach(function (picker) {
       picker.innerHTML = '';
+      var openGroupName = null;
+      var openGroupEl = null;
       servers.forEach(function (s) {
+        var group = s.group || '';
         var opt = document.createElement('option');
         opt.value = s.id;
         opt.textContent = s.name;
-        picker.appendChild(opt);
+        if (!group) {
+          openGroupName = null;
+          openGroupEl = null;
+          picker.appendChild(opt);
+          return;
+        }
+        if (group !== openGroupName) {
+          openGroupName = group;
+          openGroupEl = document.createElement('optgroup');
+          openGroupEl.label = group;
+          picker.appendChild(openGroupEl);
+        }
+        openGroupEl.appendChild(opt);
       });
     });
   }
@@ -3942,6 +4204,7 @@ function initDashboard(resolvedRole) {
       renderStatus(servers.find(function (s) { return s.id === currentId; }));
       renderAnalyticsStatus();
       renderClusterCards(servers);
+      if (activeView === 'dashboard') renderDashboardCards(servers);
       refreshClusterConsoleServers();
     });
   }

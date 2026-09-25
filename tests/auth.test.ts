@@ -4,6 +4,7 @@ import {
   hashPassword,
   verifyPassword,
   roleAtLeast,
+  migrateLegacyRole,
   generateApiKeyId,
   generateApiKeySecret,
   buildApiKey,
@@ -34,13 +35,32 @@ describe('hashPassword / verifyPassword', () => {
 })
 
 describe('roleAtLeast', () => {
-  it('ranks readonly < operator < admin', () => {
+  it('ranks readonly < moderator < admin < globalAdmin', () => {
     expect(roleAtLeast('readonly', 'readonly')).toBe(true)
-    expect(roleAtLeast('readonly', 'operator')).toBe(false)
-    expect(roleAtLeast('operator', 'readonly')).toBe(true)
-    expect(roleAtLeast('operator', 'admin')).toBe(false)
-    expect(roleAtLeast('admin', 'operator')).toBe(true)
+    expect(roleAtLeast('readonly', 'moderator')).toBe(false)
+    expect(roleAtLeast('moderator', 'readonly')).toBe(true)
+    expect(roleAtLeast('moderator', 'admin')).toBe(false)
+    expect(roleAtLeast('admin', 'moderator')).toBe(true)
     expect(roleAtLeast('admin', 'admin')).toBe(true)
+    expect(roleAtLeast('admin', 'globalAdmin')).toBe(false)
+    expect(roleAtLeast('globalAdmin', 'admin')).toBe(true)
+    expect(roleAtLeast('globalAdmin', 'globalAdmin')).toBe(true)
+  })
+})
+
+describe('migrateLegacyRole', () => {
+  it('migrates the pre-4-tier admin role to globalAdmin, preserving full access', () => {
+    expect(migrateLegacyRole('admin')).toBe('globalAdmin')
+  })
+
+  it('migrates the pre-4-tier operator role to moderator', () => {
+    expect(migrateLegacyRole('operator')).toBe('moderator')
+  })
+
+  it('leaves every current role value unchanged', () => {
+    expect(migrateLegacyRole('globalAdmin')).toBe('globalAdmin')
+    expect(migrateLegacyRole('moderator')).toBe('moderator')
+    expect(migrateLegacyRole('readonly')).toBe('readonly')
   })
 })
 

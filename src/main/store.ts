@@ -3,6 +3,7 @@ import type { ServerProfile, AppSettings, WebDashboardAccessToken, WebDashboardA
 import { migrateProfile } from './lib/profileMigration'
 import { reorderProfiles } from './lib/reorder'
 import { stripWrappingQuotes } from './lib/pathSanitize'
+import { migrateLegacyRole } from './lib/auth'
 
 interface StoreSchema {
   profiles: ServerProfile[]
@@ -108,7 +109,7 @@ export function saveSettings(settings: AppSettings): AppSettings {
 }
 
 export function listWebDashboardAccessTokens(): WebDashboardAccessToken[] {
-  return store.get('webDashboardAccessTokens') ?? []
+  return (store.get('webDashboardAccessTokens') ?? []).map((t) => ({ ...t, role: migrateLegacyRole(t.role) }))
 }
 
 export function saveWebDashboardAccessToken(token: WebDashboardAccessToken): WebDashboardAccessToken[] {
@@ -127,7 +128,7 @@ export function deleteWebDashboardAccessToken(id: string): WebDashboardAccessTok
 }
 
 export function listWebDashboardApiKeys(): WebDashboardApiKey[] {
-  return store.get('webDashboardApiKeys') ?? []
+  return (store.get('webDashboardApiKeys') ?? []).map((k) => ({ ...k, role: migrateLegacyRole(k.role) }))
 }
 
 export function saveWebDashboardApiKey(key: WebDashboardApiKey): WebDashboardApiKey[] {

@@ -570,32 +570,48 @@ dedicated servers running on the same machine.
   trimming and fall back to the size cap alone. This is also where the **web dashboard** is
   enabled - the only place in this app for a live console feed and RCON, on purpose (the
   desktop app itself has no console/RCON tab). It's a plain HTTP server built into the
-  Manager (no separate process), serving a page with a sidebar that starts with just
-  **Cluster Dashboard** - the main/landing view every page load opens on, with nothing else
-  in the sidebar yet. A single separator, then one flat group of eight per-server tabs, in
-  this order - **Console**, **Analytics**, **Settings**, **Mods**, **Backup**, **Map
-  Management**, **Server Management**, **Update Log** - only appears in the sidebar once a
-  server has actually been clicked (a card inside a group's mobile Group Console, or any of
-  these eight tabs' own server picker, top-right of the header, once one of them is
-  reachable some other way). Of those eight, **Settings**, **Mods**, **Map Management**,
-  **Server Management**, and **Update Log** additionally require the connecting token/key
-  to be role `admin` (or no login requirement at all, in which case every route is
-  effectively admin) - **Console**, **Analytics**, and **Backup** stay available to any
-  role, same as before. This is a deliberate gate, not just a first-load default: a plain
-  `selectView('console')` call still works even while its nav button is hidden (so drilling
-  in via a card always works), but nothing pre-selects a server on load the way earlier
-  versions of this page did - every one of these views starts genuinely empty until you
-  choose a server yourself, and once shown, the whole group stays in the sidebar for the
-  rest of that page's session even if the server it was showing later disappears (e.g. that
-  profile gets deleted), falling back to Cluster Dashboard rather than hiding the tabs
-  again. Every one of the eight tabs carries an identical **server picker** dropdown at the
-  top-right of its own header (`.server-picker` - `margin-left: auto` pushes it to the far
-  right of the flex header row), listing every server by plain name only (no "(running)"/
-  state suffix cluttering it up - that's what each tab's own content already shows).
-  Switching it on any one of the eight instantly switches all the others to the same server
-  too (`syncServerPickers`), so hopping from, say, Analytics straight to that same server's
-  Mods tab, or over to a completely different server's Settings, never requires detouring
-  back through Cluster Dashboard first:
+  Manager (no separate process), serving a page with a sidebar that starts with, in order,
+  **Dashboard** (admin-tier tokens only - see roles below) and **Cluster Dashboard** - the
+  latter is the main/landing view every page load opens on, with nothing else in the
+  sidebar yet besides Dashboard. **Dashboard** replicates the desktop Manager's own
+  Dashboard page as a card grid, grouped the same way (ungrouped servers first, then each
+  Dashboard group as its own labeled section) - each card shows State/Version/Players/CPU/
+  RAM and the same Start/Stop/Restart/Update/Update Restart action menu (the "⋮" button) as
+  the mobile Group Console's own cards below, but no **Manage** button - clicking a card
+  (outside that menu) selects that server and jumps straight to its Console, exactly like
+  tapping a mobile Group Console card already does. It's built from the exact same
+  `buildServerCardMobile` card renderer as that mobile view, just laid out as a responsive
+  grid instead of one mobile column. A single separator, then one flat group of eight
+  per-server tabs, in this order - **Console**, **Analytics**, **Settings**, **Mods**,
+  **Backup**, **Map Management**, **Server Management**, **Update Log** - only appears in
+  the sidebar once a server has actually been clicked (a card inside a group's mobile Group
+  Console, the Dashboard tab above, or any of these eight tabs' own server picker, top-right
+  of the header, once one of them is reachable some other way). Of those eight, **Settings**,
+  **Mods**, **Map Management**, and **Update Log** additionally require the connecting
+  token/key to be role `admin` or `globalAdmin` (or no login requirement at all, in which
+  case every route is effectively `globalAdmin`) - see **Access tokens** further below for
+  what each of the four roles can reach. **Server Management** requires `moderator`
+  or higher (a narrower tier than the other four admin-only tabs) through its own dedicated
+  `GET`/`POST /api/servers/:id/servermanagement` route - a whitelist of just the fields that
+  tab edits, never the rest of the profile the admin-only `/profile` route exposes.
+  **Console**, **Analytics**, and **Backup** stay available to any role, same as before. This
+  is a deliberate gate, not just a first-load default: a plain `selectView('console')` call
+  still works even while its nav button is hidden (so drilling in via a card always works),
+  but nothing pre-selects a server on load the way earlier versions of this page did - every
+  one of these views starts genuinely empty until you choose a server yourself, and once
+  shown, the whole group stays in the sidebar for the rest of that page's session even if the
+  server it was showing later disappears (e.g. that profile gets deleted), falling back to
+  Cluster Dashboard rather than hiding the tabs again. Every one of the eight tabs carries an
+  identical **server picker** dropdown at the top-right of its own header (`.server-picker` -
+  `margin-left: auto` pushes it to the far right of the flex header row), listing every
+  server by plain name only (no "(running)"/state suffix cluttering it up - that's what each
+  tab's own content already shows), grouped into `<optgroup>`s by Dashboard group exactly
+  like the Settings tab's own Map dropdown groups Official/Custom maps - ungrouped servers
+  listed bare above the first optgroup, each group's servers in the same order the desktop
+  dashboard shows them in. Switching it on any one of the eight instantly switches all the
+  others to the same server too (`syncServerPickers`), so hopping from, say, Analytics
+  straight to that same server's Mods tab, or over to a completely different server's
+  Settings, never requires detouring back through Cluster Dashboard first:
   - **Cluster Dashboard** - a mobile-adapted version of the desktop Manager's own Cluster
     Dashboard page, not just a per-server card grid: one summary row per Dashboard group
     (ungrouped servers get their own "Ungrouped" row), same shape as the desktop version -
@@ -703,12 +719,12 @@ dedicated servers running on the same machine.
     pill badge as the Group Console's own server cards instead of plain text, plus **Version** (the
     Game Version, e.g. "92.28") alongside Players/CPU/RAM - both boxes pull from the same
     `/api/servers` response, so they always agree. Its server picker (top-right of the
-    header, listing profiles in the same order as the desktop dashboard - ungrouped first in
-    their reordered position, then each group alphabetically, leaving out anything marked
-    **Hidden** - options show the plain server name only, no "(running)"/state suffix, since
-    every tab that has one already shows state some other way) is the same shared
-    `.server-picker` every one of the eight per-server tabs carries, not something unique to
-    this view.
+    header, listing profiles in the same order as the desktop dashboard and grouped into
+    `<optgroup>`s the same way - ungrouped first in their reordered position, then each group
+    alphabetically, leaving out anything marked **Hidden** - options show the plain server
+    name only, no "(running)"/state suffix, since every tab that has one already shows state
+    some other way) is the same shared `.server-picker` every one of the eight per-server
+    tabs carries, not something unique to this view.
   - A live, color-coded event feed - only the event label is colored (plus the player's
     name specifically for JOIN/LEFT), not the whole line. It tails the server's
     `ShooterGame.log` file directly on every page load/reconnect (the same per-connection
@@ -792,32 +808,47 @@ dedicated servers running on the same machine.
     exact same `GET /api/servers/:id/backups/status` route the Backup tab itself calls,
     rather than a separate endpoint) - the same fields the desktop Manager's own Analytics
     tab shows under its own "Server Status" heading, minus PID/build ID/the file-shortcut
-    buttons/the update-check panel, none of which have a meaningful remote equivalent. Below
+    buttons/the update-check panel, none of which have a meaningful remote equivalent.
+    **Backup task status** is colored the same way as the desktop tab's own field
+    (`status-ok`/`status-warn`/`status-offline` - green when a schedule is armed, amber when
+    enabled but not currently active, red/muted when the server itself is offline). Below
+    that, a **Time Scale** row (1m through All, a separate button set and a separate
+    per-profile `localStorage` key from the Cluster Dashboard's, so picking a scale here
+    doesn't change what a group's own chart shows) with an **Enable stats collection**
+    checkbox to its right (shortened from "Enable stats collection for this server" - the tab
+    itself already makes clear which server it's for) - mirrors the desktop Analytics tab's
+    own toggle (`ServerProfile.statsEnabled`); unlike that checkbox, toggling it here is
+    itself a profile write, so it goes through the same admin-gated `POST
+    /api/servers/:id/profile` route as Settings/Mods and is disabled client-side for any role
+    below admin (the tab itself stays open to every role, same as Console/Backup - viewing an
+    already-enabled server's history, or its Status box, needs no special permission). Below
     that, the same CPU/RAM/Players sparkline chart as the Cluster Dashboard's own per-group
     chart above, just fed one server's own history instead of several summed together -
     literally the same `buildClusterChart`/`buildSparkline` drawing code, reused rather than
-    reimplemented. An **Enable stats collection for this server** checkbox mirrors the
-    desktop Analytics tab's own toggle (`ServerProfile.statsEnabled`); unlike that checkbox,
-    toggling it here is itself a profile write, so it goes through the same admin-gated
-    `POST /api/servers/:id/profile` route as Settings/Mods/Server Management and is disabled
-    client-side for any role below admin (the tab itself stays open to every role, same as
-    Console/Backup - viewing an already-enabled server's history, or its Status box, needs no
-    special permission). A `GET /api/servers/:id/stats` route (`readonly`, backed by the
-    same `readStatsHistory` the desktop Manager's own IPC channel calls) feeds the chart,
-    downsampled to the same 500-point budget and polled every 5s while the tab is open. Its
-    own **Time Scale** row (1m through All) is a separate button set and a separate
-    per-profile `localStorage` key from the Cluster Dashboard's, so picking a scale here
-    doesn't change what a group's own chart shows.
-  - **Backup** - a read-only-settings backup menu similar to the desktop app's Backups
-    tab, always showing whichever server its own picker (or any of the other seven tabs'
-    pickers, kept in sync) currently has selected - switching servers anywhere, including
-    via a Cluster Dashboard card click, updates this view too. Shows the configured backup
-    directory, retention count, and schedule
-    (cron + next run) as plain info text - editing the backup directory/retention/schedule
-    itself stays a desktop-only setting; everything this view's own routes can do is act on
-    backups that already exist (create/restore/delete), not reconfigure how they're taken.
-    (Profile configuration in general is a different story now - see the five admin-only
-    tabs below.) A **Create backup now** button and **Refresh**
+    reimplemented. A `GET /api/servers/:id/stats` route (`readonly`, backed by the same
+    `readStatsHistory` the desktop Manager's own IPC channel calls) feeds the chart,
+    downsampled to the same 500-point budget and polled every 5s while the tab is open. Once
+    stats are enabled but no samples exist yet, the chart area shows "Collecting data..." only
+    while the server is actually running - a stopped server instead shows "Server isn't
+    running - start it to see live stats.", matching the desktop Analytics tab's own
+    conditional, rather than perpetually implying data collection is imminent for a server
+    that isn't even up.
+  - **Backup** - a backup menu matching the desktop app's own Backups tab, always showing
+    whichever server its own picker (or any of the other seven tabs' pickers, kept in sync)
+    currently has selected - switching servers anywhere, including via a Cluster Dashboard
+    card click, updates this view too. A **Backup Settings** section (admin/globalAdmin only
+    - hidden entirely for lower roles, same pattern as Settings/Mods) lets an admin token
+    edit the backup directory, max backups to keep, the scheduled-backup toggle and its cron
+    expression, and the player-profile-backup toggle/per-player retention count, each saving
+    immediately on change through the same admin-gated `POST /api/servers/:id/profile` route
+    as Settings/Mods - full parity with the desktop tab's own settings form, short of the
+    **Browse...** directory picker button (no local file-system dialog to open remotely; type
+    the path directly instead). Below that, the same directory/retention/schedule summary
+    line as before (now doubling as live confirmation that a setting just saved actually
+    took). Every other role sees that summary line only, exactly as before - everything the
+    rest of this view's own routes can do is act on backups that already exist
+    (create/restore/delete), not reconfigure how they're taken. A **Create backup now** button
+    and **Refresh**
     button sit above a table of existing backups (file name, size, creation time) each
     with **Restore** and **Delete** actions (both confirm before acting), and a **Backup
     Process Log** panel alongside it - taking 40% of that row's width to the table's 60%,
@@ -829,34 +860,40 @@ dedicated servers running on the same machine.
     fewer**; desktop always shows the full list, no cap. All of it backed by the same
     `backup.ts`/`schedule.ts` functions the desktop Backups tab uses, reused directly
     since the web dashboard runs in the same process.
-  - **Settings**, **Mods**, **Map Management**, **Server Management**, and **Update Log** -
-    admin-only tabs (role `admin`, or no login requirement at all) that let an admin token
-    do essentially everything the desktop Manager's own per-server Settings/Mods/Map
-    Management/Server Management/Update Log tabs can, without any local file-system access
-    (no directory/file picker, no "open folder" button - those stay desktop-only, they have
-    no remote equivalent). Each follows whatever server is currently selected exactly like
-    Backup above, with the same "No server selected - choose one above." fallback.
-    **Settings** covers Name/Install directory/ports/Platform/Max Players/Map (official +
-    custom, from the same `maps.json`/`customMaps.json` the desktop Manager reads)/Mod
-    Map/Beta/culture/BattlEye/RCON Tribe Log/Force Respawn Dinos/No Sound/Dashboard
-    group/Extra launch arguments/Cluster settings. **Mods** is the same enable/passive/dev
-    checkboxes, name, and mod ID table as the desktop tab, add/remove included. **Map
-    Management** creates/lists/deletes `SavedArks/<folder>/<file>` placeholders. **Server
-    Management** covers the startup/crash-watchdog/zombie-detection toggles, the cluster
-    console archive size, and the scheduled Restart/Dino Wipe day-and-time pickers, including
-    the same live "Next shutdown/dinowipe in: DD:HH:MM:SS" countdown as the desktop tab -
-    `computeNextOccurrence`/`formatCountdown` (`shared/scheduleTime.ts`) hand-ported into
-    this page's own vanilla-JS client script (which has no module system to import the real
-    ones from) and ticking once a second while this tab is open, same cadence as desktop.
-    **Update Log** is a read-only view of the last SteamCMD run's output,
-    refreshing every few seconds while open, same as the desktop tab's live-updating
-    version. Every field saves immediately on change (no separate Save button), each
-    through its own `POST /api/servers/:id/profile` call (Mods and Server Management reuse
-    this same route; Map Management gets its own `GET`/`POST /api/servers/:id/mapfolders`
-    and `POST .../mapfolders/delete`; Settings additionally reads `GET /api/maps` for its
-    Map dropdown) - all gated by `requireRole(req, res, 'admin')` server-side regardless of
-    what the sidebar does or doesn't show client-side, and still scoped by a token's
-    per-profile access list the same as every other per-server route on this page.
+  - **Settings**, **Mods**, **Map Management**, and **Update Log** - admin-only tabs (role
+    `admin`/`globalAdmin`, or no login requirement at all) that let an admin token do
+    essentially everything the desktop Manager's own per-server Settings/Mods/Map
+    Management/Update Log tabs can, without any local file-system access (no directory/file
+    picker, no "open folder" button - those stay desktop-only, they have no remote
+    equivalent). Each follows whatever server is currently selected exactly like Backup
+    above, with the same "No server selected - choose one above." fallback. **Settings**
+    covers Name/Install directory/ports/Platform/Max Players/Map (official + custom, from the
+    same `maps.json`/`customMaps.json` the desktop Manager reads)/Mod Map/Beta/culture/
+    BattlEye/RCON Tribe Log/Force Respawn Dinos/No Sound/Dashboard group/Extra launch
+    arguments/Cluster settings. **Mods** is the same enable/passive/dev checkboxes, name, and
+    mod ID table as the desktop tab, add/remove included. **Map Management** creates/lists/
+    deletes `SavedArks/<folder>/<file>` placeholders. **Update Log** is a read-only view of
+    the last SteamCMD run's output, refreshing every few seconds while open, same as the
+    desktop tab's live-updating version. Every field saves immediately on change (no separate
+    Save button), each through its own `POST /api/servers/:id/profile` call (Mods reuses this
+    same route; Map Management gets its own `GET`/`POST /api/servers/:id/mapfolders` and
+    `POST .../mapfolders/delete`; Settings additionally reads `GET /api/maps` for its Map
+    dropdown) - all gated by `requireRole(req, res, 'admin')` server-side regardless of what
+    the sidebar does or doesn't show client-side, and still scoped by a token's per-profile
+    access list the same as every other per-server route on this page.
+  - **Server Management** - a `moderator`-and-above tab (a wider tier than the four above -
+    moderators are meant to reach it), covering the startup/crash-watchdog/zombie-detection
+    toggles, the cluster console archive size, and the scheduled Restart/Dino Wipe
+    day-and-time pickers, including the same live "Next shutdown/dinowipe in: DD:HH:MM:SS"
+    countdown as the desktop tab - `computeNextOccurrence`/`formatCountdown`
+    (`shared/scheduleTime.ts`) hand-ported into this page's own vanilla-JS client script
+    (which has no module system to import the real ones from) and ticking once a second
+    while this tab is open, same cadence as desktop. Unlike the four admin-only tabs above,
+    it has its own dedicated `GET`/`POST /api/servers/:id/servermanagement` route rather than
+    reusing the generic `/profile` route - a hardcoded whitelist of just the fields this tab
+    edits, so a moderator-tier credential reaching it can never read or write anything else
+    on the profile (install directory, ports, mods, backup settings, etc. all stay behind the
+    admin-only `/profile` route). Saves immediately on change, same as the other tabs.
   - Cluster Dashboard is always the tab this page opens on - there's no remembered-last-view
     restore across reloads the way earlier versions of this page had. The eight per-server
     tabs above only ever enter the sidebar through an explicit click on a card in a group's
@@ -890,44 +927,55 @@ dedicated servers running on the same machine.
     - **Access tokens** are managed only from this Settings screen, never from the
       dashboard page itself - so having a token never grants the ability to create or
       revoke tokens, that always requires being at the machine running the Manager. Each
-      token has a label (just for telling tokens apart, e.g. "My laptop") and one of three
-      roles: **Admin** (everything, including the Settings/Mods/Map Management/Server
-      Management/Update Log tabs - full remote profile editing, not just Operator's
-      start/stop/RCON/backup-creation), **Operator** (start/stop/restart/update a server, send
-      RCON commands, create backups - but not restore or delete them, and not the
-      event-label filter checkboxes, which are shared/global rather than per-token), and
-      **Read-only** (Cluster Dashboard plus a server's console feed and online players
-      list, with every action hidden - no Backup section, no Start/Stop/RCON, no Kick,
-      nothing that writes). Role checks happen on the server for every route regardless of
-      what the page shows - the client-side hiding is just so a role never sees a button
-      that would fail if clicked. A token's full value (`ark_<id>_<secret>`) is shown
-      exactly once, right after creating it - only its hash is ever stored, so a lost token
-      can't be recovered, only revoked and replaced with a new one. To use one, paste it
-      into the small prompt the dashboard page shows the first time a browser opens it
-      without a token; that browser then remembers it (in its own `localStorage`, never a
-      cookie or server-side session) until it's cleared, the token is revoked from
-      Settings, or **Log out** is clicked - unlike a login session, a stored token survives
-      a Manager restart or the dashboard being turned off and back on, so a browser only
-      has to paste it in once.
+      token has a label (just for telling tokens apart, e.g. "My laptop") and one of four
+      roles, highest to lowest: **Global Admin** (everything, on every server, always -
+      the only role that ignores the per-server scoping described below even if one is
+      set on the token), **Admin** (the exact same full permission set as Global Admin -
+      Settings/Mods/Map Management/Update Log, full remote profile editing - but restricted
+      to whichever servers the token is scoped to, same as every other role), **Moderator**
+      (Console/Analytics/Backup/Cluster Dashboard plus **Server Management** - start/stop/
+      restart/update a server, send RCON commands, create backups - but not restore or
+      delete them, not Settings/Mods/Map Management/Update Log, and not the event-label
+      filter checkboxes, which are shared/global rather than per-token), and **Read-only**
+      (Cluster Dashboard plus a server's console feed and online players list, with every
+      action hidden - no Backup section, no Start/Stop/RCON, no Kick, nothing that writes).
+      A token created before this four-tier split existed keeps working exactly as it did:
+      a stored `admin` role becomes **Global Admin** (it already meant unrestricted access
+      before per-server scoping existed) and a stored `operator` role becomes **Moderator**,
+      both migrated automatically the moment the Manager reads them, no action needed. Role
+      checks happen on the server for every route regardless of what the page shows - the
+      client-side hiding is just so a role never sees a button that would fail if clicked. A
+      token's full value (`ark_<id>_<secret>`) is shown exactly once, right after creating it
+      - only its hash is ever stored, so a lost token can't be recovered, only revoked and
+      replaced with a new one. To use one, paste it into the small prompt the dashboard page
+      shows the first time a browser opens it without a token; that browser then remembers it
+      (in its own `localStorage`, never a cookie or server-side session) until it's cleared,
+      the token is revoked from Settings, or **Log out** is clicked - unlike a login session,
+      a stored token survives a Manager restart or the dashboard being turned off and back
+      on, so a browser only has to paste it in once.
     - Each access token can also be scoped to a chosen subset of servers, via a dropdown
       next to the label/role fields when creating one - a button showing the current
       selection ("All servers", one name, or a count) opens a scrollable checklist, one
       checkbox per server, rather than requiring Ctrl/Cmd-click. Nothing checked, the
       default, means every server - including ones added later, same as a token created
-      before this existed. This is enforced on the server for every route that operates on
-      a specific server or group, not just filtered out of what the dashboard page displays
-      - a direct API call for a server outside a token's scope gets the same 404 as a
-      genuinely unknown server, rather than exposing that the server exists at all. The
-      tokens table shows each one's scope as "All" or the list of server names it's
-      restricted to.
+      before this existed. Choosing **Global Admin** hides/disables this picker entirely
+      (it shows "All servers" and can't be changed) since that role structurally ignores
+      scoping either way - pick **Admin** instead for a token that should be limited to
+      specific servers while still having full permissions on them. This is enforced on the
+      server for every route that operates on a specific server or group, not just filtered
+      out of what the dashboard page displays - a direct API call for a server outside a
+      token's scope gets the same 404 as a genuinely unknown server, rather than exposing
+      that the server exists at all. The tokens table shows each one's scope as "All" or the
+      list of server names it's restricted to.
     - **API keys** (also managed only from this Settings screen, kept as their own separate
       list from access tokens) are the same idea, but for scripts/bots that call the
       dashboard's HTTP API directly rather than a person's browser - e.g. a Discord bot
-      posting server status. Each key has a label, a role (same three as access tokens), and
-      is sent as `Authorization: Bearer <key>` exactly like an access token is - the server
-      checks a presented Bearer credential against both lists, so either kind works
-      anywhere the other does. A key's full value is shown exactly once at creation, same
-      as an access token.
+      posting server status. Each key has a label, a role (same four as access tokens - Admin
+      and Global Admin behave identically for a key, since keys aren't scoped to specific
+      servers the way access tokens can be), and is sent as `Authorization: Bearer <key>`
+      exactly like an access token is - the server checks a presented Bearer credential
+      against both lists, so either kind works anywhere the other does. A key's full value is
+      shown exactly once at creation, same as an access token.
 - **Cluster** — an optional, per-server section (Settings tab) for cross-server transfers:
   Cluster ID (`-clusterid=`), Dedicated Cluster Directory (`-ClusterDirOverride=`, with a
   folder picker), No Transfer From Filtering (`-NoTransferFromFiltering`), and External IP
@@ -1239,9 +1287,10 @@ the Settings section above:
   token works anywhere an API key does and vice versa; they're only kept as separate lists
   for organizing who has what.
 - `GET /api/whoami` - what the dashboard page itself calls right after a browser pastes in
-  a token, to learn its role. Returns `{ "role": "admin" | "operator" | "readonly" }` for
-  any valid credential, 401 for an invalid or missing one - useful for a script to sanity-check
-  a key/token before using it for anything else.
+  a token, to learn its role. Returns
+  `{ "role": "globalAdmin" | "admin" | "moderator" | "readonly" }` for any valid credential,
+  401 for an invalid or missing one - useful for a script to sanity-check a key/token before
+  using it for anything else.
 
 | Method | Path | Body | Response | Notes |
 | --- | --- | --- | --- | --- |
@@ -1256,7 +1305,7 @@ the Settings section above:
 | POST | `/api/servers/:id/stop-update-restart` | — | `{ ok: true }` | Stops if running, updates, starts back up - the single-server "do everything" action |
 | POST | `/api/servers/:id/rcon` | `{ "command": "Broadcast hello" }` | `{ ok, response? , error? }` | Same RCON connection the page's own console box uses |
 | GET | `/api/servers/:id/players` | — | `[{ name, id }]` | Fresh `ListPlayers` call every time, not cached |
-| GET | `/api/servers/:id/backups/status` | — | `{ backupDir, maxBackups, scheduleEnabled, scheduleCron, scheduleActive, nextRunAt }` | Read-only - mirrors the Backups tab's settings, doesn't let you change them |
+| GET | `/api/servers/:id/backups/status` | — | `{ backupDir, maxBackups, scheduleEnabled, scheduleCron, scheduleActive, nextRunAt, playerProfileBackupEnabled, playerProfileBackupMaxPerPlayer }` | Read-only - mirrors the Backups tab's settings; an `admin`/`globalAdmin` credential can change them via `POST /api/servers/:id/profile` (not listed here - same generic route Settings/Mods use) |
 | GET | `/api/servers/:id/backups` | — | `[{ fileName, filePath, sizeBytes, createdAt }]` | Same list the Backups tab shows |
 | POST | `/api/servers/:id/backups` | — | `{ ok, entry? , error? }` | Creates a backup now (sends RCON SaveWorld first, same as the desktop app); 400 if no backup directory is set |
 | POST | `/api/servers/:id/backups/restore` | `{ "filePath": "..." }` | `{ ok, error? }` | Same restore-blocked-while-running guard as the desktop app |

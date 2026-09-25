@@ -40,10 +40,23 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return derived.length === expected.length && timingSafeEqual(derived, expected)
 }
 
-const ROLE_RANK: Record<WebDashboardRole, number> = { readonly: 0, operator: 1, admin: 2 }
+const ROLE_RANK: Record<WebDashboardRole, number> = { readonly: 0, moderator: 1, admin: 2, globalAdmin: 3 }
 
 export function roleAtLeast(role: WebDashboardRole, min: WebDashboardRole): boolean {
   return ROLE_RANK[role] >= ROLE_RANK[min]
+}
+
+/** Stored tokens/keys predate the 4-tier role split and may still carry one of the two old
+ *  role strings - `'admin'` (which used to mean unrestricted access to everything, now split
+ *  into globalAdmin/admin) and `'operator'` (renamed moderator). Applied lazily on every read
+ *  (electron-store doesn't validate types), the same way listProfiles() lazily runs
+ *  migrateProfile - never persisted back, so this must stay correct indefinitely. A legacy
+ *  `'admin'` becomes `globalAdmin` rather than the new scoped `admin` so nobody who already had
+ *  full access loses any of it just from this rename. */
+export function migrateLegacyRole(role: string): WebDashboardRole {
+  if (role === 'admin') return 'globalAdmin'
+  if (role === 'operator') return 'moderator'
+  return role as WebDashboardRole
 }
 
 /** Shared `ark_<id>_<secret>` credential format for both WebDashboardApiKey (bots/scripts)

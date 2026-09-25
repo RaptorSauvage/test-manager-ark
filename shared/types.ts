@@ -207,7 +207,16 @@ export interface AppSettings {
   statsHistoryMaxAgeHours: number
 }
 
-export type WebDashboardRole = 'admin' | 'operator' | 'readonly'
+/** Four tiers, highest to lowest: `globalAdmin` (everything, every server, regardless of any
+ *  `profileIds` scoping on the credential - the only role that ignores it), `admin` (the same
+ *  full permission set as globalAdmin, but restricted to whichever servers the credential is
+ *  scoped to via `profileIds`, exactly like every other role already is), `moderator` (start/
+ *  stop/RCON/create-backup plus the Console/Analytics/Backup/Server Management/Cluster
+ *  Dashboard views - everything but Settings/Mods/Map Management/Update Log), `readonly` (view
+ *  only, no actions). Legacy stored values from before this 4-tier split - `'admin'` (which
+ *  used to mean unrestricted) and `'operator'` - are migrated lazily on read; see
+ *  migrateLegacyRole in store.ts. */
+export type WebDashboardRole = 'globalAdmin' | 'admin' | 'moderator' | 'readonly'
 
 /**
  * A browser access token for the web dashboard page itself - pasted once into the browser

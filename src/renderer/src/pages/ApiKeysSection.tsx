@@ -11,6 +11,13 @@ export default function ApiKeysSection(): JSX.Element {
   const [keys, setKeys] = useState<WebDashboardApiKeySummary[]>([])
   const [label, setLabel] = useState('')
   const [role, setRole] = useState<WebDashboardRole>('readonly')
+
+  const ROLE_LABELS: Record<WebDashboardRole, string> = {
+    globalAdmin: 'Global Admin',
+    admin: 'Admin',
+    moderator: 'Moderator',
+    readonly: 'Read-only'
+  }
   const [error, setError] = useState('')
   const [newKey, setNewKey] = useState('')
 
@@ -52,8 +59,9 @@ export default function ApiKeysSection(): JSX.Element {
       <p className="empty-state">
         For scripts/bots that call the web dashboard&apos;s HTTP API directly and can&apos;t log in through a
         browser - send <code>Authorization: Bearer &lt;key&gt;</code> with each request instead of logging in. Only
-        matters while &quot;Require access token&quot; above is on; keys grant access per the same three roles as the
-        access tokens above.
+        matters while &quot;Require access token&quot; above is on; keys grant access per the same roles as the
+        access tokens above. API keys aren&apos;t scoped to specific servers, so <strong>Admin</strong> and{' '}
+        <strong>Global Admin</strong> behave identically for a key.
       </p>
 
       {newKey && (
@@ -76,8 +84,9 @@ export default function ApiKeysSection(): JSX.Element {
           autoComplete="off"
         />
         <select value={role} onChange={(e) => setRole(e.target.value as WebDashboardRole)}>
+          <option value="globalAdmin">Global Admin</option>
           <option value="admin">Admin</option>
-          <option value="operator">Operator</option>
+          <option value="moderator">Moderator</option>
           <option value="readonly">Read-only</option>
         </select>
         <button type="submit">Create key</button>
@@ -99,7 +108,7 @@ export default function ApiKeysSection(): JSX.Element {
             {keys.map((key) => (
               <tr key={key.id}>
                 <td>{key.label}</td>
-                <td>{key.role}</td>
+                <td>{ROLE_LABELS[key.role] ?? key.role}</td>
                 <td className="accounts-row-actions">
                   <button
                     type="button"

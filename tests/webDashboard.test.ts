@@ -683,24 +683,86 @@ describe('web dashboard HTTP server', () => {
       expect(res.status).toBe(404)
     })
   })
+
+  // The Server Management tab's own narrower route (moderator+, not admin+ like everything
+  // else above) - only the whitelisted schedule/watchdog fields, never the rest of the
+  // profile.
+  describe('moderator-accessible Server Management route', () => {
+    it('GET /api/servers/:id/servermanagement returns only the whitelisted fields', async () => {
+      const res = await request('/api/servers/p1/servermanagement')
+      expect(res.status).toBe(200)
+      // mockProfiles only sets startOnManagerLaunch among the whitelisted fields - every other
+      // one comes back undefined and JSON.stringify drops it entirely, proving the route never
+      // leaks the rest of the profile (e.g. installDir, backupDir) rather than asserting on
+      // values.
+      expect(JSON.parse(res.body)).toEqual({ startOnManagerLaunch: false })
+    })
+
+    it('GET /api/servers/:id/servermanagement 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/servermanagement')
+      expect(res.status).toBe(404)
+    })
+
+    it('POST /api/servers/:id/servermanagement saves only whitelisted fields, ignoring the rest', async () => {
+      const res = await request('/api/servers/p1/servermanagement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledRestartEnabled: true, scheduledRestartTime: '04:00', name: 'Hijacked name' })
+      })
+      expect(res.status).toBe(200)
+      const result = JSON.parse(res.body)
+      expect(result.ok).toBe(true)
+      expect(result.profile).toEqual({
+        startOnManagerLaunch: false,
+        scheduledRestartEnabled: true,
+        scheduledRestartTime: '04:00'
+      })
+
+      const reread = await request('/api/servers/p1/profile')
+      const profile = JSON.parse(reread.body)
+      expect(profile.scheduledRestartEnabled).toBe(true)
+      expect(profile.scheduledRestartTime).toBe('04:00')
+      // The name field in the body above must have been ignored, not just left off the
+      // narrower response.
+      expect(profile.name).toBe('Test Server')
+
+      // restore for other tests
+      await request('/api/servers/p1/servermanagement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledRestartEnabled: false, scheduledRestartTime: '' })
+      })
+    })
+  })
 })
 
 describe('web dashboard HTTP server, auth enabled', () => {
   const CERTS_DIR = path.join(os.tmpdir(), `web-dashboard-test-certs-${process.pid}`)
+  let globalAdminToken = ''
   let adminToken = ''
-  let operatorToken = ''
+  let moderatorToken = ''
   let readonlyToken = ''
   let readonlyApiKey = ''
-  let operatorApiKey = ''
+  let moderatorApiKey = ''
 
   beforeAll(async () => {
+    const globalAdminId = generateApiKeyId()
+    const globalAdminSecret = generateApiKeySecret()
     const adminId = generateApiKeyId()
     const adminSecret = generateApiKeySecret()
-    const operatorId = generateApiKeyId()
-    const operatorSecret = generateApiKeySecret()
+    const moderatorId = generateApiKeyId()
+    const moderatorSecret = generateApiKeySecret()
     const readonlyId = generateApiKeyId()
     const readonlySecret = generateApiKeySecret()
     mockAccessTokens = [
+      {
+        id: globalAdminId,
+        label: 'Global Admin token',
+        secretHash: await hashPassword(globalAdminSecret),
+        role: 'globalAdmin',
+        profileIds: null,
+        createdAt: Date.now()
+      },
       {
         id: adminId,
         label: 'Admin token',
@@ -710,10 +772,10 @@ describe('web dashboard HTTP server, auth enabled', () => {
         createdAt: Date.now()
       },
       {
-        id: operatorId,
-        label: 'Operator token',
-        secretHash: await hashPassword(operatorSecret),
-        role: 'operator',
+        id: moderatorId,
+        label: 'Moderator token',
+        secretHash: await hashPassword(moderatorSecret),
+        role: 'moderator',
         profileIds: null,
         createdAt: Date.now()
       },
@@ -726,14 +788,15 @@ describe('web dashboard HTTP server, auth enabled', () => {
         createdAt: Date.now()
       }
     ]
+    globalAdminToken = buildApiKey(globalAdminId, globalAdminSecret)
     adminToken = buildApiKey(adminId, adminSecret)
-    operatorToken = buildApiKey(operatorId, operatorSecret)
+    moderatorToken = buildApiKey(moderatorId, moderatorSecret)
     readonlyToken = buildApiKey(readonlyId, readonlySecret)
 
     const readonlyKeyId = generateApiKeyId()
     const readonlyKeySecret = generateApiKeySecret()
-    const operatorKeyId = generateApiKeyId()
-    const operatorKeySecret = generateApiKeySecret()
+    const moderatorKeyId = generateApiKeyId()
+    const moderatorKeySecret = generateApiKeySecret()
     mockApiKeys = [
       {
         id: readonlyKeyId,
@@ -743,15 +806,15 @@ describe('web dashboard HTTP server, auth enabled', () => {
         createdAt: Date.now()
       },
       {
-        id: operatorKeyId,
-        label: 'Test operator bot',
-        secretHash: await hashPassword(operatorKeySecret),
-        role: 'operator',
+        id: moderatorKeyId,
+        label: 'Test moderator bot',
+        secretHash: await hashPassword(moderatorKeySecret),
+        role: 'moderator',
         createdAt: Date.now()
       }
     ]
     readonlyApiKey = buildApiKey(readonlyKeyId, readonlyKeySecret)
-    operatorApiKey = buildApiKey(operatorKeyId, operatorKeySecret)
+    moderatorApiKey = buildApiKey(moderatorKeyId, moderatorKeySecret)
     // getOrCreateCert() resolves its cert folder off settings.dataDir - point it at a real
     // tmp dir instead of the default (Documents/ARK Server Manager via Electron's `app`,
     // which isn't available outside a real Electron process).
@@ -792,18 +855,18 @@ describe('web dashboard HTTP server, auth enabled', () => {
     expect(res.status).toBe(403)
   })
 
-  it('allows an operator access token to start a server', async () => {
+  it('allows a moderator access token to start a server', async () => {
     const res = await authRequest('/api/servers/p1/start', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${operatorToken}` }
+      headers: { Authorization: `Bearer ${moderatorToken}` }
     })
     expect(res.status).toBe(200)
   })
 
-  it('blocks an operator access token from deleting a backup', async () => {
+  it('blocks a moderator access token from deleting a backup', async () => {
     const res = await authRequest('/api/servers/p1/backups/delete', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${operatorToken}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${moderatorToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filePath: '/tmp/does-not-matter.zip' })
     })
     expect(res.status).toBe(403)
@@ -818,9 +881,9 @@ describe('web dashboard HTTP server, auth enabled', () => {
     expect(res.status).toBe(200)
   })
 
-  it('blocks an operator access token from reading the remote-control profile route', async () => {
+  it('blocks a moderator access token from reading the admin-only remote-control profile route', async () => {
     const res = await authRequest('/api/servers/p1/profile', {
-      headers: { Authorization: `Bearer ${operatorToken}` }
+      headers: { Authorization: `Bearer ${moderatorToken}` }
     })
     expect(res.status).toBe(403)
   })
@@ -838,6 +901,28 @@ describe('web dashboard HTTP server, auth enabled', () => {
     })
     expect(postRes.status).toBe(200)
     expect(JSON.parse(postRes.body).profile.extraArgs).toBe('-clusterid=test')
+  })
+
+  it('blocks a readonly access token from the moderator-accessible Server Management route', async () => {
+    const res = await authRequest('/api/servers/p1/servermanagement', {
+      headers: { Authorization: `Bearer ${readonlyToken}` }
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('allows a moderator access token to read and save the Server Management route', async () => {
+    const getRes = await authRequest('/api/servers/p1/servermanagement', {
+      headers: { Authorization: `Bearer ${moderatorToken}` }
+    })
+    expect(getRes.status).toBe(200)
+
+    const postRes = await authRequest('/api/servers/p1/servermanagement', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${moderatorToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scheduledDinoWipeEnabled: true })
+    })
+    expect(postRes.status).toBe(200)
+    expect(JSON.parse(postRes.body).profile.scheduledDinoWipeEnabled).toBe(true)
   })
 
   it('reports the caller role via GET /api/whoami', async () => {
@@ -892,10 +977,10 @@ describe('web dashboard HTTP server, auth enabled', () => {
     expect(res.status).toBe(403)
   })
 
-  it('allows an operator API key to start a server', async () => {
+  it('allows a moderator API key to start a server', async () => {
     const res = await authRequest('/api/servers/p1/start', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${operatorApiKey}` }
+      headers: { Authorization: `Bearer ${moderatorApiKey}` }
     })
     expect(res.status).toBe(200)
   })
@@ -960,6 +1045,45 @@ describe('web dashboard HTTP server, auth enabled', () => {
       expect(res.status).toBe(200)
       const profileIds = new Set(JSON.parse(res.body).map((e: { profileId: string }) => e.profileId))
       expect(profileIds.has('p1')).toBe(false)
+    })
+  })
+
+  // Unlike a plain 'admin' token (above), globalAdmin ignores profileIds entirely - the one
+  // role scoping was never meant to restrict, so it always behaves as if unscoped regardless
+  // of what's stored on the token.
+  describe('a globalAdmin token scoped to a single server', () => {
+    let scopedGlobalAdminToken = ''
+
+    beforeAll(async () => {
+      const id = generateApiKeyId()
+      const secret = generateApiKeySecret()
+      mockAccessTokens.push({
+        id,
+        label: 'globalAdmin scoped to p2',
+        secretHash: await hashPassword(secret),
+        role: 'globalAdmin',
+        profileIds: ['p2'],
+        createdAt: Date.now()
+      })
+      scopedGlobalAdminToken = buildApiKey(id, secret)
+    })
+
+    afterAll(() => {
+      mockAccessTokens = mockAccessTokens.filter((t) => t.label !== 'globalAdmin scoped to p2')
+    })
+
+    it('still lists every server via GET /api/servers, ignoring profileIds', async () => {
+      const res = await authRequest('/api/servers', { headers: { Authorization: `Bearer ${scopedGlobalAdminToken}` } })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body).map((s: { id: string }) => s.id).sort()).toEqual(['p1', 'p2'])
+    })
+
+    it('still acts on a server outside its nominal scope', async () => {
+      const res = await authRequest('/api/servers/p1/start', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${scopedGlobalAdminToken}` }
+      })
+      expect(res.status).toBe(200)
     })
   })
 })
