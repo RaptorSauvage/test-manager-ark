@@ -2,7 +2,15 @@ import http from 'node:http'
 import https from 'node:https'
 import os from 'node:os'
 import type { AppSettings, ServerProfile, ServerStatus, WebDashboardRole } from '@shared/types'
-import { listProfiles, getSettings, saveSettings, listWebDashboardAccessTokens, listWebDashboardApiKeys } from '../store'
+import {
+  listProfiles,
+  getProfile,
+  saveProfile,
+  getSettings,
+  saveSettings,
+  listWebDashboardAccessTokens,
+  listWebDashboardApiKeys
+} from '../store'
 import { getStatus, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches, readLogBacklog } from './logEvents'
@@ -20,6 +28,10 @@ import { getBackupScheduleStatus } from './schedule'
 import { getCachedGameVersion } from './serverVersion'
 import { getOrCreateCert } from './tlsCert'
 import { verifyPassword, roleAtLeast, getBearerTokenFromRequest, parseApiKey } from './auth'
+import { readUpdateLog } from './steamcmd'
+import { listMapFolders, createMapFolder, deleteMapFolder } from './mapManagement'
+import { listMaps } from './maps'
+import { listCustomMaps } from './customMaps'
 
 let server: http.Server | https.Server | null = null
 let lastError: string | null = null
@@ -577,6 +589,126 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  // ---- Admin-only remote control: Settings/Mods/Map Management/Server Management/Update
+  // Log - lets an admin-scoped token do everything the desktop Manager's own per-server
+  // tabs can, without local file-system access (no directory/file picker dialogs, no
+  // "open folder" - those are desktop-only conveniences with no remote equivalent).
+
+  const profileMatch = path.match(/^\/api\/servers\/([^/]+)\/profile$/)
+  if (req.method === 'GET' && profileMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(profileMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    sendJson(res, 200, profile)
+    return
+  }
+  if (req.method === 'POST' && profileMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = getProfile(decodeURIComponent(profileMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        // id never changes, regardless of what the body sends - every other field is fair
+        // game, matching what the desktop Manager's own Settings/Server Management/Mods
+        // tabs can already do to this same profile via profiles.save.
+        const updated = saveProfile({ ...profile, ...body, id: profile.id } as ServerProfile)
+        const saved = updated.find((p) => p.id === profile.id)
+        sendJson(res, 200, { ok: true, profile: saved })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const updateLogMatch = path.match(/^\/api\/servers\/([^/]+)\/update-log$/)
+  if (req.method === 'GET' && updateLogMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profileId = decodeURIComponent(updateLogMatch[1])
+    if (!listProfiles().some((p) => p.id === profileId) || !hasProfileAccess(auth, profileId)) {
+      sendJson(res, 404, { log: null })
+      return
+    }
+    sendJson(res, 200, { log: readUpdateLog(profileId) })
+    return
+  }
+
+  if (req.method === 'GET' && path === '/api/maps') {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    sendJson(res, 200, { maps: listMaps(), customMaps: listCustomMaps() })
+    return
+  }
+
+  const mapFoldersMatch = path.match(/^\/api\/servers\/([^/]+)\/mapfolders$/)
+  if (req.method === 'GET' && mapFoldersMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(mapFoldersMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    try {
+      sendJson(res, 200, listMapFolders(profile))
+    } catch (err) {
+      sendJson(res, 400, { error: (err as Error).message })
+    }
+    return
+  }
+  if (req.method === 'POST' && mapFoldersMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(mapFoldersMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const folderName = typeof body.folderName === 'string' ? body.folderName : ''
+        const fileName = typeof body.fileName === 'string' ? body.fileName : ''
+        if (!folderName.trim() || !fileName.trim()) {
+          sendJson(res, 400, { ok: false, error: 'Missing folderName/fileName' })
+          return
+        }
+        createMapFolder(profile, folderName, fileName)
+        sendJson(res, 200, { ok: true })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const mapFoldersDeleteMatch = path.match(/^\/api\/servers\/([^/]+)\/mapfolders\/delete$/)
+  if (req.method === 'POST' && mapFoldersDeleteMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(mapFoldersDeleteMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const folderName = typeof body.folderName === 'string' ? body.folderName : ''
+        if (!folderName.trim()) {
+          sendJson(res, 400, { ok: false, error: 'Missing folderName' })
+          return
+        }
+        deleteMapFolder(profile, folderName)
+        sendJson(res, 200, { ok: true })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
   res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
   res.end('Not found')
 }
@@ -850,6 +982,34 @@ const DASHBOARD_HTML = `<!doctype html>
   .backup-log-line.error { color: var(--danger); }
   .backup-log-time { color: var(--muted); margin-right: 6px; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); z-index: 1100; }
+  /* Admin-only remote control tabs (Settings/Mods/Map Management/Server Management/Update
+     Log) - reuses the same select/input/button/table/.empty-state/.form-actions styling
+     already defined above for the console and backup views, rather than a second bespoke
+     visual language. */
+  .admin-tab-content { display: none; flex: 1; flex-direction: column; min-height: 0; overflow-y: auto; }
+  .admin-tab-content.active { display: flex; }
+  .settings-form { display: none; flex: 1; overflow-y: auto; flex-direction: column; gap: 16px; }
+  .settings-form.active { display: flex; }
+  .settings-section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .settings-section h3 { margin: 0; font-size: 1rem; }
+  .settings-section label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--muted); }
+  .settings-section label.checkbox { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 0.88rem; }
+  .settings-section label.checkbox input { width: auto; }
+  .settings-section .form-actions { margin-bottom: 0; }
+  .settings-grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 16px; }
+  .settings-days-row { display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.82rem; }
+  .settings-days-row label { flex-direction: row; align-items: center; gap: 4px; color: var(--text); }
+  .settings-days-row input { width: auto; }
+  .status-message { color: var(--ok); font-size: 0.85rem; }
+  button.danger { border-color: var(--danger); color: var(--danger); }
+  button.danger:hover:not(:disabled) { background: var(--danger); color: #14161a; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 4px; }
+  .data-table th, .data-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+  .data-table th { color: var(--muted); font-weight: 600; }
+  .data-table tbody tr.selected { background: var(--bg); }
+  .data-table tbody tr.selectable { cursor: pointer; }
+  .data-table td.mod-disabled-row { color: var(--muted); }
+  .log-output { flex: 1; overflow: auto; font-size: 0.8rem; font-family: Consolas, Menlo, monospace; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 0; }
   @media (max-width: 700px) {
     /* The desktop layout is a fixed-viewport "app" (body: height:100vh + overflow:hidden)
        that relies on each panel being its own bounded, individually-scrolling box. That
@@ -902,6 +1062,9 @@ const DASHBOARD_HTML = `<!doctype html>
     .backup-table-panel, .backup-log-panel { flex: none; width: 100%; min-width: 0; }
     .backup-table-panel { overflow-x: auto; }
     #backup-table { font-size: 0.78rem; }
+    .admin-tab-content, .settings-form { overflow-y: visible; }
+    .settings-grid2 { grid-template-columns: 1fr; }
+    .data-table { font-size: 0.78rem; }
   }
 </style>
 </head>
@@ -920,6 +1083,12 @@ const DASHBOARD_HTML = `<!doctype html>
   <hr class="nav-sep" />
   <button id="nav-console" class="nav-btn" type="button">Dashboard</button>
   <button id="nav-backup" class="nav-btn" type="button">Backup</button>
+  <hr class="nav-sep" />
+  <button id="nav-settings" class="nav-btn" type="button">Settings</button>
+  <button id="nav-mods" class="nav-btn" type="button">Mods</button>
+  <button id="nav-mapmanagement" class="nav-btn" type="button">Map Management</button>
+  <button id="nav-servermanagement" class="nav-btn" type="button">Server Management</button>
+  <button id="nav-updatelog" class="nav-btn" type="button">Update Log</button>
 </nav>
 <div id="main-area">
   <section id="view-cluster" class="view">
@@ -1033,6 +1202,237 @@ const DASHBOARD_HTML = `<!doctype html>
             <div id="backup-log"></div>
           </aside>
         </div>
+      </div>
+    </main>
+  </section>
+  <section id="view-settings" class="view">
+    <header>
+      <h1>Settings</h1>
+      <span id="settings-server-name"></span>
+    </header>
+    <main>
+      <p id="settings-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <form id="settings-content" class="settings-form" onsubmit="return false;">
+        <section class="settings-section">
+          <h3>Server</h3>
+          <label>
+            Name
+            <input id="settings-name" />
+          </label>
+          <label>
+            Install directory
+            <input id="settings-installdir" placeholder="C:\ARK\Server" />
+          </label>
+          <div class="settings-grid2">
+            <label>
+              Game port
+              <input id="settings-gameport" type="number" />
+            </label>
+            <label>
+              RCON port
+              <input id="settings-rconport" type="number" />
+            </label>
+            <label>
+              Server Platform
+              <select id="settings-platform">
+                <option value="PC">PC</option>
+                <option value="ALL">ALL</option>
+              </select>
+            </label>
+            <label>
+              Max Players
+              <input id="settings-maxplayers" type="number" />
+            </label>
+          </div>
+          <label>
+            Map
+            <select id="settings-map"></select>
+          </label>
+          <label>
+            Mod Map ID
+            <div class="form-actions">
+              <input id="settings-moddedmapid" placeholder="Workshop mod id" />
+              <label class="checkbox"><input id="settings-moddedmapenabled" type="checkbox" /> Enabled</label>
+            </div>
+            <p class="empty-state">Passed as -MapModID=&lt;id&gt; when enabled, alongside Map above.</p>
+          </label>
+          <label>
+            Beta
+            <div class="form-actions">
+              <label class="checkbox"><input id="settings-betaenabled" type="checkbox" /> Enabled</label>
+              <input id="settings-betaname" placeholder="Beta branch name" />
+            </div>
+          </label>
+        </section>
+        <section class="settings-section">
+          <h3>Extra Settings</h3>
+          <label>
+            Culture Settings
+            <select id="settings-culture">
+              <option value="none">None</option>
+              <option value="en">English</option>
+              <option value="fr">French</option>
+            </select>
+          </label>
+          <label class="checkbox"><input id="settings-battleye" type="checkbox" /> Disable BattlEye</label>
+          <label class="checkbox"><input id="settings-tribelog" type="checkbox" /> RCON Tribe Log</label>
+          <label class="checkbox"><input id="settings-respawndinos" type="checkbox" /> Force Respawn Wild Dinos</label>
+          <label class="checkbox"><input id="settings-nosound" type="checkbox" /> No Sound</label>
+          <label>
+            Dashboard group
+            <input id="settings-group" placeholder="Leave blank for no group" />
+          </label>
+          <label>
+            Extra launch arguments
+            <input id="settings-extraargs" />
+          </label>
+        </section>
+        <section class="settings-section">
+          <h3>Cluster</h3>
+          <label class="checkbox"><input id="settings-clusterenabled" type="checkbox" /> Enable cluster</label>
+          <label>
+            Cluster ID
+            <input id="settings-clusterid" placeholder="my-cluster" />
+          </label>
+          <label>
+            Dedicated Cluster Directory
+            <input id="settings-clusterdir" />
+          </label>
+          <label class="checkbox"><input id="settings-notransferfiltering" type="checkbox" /> No Transfer From Filtering</label>
+          <label>
+            External IP
+            <input id="settings-externalip" placeholder="203.0.113.10" />
+          </label>
+        </section>
+        <p id="settings-status" class="status-message" style="display: none"></p>
+        <p id="settings-error" class="error-message" style="display: none"></p>
+      </form>
+    </main>
+  </section>
+  <section id="view-mods" class="view">
+    <header>
+      <h1>Mods</h1>
+      <span id="mods-server-name"></span>
+    </header>
+    <main>
+      <p id="mods-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <div id="mods-content" class="admin-tab-content">
+        <p class="empty-state">
+          Mod IDs, applied in this order. Enabled mods are passed via -mods= at the next start, unless Passive is
+          checked (-passivemods= instead). Dev appends -dev to the ID. Changes save immediately - restart the
+          server to apply them.
+        </p>
+        <div class="form-actions">
+          <input id="mods-new-id" placeholder="Mod ID" />
+          <button id="btn-mods-add" type="button">Add</button>
+        </div>
+        <table id="mods-table" class="data-table">
+          <thead>
+            <tr><th>Enable</th><th>Passive</th><th>Dev</th><th>Name</th><th>Mod ID</th><th></th></tr>
+          </thead>
+          <tbody id="mods-table-body"></tbody>
+        </table>
+        <p id="mods-error" class="error-message" style="display: none"></p>
+      </div>
+    </main>
+  </section>
+  <section id="view-mapmanagement" class="view">
+    <header>
+      <h1>Map Management</h1>
+      <span id="mapmanagement-server-name"></span>
+    </header>
+    <main>
+      <p id="mapmanagement-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <div id="mapmanagement-content" class="admin-tab-content">
+        <div class="form-actions">
+          <input id="mapmanagement-folder" placeholder="Folder name (e.g. Svartalfheim)" />
+          <input id="mapmanagement-file" placeholder="File name (e.g. Svartalfheim_WP.ark)" />
+          <button id="btn-mapmanagement-add" type="button">Add map</button>
+        </div>
+        <p class="empty-state">
+          Creates SavedArks/&lt;folder&gt;/&lt;file&gt; (an empty placeholder) under this server's install
+          directory. Also add its mod in the Mods tab - that's what actually downloads the map.
+        </p>
+        <p id="mapmanagement-error" class="error-message" style="display: none"></p>
+        <div class="form-actions">
+          <button id="btn-mapmanagement-refresh" type="button">Refresh</button>
+          <button id="btn-mapmanagement-delete" type="button" class="danger" disabled>Delete selected map</button>
+        </div>
+        <table id="mapmanagement-table" class="data-table">
+          <thead><tr><th>Name</th><th>Creation Date</th></tr></thead>
+          <tbody id="mapmanagement-table-body"></tbody>
+        </table>
+      </div>
+    </main>
+  </section>
+  <section id="view-servermanagement" class="view">
+    <header>
+      <h1>Server Management</h1>
+      <span id="servermanagement-server-name"></span>
+    </header>
+    <main>
+      <p id="servermanagement-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <form id="servermanagement-content" class="settings-form" onsubmit="return false;">
+        <section class="settings-section">
+          <h3>Startup &amp; Watchdog</h3>
+          <label class="checkbox">
+            <input id="sm-startonlaunch" type="checkbox" /> Start this server when the Manager starts
+          </label>
+          <label class="checkbox">
+            <input id="sm-crashwatch" type="checkbox" /> Automatically restart this server if it crashes unexpectedly
+          </label>
+          <label class="checkbox">
+            <input id="sm-zombiedetection" type="checkbox" /> Kill this server if it gets stuck starting up
+          </label>
+          <div class="settings-grid2">
+            <label>
+              Zombie timeout (minutes)
+              <input id="sm-zombietimeout" type="number" min="1" />
+            </label>
+            <label class="checkbox">
+              <input id="sm-zombieautorestart" type="checkbox" /> Restart automatically after killing it
+            </label>
+          </div>
+          <label>
+            Cluster console archive max size (MB, 1-100)
+            <input id="sm-archivesize" type="number" min="1" max="100" />
+          </label>
+        </section>
+        <section class="settings-section">
+          <h3>Scheduled Restart</h3>
+          <div class="form-actions">
+            <label class="checkbox"><input id="sm-restart-enabled" type="checkbox" /> Shutdown server at:</label>
+            <input id="sm-restart-time" type="time" />
+          </div>
+          <div id="sm-restart-days" class="settings-days-row"></div>
+          <label class="checkbox"><input id="sm-restart-updateafter" type="checkbox" /> Update server from steam after shutdown</label>
+          <label class="checkbox"><input id="sm-restart-startafter" type="checkbox" /> Start server after shutdown</label>
+        </section>
+        <section class="settings-section">
+          <h3>Dino Wipe</h3>
+          <div class="form-actions">
+            <label class="checkbox"><input id="sm-dinowipe-enabled" type="checkbox" /> Wipe wild dinos at:</label>
+            <input id="sm-dinowipe-time" type="time" />
+          </div>
+          <div id="sm-dinowipe-days" class="settings-days-row"></div>
+        </section>
+        <p id="servermanagement-error" class="error-message" style="display: none"></p>
+      </form>
+    </main>
+  </section>
+  <section id="view-updatelog" class="view">
+    <header>
+      <h1>Update Log</h1>
+      <span id="updatelog-server-name"></span>
+    </header>
+    <main>
+      <p id="updatelog-no-server" class="empty-state">Select a server in the Dashboard view first.</p>
+      <div id="updatelog-content" class="admin-tab-content">
+        <p class="empty-state">
+          Output of this server's last SteamCMD install/update run - manual or scheduled. Refreshes every few
+          seconds while this tab is open.
+        </p>
+        <pre id="updatelog-output" class="log-output"></pre>
       </div>
     </main>
   </section>
@@ -1291,9 +1691,19 @@ function initDashboard(resolvedRole) {
   var navClusterBtn = document.getElementById('nav-cluster');
   var navConsoleBtn = document.getElementById('nav-console');
   var navBackupBtn = document.getElementById('nav-backup');
+  var navSettingsBtn = document.getElementById('nav-settings');
+  var navModsBtn = document.getElementById('nav-mods');
+  var navMapManagementBtn = document.getElementById('nav-mapmanagement');
+  var navServerManagementBtn = document.getElementById('nav-servermanagement');
+  var navUpdateLogBtn = document.getElementById('nav-updatelog');
   var viewClusterEl = document.getElementById('view-cluster');
   var viewConsoleEl = document.getElementById('view-console');
   var viewBackupEl = document.getElementById('view-backup');
+  var viewSettingsEl = document.getElementById('view-settings');
+  var viewModsEl = document.getElementById('view-mods');
+  var viewMapManagementEl = document.getElementById('view-mapmanagement');
+  var viewServerManagementEl = document.getElementById('view-servermanagement');
+  var viewUpdateLogEl = document.getElementById('view-updatelog');
   var clusterCardsEl = document.getElementById('cluster-cards');
   var clusterGroupsEl = document.getElementById('cluster-groups');
   var clusterConsoleEl = document.getElementById('cluster-console');
@@ -1348,6 +1758,29 @@ function initDashboard(resolvedRole) {
   });
 
   if (role === 'readonly') navBackupBtn.style.display = 'none';
+  var adminNavBtns = [navSettingsBtn, navModsBtn, navMapManagementBtn, navServerManagementBtn, navUpdateLogBtn];
+  if (role && !canAdmin) {
+    adminNavBtns.forEach(function (btn) { btn.style.display = 'none'; });
+  }
+  // Cluster Dashboard is the main tab now - Dashboard/Backup (and the admin-only tabs
+  // above) are only relevant once you've actually drilled into a specific server, so they
+  // stay out of the sidebar until selectServer() below has been called at least once with a
+  // real id (clicking a card in the Cluster Dashboard's group console, or picking one from
+  // the Dashboard view's own dropdown once that's reachable some other way). Once shown,
+  // they stay shown for the rest of this page's lifetime rather than hiding again if the
+  // selection is later cleared (e.g. that server got deleted) - the point is gating first
+  // contact, not hiding a tab whose view still works fine with "no server selected".
+  var serverEverSelected = false;
+  navConsoleBtn.style.display = 'none';
+  navBackupBtn.style.display = 'none';
+  adminNavBtns.forEach(function (btn) { btn.style.display = 'none'; });
+  function revealServerScopedNav() {
+    if (serverEverSelected) return;
+    serverEverSelected = true;
+    navConsoleBtn.style.display = '';
+    if (role !== 'readonly') navBackupBtn.style.display = '';
+    if (!role || canAdmin) adminNavBtns.forEach(function (btn) { btn.style.display = ''; });
+  }
   if (role && !canOperate) {
     startBtn.style.display = 'none';
     stopBtn.style.display = 'none';
@@ -1370,28 +1803,48 @@ function initDashboard(resolvedRole) {
     sidebarEl.appendChild(logoutBtn);
   }
 
-  var ACTIVE_VIEW_KEY = 'ark-dashboard-active-view';
-  var activeView = 'console';
-  try { activeView = localStorage.getItem(ACTIVE_VIEW_KEY) || 'console'; } catch (err) { /* storage unavailable - not fatal */ }
+  // Cluster Dashboard is always the landing tab now - no remembered-last-view restore
+  // across page loads, matching "Cluster Dashboard is the main tab" rather than
+  // occasionally reopening straight into a single server's Dashboard/Backup/admin view.
+  var activeView = 'cluster';
 
   function applyActiveView() {
     navClusterBtn.classList.toggle('active', activeView === 'cluster');
     navConsoleBtn.classList.toggle('active', activeView === 'console');
     navBackupBtn.classList.toggle('active', activeView === 'backup');
+    navSettingsBtn.classList.toggle('active', activeView === 'settings');
+    navModsBtn.classList.toggle('active', activeView === 'mods');
+    navMapManagementBtn.classList.toggle('active', activeView === 'mapmanagement');
+    navServerManagementBtn.classList.toggle('active', activeView === 'servermanagement');
+    navUpdateLogBtn.classList.toggle('active', activeView === 'updatelog');
     viewClusterEl.classList.toggle('active', activeView === 'cluster');
     viewConsoleEl.classList.toggle('active', activeView === 'console');
     viewBackupEl.classList.toggle('active', activeView === 'backup');
+    viewSettingsEl.classList.toggle('active', activeView === 'settings');
+    viewModsEl.classList.toggle('active', activeView === 'mods');
+    viewMapManagementEl.classList.toggle('active', activeView === 'mapmanagement');
+    viewServerManagementEl.classList.toggle('active', activeView === 'servermanagement');
+    viewUpdateLogEl.classList.toggle('active', activeView === 'updatelog');
     if (activeView === 'backup') loadBackupView();
+    if (activeView === 'settings') loadSettingsView();
+    if (activeView === 'mods') loadModsView();
+    if (activeView === 'mapmanagement') loadMapManagementView();
+    if (activeView === 'servermanagement') loadServerManagementView();
+    if (activeView === 'updatelog') loadUpdateLogView();
   }
 
   function selectView(view) {
     activeView = view;
-    try { localStorage.setItem(ACTIVE_VIEW_KEY, view); } catch (err) { /* storage unavailable - not fatal */ }
     applyActiveView();
   }
   navClusterBtn.addEventListener('click', function () { selectView('cluster'); });
   navConsoleBtn.addEventListener('click', function () { selectView('console'); });
   navBackupBtn.addEventListener('click', function () { selectView('backup'); });
+  navSettingsBtn.addEventListener('click', function () { selectView('settings'); });
+  navModsBtn.addEventListener('click', function () { selectView('mods'); });
+  navMapManagementBtn.addEventListener('click', function () { selectView('mapmanagement'); });
+  navServerManagementBtn.addEventListener('click', function () { selectView('servermanagement'); });
+  navUpdateLogBtn.addEventListener('click', function () { selectView('updatelog'); });
 
   // ---- Cluster stats chart (desktop only) ----------------------------------------------
   // Same 1m/5m/15m/1h/6h/12h/24h/All time scales and persistent, server-downsampled history
@@ -2314,6 +2767,598 @@ function initDashboard(resolvedRole) {
       .then(function (entries) { if (id === currentId) renderBackupLog(entries); });
   }, 5000);
 
+  // ---- Admin-only remote control tabs: Update Log, Mods, Map Management, Server
+  // Management, Settings - each follows currentId exactly like the Backup view above (no
+  // server picker of its own), and every write goes through requireRole('admin') server-
+  // side regardless of what this client-side hiding does or doesn't show.
+
+  function currentServerLabel() {
+    return select.options[select.selectedIndex] ? select.options[select.selectedIndex].textContent : '';
+  }
+
+  // -- Update Log --------------------------------------------------------------------
+  var updatelogServerNameEl = document.getElementById('updatelog-server-name');
+  var updatelogNoServerEl = document.getElementById('updatelog-no-server');
+  var updatelogContentEl = document.getElementById('updatelog-content');
+  var updatelogOutputEl = document.getElementById('updatelog-output');
+
+  function loadUpdateLogView() {
+    var id = currentId;
+    if (!id) {
+      updatelogServerNameEl.textContent = '';
+      updatelogNoServerEl.style.display = '';
+      updatelogContentEl.classList.remove('active');
+      return;
+    }
+    updatelogNoServerEl.style.display = 'none';
+    updatelogContentEl.classList.add('active');
+    updatelogServerNameEl.textContent = currentServerLabel();
+    fetch('/api/servers/' + encodeURIComponent(id) + '/update-log')
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (id !== currentId) return;
+        updatelogOutputEl.textContent = result.log || 'No update log yet - run Update at least once.';
+      });
+  }
+
+  setInterval(function () {
+    if (activeView === 'updatelog' && currentId) loadUpdateLogView();
+  }, 4000);
+
+  // -- Mods ---------------------------------------------------------------------------
+  var modsServerNameEl = document.getElementById('mods-server-name');
+  var modsNoServerEl = document.getElementById('mods-no-server');
+  var modsContentEl = document.getElementById('mods-content');
+  var modsNewIdInput = document.getElementById('mods-new-id');
+  var btnModsAdd = document.getElementById('btn-mods-add');
+  var modsTableBody = document.getElementById('mods-table-body');
+  var modsErrorEl = document.getElementById('mods-error');
+  var currentMods = [];
+
+  function showModsError(message) {
+    modsErrorEl.textContent = message || '';
+    modsErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function saveMods(next) {
+    if (!currentId) return;
+    var id = currentId;
+    fetch('/api/servers/' + encodeURIComponent(id) + '/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mods: next })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showModsError(result.error || 'Save failed'); return; }
+        if (id !== currentId) return;
+        currentMods = result.profile.mods || [];
+        renderModsTable();
+      })
+      .catch(function () { showModsError('Request failed'); });
+  }
+
+  function renderModsTable() {
+    modsTableBody.innerHTML = '';
+    if (currentMods.length === 0) {
+      var emptyRow = document.createElement('tr');
+      var emptyCell = document.createElement('td');
+      emptyCell.colSpan = 6;
+      emptyCell.className = 'empty-state';
+      emptyCell.textContent = 'No mods configured.';
+      emptyRow.appendChild(emptyCell);
+      modsTableBody.appendChild(emptyRow);
+      return;
+    }
+    currentMods.forEach(function (mod, index) {
+      var row = document.createElement('tr');
+
+      function checkboxCell(field) {
+        var td = document.createElement('td');
+        var input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = !!mod[field];
+        input.addEventListener('change', function () {
+          var updatedMod = Object.assign({}, mod);
+          updatedMod[field] = input.checked;
+          var next = currentMods.slice();
+          next[index] = updatedMod;
+          saveMods(next);
+        });
+        td.appendChild(input);
+        return td;
+      }
+      row.appendChild(checkboxCell('enabled'));
+      row.appendChild(checkboxCell('passive'));
+      row.appendChild(checkboxCell('dev'));
+
+      var nameCell = document.createElement('td');
+      var nameInput = document.createElement('input');
+      nameInput.value = mod.name || '';
+      nameInput.placeholder = 'Optional label';
+      nameInput.addEventListener('change', function () {
+        var updatedMod = Object.assign({}, mod, { name: nameInput.value || undefined });
+        var next = currentMods.slice();
+        next[index] = updatedMod;
+        saveMods(next);
+      });
+      nameCell.appendChild(nameInput);
+      row.appendChild(nameCell);
+
+      var idCell = document.createElement('td');
+      idCell.textContent = mod.id + (mod.dev ? '-dev' : '');
+      row.appendChild(idCell);
+
+      var actionsCell = document.createElement('td');
+      var removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'danger';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', function () {
+        saveMods(currentMods.filter(function (m) { return m.id !== mod.id; }));
+      });
+      actionsCell.appendChild(removeBtn);
+      row.appendChild(actionsCell);
+
+      modsTableBody.appendChild(row);
+    });
+  }
+
+  function loadModsView() {
+    var id = currentId;
+    if (!id) {
+      modsServerNameEl.textContent = '';
+      modsNoServerEl.style.display = '';
+      modsContentEl.classList.remove('active');
+      return;
+    }
+    showModsError('');
+    modsNoServerEl.style.display = 'none';
+    modsContentEl.classList.add('active');
+    modsServerNameEl.textContent = currentServerLabel();
+    fetch('/api/servers/' + encodeURIComponent(id) + '/profile')
+      .then(function (r) { return r.json(); })
+      .then(function (profile) {
+        if (id !== currentId) return;
+        currentMods = profile.mods || [];
+        renderModsTable();
+      });
+  }
+
+  btnModsAdd.addEventListener('click', function () {
+    var idValue = modsNewIdInput.value.trim();
+    if (!idValue || currentMods.some(function (m) { return m.id === idValue; })) return;
+    saveMods(currentMods.concat([{ id: idValue, enabled: true, passive: false, dev: false }]));
+    modsNewIdInput.value = '';
+  });
+
+  // -- Map Management -------------------------------------------------------------------
+  var mapmanagementServerNameEl = document.getElementById('mapmanagement-server-name');
+  var mapmanagementNoServerEl = document.getElementById('mapmanagement-no-server');
+  var mapmanagementContentEl = document.getElementById('mapmanagement-content');
+  var mapmanagementFolderInput = document.getElementById('mapmanagement-folder');
+  var mapmanagementFileInput = document.getElementById('mapmanagement-file');
+  var btnMapManagementAdd = document.getElementById('btn-mapmanagement-add');
+  var mapmanagementErrorEl = document.getElementById('mapmanagement-error');
+  var btnMapManagementRefresh = document.getElementById('btn-mapmanagement-refresh');
+  var btnMapManagementDelete = document.getElementById('btn-mapmanagement-delete');
+  var mapmanagementTableBody = document.getElementById('mapmanagement-table-body');
+  var mapManagementSelected = '';
+  var mapManagementFolders = [];
+
+  function showMapManagementError(message) {
+    mapmanagementErrorEl.textContent = message || '';
+    mapmanagementErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function renderMapManagementTable() {
+    mapmanagementTableBody.innerHTML = '';
+    if (mapManagementFolders.length === 0) {
+      var emptyRow = document.createElement('tr');
+      var emptyCell = document.createElement('td');
+      emptyCell.colSpan = 2;
+      emptyCell.className = 'empty-state';
+      emptyCell.textContent = 'No map folders under SavedArks yet.';
+      emptyRow.appendChild(emptyCell);
+      mapmanagementTableBody.appendChild(emptyRow);
+      return;
+    }
+    mapManagementFolders.forEach(function (folder) {
+      var row = document.createElement('tr');
+      row.className = 'selectable' + (folder.name === mapManagementSelected ? ' selected' : '');
+      row.addEventListener('click', function () {
+        mapManagementSelected = folder.name;
+        btnMapManagementDelete.disabled = false;
+        renderMapManagementTable();
+      });
+      var nameCell = document.createElement('td');
+      nameCell.textContent = folder.name;
+      var dateCell = document.createElement('td');
+      dateCell.textContent = new Date(folder.createdAt).toLocaleString();
+      row.appendChild(nameCell);
+      row.appendChild(dateCell);
+      mapmanagementTableBody.appendChild(row);
+    });
+  }
+
+  function loadMapManagementView() {
+    var id = currentId;
+    if (!id) {
+      mapmanagementServerNameEl.textContent = '';
+      mapmanagementNoServerEl.style.display = '';
+      mapmanagementContentEl.classList.remove('active');
+      return;
+    }
+    showMapManagementError('');
+    mapmanagementNoServerEl.style.display = 'none';
+    mapmanagementContentEl.classList.add('active');
+    mapmanagementServerNameEl.textContent = currentServerLabel();
+    mapManagementSelected = '';
+    btnMapManagementDelete.disabled = true;
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mapfolders')
+      .then(function (r) { return r.json(); })
+      .then(function (folders) {
+        if (id !== currentId) return;
+        mapManagementFolders = folders;
+        renderMapManagementTable();
+      });
+  }
+
+  btnMapManagementAdd.addEventListener('click', function () {
+    if (!currentId) return;
+    var folderName = mapmanagementFolderInput.value.trim();
+    var fileName = mapmanagementFileInput.value.trim();
+    if (!folderName || !fileName) return;
+    showMapManagementError('');
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/mapfolders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderName: folderName, fileName: fileName })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showMapManagementError(result.error || 'Failed'); return; }
+        mapmanagementFolderInput.value = '';
+        mapmanagementFileInput.value = '';
+        loadMapManagementView();
+      })
+      .catch(function () { showMapManagementError('Request failed'); });
+  });
+
+  btnMapManagementRefresh.addEventListener('click', function () { loadMapManagementView(); });
+
+  btnMapManagementDelete.addEventListener('click', function () {
+    if (!currentId || !mapManagementSelected) return;
+    if (!confirm('Delete the "' + mapManagementSelected + '" map folder and everything in it?')) return;
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/mapfolders/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderName: mapManagementSelected })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showMapManagementError(result.error || 'Failed'); return; }
+        loadMapManagementView();
+      })
+      .catch(function () { showMapManagementError('Request failed'); });
+  });
+
+  // -- Server Management ---------------------------------------------------------------
+  var DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var smServerNameEl = document.getElementById('servermanagement-server-name');
+  var smNoServerEl = document.getElementById('servermanagement-no-server');
+  var smContentEl = document.getElementById('servermanagement-content');
+  var smErrorEl = document.getElementById('servermanagement-error');
+  var smStartOnLaunch = document.getElementById('sm-startonlaunch');
+  var smCrashWatch = document.getElementById('sm-crashwatch');
+  var smZombieDetection = document.getElementById('sm-zombiedetection');
+  var smZombieTimeout = document.getElementById('sm-zombietimeout');
+  var smZombieAutoRestart = document.getElementById('sm-zombieautorestart');
+  var smArchiveSize = document.getElementById('sm-archivesize');
+  var smRestartEnabled = document.getElementById('sm-restart-enabled');
+  var smRestartTime = document.getElementById('sm-restart-time');
+  var smRestartDaysEl = document.getElementById('sm-restart-days');
+  var smRestartUpdateAfter = document.getElementById('sm-restart-updateafter');
+  var smRestartStartAfter = document.getElementById('sm-restart-startafter');
+  var smDinoWipeEnabled = document.getElementById('sm-dinowipe-enabled');
+  var smDinoWipeTime = document.getElementById('sm-dinowipe-time');
+  var smDinoWipeDaysEl = document.getElementById('sm-dinowipe-days');
+  var smProfile = null;
+
+  function buildDayCheckboxes(container, days, onChange) {
+    container.innerHTML = '';
+    DAY_LABELS.forEach(function (label, index) {
+      var wrapper = document.createElement('label');
+      wrapper.className = 'checkbox';
+      var input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = days.indexOf(index) !== -1;
+      input.addEventListener('change', function () { onChange(index, input.checked); });
+      wrapper.appendChild(input);
+      wrapper.appendChild(document.createTextNode(label));
+      container.appendChild(wrapper);
+    });
+  }
+
+  function showSmError(message) {
+    smErrorEl.textContent = message || '';
+    smErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function saveSmField(field, value) {
+    if (!currentId || !smProfile) return;
+    var id = currentId;
+    var body = {};
+    body[field] = value;
+    fetch('/api/servers/' + encodeURIComponent(id) + '/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showSmError(result.error || 'Save failed'); return; }
+        if (id !== currentId) return;
+        smProfile = result.profile;
+        renderServerManagementForm();
+      })
+      .catch(function () { showSmError('Request failed'); });
+  }
+
+  function renderServerManagementForm() {
+    var p = smProfile;
+    smStartOnLaunch.checked = !!p.startOnManagerLaunch;
+    smCrashWatch.checked = !!p.crashWatchEnabled;
+    smZombieDetection.checked = !!p.zombieDetectionEnabled;
+    smZombieTimeout.value = p.zombieDetectionTimeoutMinutes;
+    smZombieTimeout.disabled = !p.zombieDetectionEnabled;
+    smZombieAutoRestart.checked = !!p.zombieDetectionAutoRestart;
+    smZombieAutoRestart.disabled = !p.zombieDetectionEnabled;
+    smArchiveSize.value = p.clusterLogArchiveMaxSizeMB;
+    smRestartEnabled.checked = !!p.scheduledRestartEnabled;
+    smRestartTime.value = p.scheduledRestartTime || '00:00';
+    smRestartTime.disabled = !p.scheduledRestartEnabled;
+    smRestartUpdateAfter.checked = !!p.scheduledRestartUpdateAfter;
+    smRestartUpdateAfter.disabled = !p.scheduledRestartEnabled;
+    smRestartStartAfter.checked = !!p.scheduledRestartStartAfter;
+    smRestartStartAfter.disabled = !p.scheduledRestartEnabled;
+    buildDayCheckboxes(smRestartDaysEl, p.scheduledRestartDays || [], function (day, checked) {
+      var days = (p.scheduledRestartDays || []).slice();
+      var idx = days.indexOf(day);
+      if (checked && idx === -1) days.push(day);
+      if (!checked && idx !== -1) days.splice(idx, 1);
+      days.sort(function (a, b) { return a - b; });
+      saveSmField('scheduledRestartDays', days);
+    });
+    smDinoWipeEnabled.checked = !!p.scheduledDinoWipeEnabled;
+    smDinoWipeTime.value = p.scheduledDinoWipeTime || '00:00';
+    smDinoWipeTime.disabled = !p.scheduledDinoWipeEnabled;
+    buildDayCheckboxes(smDinoWipeDaysEl, p.scheduledDinoWipeDays || [], function (day, checked) {
+      var days = (p.scheduledDinoWipeDays || []).slice();
+      var idx = days.indexOf(day);
+      if (checked && idx === -1) days.push(day);
+      if (!checked && idx !== -1) days.splice(idx, 1);
+      days.sort(function (a, b) { return a - b; });
+      saveSmField('scheduledDinoWipeDays', days);
+    });
+  }
+
+  function loadServerManagementView() {
+    var id = currentId;
+    if (!id) {
+      smServerNameEl.textContent = '';
+      smNoServerEl.style.display = '';
+      smContentEl.classList.remove('active');
+      return;
+    }
+    showSmError('');
+    smNoServerEl.style.display = 'none';
+    smContentEl.classList.add('active');
+    smServerNameEl.textContent = currentServerLabel();
+    fetch('/api/servers/' + encodeURIComponent(id) + '/profile')
+      .then(function (r) { return r.json(); })
+      .then(function (profile) {
+        if (id !== currentId) return;
+        smProfile = profile;
+        renderServerManagementForm();
+      });
+  }
+
+  smStartOnLaunch.addEventListener('change', function () { saveSmField('startOnManagerLaunch', smStartOnLaunch.checked); });
+  smCrashWatch.addEventListener('change', function () { saveSmField('crashWatchEnabled', smCrashWatch.checked); });
+  smZombieDetection.addEventListener('change', function () { saveSmField('zombieDetectionEnabled', smZombieDetection.checked); });
+  smZombieTimeout.addEventListener('change', function () { saveSmField('zombieDetectionTimeoutMinutes', Number(smZombieTimeout.value)); });
+  smZombieAutoRestart.addEventListener('change', function () { saveSmField('zombieDetectionAutoRestart', smZombieAutoRestart.checked); });
+  smArchiveSize.addEventListener('change', function () { saveSmField('clusterLogArchiveMaxSizeMB', Math.min(100, Math.max(1, Number(smArchiveSize.value)))); });
+  smRestartEnabled.addEventListener('change', function () { saveSmField('scheduledRestartEnabled', smRestartEnabled.checked); });
+  smRestartTime.addEventListener('change', function () { saveSmField('scheduledRestartTime', smRestartTime.value); });
+  smRestartUpdateAfter.addEventListener('change', function () { saveSmField('scheduledRestartUpdateAfter', smRestartUpdateAfter.checked); });
+  smRestartStartAfter.addEventListener('change', function () { saveSmField('scheduledRestartStartAfter', smRestartStartAfter.checked); });
+  smDinoWipeEnabled.addEventListener('change', function () { saveSmField('scheduledDinoWipeEnabled', smDinoWipeEnabled.checked); });
+  smDinoWipeTime.addEventListener('change', function () { saveSmField('scheduledDinoWipeTime', smDinoWipeTime.value); });
+
+  // -- Settings ---------------------------------------------------------------------------
+  var settingsServerNameEl = document.getElementById('settings-server-name');
+  var settingsNoServerEl = document.getElementById('settings-no-server');
+  var settingsContentEl = document.getElementById('settings-content');
+  var settingsStatusEl = document.getElementById('settings-status');
+  var settingsErrorEl = document.getElementById('settings-error');
+  var settingsName = document.getElementById('settings-name');
+  var settingsInstallDir = document.getElementById('settings-installdir');
+  var settingsGamePort = document.getElementById('settings-gameport');
+  var settingsRconPort = document.getElementById('settings-rconport');
+  var settingsPlatform = document.getElementById('settings-platform');
+  var settingsMaxPlayers = document.getElementById('settings-maxplayers');
+  var settingsMap = document.getElementById('settings-map');
+  var settingsModdedMapId = document.getElementById('settings-moddedmapid');
+  var settingsModdedMapEnabled = document.getElementById('settings-moddedmapenabled');
+  var settingsBetaEnabled = document.getElementById('settings-betaenabled');
+  var settingsBetaName = document.getElementById('settings-betaname');
+  var settingsCulture = document.getElementById('settings-culture');
+  var settingsBattlEye = document.getElementById('settings-battleye');
+  var settingsTribeLog = document.getElementById('settings-tribelog');
+  var settingsRespawnDinos = document.getElementById('settings-respawndinos');
+  var settingsNoSound = document.getElementById('settings-nosound');
+  var settingsGroup = document.getElementById('settings-group');
+  var settingsExtraArgs = document.getElementById('settings-extraargs');
+  var settingsClusterEnabled = document.getElementById('settings-clusterenabled');
+  var settingsClusterId = document.getElementById('settings-clusterid');
+  var settingsClusterDir = document.getElementById('settings-clusterdir');
+  var settingsNoTransferFiltering = document.getElementById('settings-notransferfiltering');
+  var settingsExternalIp = document.getElementById('settings-externalip');
+  var settingsProfile = null;
+  var settingsMapsCache = { maps: [], customMaps: [] };
+
+  function showSettingsError(message) {
+    settingsErrorEl.textContent = message || '';
+    settingsErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function showSettingsStatus(message) {
+    settingsStatusEl.textContent = message || '';
+    settingsStatusEl.style.display = message ? '' : 'none';
+    if (message) setTimeout(function () { showSettingsStatus(''); }, 2000);
+  }
+
+  function populateSettingsMapOptions() {
+    var current = settingsProfile ? settingsProfile.map : '';
+    settingsMap.innerHTML = '';
+    var known = settingsMapsCache.maps.concat(settingsMapsCache.customMaps);
+    if (current && !known.some(function (m) { return m.id === current; })) {
+      var currentOpt = document.createElement('option');
+      currentOpt.value = current;
+      currentOpt.textContent = current;
+      settingsMap.appendChild(currentOpt);
+    }
+    var officialGroup = document.createElement('optgroup');
+    officialGroup.label = 'Official';
+    settingsMapsCache.maps.forEach(function (m) {
+      var opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.displayName;
+      officialGroup.appendChild(opt);
+    });
+    settingsMap.appendChild(officialGroup);
+    var customGroup = document.createElement('optgroup');
+    customGroup.label = 'Custom';
+    settingsMapsCache.customMaps.forEach(function (m) {
+      var opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.displayName;
+      customGroup.appendChild(opt);
+    });
+    settingsMap.appendChild(customGroup);
+    settingsMap.value = current;
+  }
+
+  function renderSettingsForm() {
+    var p = settingsProfile;
+    settingsName.value = p.name;
+    settingsInstallDir.value = p.installDir;
+    settingsGamePort.value = p.gamePort;
+    settingsRconPort.value = p.rconPort;
+    settingsPlatform.value = p.serverPlatform;
+    settingsMaxPlayers.value = p.maxPlayers;
+    populateSettingsMapOptions();
+    settingsModdedMapId.value = p.moddedMapId || '';
+    settingsModdedMapId.disabled = !p.moddedMapEnabled;
+    settingsModdedMapEnabled.checked = !!p.moddedMapEnabled;
+    settingsBetaEnabled.checked = !!p.steamBetaEnabled;
+    settingsBetaName.value = p.steamBetaName || '';
+    settingsBetaName.disabled = !p.steamBetaEnabled;
+    settingsCulture.value = p.cultureSettings;
+    settingsBattlEye.checked = !!p.disableBattlEye;
+    settingsTribeLog.checked = !!p.rconTribeLog;
+    settingsRespawnDinos.checked = !!p.forceRespawnDinos;
+    settingsNoSound.checked = !!p.noSound;
+    settingsGroup.value = p.group;
+    settingsExtraArgs.value = p.extraArgs;
+    settingsClusterEnabled.checked = !!p.clusterEnabled;
+    settingsClusterId.value = p.clusterId;
+    settingsClusterId.disabled = !p.clusterEnabled;
+    settingsClusterDir.value = p.clusterDirOverride;
+    settingsClusterDir.disabled = !p.clusterEnabled;
+    settingsNoTransferFiltering.checked = !!p.noTransferFromFiltering;
+    settingsNoTransferFiltering.disabled = !p.clusterEnabled;
+    settingsExternalIp.value = p.externalIp;
+    settingsExternalIp.disabled = !p.clusterEnabled;
+  }
+
+  function saveSettingsField(field, value) {
+    if (!currentId || !settingsProfile) return;
+    var id = currentId;
+    var body = {};
+    body[field] = value;
+    showSettingsError('');
+    fetch('/api/servers/' + encodeURIComponent(id) + '/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showSettingsError(result.error || 'Save failed'); return; }
+        if (id !== currentId) return;
+        settingsProfile = result.profile;
+        renderSettingsForm();
+        showSettingsStatus('Saved');
+      })
+      .catch(function () { showSettingsError('Request failed'); });
+  }
+
+  function loadSettingsMaps() {
+    fetch('/api/maps').then(function (r) { return r.json(); }).then(function (data) {
+      settingsMapsCache = data;
+      if (settingsProfile) populateSettingsMapOptions();
+    });
+  }
+
+  function loadSettingsView() {
+    var id = currentId;
+    if (!id) {
+      settingsServerNameEl.textContent = '';
+      settingsNoServerEl.style.display = '';
+      settingsContentEl.classList.remove('active');
+      return;
+    }
+    showSettingsError('');
+    settingsNoServerEl.style.display = 'none';
+    settingsContentEl.classList.add('active');
+    settingsServerNameEl.textContent = currentServerLabel();
+    loadSettingsMaps();
+    fetch('/api/servers/' + encodeURIComponent(id) + '/profile')
+      .then(function (r) { return r.json(); })
+      .then(function (profile) {
+        if (id !== currentId) return;
+        settingsProfile = profile;
+        renderSettingsForm();
+      });
+  }
+
+  settingsName.addEventListener('change', function () { saveSettingsField('name', settingsName.value); });
+  settingsInstallDir.addEventListener('change', function () { saveSettingsField('installDir', settingsInstallDir.value); });
+  settingsGamePort.addEventListener('change', function () { saveSettingsField('gamePort', Number(settingsGamePort.value)); });
+  settingsRconPort.addEventListener('change', function () { saveSettingsField('rconPort', Number(settingsRconPort.value)); });
+  settingsPlatform.addEventListener('change', function () { saveSettingsField('serverPlatform', settingsPlatform.value); });
+  settingsMaxPlayers.addEventListener('change', function () { saveSettingsField('maxPlayers', Number(settingsMaxPlayers.value)); });
+  settingsMap.addEventListener('change', function () { saveSettingsField('map', settingsMap.value); });
+  settingsModdedMapId.addEventListener('change', function () { saveSettingsField('moddedMapId', settingsModdedMapId.value); });
+  settingsModdedMapEnabled.addEventListener('change', function () { saveSettingsField('moddedMapEnabled', settingsModdedMapEnabled.checked); });
+  settingsBetaEnabled.addEventListener('change', function () { saveSettingsField('steamBetaEnabled', settingsBetaEnabled.checked); });
+  settingsBetaName.addEventListener('change', function () { saveSettingsField('steamBetaName', settingsBetaName.value); });
+  settingsCulture.addEventListener('change', function () { saveSettingsField('cultureSettings', settingsCulture.value); });
+  settingsBattlEye.addEventListener('change', function () { saveSettingsField('disableBattlEye', settingsBattlEye.checked); });
+  settingsTribeLog.addEventListener('change', function () { saveSettingsField('rconTribeLog', settingsTribeLog.checked); });
+  settingsRespawnDinos.addEventListener('change', function () { saveSettingsField('forceRespawnDinos', settingsRespawnDinos.checked); });
+  settingsNoSound.addEventListener('change', function () { saveSettingsField('noSound', settingsNoSound.checked); });
+  settingsGroup.addEventListener('change', function () { saveSettingsField('group', settingsGroup.value); });
+  settingsExtraArgs.addEventListener('change', function () { saveSettingsField('extraArgs', settingsExtraArgs.value); });
+  settingsClusterEnabled.addEventListener('change', function () { saveSettingsField('clusterEnabled', settingsClusterEnabled.checked); });
+  settingsClusterId.addEventListener('change', function () { saveSettingsField('clusterId', settingsClusterId.value); });
+  settingsClusterDir.addEventListener('change', function () { saveSettingsField('clusterDirOverride', settingsClusterDir.value); });
+  settingsNoTransferFiltering.addEventListener('change', function () { saveSettingsField('noTransferFromFiltering', settingsNoTransferFiltering.checked); });
+  settingsExternalIp.addEventListener('change', function () { saveSettingsField('externalIp', settingsExternalIp.value); });
+
   var CONSOLE_AUTOSCROLL_KEY = 'ark-dashboard-console-autoscroll';
   var consoleAutoScroll = false;
   try { consoleAutoScroll = localStorage.getItem(CONSOLE_AUTOSCROLL_KEY) === '1'; } catch (err) { /* storage unavailable - not fatal */ }
@@ -2495,14 +3540,19 @@ function initDashboard(resolvedRole) {
     postServerAction('stop-update-restart');
   });
 
-  var SELECTED_SERVER_KEY = 'ark-dashboard-selected-server';
+  var SERVER_SCOPED_VIEWS = ['console', 'backup', 'settings', 'mods', 'mapmanagement', 'servermanagement', 'updatelog'];
 
   function selectServer(id) {
     if (id === currentId) return;
     currentId = id;
-    try { localStorage.setItem(SELECTED_SERVER_KEY, id); } catch (err) { /* storage unavailable - not fatal */ }
+    if (id) revealServerScopedNav();
     backupShowAll = false;
     if (activeView === 'backup') loadBackupView();
+    if (activeView === 'settings') loadSettingsView();
+    if (activeView === 'mods') loadModsView();
+    if (activeView === 'mapmanagement') loadMapManagementView();
+    if (activeView === 'servermanagement') loadServerManagementView();
+    if (activeView === 'updatelog') loadUpdateLogView();
     consoleEl.innerHTML = '';
     if (es) { es.close(); es = null; }
     loadPlayers();
@@ -2539,20 +3589,14 @@ function initDashboard(resolvedRole) {
         select.value = previousValue;
       }
       // A server that was selected can vanish out from under us (profile deleted, or
-      // filtered out by Hidden) - treat that the same as never having selected one.
+      // filtered out by Hidden) - treat that the same as never having selected one. Unlike
+      // before, this never auto-picks a replacement: Dashboard/Backup/the admin tabs only
+      // ever get a server through an explicit click (see revealServerScopedNav), never a
+      // silent default - so losing the selection just falls back to Cluster Dashboard.
       if (currentId && !servers.some(function (s) { return s.id === currentId; })) {
         currentId = null;
+        if (SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1) selectView('cluster');
       }
-      if (!currentId && servers.length > 0) {
-        var remembered = null;
-        try { remembered = localStorage.getItem(SELECTED_SERVER_KEY); } catch (err) { /* storage unavailable - not fatal */ }
-        var toSelect = remembered && servers.some(function (s) { return s.id === remembered; }) ? remembered : servers[0].id;
-        select.value = toSelect;
-        selectServer(toSelect);
-      }
-      // Dashboard and Backup both need a selected server to show anything useful - with
-      // none available, default to Cluster Dashboard instead of an empty/stuck view.
-      if (!currentId && activeView !== 'cluster') selectView('cluster');
       renderStatus(servers.find(function (s) { return s.id === select.value; }));
       renderClusterCards(servers);
       refreshClusterConsoleServers();

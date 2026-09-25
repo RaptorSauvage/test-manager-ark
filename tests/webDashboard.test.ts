@@ -29,33 +29,45 @@ let mockSettings = {
 let mockAccessTokens: WebDashboardAccessToken[] = []
 let mockApiKeys: WebDashboardApiKey[] = []
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockProfiles: any[] = [
+  {
+    id: 'p1',
+    name: 'Test Server',
+    installDir: EMPTY_INSTALL_DIR,
+    startOnManagerLaunch: false,
+    hidden: false,
+    group: '',
+    backupDir: '',
+    maxBackups: 10,
+    backupScheduleEnabled: false,
+    backupSchedule: '',
+    mods: []
+  },
+  {
+    id: 'p2',
+    name: 'Logged Server',
+    installDir: LOGGED_INSTALL_DIR,
+    startOnManagerLaunch: false,
+    hidden: false,
+    group: '',
+    backupDir: '',
+    maxBackups: 10,
+    backupScheduleEnabled: false,
+    backupSchedule: '',
+    mods: []
+  }
+]
+
 vi.mock('../src/main/store', () => ({
-  listProfiles: () => [
-    {
-      id: 'p1',
-      name: 'Test Server',
-      installDir: EMPTY_INSTALL_DIR,
-      startOnManagerLaunch: false,
-      hidden: false,
-      group: '',
-      backupDir: '',
-      maxBackups: 10,
-      backupScheduleEnabled: false,
-      backupSchedule: ''
-    },
-    {
-      id: 'p2',
-      name: 'Logged Server',
-      installDir: LOGGED_INSTALL_DIR,
-      startOnManagerLaunch: false,
-      hidden: false,
-      group: '',
-      backupDir: '',
-      maxBackups: 10,
-      backupScheduleEnabled: false,
-      backupSchedule: ''
-    }
-  ],
+  listProfiles: () => mockProfiles,
+  getProfile: (id: string) => mockProfiles.find((p) => p.id === id),
+  saveProfile: (profile: { id: string }) => {
+    const idx = mockProfiles.findIndex((p) => p.id === profile.id)
+    if (idx >= 0) mockProfiles[idx] = profile
+    else mockProfiles.push(profile)
+    return mockProfiles
+  },
   getSettings: () => mockSettings,
   saveSettings: (settings: typeof mockSettings) => {
     mockSettings = settings
@@ -554,6 +566,107 @@ describe('web dashboard HTTP server', () => {
       body: JSON.stringify({ enabled: true })
     })
   })
+
+  describe('admin-only remote control routes', () => {
+    it('GET /api/servers/:id/profile returns the full profile', async () => {
+      const res = await request('/api/servers/p1/profile')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toMatchObject({ id: 'p1', name: 'Test Server' })
+    })
+
+    it('GET /api/servers/:id/profile 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/profile')
+      expect(res.status).toBe(404)
+    })
+
+    it('POST /api/servers/:id/profile merges and persists fields, ignoring an id in the body', async () => {
+      const res = await request('/api/servers/p1/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Renamed Server', id: 'not-p1' })
+      })
+      expect(res.status).toBe(200)
+      const result = JSON.parse(res.body)
+      expect(result.ok).toBe(true)
+      expect(result.profile.id).toBe('p1')
+      expect(result.profile.name).toBe('Renamed Server')
+
+      const reread = await request('/api/servers/p1/profile')
+      expect(JSON.parse(reread.body).name).toBe('Renamed Server')
+
+      // restore for other tests
+      await request('/api/servers/p1/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Test Server' })
+      })
+    })
+
+    it('POST /api/servers/:id/profile with a mods array saves it (the Mods tab reuses this route)', async () => {
+      const mods = [{ id: 'workshop-123', enabled: true, passive: false, dev: false }]
+      const res = await request('/api/servers/p1/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mods })
+      })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body).profile.mods).toEqual(mods)
+
+      // restore for other tests
+      await request('/api/servers/p1/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mods: [] })
+      })
+    })
+
+    it('GET /api/servers/:id/update-log is null before any update has run, then reflects the file', async () => {
+      const before = await request('/api/servers/p1/update-log')
+      expect(JSON.parse(before.body)).toEqual({ log: null })
+
+      const logPath = path.join(DATA_DIR, 'logs', 'steamcmd-update-p1.log')
+      fs.mkdirSync(path.dirname(logPath), { recursive: true })
+      fs.writeFileSync(logPath, 'Success! App update complete.')
+
+      const after = await request('/api/servers/p1/update-log')
+      expect(JSON.parse(after.body)).toEqual({ log: 'Success! App update complete.' })
+    })
+
+    it('GET /api/maps returns the seeded official maps and an empty custom list', async () => {
+      const res = await request('/api/maps')
+      expect(res.status).toBe(200)
+      const body = JSON.parse(res.body)
+      expect(body.maps).toContainEqual({ id: 'TheIsland_WP', displayName: 'The Island' })
+      expect(body.customMaps).toEqual([])
+    })
+
+    it('map folders: starts empty, POST creates one, GET lists it, delete removes it', async () => {
+      const empty = await request('/api/servers/p1/mapfolders')
+      expect(JSON.parse(empty.body)).toEqual([])
+
+      const create = await request('/api/servers/p1/mapfolders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderName: 'Svartalfheim', fileName: 'Svartalfheim_WP.ark' })
+      })
+      expect(JSON.parse(create.body)).toEqual({ ok: true })
+
+      const listed = await request('/api/servers/p1/mapfolders')
+      const folders = JSON.parse(listed.body)
+      expect(folders).toHaveLength(1)
+      expect(folders[0].name).toBe('Svartalfheim')
+
+      const del = await request('/api/servers/p1/mapfolders/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderName: 'Svartalfheim' })
+      })
+      expect(JSON.parse(del.body)).toEqual({ ok: true })
+
+      const listedAfter = await request('/api/servers/p1/mapfolders')
+      expect(JSON.parse(listedAfter.body)).toEqual([])
+    })
+  })
 })
 
 describe('web dashboard HTTP server, auth enabled', () => {
@@ -687,6 +800,28 @@ describe('web dashboard HTTP server, auth enabled', () => {
       body: JSON.stringify({ filePath: '/tmp/does-not-matter.zip' })
     })
     expect(res.status).toBe(200)
+  })
+
+  it('blocks an operator access token from reading the remote-control profile route', async () => {
+    const res = await authRequest('/api/servers/p1/profile', {
+      headers: { Authorization: `Bearer ${operatorToken}` }
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('allows an admin access token to read and save the profile route', async () => {
+    const getRes = await authRequest('/api/servers/p1/profile', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    })
+    expect(getRes.status).toBe(200)
+
+    const postRes = await authRequest('/api/servers/p1/profile', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ extraArgs: '-clusterid=test' })
+    })
+    expect(postRes.status).toBe(200)
+    expect(JSON.parse(postRes.body).profile.extraArgs).toBe('-clusterid=test')
   })
 
   it('reports the caller role via GET /api/whoami', async () => {

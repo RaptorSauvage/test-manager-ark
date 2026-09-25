@@ -329,6 +329,11 @@ export default function Dashboard({
     onProfilesChange(saved)
   }
 
+  const runningCount = visibleProfiles.filter((p) => statuses[p.id]?.state === 'running').length
+  const totalPlayers = visibleProfiles.reduce((sum, p) => sum + (statuses[p.id]?.players?.length ?? 0), 0)
+  const totalCpu = visibleProfiles.reduce((sum, p) => sum + (statuses[p.id]?.cpu ?? 0), 0)
+  const totalMemoryMB = visibleProfiles.reduce((sum, p) => sum + (statuses[p.id]?.memoryMB ?? 0), 0)
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
@@ -408,6 +413,32 @@ export default function Dashboard({
         </div>
 
         <aside className="dashboard-sidebar">
+          <section className="official-status-panel">
+            <div className="official-status-header">
+              <h3>Performance</h3>
+            </div>
+            <p className="empty-state">Combined totals across every visible server, running or not.</p>
+            <dl className="group-console-cluster-stats">
+              <div>
+                <dt>Servers running</dt>
+                <dd>
+                  {runningCount} <span className="muted">({visibleProfiles.length} total)</span>
+                </dd>
+              </div>
+              <div>
+                <dt>Players</dt>
+                <dd>{totalPlayers}</dd>
+              </div>
+              <div>
+                <dt>CPU</dt>
+                <dd>{totalCpu.toFixed(1)}%</dd>
+              </div>
+              <div>
+                <dt>RAM</dt>
+                <dd>{totalMemoryMB} MB</dd>
+              </div>
+            </dl>
+          </section>
           <OfficialServerStatusPanel />
         </aside>
       </div>
