@@ -1427,6 +1427,13 @@ async function findProfileIdByName(name) {
   - ARK: Survival Evolved needs a `QueryPort` distinct from the game port (ARK: Survival
     Ascended merged the two) - the Settings tab shows a **Query port** field only for a game
     that needs it (`GameDefinition.usesQueryPort`).
+  - ARK: Survival Evolved's launch line differs from ARK: Survival Ascended's in a few more
+    ways, confirmed against a real, working `ShooterGameServer.exe` command line (not just
+    docs): it omits `?listen` and `-server -log` entirely, adds `-servergamelog` instead (the
+    flag that actually makes it write `ShooterGame.log`, which `startServer`'s
+    startup-complete-marker watch depends on), and passes `MaxPlayers=` inline in the
+    `?`-string rather than `-WinLiveMaxPlayers=` (an ARK: Survival Ascended/crossplay-only
+    flag). ARK: Survival Ascended's launch line is unchanged.
   - A handful of ARK: Survival Ascended launch flags have **unconfirmed** ARK: Survival
     Evolved support and are simply never emitted for it, rather than guessed at: crossplay
     (`-ServerPlatform=` - the Settings tab hides that field for ARK: Survival Evolved too),

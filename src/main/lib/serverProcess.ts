@@ -293,17 +293,30 @@ export function getExecutablePath(profile: ServerProfile): string {
  */
 export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: string): string[] {
   const def = getGameDefinition(profile.game)
+  const isEvolved = profile.game === 'ark-evolved'
   const adminPassword = adminPasswordOverride ?? readAdminPassword(profile.installDir)
-  const params = ['listen', `Port=${profile.gamePort}`]
+  // '?listen', '-server -log', and '-WinLiveMaxPlayers=' are confirmed ARK: Survival Ascended
+  // behavior but were confirmed absent from a real, working ARK: Survival Evolved launch line
+  // (ShooterGameServer.exe doesn't take them) - ASE instead takes MaxPlayers= inline in the
+  // ?-string and needs -servergamelog for its own log file (what startServer's marker-watch
+  // relies on) to be written at all.
+  const params = isEvolved ? [] : ['listen']
+  params.push(`Port=${profile.gamePort}`)
   if (def.usesQueryPort) params.push(`QueryPort=${profile.queryPort}`)
   params.push('RCONEnabled=True', `RCONPort=${profile.rconPort}`)
   if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
+  if (isEvolved) params.push(`MaxPlayers=${profile.maxPlayers}`)
 
-  const args = [`${profile.map}?${params.join('?')}`, '-server', '-log']
+  const args = [`${profile.map}?${params.join('?')}`]
+  if (isEvolved) {
+    args.push('-servergamelog')
+  } else {
+    args.push('-server', '-log')
+  }
   // Crossplay platform selection - ARK: Survival Ascended only; unconfirmed for ARK: Survival
   // Evolved, so never emitted for it rather than guessed at (see shared/games.ts).
   if (profile.game === 'ark-ascended') args.push(`-ServerPlatform=${profile.serverPlatform}`)
-  args.push(`-WinLiveMaxPlayers=${profile.maxPlayers}`)
+  if (!isEvolved) args.push(`-WinLiveMaxPlayers=${profile.maxPlayers}`)
 
   const enabledMods = profile.mods.filter((mod) => mod.enabled)
   const formatModId = (mod: ServerMod): string => (mod.dev ? `${mod.id}-dev` : mod.id)

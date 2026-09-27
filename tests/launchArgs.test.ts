@@ -256,12 +256,48 @@ describe('buildLaunchArgs', () => {
   describe('ark-evolved specific behavior', () => {
     it('adds QueryPort= to the ?-string, distinct from Port=', () => {
       const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', gamePort: 7777, queryPort: 27015 }))
-      expect(args[0]).toContain('?Port=7777?QueryPort=27015?RCONEnabled=True')
+      expect(args[0]).toContain('Port=7777?QueryPort=27015?RCONEnabled=True')
     })
 
     it('never omits QueryPort= for ark-ascended, which merges it into Port=', () => {
       const args = buildLaunchArgs(makeProfile({ game: 'ark-ascended', gamePort: 7777, queryPort: 27015 }))
       expect(args[0]).not.toContain('QueryPort=')
+    })
+
+    it('omits ?listen, confirmed absent from a real working ark-evolved launch line', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved' }))
+      expect(args[0]).not.toMatch(/\?listen(\?|$)/)
+    })
+
+    it('still passes ?listen for ark-ascended', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-ascended' }))
+      expect(args[0]).toMatch(/\?listen(\?|$)/)
+    })
+
+    it('omits -server/-log, adding -servergamelog instead', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved' }))
+      expect(args).not.toContain('-server')
+      expect(args).not.toContain('-log')
+      expect(args).toContain('-servergamelog')
+    })
+
+    it('still passes -server -log for ark-ascended, without -servergamelog', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-ascended' }))
+      expect(args).toContain('-server')
+      expect(args).toContain('-log')
+      expect(args).not.toContain('-servergamelog')
+    })
+
+    it('passes MaxPlayers= inline in the ?-string instead of -WinLiveMaxPlayers=', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', maxPlayers: 10 }))
+      expect(args[0]).toContain('MaxPlayers=10')
+      expect(args.some((a) => a.startsWith('-WinLiveMaxPlayers='))).toBe(false)
+    })
+
+    it('still passes -WinLiveMaxPlayers= for ark-ascended, without MaxPlayers= inline', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-ascended', maxPlayers: 42 }))
+      expect(args).toContain('-WinLiveMaxPlayers=42')
+      expect(args[0]).not.toContain('MaxPlayers=42')
     })
 
     it('omits -ServerPlatform=, unconfirmed for ark-evolved', () => {
