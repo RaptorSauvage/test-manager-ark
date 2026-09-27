@@ -1497,6 +1497,19 @@ async function findProfileIdByName(name) {
     from inside its own `Win64` folder, cmd's prompt showing as much), so this keeps the
     Manager's spawn matching that exactly instead of leaving the working directory as one more
     unverified difference from a known-working reference. Applies to both games.
+  - `startServer` also now spawns with `windowsVerbatimArguments: true`. A confirmed-working
+    ARK: Survival Evolved launch passes `SessionName=<value with spaces>` completely unquoted
+    (typed straight at a `cmd` prompt); Node's default Windows quoting instead wraps that whole
+    `?`-string argument in double quotes because it contains a space - the normally-correct
+    thing to do for a well-behaved argv parser, but ARK: Survival Evolved's own command-line
+    parsing dates back to a much older, less rigorous codebase than ARK: Survival Ascended's,
+    and plausibly can't handle the added quoting. This opts the whole `args` array out of
+    Node's quoting, so the raw text sent to `CreateProcess` matches the confirmed-working,
+    unquoted command line exactly (a no-op for ARK: Survival Ascended, whose arguments never
+    contain a bare space to begin with). Applies to both games; couldn't be verified against a
+    real Windows ARK: Survival Evolved install from this environment, so it's a best-effort fix
+    for the underlying cause rather than a confirmed one - if the server still won't start,
+    next step is comparing the Debug box's command line against a real working one again.
   - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
     browser) doesn't expose the Game/Query port fields, the new Session Name/Server Password
     fields, or a game-aware map list the way the desktop Settings tab now does - it still

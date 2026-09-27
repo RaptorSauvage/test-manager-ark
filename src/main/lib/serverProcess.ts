@@ -470,7 +470,16 @@ export function startServer(profile: ServerProfile): ServerStatus {
     // (a manually confirmed working ARK: Survival Evolved launch, for instance, was run from
     // its own Win64 folder), and this keeps the Manager's spawn matching that exactly rather
     // than leaving a working-directory mismatch as one more unverified difference.
-    child = spawn(exe, args, { cwd: path.dirname(exe), stdio: 'ignore', detached: true })
+    // windowsVerbatimArguments: true - a confirmed-working ARK: Survival Evolved launch passes
+    // SessionName=<value with spaces> completely unquoted (e.g. typed directly at a cmd
+    // prompt); Node's default Windows quoting would instead wrap that whole ?-string argument
+    // in double quotes because it contains spaces, since it's normally the right thing to do
+    // for a well-behaved argv parser. ARK: Survival Evolved's own command-line parsing dates
+    // back to a much older, less rigorous UE4 codebase than ARK: Survival Ascended's, and
+    // plausibly doesn't handle that added quoting the way a modern argv parser would - this
+    // opts out of Node's quoting entirely so the raw text sent to CreateProcess matches the
+    // confirmed-working, unquoted command line exactly. Ignored on non-Windows platforms.
+    child = spawn(exe, args, { cwd: path.dirname(exe), stdio: 'ignore', detached: true, windowsVerbatimArguments: true })
     child.unref()
   } catch (err) {
     const failed: ServerStatus = { profileId: profile.id, state: 'error', lastError: (err as Error).message }
