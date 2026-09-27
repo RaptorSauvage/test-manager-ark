@@ -465,7 +465,12 @@ export function startServer(profile: ServerProfile): ServerStatus {
     // detached + unref - the server must keep running even if this Manager
     // crashes or is closed; without detaching, Windows ties child processes to
     // the parent's job object and kills them the moment the parent dies.
-    child = spawn(exe, args, { cwd: profile.installDir, stdio: 'ignore', detached: true })
+    // cwd: the executable's own directory (Win64/Linux), not the install root - every
+    // community-standard ARK launch script `cd`s into that folder before running the exe
+    // (a manually confirmed working ARK: Survival Evolved launch, for instance, was run from
+    // its own Win64 folder), and this keeps the Manager's spawn matching that exactly rather
+    // than leaving a working-directory mismatch as one more unverified difference.
+    child = spawn(exe, args, { cwd: path.dirname(exe), stdio: 'ignore', detached: true })
     child.unref()
   } catch (err) {
     const failed: ServerStatus = { profileId: profile.id, state: 'error', lastError: (err as Error).message }

@@ -1491,6 +1491,12 @@ async function findProfileIdByName(name) {
     without it. `rcon.ts` already surfaces that case with a clear
     "No ServerAdminPassword set in this server's GameUserSettings.ini" error when a
     Manager-driven RCON command (Stop/Restart/etc.) is attempted against it.
+  - `startServer` now spawns with `cwd` set to the executable's own directory (`Win64`/`Linux`)
+    rather than the install root three folders up. Every community-standard ARK launch script
+    `cd`s into that folder before running the exe (a manually confirmed working launch was run
+    from inside its own `Win64` folder, cmd's prompt showing as much), so this keeps the
+    Manager's spawn matching that exactly instead of leaving the working directory as one more
+    unverified difference from a known-working reference. Applies to both games.
   - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
     browser) doesn't expose the Game/Query port fields, the new Session Name/Server Password
     fields, or a game-aware map list the way the desktop Settings tab now does - it still
