@@ -3,6 +3,7 @@ import https from 'node:https'
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { app } from 'electron'
 import type { AppSettings, ServerProfile, ServerStatus, WebDashboardRole } from '@shared/types'
 import {
@@ -57,10 +58,14 @@ let lastError: string | null = null
 let lastHost: string | null = null
 
 // Same icon.png the desktop window/taskbar uses (see src/main/index.ts), read once and
-// cached in memory since it never changes while the app is running.
+// cached in memory since it never changes while the app is running. Served with an ETag
+// (rather than a long max-age) so a browser that already has an older icon cached - from
+// before an app update replaced this file - re-fetches it on the very next page load
+// instead of holding onto stale bytes for the rest of its cache lifetime.
 let faviconCache: Buffer | null | undefined
-function getFaviconBuffer(): Buffer | null {
-  if (faviconCache !== undefined) return faviconCache
+let faviconETag = ''
+function getFaviconBuffer(): { buffer: Buffer; etag: string } | null {
+  if (faviconCache !== undefined) return faviconCache ? { buffer: faviconCache, etag: faviconETag } : null
   // cwd rather than __dirname-relative math: this file sits one level deeper than
   // src/main/index.ts (which resolves the same dev-mode icon via __dirname), but once
   // bundled by electron-vite both end up inlined into the same out/main/index.js anyway -
@@ -71,10 +76,11 @@ function getFaviconBuffer(): Buffer | null {
     : path.join(process.cwd(), 'build/icon.png')
   try {
     faviconCache = fs.readFileSync(iconPath)
+    faviconETag = `"${crypto.createHash('md5').update(faviconCache).digest('hex')}"`
   } catch {
     faviconCache = null
   }
-  return faviconCache
+  return faviconCache ? { buffer: faviconCache, etag: faviconETag } : null
 }
 
 /** Event categories that can be individually hidden from the web dashboard's feed. */
@@ -232,8 +238,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       res.end('Not found')
       return
     }
-    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' })
-    res.end(favicon)
+    if (req.headers['if-none-match'] === favicon.etag) {
+      res.writeHead(304)
+      res.end()
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache', ETag: favicon.etag })
+    res.end(favicon.buffer)
     return
   }
 

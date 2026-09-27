@@ -267,11 +267,20 @@ describe('web dashboard HTTP server', () => {
     expect(res.body).toContain('<link rel="icon" type="image/png" href="/favicon.png" />')
   })
 
-  it('serves the app icon as a PNG at /favicon.png', async () => {
+  it('serves the app icon as a PNG at /favicon.png, with an ETag rather than a long cache lifetime', async () => {
     const res = await request('/favicon.png')
     expect(res.status).toBe(200)
     expect(res.headers['content-type']).toBe('image/png')
+    expect(res.headers['cache-control']).toBe('no-cache')
+    expect(res.headers['etag']).toBeTruthy()
     expect(res.body.length).toBeGreaterThan(0)
+  })
+
+  it('returns 304 for /favicon.png when the client already has the current ETag', async () => {
+    const first = await request('/favicon.png')
+    const res = await request('/favicon.png', { headers: { 'If-None-Match': first.headers['etag'] as string } })
+    expect(res.status).toBe(304)
+    expect(res.body).toBe('')
   })
 
   it('lists servers with their live status', async () => {
