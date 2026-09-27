@@ -922,7 +922,7 @@ const DASHBOARD_HTML = `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ARK Server Manager - Web Console</title>
+<title>Bober Server Manager - Web Console</title>
 <style>
   :root {
     color-scheme: dark;
@@ -1217,14 +1217,14 @@ const DASHBOARD_HTML = `<!doctype html>
 <body>
 <div id="token-gate">
   <form id="token-gate-form">
-    <h1>ARK Server Manager</h1>
+    <h1>Bober Server Manager</h1>
     <input id="token-gate-input" placeholder="Access token" autocomplete="off" autofocus />
     <div id="token-gate-error"></div>
     <button type="submit">Continue</button>
   </form>
 </div>
 <nav id="sidebar">
-  <h1>ARK Manager</h1>
+  <h1>Bober Manager</h1>
   <button id="nav-dashboard" class="nav-btn" type="button">Dashboard</button>
   <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
   <hr class="nav-sep" />
@@ -1290,7 +1290,7 @@ const DASHBOARD_HTML = `<!doctype html>
   </section>
   <section id="view-console" class="view">
     <header>
-      <h1>ARK Server Manager</h1>
+      <h1>Bober Server Manager</h1>
       <div id="server-actions">
         <button id="btn-start" class="ok">Start</button>
         <button id="btn-stop" class="danger">Stop</button>
@@ -1517,6 +1517,10 @@ const DASHBOARD_HTML = `<!doctype html>
           <label class="checkbox"><input id="settings-tribelog" type="checkbox" /> RCON Tribe Log</label>
           <label class="checkbox"><input id="settings-respawndinos" type="checkbox" /> Force Respawn Wild Dinos</label>
           <label class="checkbox"><input id="settings-nosound" type="checkbox" /> No Sound</label>
+          <label>
+            Max Dino Level
+            <input id="settings-maxdinolevel" />
+          </label>
           <label>
             Dashboard group
             <input id="settings-group" placeholder="Leave blank for no group" />
@@ -3980,6 +3984,7 @@ function initDashboard(resolvedRole) {
   var settingsTribeLog = document.getElementById('settings-tribelog');
   var settingsRespawnDinos = document.getElementById('settings-respawndinos');
   var settingsNoSound = document.getElementById('settings-nosound');
+  var settingsMaxDinoLevel = document.getElementById('settings-maxdinolevel');
   var settingsGroup = document.getElementById('settings-group');
   var settingsExtraArgs = document.getElementById('settings-extraargs');
   var settingsClusterEnabled = document.getElementById('settings-clusterenabled');
@@ -4052,6 +4057,7 @@ function initDashboard(resolvedRole) {
     settingsTribeLog.checked = !!p.rconTribeLog;
     settingsRespawnDinos.checked = !!p.forceRespawnDinos;
     settingsNoSound.checked = !!p.noSound;
+    settingsMaxDinoLevel.value = p.maxDinoLevel || '';
     settingsGroup.value = p.group;
     settingsExtraArgs.value = p.extraArgs;
     settingsClusterEnabled.checked = !!p.clusterEnabled;
@@ -4130,6 +4136,7 @@ function initDashboard(resolvedRole) {
   settingsTribeLog.addEventListener('change', function () { saveSettingsField('rconTribeLog', settingsTribeLog.checked); });
   settingsRespawnDinos.addEventListener('change', function () { saveSettingsField('forceRespawnDinos', settingsRespawnDinos.checked); });
   settingsNoSound.addEventListener('change', function () { saveSettingsField('noSound', settingsNoSound.checked); });
+  settingsMaxDinoLevel.addEventListener('change', function () { saveSettingsField('maxDinoLevel', settingsMaxDinoLevel.value); });
   settingsGroup.addEventListener('change', function () { saveSettingsField('group', settingsGroup.value); });
   settingsExtraArgs.addEventListener('change', function () { saveSettingsField('extraArgs', settingsExtraArgs.value); });
   settingsClusterEnabled.addEventListener('change', function () { saveSettingsField('clusterEnabled', settingsClusterEnabled.checked); });

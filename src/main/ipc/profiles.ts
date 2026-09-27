@@ -98,6 +98,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
       rconTribeLog: false,
       forceRespawnDinos: false,
       noSound: false,
+      maxDinoLevel: '',
       extraArgs: '',
       scheduledRestartEnabled: false,
       scheduledRestartTime: '00:00',

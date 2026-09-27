@@ -1,7 +1,7 @@
 {
   "name": "ark-server-manager",
   "version": "0.1.0",
-  "description": "ARK Server Manager",
+  "description": "Bober Server Manager",
   "main": "out/main/index.js",
   "author": "",
   "license": "MIT",
@@ -47,7 +47,7 @@
   },
   "build": {
     "appId": "com.arkservermanager.app",
-    "productName": "ARK Server Manager",
+    "productName": "Bober Server Manager",
     "directories": {
       "output": "release"
     },

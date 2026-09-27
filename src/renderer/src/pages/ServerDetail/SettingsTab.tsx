@@ -271,6 +271,10 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           No Sound
         </label>
         <label>
+          Max Dino Level
+          <input value={form.maxDinoLevel} onChange={(e) => update('maxDinoLevel', e.target.value)} />
+        </label>
+        <label>
           Dashboard group
           <input
             value={form.group}

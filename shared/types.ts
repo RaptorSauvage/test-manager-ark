@@ -68,6 +68,8 @@ export interface ServerProfile {
   forceRespawnDinos: boolean
   /** Passed as -nosound when true */
   noSound: boolean
+  /** Passed as -DestroyTamesOverLevel=<value> when non-empty */
+  maxDinoLevel: string
   /** Free-form extra launch arguments appended to the command line */
   extraArgs: string
   /**

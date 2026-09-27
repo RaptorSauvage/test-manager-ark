@@ -30,6 +30,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     rconTribeLog: false,
     forceRespawnDinos: false,
     noSound: false,
+    maxDinoLevel: '',
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',
@@ -209,6 +210,16 @@ describe('buildLaunchArgs', () => {
   it('passes -nosound only when noSound is true', () => {
     expect(buildLaunchArgs(makeProfile({ noSound: false }))).not.toContain('-nosound')
     expect(buildLaunchArgs(makeProfile({ noSound: true }))).toContain('-nosound')
+  })
+
+  it('passes -DestroyTamesOverLevel=<value> only when maxDinoLevel is non-empty', () => {
+    const withoutFlag = buildLaunchArgs(makeProfile({ maxDinoLevel: '' }))
+    expect(withoutFlag.some((a) => a.startsWith('-DestroyTamesOverLevel='))).toBe(false)
+    expect(buildLaunchArgs(makeProfile({ maxDinoLevel: '150' }))).toContain('-DestroyTamesOverLevel=150')
+  })
+
+  it('trims whitespace around maxDinoLevel before using it', () => {
+    expect(buildLaunchArgs(makeProfile({ maxDinoLevel: '  150  ' }))).toContain('-DestroyTamesOverLevel=150')
   })
 
   it('omits -MapModID= when moddedMapEnabled is false, even with moddedMapId filled in', () => {

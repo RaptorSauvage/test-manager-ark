@@ -3,7 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { spawn } from 'node:child_process'
 
-const FIREWALL_RULE_PREFIX = 'SteamCMD (ARK Manager)'
+const FIREWALL_RULE_PREFIX = 'SteamCMD (Bober Manager)'
 
 /**
  * PowerShell script that adds allow rules (inbound + outbound) for the given executable.
@@ -45,8 +45,8 @@ export function addFirewallRulesForSteamCmd(steamCmdPath: string): Promise<void>
 
   return new Promise((resolve, reject) => {
     const stamp = Date.now()
-    const ruleScriptPath = path.join(os.tmpdir(), `ark-manager-firewall-rule-${stamp}.ps1`)
-    const launcherScriptPath = path.join(os.tmpdir(), `ark-manager-firewall-elevate-${stamp}.ps1`)
+    const ruleScriptPath = path.join(os.tmpdir(), `bober-manager-firewall-rule-${stamp}.ps1`)
+    const launcherScriptPath = path.join(os.tmpdir(), `bober-manager-firewall-elevate-${stamp}.ps1`)
 
     fs.writeFileSync(ruleScriptPath, buildFirewallRuleScript(steamCmdPath), 'utf-8')
     fs.writeFileSync(launcherScriptPath, buildElevationLauncherScript(ruleScriptPath), 'utf-8')

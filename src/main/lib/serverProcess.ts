@@ -324,6 +324,9 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
   if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
   if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
   if (profile.noSound) args.push('-nosound')
+  // Falls back to '' for a profile saved before this field existed and read some way that
+  // bypasses store.ts's own migrateProfile backfill (e.g. a test fixture) - never throws.
+  if ((profile.maxDinoLevel ?? '').trim()) args.push(`-DestroyTamesOverLevel=${profile.maxDinoLevel.trim()}`)
   if (profile.moddedMapEnabled && profile.moddedMapId.trim()) args.push(`-MapModID=${profile.moddedMapId.trim()}`)
 
   if (profile.extraArgs.trim()) {

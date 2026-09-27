@@ -464,6 +464,10 @@ label.checkbox {
   padding: 12px 14px;
 }
 
+.official-status-panel .group-console-cluster-stats {
+  background: var(--bg);
+}
+
 .group-console-cluster-stats div {
   display: flex;
   flex-direction: column;

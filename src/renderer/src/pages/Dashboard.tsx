@@ -337,7 +337,7 @@ export default function Dashboard({
   return (
     <div className="dashboard">
       <header className="dashboard-header">
-        <h1>ARK Server Manager</h1>
+        <h1>Bober Server Manager</h1>
         <div className="dashboard-header-actions">
           <button onClick={onOpenSteamCmd}>SteamCMD</button>
           <button onClick={onOpenDataSettings}>Settings</button>

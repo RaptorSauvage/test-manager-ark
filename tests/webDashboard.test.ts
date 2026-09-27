@@ -262,7 +262,7 @@ describe('web dashboard HTTP server', () => {
   it('serves the dashboard page at /', async () => {
     const res = await request('/')
     expect(res.status).toBe(200)
-    expect(res.body).toContain('<title>ARK Server Manager - Web Console</title>')
+    expect(res.body).toContain('<title>Bober Server Manager - Web Console</title>')
   })
 
   it('lists servers with their live status', async () => {
@@ -857,7 +857,7 @@ describe('web dashboard HTTP server, auth enabled', () => {
   it('always serves the same dashboard page, with window.__authRequired set', async () => {
     const res = await authRequest('/')
     expect(res.status).toBe(200)
-    expect(res.body).toContain('<title>ARK Server Manager - Web Console</title>')
+    expect(res.body).toContain('<title>Bober Server Manager - Web Console</title>')
     expect(res.body).toContain('window.__authRequired = true;')
   })
 

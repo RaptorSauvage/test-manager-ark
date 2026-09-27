@@ -1,4 +1,4 @@
-# ARK Server Manager
+# Bober Server Manager
 
 A small desktop app (Electron + React + TypeScript) for controlling ARK: Survival Ascended
 dedicated servers running on the same machine.
@@ -889,8 +889,8 @@ dedicated servers running on the same machine.
     above, with the same "No server selected - choose one above." fallback. **Settings**
     covers Name/Install directory/ports/Platform/Max Players/Map (official + custom, from the
     same `maps.json`/`customMaps.json` the desktop Manager reads)/Mod Map/Beta/culture/
-    BattlEye/RCON Tribe Log/Force Respawn Dinos/No Sound/Dashboard group/Extra launch
-    arguments/Cluster settings. **Mods** is the same enable/passive/dev checkboxes, name, and
+    BattlEye/RCON Tribe Log/Force Respawn Dinos/No Sound/Max Dino Level/Dashboard group/Extra
+    launch arguments/Cluster settings. **Mods** is the same enable/passive/dev checkboxes, name, and
     mod ID table as the desktop tab, add/remove included. **Map Management** creates/lists/
     deletes `SavedArks/<folder>/<file>` placeholders. **Update Log** is a read-only view of
     the last SteamCMD run's output, refreshing every few seconds while open, same as the
@@ -1032,10 +1032,11 @@ dedicated servers running on the same machine.
 - **Extra Settings** (Settings tab) — Culture Settings (None/English/French, passed as
   `-culture=en`/`-culture=fr`, omitted entirely when set to None), Disable BattlEye
   (`-NoBattlEye`), RCON Tribe Log (`-servergamelogincludetribelogs` +
-  `-ServerRCONOutputTribeLogs`), Force Respawn Wild Dinos (`-ForceRespawnDinos`), and No
-  Sound (`-nosound`). RCON itself is always on (the Manager depends on it for Stop/Restart
-  and the web dashboard) and can't be turned off, so there's no toggle or indicator for it
-  in the UI at all.
+  `-ServerRCONOutputTribeLogs`), Force Respawn Wild Dinos (`-ForceRespawnDinos`), No
+  Sound (`-nosound`), and Max Dino Level (`-DestroyTamesOverLevel=<value>`, omitted
+  entirely when left blank). RCON itself is always on (the Manager depends on it for
+  Stop/Restart and the web dashboard) and can't be turned off, so there's no toggle or
+  indicator for it in the UI at all.
 - **Server Management tab** — **Manager Startup**, **Anti-Crash Watchdog**, **Zombie
   Detection**, and **Cluster Console Log Archive** share one **Startup & Watchdog** card
   (in that order, each its own labeled subsection with a one-line description rather than

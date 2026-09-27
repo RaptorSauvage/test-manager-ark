@@ -31,6 +31,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     rconTribeLog: false,
     forceRespawnDinos: false,
     noSound: false,
+    maxDinoLevel: '',
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',
@@ -142,6 +143,11 @@ describe('migrateProfile', () => {
     expect(migrated.rconTribeLog).toBe(false)
     expect(migrated.forceRespawnDinos).toBe(false)
     expect(migrated.noSound).toBe(false)
+  })
+
+  it('backfills maxDinoLevel to an empty string on profiles saved before it existed', () => {
+    const legacy = baseProfile({ maxDinoLevel: undefined })
+    expect(migrateProfile(legacy).maxDinoLevel).toBe('')
   })
 
   it('backfills moddedMapEnabled/moddedMapId on profiles saved before they existed', () => {
