@@ -409,6 +409,7 @@ export const IPC = {
   serverStatusChanged: 'server:status-changed',
   serverGetInstalledBuildId: 'server:get-installed-build-id',
   serverGetGameVersion: 'server:get-game-version',
+  serverPreviewLaunchCommand: 'server:preview-launch-command',
 
   modsSave: 'mods:save',
   modsParseText: 'mods:parse-text',
@@ -614,6 +615,10 @@ export interface Api {
      *  console window title - Windows-only, and null until the server is running and that
      *  title has actually been set (a few seconds into startup). */
     getGameVersion: (profileId: string) => Promise<string | null>
+    /** Computes the executable path and exact launch argument list for `profile` without
+     *  starting it - what startServer would actually run, for a debug/preview display. Takes
+     *  the profile directly (not a saved profileId) so it reflects unsaved edits too. */
+    previewLaunchCommand: (profile: ServerProfile) => Promise<{ executable: string; args: string[] }>
   }
   mods: {
     save: (profileId: string, mods: ServerMod[]) => Promise<ServerProfile>

@@ -1466,8 +1466,15 @@ label.checkbox {
 }
 
 .path-input-row input,
-.path-input-row select {
+.path-input-row select,
+.path-input-row textarea {
   flex: 1;
+}
+
+.launch-command-preview {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.8rem;
+  resize: vertical;
 }
 
 .form-actions {

@@ -15,6 +15,9 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   const [refreshingMaps, setRefreshingMaps] = useState(false)
   const [customMaps, setCustomMaps] = useState<MapDefinition[]>([])
   const [refreshingCustomMaps, setRefreshingCustomMaps] = useState(false)
+  const [launchPreview, setLaunchPreview] = useState<{ executable: string; args: string[] } | null>(null)
+  const [launchPreviewError, setLaunchPreviewError] = useState('')
+  const [copyStatus, setCopyStatus] = useState('')
   const gameDef = getGameDefinition(form.game)
 
   useEffect(() => {
@@ -22,6 +25,30 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
     void refreshCustomMaps()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.game])
+
+  // Recomputes what startServer would actually run - reflects unsaved edits too, since it's
+  // driven by `form` rather than the last-saved profile. Debounced so fast typing (e.g. in
+  // Extra launch arguments) doesn't fire an IPC round-trip per keystroke.
+  useEffect(() => {
+    let cancelled = false
+    const timer = setTimeout(() => {
+      window.api.server
+        .previewLaunchCommand(form)
+        .then((preview) => {
+          if (!cancelled) {
+            setLaunchPreview(preview)
+            setLaunchPreviewError('')
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) setLaunchPreviewError((err as Error).message)
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [form])
 
   async function refreshMaps(game: GameId): Promise<void> {
     setRefreshingMaps(true)
@@ -79,6 +106,13 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
     } catch (err) {
       setFormError((err as Error).message)
     }
+  }
+
+  async function copyLaunchCommand(): Promise<void> {
+    if (!launchPreview) return
+    await navigator.clipboard.writeText([launchPreview.executable, ...launchPreview.args].join(' '))
+    setCopyStatus('Copied')
+    setTimeout(() => setCopyStatus(''), 2000)
   }
 
   async function exportProfile(): Promise<void> {
@@ -394,6 +428,33 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
             disabled={!form.clusterEnabled}
           />
         </label>
+      </section>
+      <section className="cluster-section">
+        <h3>Debug</h3>
+        <label>
+          Launch command
+          <div className="path-input-row">
+            <textarea
+              className="launch-command-preview"
+              readOnly
+              rows={3}
+              value={
+                launchPreviewError
+                  ? launchPreviewError
+                  : launchPreview
+                    ? [launchPreview.executable, ...launchPreview.args].join(' ')
+                    : 'Computing...'
+              }
+            />
+            <button type="button" onClick={() => void copyLaunchCommand()} disabled={!launchPreview}>
+              {copyStatus || 'Copy'}
+            </button>
+          </div>
+        </label>
+        <p className="empty-state">
+          Exactly what Start would run right now, including unsaved edits above - useful for diagnosing a server that
+          won't launch.
+        </p>
       </section>
       {formError && <p className="error-message">{formError}</p>}
     </form>

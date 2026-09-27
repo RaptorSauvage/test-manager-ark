@@ -1,7 +1,7 @@
 import { ipcMain, type WebContents } from 'electron'
-import { IPC } from '@shared/types'
+import { IPC, type ServerProfile } from '@shared/types'
 import { getProfile } from '../store'
-import { getStatus, serverEvents } from '../lib/serverProcess'
+import { getStatus, serverEvents, getExecutablePath, buildLaunchArgs } from '../lib/serverProcess'
 import { doStartServer, doStopServer, doRestartServer, doKillServer, doUpdateServer } from '../lib/serverActions'
 import { isValidArkInstall } from '../lib/detect'
 import { getInstalledBuildId } from '../lib/steamcmd'
@@ -47,4 +47,9 @@ export function registerServerProcessHandlers(webContents: WebContents): void {
     requireProfile(profileId)
     return getCachedGameVersion(profileId)
   })
+
+  ipcMain.handle(IPC.serverPreviewLaunchCommand, (_event, profile: ServerProfile) => ({
+    executable: getExecutablePath(profile),
+    args: buildLaunchArgs(profile)
+  }))
 }

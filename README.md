@@ -1471,6 +1471,13 @@ async function findProfileIdByName(name) {
     icon (desktop Dashboard grid and the Web Dashboard's own cards, served from a new
     `GET /game-icons/<fileName>` route with the same ETag/no-cache pattern as `/favicon.png`)
     are both correctly scoped per game now instead of assuming ARK: Survival Ascended.
+  - The Settings tab has a new **Debug** section showing the exact executable path and launch
+    argument list `Start` would run right now, including unsaved edits above (a new
+    `server:preview-launch-command` IPC call runs `getExecutablePath`/`buildLaunchArgs` against
+    the live form state, debounced 300ms) - a **Copy** button copies the full command line.
+    Added directly off the back of the `RuntimeMeshComponent` argument-order issue above, so a
+    similarly obscure launch failure can be diagnosed by comparing this against a known-working
+    command line instead of guessing blind.
   - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
     browser) doesn't expose the Game/Query port fields, the new Session Name/Server Password
     fields, or a game-aware map list the way the desktop Settings tab now does - it still
