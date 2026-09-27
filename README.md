@@ -1402,3 +1402,8 @@ async function findProfileIdByName(name) {
   blocking the Manager's `.exe` and/or `cmd.exe`/`steamcmd.exe` - add an exception for both
   and retry. This was confirmed as the actual root cause in one real case, after disk
   space, admin rights, and a stuck SteamCMD manifest state had all been ruled out first.
+- Every server profile now carries a `game` field (`shared/games.ts`), always
+  `'ark-ascended'` today - the only game this app supports so far. It's groundwork for
+  planned multi-game support (ARK: Survival Evolved, Palworld, Minecraft), being built
+  incrementally on the `multi-game-support` branch; nothing in this version's behavior
+  reads or branches on it yet.

@@ -2,9 +2,15 @@
 // React renderer. Keeping a single source of truth here avoids the two sides
 // of the IPC boundary drifting apart.
 
+import type { GameId } from './games'
+
 export interface ServerProfile {
   id: string
   name: string
+  /** Which game this profile launches. Always 'ark-ascended' today - the only game this
+   *  app supports so far (see shared/games.ts) - but every profile carries it so a future
+   *  second game doesn't need a silent migration to retrofit it onto existing profiles. */
+  game: GameId
   /** Root install directory, containing ShooterGame/Binaries/... */
   installDir: string
   /** Whether the SteamCMD update/install below targets a beta branch instead of the

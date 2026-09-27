@@ -31,6 +31,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     rconTribeLog: false,
     forceRespawnDinos: false,
     noSound: false,
+    game: 'ark-ascended',
     maxDinoLevel: '',
     extraArgs: '',
     scheduledRestartEnabled: false,
@@ -175,5 +176,10 @@ describe('migrateProfile', () => {
   it('defaults startOnManagerLaunch to false on profiles saved before it existed', () => {
     const legacy = baseProfile({ startOnManagerLaunch: undefined })
     expect(migrateProfile(legacy).startOnManagerLaunch).toBe(false)
+  })
+
+  it("backfills game to 'ark-ascended' on profiles saved before multi-game support existed", () => {
+    const legacy = baseProfile({ game: undefined })
+    expect(migrateProfile(legacy).game).toBe('ark-ascended')
   })
 })

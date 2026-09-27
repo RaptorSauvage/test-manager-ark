@@ -40,6 +40,7 @@ function makeProfile(id: string): ServerProfile {
     rconTribeLog: false,
     forceRespawnDinos: false,
     noSound: false,
+    game: 'ark-ascended',
     maxDinoLevel: '',
     extraArgs: '',
     scheduledRestartEnabled: false,

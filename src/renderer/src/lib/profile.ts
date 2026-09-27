@@ -4,6 +4,7 @@ export function createDefaultProfile(name: string): ServerProfile {
   return {
     id: crypto.randomUUID(),
     name,
+    game: 'ark-ascended',
     installDir: '',
     steamBetaEnabled: false,
     steamBetaName: '',

@@ -71,6 +71,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     const profile: ServerProfile = {
       id: randomUUID(),
       name: uniqueProfileName(detected.suggestedName, existing.map((p) => p.name)),
+      game: 'ark-ascended',
       installDir,
       steamBetaEnabled: false,
       steamBetaName: '',

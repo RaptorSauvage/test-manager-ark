@@ -50,6 +50,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     rconTribeLog: false,
     forceRespawnDinos: false,
     noSound: false,
+    game: 'ark-ascended',
     maxDinoLevel: '',
     extraArgs: '',
     scheduledRestartEnabled: false,

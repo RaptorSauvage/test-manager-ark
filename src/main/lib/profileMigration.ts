@@ -41,6 +41,8 @@ interface LegacyProfileFields {
  * - `clusterLogArchiveMaxSizeMB` is new and defaults to 10
  * - `statsEnabled` is new and defaults to false
  * - `steamBetaEnabled`/`steamBetaName` are new and default to false/''
+ * - `game` is new; every profile predating multi-game support is ARK: Survival Ascended,
+ *   so it backfills to 'ark-ascended'
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -67,6 +69,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
 
   return {
     ...rest,
+    game: rest.game ?? 'ark-ascended',
     mods,
     backupScheduleEnabled,
     clusterEnabled: rest.clusterEnabled ?? false,
