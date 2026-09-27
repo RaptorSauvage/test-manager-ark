@@ -1429,6 +1429,29 @@ label.checkbox {
   gap: 12px;
 }
 
+.games-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.games-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.games-list-item span:first-of-type {
+  flex: 1;
+}
+
+.games-list-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
 .path-input-row {
   display: flex;
   gap: 8px;

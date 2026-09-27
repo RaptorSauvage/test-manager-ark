@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react'
 import type { AppSettings, AppUpdateStatus } from '@shared/types'
+import { listGameDefinitions } from '@shared/games'
 import AccessTokensSection from './AccessTokensSection'
 import ApiKeysSection from './ApiKeysSection'
+import arkAscendedIcon from '../assets/games/ark-ascended.png'
+import arkEvolvedIcon from '../assets/games/ark-evolved.png'
+
+const GAME_ICONS: Record<string, string> = {
+  'ark-ascended.png': arkAscendedIcon,
+  'ark-evolved.png': arkEvolvedIcon
+}
 
 interface DataSettingsViewProps {
   onBack: () => void
@@ -205,6 +213,22 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                     Makes <code>GameUserSettings.ini</code>/<code>Game.ini</code> read-only while that server runs,
                     as a guard against editing it by accident.
                   </p>
+                </section>
+
+                <section className="cluster-section">
+                  <h3>Games</h3>
+                  <div className="games-list">
+                    {listGameDefinitions().map((game) => (
+                      <div className="games-list-item" key={game.id}>
+                        <img src={GAME_ICONS[game.iconFileName]} alt="" className="games-list-icon" />
+                        <span>{game.displayName}</span>
+                        <span className={game.status === 'available' ? 'status-ok' : 'muted'}>
+                          {game.status === 'available' ? 'Available' : 'Coming soon'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="empty-state">Multi-game support is in progress.</p>
                 </section>
               </>
             )}

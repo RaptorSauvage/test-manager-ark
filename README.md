@@ -1405,5 +1405,10 @@ async function findProfileIdByName(name) {
 - Every server profile now carries a `game` field (`shared/games.ts`), always
   `'ark-ascended'` today - the only game this app supports so far. It's groundwork for
   planned multi-game support (ARK: Survival Evolved, Palworld, Minecraft), being built
-  incrementally on the `multi-game-support` branch; nothing in this version's behavior
-  reads or branches on it yet.
+  incrementally on the `multi-game-support` branch. Settings' General tab has a new
+  **Games** section listing every entry in the registry with its icon and status
+  ("Available" for ARK: Survival Ascended, "Coming soon" for ARK: Survival Evolved, the
+  next one planned) - display only for now, profile creation isn't wired up for a second
+  game yet since that also needs its executable name/path, SteamCMD app id, and exact
+  launch-arg differences (e.g. ARK Evolved's separate `QueryPort`, which ARK Ascended
+  dropped) confirmed against a real install first.
