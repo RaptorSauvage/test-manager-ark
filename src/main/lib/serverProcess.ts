@@ -11,6 +11,7 @@ import { sendRconCommand } from './rcon'
 import { readAdminPassword } from './config'
 import { setRunningPid, setRunningStartedAt } from '../store'
 import { delay } from './delay'
+import { logManagerEvent, newTaskId } from './managerLog'
 
 const execAsync = promisify(exec)
 
@@ -477,7 +478,17 @@ function writeLaunchBatchFile(profile: ServerProfile, exe: string, args: string[
  * longer running under the wrapper pid it started with.
  */
 function watchForBatchPidHandoff(profileId: string, port: number, wrapperPid: number, intervalMs = 2000): () => void {
+  const taskId = newTaskId('batch-pid-handoff')
+  const taskLabel = 'ARK: Survival Evolved pid handoff'
+  logManagerEvent(
+    taskId,
+    taskLabel,
+    `Launched via cmd.exe (wrapper pid ${wrapperPid}) - waiting to find the real server process listening on port ${port}.`
+  )
+
   let stopped = false
+  let attempts = 0
+  let warnedSlow = false
   const interval = setInterval(() => {
     if (stopped) return
     void (async () => {
@@ -487,16 +498,48 @@ function watchForBatchPidHandoff(profileId: string, port: number, wrapperPid: nu
         clearInterval(interval)
         return
       }
+      attempts += 1
       const realPid = await findListeningPid(port)
-      if (realPid && realPid !== wrapperPid && isPidAlive(realPid)) {
-        entry.process = null
-        entry.pid = realPid
-        entry.pidTracked = true
-        entry.status = { ...entry.status, pid: realPid }
-        setRunningPid(profileId, realPid)
-        emitStatus(entry.status)
-        stopped = true
-        clearInterval(interval)
+      // Logged even when nothing/the wrapper's own pid came back - the exact value (or lack
+      // of one) is the whole point of this diagnostic, added after a real report of the
+      // hand-off silently never completing with no way to tell why. Capped to the first 10
+      // attempts (20s) so a persistently-failing hand-off can't flood the log for as long as
+      // the server stays up.
+      if (attempts <= 10) {
+        logManagerEvent(
+          taskId,
+          taskLabel,
+          `Attempt ${attempts}: findListeningPid(${port}) returned ${realPid ?? 'null'}${
+            realPid === wrapperPid ? ' (still just the wrapper)' : ''
+          }.`
+        )
+      }
+      if (realPid && realPid !== wrapperPid) {
+        const alive = isPidAlive(realPid)
+        if (!alive) {
+          logManagerEvent(taskId, taskLabel, `pid ${realPid} found listening but isPidAlive() says it's gone already - skipping.`, 'error')
+        } else {
+          entry.process = null
+          entry.pid = realPid
+          entry.pidTracked = true
+          entry.status = { ...entry.status, pid: realPid }
+          setRunningPid(profileId, realPid)
+          emitStatus(entry.status)
+          logManagerEvent(taskId, taskLabel, `Found it - now tracking pid ${realPid} instead of the launch wrapper (pid ${wrapperPid}).`)
+          stopped = true
+          clearInterval(interval)
+          return
+        }
+      }
+      if (!warnedSlow && attempts * intervalMs >= 20000) {
+        warnedSlow = true
+        logManagerEvent(
+          taskId,
+          taskLabel,
+          `Still haven't found a process listening on port ${port} after ${Math.round((attempts * intervalMs) / 1000)}s - ` +
+            'CPU/RAM monitoring stays unavailable until it does. Still retrying every 2s.',
+          'error'
+        )
       }
     })()
   }, intervalMs)

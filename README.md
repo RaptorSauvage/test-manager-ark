@@ -1528,6 +1528,14 @@ async function findProfileIdByName(name) {
       environment - if the server still won't start, next step is comparing the Debug box's
       command line (still shows the raw exe+args either way, not the `.bat` wrapper) against a
       real working one again.
+    - A real report confirmed `netstat` itself finds the right pid listening on the RCON port
+      (`netstat -ano | findstr :<port>` showed a clean `LISTENING` line), yet the hand-off
+      still wasn't happening - so `watchForBatchPidHandoff` now logs every attempt (capped to
+      the first 10, ~20s, so a persistently-failing hand-off can't flood the log for as long as
+      the server stays up) to the **Manager Log**, under a `ARK: Survival Evolved pid handoff`
+      task: the wrapper pid it started from, what `findListeningPid` returned on each attempt,
+      and either the pid it handed off to or a warning after ~20s that it's still looking. This
+      turns "still doesn't work" into an actual diagnosable trace instead of another guess.
   - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
     browser) doesn't expose the Game/Query port fields, the new Session Name/Server Password
     fields, or a game-aware map list the way the desktop Settings tab now does - it still

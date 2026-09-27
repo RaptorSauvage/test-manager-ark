@@ -22,7 +22,13 @@ vi.mock('node:child_process', () => ({
   exec: (...args: unknown[]) => mockExec(...args)
 }))
 
+vi.mock('../src/main/lib/managerLog', () => ({
+  logManagerEvent: vi.fn(),
+  newTaskId: vi.fn((prefix: string) => `${prefix}-test`)
+}))
+
 import { startServer, isPidTracked, getStatus } from '../src/main/lib/serverProcess'
+import { logManagerEvent as mockLogManagerEvent } from '../src/main/lib/managerLog'
 
 function mockNetstatOutput(stdout: string): void {
   mockExec.mockImplementation((_cmd: string, cb: (err: Error | null, result: { stdout: string; stderr: string }) => void) =>
@@ -87,6 +93,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
 beforeEach(() => {
   spawnMock.mockClear()
   mockExec.mockReset()
+  vi.mocked(mockLogManagerEvent).mockClear()
   vi.useFakeTimers()
 })
 
@@ -157,6 +164,11 @@ describe('startServer - ARK: Survival Evolved batch launch (Windows)', () => {
 
     expect(isPidTracked(profile.id)).toBe(true)
     expect(getStatus(profile.id).pid).toBe(process.pid)
+    const successMessages = vi
+      .mocked(mockLogManagerEvent)
+      .mock.calls.map((call) => call[2])
+      .filter((message) => message.includes('Found it'))
+    expect(successMessages).toHaveLength(1)
   })
 
   it('keeps polling (does not hand off) while nothing is listening yet', async () => {
