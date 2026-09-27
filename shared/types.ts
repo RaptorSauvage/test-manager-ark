@@ -7,9 +7,8 @@ import type { GameId } from './games'
 export interface ServerProfile {
   id: string
   name: string
-  /** Which game this profile launches. Always 'ark-ascended' today - the only game this
-   *  app supports so far (see shared/games.ts) - but every profile carries it so a future
-   *  second game doesn't need a silent migration to retrofit it onto existing profiles. */
+  /** Which game this profile launches (see shared/games.ts). Defaults to 'ark-ascended' for
+   *  every profile saved before multi-game support existed. */
   game: GameId
   /** Root install directory, containing ShooterGame/Binaries/... */
   installDir: string
@@ -27,7 +26,12 @@ export interface ServerProfile {
   moddedMapId: string
   gamePort: number
   rconPort: number
-  /** Crossplay setting passed as -ServerPlatform=<value> */
+  /** Separate query port some games need (ARK: Survival Evolved's -QueryPort=<n>) - unused
+   *  for a game whose GameDefinition.usesQueryPort is false (ARK: Survival Ascended merged
+   *  it into gamePort). Always present so every profile has a stable shape either way. */
+  queryPort: number
+  /** Crossplay setting passed as -ServerPlatform=<value> (ARK: Survival Ascended only - see
+   *  buildLaunchArgs). */
   serverPlatform: 'PC' | 'ALL'
   /** Passed as -WinLiveMaxPlayers=<n> */
   maxPlayers: number
@@ -635,10 +639,10 @@ export interface Api {
     getUpdateLog: (profileId: string) => Promise<string | null>
     onUpdateLogChanged: (callback: (profileId: string) => void) => () => void
     addFirewallRule: (steamCmdPath: string) => Promise<void>
-    getLatestBuildId: () => Promise<LatestBuildIdCache>
+    getLatestBuildId: (game: GameId) => Promise<LatestBuildIdCache>
   }
   maps: {
-    list: () => Promise<MapDefinition[]>
+    list: (game: GameId) => Promise<MapDefinition[]>
   }
   customMaps: {
     list: () => Promise<MapDefinition[]>

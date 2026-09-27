@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { MapDefinition, ServerProfile, ServerRunState } from '@shared/types'
-import { getGameDefinition } from '@shared/games'
+import { getGameDefinition, listGameDefinitions } from '@shared/games'
 import { useServerStatuses } from '../lib/useServerStatuses'
 import { createDefaultProfile } from '../lib/profile'
 import type { TabKey } from './ServerDetail'
@@ -41,7 +41,12 @@ export default function Dashboard({
   const [maps, setMaps] = useState<MapDefinition[]>([])
 
   useEffect(() => {
-    window.api.maps.list().then(setMaps)
+    // Merged across every known game, not just the profiles currently on this dashboard - map
+    // ids don't collide between games (ARK: Survival Ascended's carry a _WP suffix ARK:
+    // Survival Evolved's don't), so one combined lookup covers every card correctly.
+    void Promise.all(listGameDefinitions().map((g) => window.api.maps.list(g.id))).then((lists) =>
+      setMaps(lists.flat())
+    )
   }, [])
 
   function mapDisplayName(mapId: string): string {

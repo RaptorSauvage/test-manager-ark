@@ -14,6 +14,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     moddedMapId: '',
     gamePort: 7777,
     rconPort: 27020,
+    queryPort: 27015,
     serverPlatform: 'PC',
     maxPlayers: 70,
     backupDir: '',
@@ -72,6 +73,7 @@ describe('serializeProfile', () => {
       moddedMapId: '1234567',
       gamePort: 7778,
       rconPort: 27021,
+      queryPort: 27022,
       serverPlatform: 'ALL',
       maxPlayers: 20,
       clusterEnabled: true,
@@ -183,6 +185,8 @@ describe('parseImportedProfile', () => {
     expect(imported.rconTribeLog).toBe(false)
     expect(imported.forceRespawnDinos).toBe(false)
     expect(imported.noSound).toBe(false)
+    expect(imported.game).toBe('ark-ascended')
+    expect(imported.queryPort).toBe(27015)
     expect('activeMods' in imported).toBe(false)
   })
 })

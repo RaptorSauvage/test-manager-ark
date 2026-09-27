@@ -33,14 +33,15 @@ export function registerServerProcessHandlers(webContents: WebContents): void {
 
   ipcMain.handle(IPC.serverIsInstalled, (_event, profileId: string) => {
     const profile = requireProfile(profileId)
-    return isValidArkInstall(profile.installDir)
+    return isValidArkInstall(profile.installDir, profile.game)
   })
 
   ipcMain.handle(IPC.serverStatus, (_event, profileId: string) => getStatus(profileId))
 
-  ipcMain.handle(IPC.serverGetInstalledBuildId, (_event, profileId: string) =>
-    getInstalledBuildId(requireProfile(profileId).installDir)
-  )
+  ipcMain.handle(IPC.serverGetInstalledBuildId, (_event, profileId: string) => {
+    const profile = requireProfile(profileId)
+    return getInstalledBuildId(profile.installDir, profile.game)
+  })
 
   ipcMain.handle(IPC.serverGetGameVersion, (_event, profileId: string) => {
     requireProfile(profileId)

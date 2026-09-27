@@ -235,7 +235,7 @@ export default function AnalyticsTab({ profile, onProfileChange }: AnalyticsTabP
             {isRunning && status?.statsError && (
               <p className="error-message">CPU/RAM unavailable: {status.statsError}</p>
             )}
-            <UpdateCheckPanel profileIds={[profile.id]} compact />
+            <UpdateCheckPanel profileIds={[profile.id]} game={profile.game} compact />
           </div>
           <div className="file-shortcuts">
             <span className="file-shortcuts-label">File Shortcuts</span>

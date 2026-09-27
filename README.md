@@ -1402,22 +1402,47 @@ async function findProfileIdByName(name) {
   blocking the Manager's `.exe` and/or `cmd.exe`/`steamcmd.exe` - add an exception for both
   and retry. This was confirmed as the actual root cause in one real case, after disk
   space, admin rights, and a stuck SteamCMD manifest state had all been ruled out first.
-- Every server profile now carries a `game` field (`shared/games.ts`), always
-  `'ark-ascended'` today - the only game this app supports so far. It's groundwork for
-  planned multi-game support (ARK: Survival Evolved, Palworld, Minecraft), being built
-  incrementally on the `multi-game-support` branch. Settings' General tab has a new
-  **Games** section listing every entry in the registry with its icon and status
-  ("Available" for ARK: Survival Ascended, "Coming soon" for ARK: Survival Evolved, the
-  next one planned) - display only for now, profile creation isn't wired up for a second
-  game yet since that also needs its executable name/path, SteamCMD app id, and exact
-  launch-arg differences (e.g. ARK Evolved's separate `QueryPort`, which ARK Ascended
-  dropped) confirmed against a real install first.
-- The `game` backfill above is now also persisted to disk the first time any profile list
-  is read (`store.ts`'s `migrateProfilesToDiskOnce`, same one-time-flag pattern as the role
-  migration below), not just applied in memory - so `config.json` reflects it after simply
-  opening the app once, without needing to edit a profile first.
-- Every server card (desktop Dashboard grid and the Web Dashboard's own cards) now shows a
-  small icon next to the server name for which game it's running, sourced from the same
-  `shared/games.ts` registry and its `build/games/*.png` artwork - the Web Dashboard serves
-  these from a new `GET /game-icons/<fileName>` route (same ETag/no-cache pattern as
-  `/favicon.png`), restricted to the exact set of file names the registry knows about.
+- **Multi-game support**, being built incrementally on the `multi-game-support` branch.
+  Every server profile carries a `game` field (`shared/games.ts`'s registry) - `'ark-ascended'`
+  for every profile saved before this existed (backfilled automatically, and persisted to
+  disk the first time any profile list is read after updating - `store.ts`'s
+  `migrateProfilesToDiskOnce`, same one-time-flag pattern as the role migration below - so
+  `config.json` reflects it after simply opening the app once, no manual edit needed).
+  **ARK: Survival Evolved is now a second, real, launchable game** alongside ARK: Survival
+  Ascended (Palworld and Minecraft remain planned, listed for visibility only in Settings'
+  **Games** section but not yet creatable):
+  - The Settings tab's **Server** section has a **Game** picker; switching it clears the Map
+    field (the two games' map ids don't match, e.g. `TheIsland_WP` vs `TheIsland`) and
+    refetches that game's own map list.
+  - "Import existing server" auto-detects which game an install directory belongs to from
+    its executable (`ArkAscendedServer.exe`/`ShooterGameServer.exe` on Windows, no extension
+    on Linux) - no need to say up front which one it is.
+  - ARK: Survival Evolved's dedicated server installs/updates via SteamCMD app id `376030`
+    (ARK: Survival Ascended's `2430930`) into its own `appmanifest_376030.acf`, so the two
+    can coexist. Its map list defaults to the classic un-suffixed names (`TheIsland`,
+    `TheCenter`, `ScorchedEarth_P`, `Ragnarok`, `Aberration_P`, `Extinction`, `Valguero_P`,
+    `CrystalIsles`, `Genesis`, `Gen2`, `LostIsland`, `Fjordur`) and is stored separately
+    (`maps-ark-evolved.json`, next to the existing `maps.json` which stays ARK: Survival
+    Ascended's and untouched).
+  - ARK: Survival Evolved needs a `QueryPort` distinct from the game port (ARK: Survival
+    Ascended merged the two) - the Settings tab shows a **Query port** field only for a game
+    that needs it (`GameDefinition.usesQueryPort`).
+  - A handful of ARK: Survival Ascended launch flags have **unconfirmed** ARK: Survival
+    Evolved support and are simply never emitted for it, rather than guessed at: crossplay
+    (`-ServerPlatform=` - the Settings tab hides that field for ARK: Survival Evolved too),
+    `-DestroyTamesOverLevel=` (Max Dino Level, also hidden), and passive/dev mods
+    (`-passivemods=`/the `-dev` suffix - a passive-flagged mod on an ARK: Survival Evolved
+    profile loads as a normal active mod instead of being silently dropped). These were
+    confirmed against public documentation (Steam community discussions, LinuxGSM's ARK:SE
+    docs, community wikis - the ARK wiki itself was unreachable from the environment this
+    was built in), not a real running ARK: Survival Evolved install - worth double-checking
+    against one before relying on it for a production server.
+  - The "New update" check (SteamCMD `app_info_print` polling) and every server card's game
+    icon (desktop Dashboard grid and the Web Dashboard's own cards, served from a new
+    `GET /game-icons/<fileName>` route with the same ETag/no-cache pattern as `/favicon.png`)
+    are both correctly scoped per game now instead of assuming ARK: Survival Ascended.
+  - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
+    browser) doesn't expose the Game/Query port fields or a game-aware map list the way the
+    desktop Settings tab now does - it still assumes ARK: Survival Ascended for those. The
+    Mods tab's passive/dev toggles also still show for an ARK: Survival Evolved profile even
+    though they're inert for it (see above) - not incorrect, just not hidden yet.

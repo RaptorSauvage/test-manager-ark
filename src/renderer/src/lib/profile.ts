@@ -13,6 +13,7 @@ export function createDefaultProfile(name: string): ServerProfile {
     moddedMapId: '',
     gamePort: 7777,
     rconPort: 27020,
+    queryPort: 27015,
     serverPlatform: 'PC',
     maxPlayers: 70,
     backupDir: '',

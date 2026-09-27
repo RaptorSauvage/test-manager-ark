@@ -10,8 +10,6 @@ interface LegacyProfileFields {
   serverPlatform?: 'PC' | 'ALL'
   /** Removed - RCON/admin password is now always read live from GameUserSettings.ini */
   rconPassword?: string
-  /** Removed - ARK:SA doesn't use a separate query port */
-  queryPort?: number
   /** Removed - the SavedArks location is always ShooterGame/Saved/SavedArks */
   savedArksSubPath?: string
   /** Removed - folded into the separate, independent scheduled dino wipe instead */
@@ -43,12 +41,13 @@ interface LegacyProfileFields {
  * - `steamBetaEnabled`/`steamBetaName` are new and default to false/''
  * - `game` is new; every profile predating multi-game support is ARK: Survival Ascended,
  *   so it backfills to 'ark-ascended'
+ * - `queryPort` is new and defaults to 27015 (ARK: Survival Evolved's default; unused by
+ *   any game whose GameDefinition.usesQueryPort is false)
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
     activeMods,
     rconPassword: _rconPassword,
-    queryPort: _queryPort,
     savedArksSubPath: _savedArksSubPath,
     scheduledRestartDestroyWildDinosAfter: _scheduledRestartDestroyWildDinosAfter,
     ...rest
@@ -70,6 +69,8 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
   return {
     ...rest,
     game: rest.game ?? 'ark-ascended',
+    // ARK: Survival Evolved's own default (see shared/games.ts) - unused by any other game.
+    queryPort: rest.queryPort ?? 27015,
     mods,
     backupScheduleEnabled,
     clusterEnabled: rest.clusterEnabled ?? false,

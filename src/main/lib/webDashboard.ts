@@ -39,7 +39,7 @@ import { readUpdateLog } from './steamcmd'
 import { listMapFolders, createMapFolder, deleteMapFolder } from './mapManagement'
 import { listMaps } from './maps'
 import { listCustomMaps } from './customMaps'
-import { getGameDefinition, listGameDefinitions } from '@shared/games'
+import { type GameId, getGameDefinition, listGameDefinitions } from '@shared/games'
 
 const KNOWN_GAME_ICON_FILE_NAMES = new Set(listGameDefinitions().map((g) => g.iconFileName))
 
@@ -869,7 +869,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && path === '/api/maps') {
     const auth = await requireRole(req, res, 'admin')
     if (!auth) return
-    sendJson(res, 200, { maps: listMaps(), customMaps: listCustomMaps() })
+    // Web Dashboard's Settings tab editing isn't wired up for a second game yet (desktop-only
+    // for now - see shared/games.ts) - always ARK: Survival Ascended's list here regardless
+    // of which server is selected, same as before this param existed.
+    const game = (url.searchParams.get('game') as GameId) ?? 'ark-ascended'
+    sendJson(res, 200, { maps: listMaps(game), customMaps: listCustomMaps() })
     return
   }
 

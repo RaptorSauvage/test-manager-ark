@@ -5,6 +5,7 @@ import path from 'node:path'
 import { platform } from 'node:process'
 import { promisify } from 'node:util'
 import type { ServerMod, ServerProfile, ServerStatus } from '@shared/types'
+import { getGameDefinition } from '@shared/games'
 import { sendRconCommand } from './rcon'
 import { readAdminPassword } from './config'
 import { setRunningPid, setRunningStartedAt } from '../store'
@@ -278,38 +279,45 @@ export function isUpdating(profileId: string): boolean {
 }
 
 export function getExecutablePath(profile: ServerProfile): string {
-  if (platform === 'win32') {
-    return path.join(profile.installDir, 'ShooterGame', 'Binaries', 'Win64', 'ArkAscendedServer.exe')
-  }
-  return path.join(profile.installDir, 'ShooterGame', 'Binaries', 'Linux', 'ArkAscendedServer')
+  const def = getGameDefinition(profile.game)
+  const relPath = platform === 'win32' ? def.executableWin : def.executableLinux
+  return path.join(profile.installDir, ...relPath.split('/'))
 }
 
 /**
  * Builds the ARK launch command line: `<Map>?param=value?param=value -flag -flag=value`.
+ * Shared across ARK: Survival Ascended and ARK: Survival Evolved (ASE predates ASA and most
+ * of this flag surface carries over unchanged), except where marked otherwise below.
  * Exact flags can drift between game updates - `extraArgs` on the profile is the
  * escape hatch for anything not covered here.
  */
 export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: string): string[] {
+  const def = getGameDefinition(profile.game)
   const adminPassword = adminPasswordOverride ?? readAdminPassword(profile.installDir)
-  const params = ['listen', `Port=${profile.gamePort}`, 'RCONEnabled=True', `RCONPort=${profile.rconPort}`]
+  const params = ['listen', `Port=${profile.gamePort}`]
+  if (def.usesQueryPort) params.push(`QueryPort=${profile.queryPort}`)
+  params.push('RCONEnabled=True', `RCONPort=${profile.rconPort}`)
   if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
 
-  const args = [
-    `${profile.map}?${params.join('?')}`,
-    '-server',
-    '-log',
-    `-ServerPlatform=${profile.serverPlatform}`,
-    `-WinLiveMaxPlayers=${profile.maxPlayers}`
-  ]
+  const args = [`${profile.map}?${params.join('?')}`, '-server', '-log']
+  // Crossplay platform selection - ARK: Survival Ascended only; unconfirmed for ARK: Survival
+  // Evolved, so never emitted for it rather than guessed at (see shared/games.ts).
+  if (profile.game === 'ark-ascended') args.push(`-ServerPlatform=${profile.serverPlatform}`)
+  args.push(`-WinLiveMaxPlayers=${profile.maxPlayers}`)
+
   const enabledMods = profile.mods.filter((mod) => mod.enabled)
   const formatModId = (mod: ServerMod): string => (mod.dev ? `${mod.id}-dev` : mod.id)
-  const activeModIds = enabledMods.filter((mod) => !mod.passive).map(formatModId)
-  const passiveModIds = enabledMods.filter((mod) => mod.passive).map(formatModId)
+  // Passive mods (-passivemods=, and the -dev suffix) are an ARK: Survival Ascended addition
+  // with unconfirmed ARK: Survival Evolved support - on an ASE profile a passive-flagged mod
+  // is simply loaded as a normal active mod instead of being dropped entirely, since that's
+  // closer to what enabling it was actually meant to do.
+  const activeModIds = enabledMods.filter((mod) => profile.game !== 'ark-ascended' || !mod.passive).map(formatModId)
   if (activeModIds.length > 0) {
     args.push(`-mods=${activeModIds.join(',')}`)
   }
-  if (passiveModIds.length > 0) {
-    args.push(`-passivemods=${passiveModIds.join(',')}`)
+  if (profile.game === 'ark-ascended') {
+    const passiveModIds = enabledMods.filter((mod) => mod.passive).map(formatModId)
+    if (passiveModIds.length > 0) args.push(`-passivemods=${passiveModIds.join(',')}`)
   }
 
   if (profile.clusterEnabled) {
@@ -324,9 +332,13 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
   if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
   if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
   if (profile.noSound) args.push('-nosound')
-  // Falls back to '' for a profile saved before this field existed and read some way that
-  // bypasses store.ts's own migrateProfile backfill (e.g. a test fixture) - never throws.
-  if ((profile.maxDinoLevel ?? '').trim()) args.push(`-DestroyTamesOverLevel=${profile.maxDinoLevel.trim()}`)
+  // -DestroyTamesOverLevel= is an ARK: Survival Ascended addition with unconfirmed ARK:
+  // Survival Evolved support - never emitted for it (see shared/games.ts). Falls back to ''
+  // for a profile saved before this field existed and read some way that bypasses store.ts's
+  // own migrateProfile backfill (e.g. a test fixture) - never throws.
+  if (profile.game === 'ark-ascended' && (profile.maxDinoLevel ?? '').trim()) {
+    args.push(`-DestroyTamesOverLevel=${profile.maxDinoLevel.trim()}`)
+  }
   if (profile.moddedMapEnabled && profile.moddedMapId.trim()) args.push(`-MapModID=${profile.moddedMapId.trim()}`)
 
   if (profile.extraArgs.trim()) {

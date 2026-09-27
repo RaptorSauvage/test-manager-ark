@@ -10,7 +10,7 @@ import {
   clearScheduledRestart,
   clearScheduledDinoWipe
 } from '../lib/scheduledActions'
-import { isValidArkInstall, detectProfileFields, uniqueProfileName } from '../lib/detect'
+import { detectGameFromInstall, detectProfileFields, uniqueProfileName } from '../lib/detect'
 import { serializeProfile, parseImportedProfile } from '../lib/profileExport'
 import { syncPlayerBackupWatch } from '../lib/playerBackupWatch'
 import { copyProfile, moveProfile } from '../lib/profileCopyMove'
@@ -61,8 +61,9 @@ export function registerProfileHandlers(webContents: WebContents): void {
   })
 
   ipcMain.handle(IPC.profilesImport, (_event, installDir: string) => {
-    if (!isValidArkInstall(installDir)) {
-      throw new Error('No ARK: Survival Ascended server executable found in this folder.')
+    const game = detectGameFromInstall(installDir)
+    if (!game) {
+      throw new Error('No supported ARK server executable found in this folder.')
     }
 
     const detected = detectProfileFields(installDir)
@@ -71,7 +72,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     const profile: ServerProfile = {
       id: randomUUID(),
       name: uniqueProfileName(detected.suggestedName, existing.map((p) => p.name)),
-      game: 'ark-ascended',
+      game,
       installDir,
       steamBetaEnabled: false,
       steamBetaName: '',
@@ -80,6 +81,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
       moddedMapId: '',
       gamePort: detected.gamePort ?? 7777,
       rconPort: detected.rconPort ?? 27020,
+      queryPort: detected.queryPort ?? 27015,
       serverPlatform: 'PC',
       maxPlayers: 70,
       backupDir: '',

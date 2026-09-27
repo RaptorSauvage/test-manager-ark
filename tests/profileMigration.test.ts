@@ -14,6 +14,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     moddedMapId: '',
     gamePort: 7777,
     rconPort: 27020,
+    queryPort: 27015,
     serverPlatform: 'PC',
     maxPlayers: 70,
     backupDir: '',
@@ -107,11 +108,15 @@ describe('migrateProfile', () => {
     expect(migrateProfile(legacy).serverPlatform).toBe('PC')
   })
 
-  it('drops the removed rconPassword/queryPort fields from legacy profiles', () => {
-    const legacy = baseProfile({ rconPassword: 'old-secret', queryPort: 27015 })
+  it('drops the removed rconPassword field from legacy profiles', () => {
+    const legacy = baseProfile({ rconPassword: 'old-secret' })
     const migrated = migrateProfile(legacy)
     expect('rconPassword' in migrated).toBe(false)
-    expect('queryPort' in migrated).toBe(false)
+  })
+
+  it('backfills queryPort to 27015 on profiles saved before multi-game support existed', () => {
+    const legacy = baseProfile({ queryPort: undefined })
+    expect(migrateProfile(legacy).queryPort).toBe(27015)
   })
 
   it('drops the removed savedArksSubPath field from legacy profiles', () => {

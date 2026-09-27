@@ -1,5 +1,6 @@
 import { ipcMain, type WebContents } from 'electron'
 import { IPC } from '@shared/types'
+import type { GameId } from '@shared/games'
 import { getSettings, saveSettings } from '../store'
 import { installManagedSteamCmd, getManagedSteamCmdStatus } from '../lib/steamcmdInstaller'
 import { readUpdateLog, steamcmdUpdateEvents } from '../lib/steamcmd'
@@ -25,5 +26,5 @@ export function registerSteamcmdInstallHandlers(webContents: WebContents): void 
     addFirewallRulesForSteamCmd(steamCmdPath)
   )
 
-  ipcMain.handle(IPC.steamcmdLatestBuildId, () => getLatestBuildIdCache())
+  ipcMain.handle(IPC.steamcmdLatestBuildId, (_event, game: GameId) => getLatestBuildIdCache(game))
 }

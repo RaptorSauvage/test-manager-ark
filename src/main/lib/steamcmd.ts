@@ -3,6 +3,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import type { ServerProfile } from '@shared/types'
+import { type GameId, getGameDefinition } from '@shared/games'
 import { setUpdating, isRunning, isUpdating, computeTailReadStart } from './serverProcess'
 import { getDataDir } from './dataDir'
 
@@ -11,17 +12,14 @@ import { getDataDir } from './dataDir'
  *  new to show instead of only finding out on its next poll. */
 export const steamcmdUpdateEvents = new EventEmitter()
 
-/** Steam App ID for the ARK: Survival Ascended dedicated server (free, public - anonymous login works). */
-const ARK_ASA_DEDICATED_SERVER_APP_ID = '2430930'
-
 /**
- * Builds the SteamCMD arguments to install/update the dedicated server into
+ * Builds the SteamCMD arguments to install/update `game`'s dedicated server into
  * `installDir`. Also works for a first-time install into an empty folder.
  * When `beta.enabled` and `beta.name` (trimmed) are both set, inserts
  * `-beta <name>` right before `validate`, targeting that beta branch instead of the
  * default/public one - same install otherwise.
  */
-export function buildUpdateArgs(installDir: string, beta?: { enabled: boolean; name: string }): string[] {
+export function buildUpdateArgs(installDir: string, game: GameId, beta?: { enabled: boolean; name: string }): string[] {
   const betaName = beta?.enabled ? beta.name.trim() : ''
   return [
     '+force_install_dir',
@@ -29,7 +27,7 @@ export function buildUpdateArgs(installDir: string, beta?: { enabled: boolean; n
     '+login',
     'anonymous',
     '+app_update',
-    ARK_ASA_DEDICATED_SERVER_APP_ID,
+    getGameDefinition(game).steamAppId,
     ...(betaName ? ['-beta', betaName] : []),
     'validate',
     '+quit'
@@ -51,8 +49,8 @@ export function describeSteamCmdExitCode(code: number): string {
   }
   if (code === 8) {
     return (
-      'SteamCMD ran out of disk space (exit code 8). ARK: Survival Ascended\'s dedicated server ' +
-      'is a large install (30+ GB) - free up space on the drive your install directory is on and try again.'
+      'SteamCMD ran out of disk space (exit code 8). A dedicated ARK server is a large install ' +
+      '(15-30+ GB) - free up space on the drive your install directory is on and try again.'
     )
   }
   return `SteamCMD exited with code ${code}`
@@ -95,8 +93,8 @@ export function readNewContentLog(steamCmdPath: string, previousSize: number): s
 }
 
 /** Where SteamCMD tracks this app's install state within a given install directory. */
-export function getAppManifestPath(installDir: string): string {
-  return path.join(installDir, 'steamapps', `appmanifest_${ARK_ASA_DEDICATED_SERVER_APP_ID}.acf`)
+export function getAppManifestPath(installDir: string, game: GameId): string {
+  return path.join(installDir, 'steamapps', `appmanifest_${getGameDefinition(game).steamAppId}.acf`)
 }
 
 /**
@@ -110,8 +108,8 @@ export function isManifestStuckInErrorState(manifestContent: string): boolean {
 }
 
 /** Deletes the app manifest if it's stuck in the error state above, so the next update can actually run. */
-function clearStuckManifest(installDir: string): void {
-  const manifestPath = getAppManifestPath(installDir)
+function clearStuckManifest(installDir: string, game: GameId): void {
+  const manifestPath = getAppManifestPath(installDir, game)
   if (!fs.existsSync(manifestPath)) return
   if (isManifestStuckInErrorState(fs.readFileSync(manifestPath, 'utf-8'))) {
     fs.rmSync(manifestPath, { force: true })
@@ -142,8 +140,8 @@ export function isInstallUpToDate(stateFlags: number | null): boolean {
   return stateFlags !== null && (stateFlags & STATE_FLAG_UPDATE_REQUIRED) === 0
 }
 
-function checkInstallUpToDate(installDir: string): boolean {
-  const manifestPath = getAppManifestPath(installDir)
+function checkInstallUpToDate(installDir: string, game: GameId): boolean {
+  const manifestPath = getAppManifestPath(installDir, game)
   if (!fs.existsSync(manifestPath)) return false
   return isInstallUpToDate(readManifestStateFlags(fs.readFileSync(manifestPath, 'utf-8')))
 }
@@ -155,8 +153,8 @@ export function readManifestBuildId(manifestContent: string): string | null {
 }
 
 /** The build id currently installed for this profile, or null if it's never been installed. */
-export function getInstalledBuildId(installDir: string): string | null {
-  const manifestPath = getAppManifestPath(installDir)
+export function getInstalledBuildId(installDir: string, game: GameId): string | null {
+  const manifestPath = getAppManifestPath(installDir, game)
   if (!fs.existsSync(manifestPath)) return null
   return readManifestBuildId(fs.readFileSync(manifestPath, 'utf-8'))
 }
@@ -171,9 +169,12 @@ const MAX_UPDATE_ATTEMPTS = 3
  *  `logStream` (left open across retries so the full log shows every attempt). */
 function runUpdateAttempt(profile: ServerProfile, steamCmdPath: string, logStream: fs.WriteStream): Promise<void> {
   return new Promise((resolve, reject) => {
-    clearStuckManifest(profile.installDir)
+    clearStuckManifest(profile.installDir, profile.game)
 
-    const args = buildUpdateArgs(profile.installDir, { enabled: profile.steamBetaEnabled, name: profile.steamBetaName })
+    const args = buildUpdateArgs(profile.installDir, profile.game, {
+      enabled: profile.steamBetaEnabled,
+      name: profile.steamBetaName
+    })
     const previousContentLogSize = contentLogSize(steamCmdPath)
 
     // Pipe stdout/stderr into a log file instead of 'ignore' - SteamCMD's own console
@@ -224,7 +225,7 @@ function runUpdateAttempt(profile: ServerProfile, steamCmdPath: string, logStrea
     // footer and settle the promise.
     child.on('close', (code) => {
       finish()
-      if (code === 0 || checkInstallUpToDate(profile.installDir)) {
+      if (code === 0 || checkInstallUpToDate(profile.installDir, profile.game)) {
         resolve()
       } else {
         reject(new Error(describeSteamCmdExitCode(code ?? -1)))

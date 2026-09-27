@@ -1,16 +1,16 @@
-// Groundwork for multi-game support: a small registry describing what each supported (or
-// planned) game looks like, so the rest of the app can eventually ask "does this game have
-// maps?" instead of assuming ARK everywhere. ARK: Survival Ascended is the only game a
-// profile can actually be created for right now (status: 'available') - ServerProfile.game
-// is always 'ark-ascended', and nothing branches on these capability flags yet.
+// Groundwork for multi-game support: a small registry describing what each supported game
+// looks like, so the rest of the app can ask "does this game have maps?" or "what's its
+// SteamCMD app id?" instead of assuming ARK: Survival Ascended everywhere.
 //
-// ARK: Survival Evolved is listed here (status: 'planned') purely as groundwork and to
-// give it a real icon/name in the UI - its capability flags below are believed correct
-// (ASE predates ASA and most of the launch-flag surface carries over), but launching a real
-// ASE server also needs its executable name/path, SteamCMD app id, and exact launch-arg
-// differences (e.g. ASE's separate QueryPort, which ASA dropped - see profileMigration.ts's
-// removed `queryPort` field) confirmed against a real install before profile creation opens
-// up for it. Until then it's display-only.
+// ARK: Survival Evolved's technical fields (steamAppId, executableWin/Linux, usesQueryPort)
+// are confirmed against public documentation (Steam community discussions, LinuxGSM's ARK:SE
+// docs, community wikis - ARK's own wiki was unreachable from this environment) - not against
+// a real running install. supportsPlayerProfileBackups stays false until its own log
+// format/.profilebak naming is verified the way ARK:SA's was (see README). A handful of
+// ARK:SA launch flags with unconfirmed ARK:SE support (-ServerPlatform= crossplay,
+// -DestroyTamesOverLevel=, passive/dev mods' -passivemods=/-dev suffix) are simply never
+// emitted for ARK:SE profiles in serverProcess.ts's buildLaunchArgs, rather than guessed at -
+// safer to omit an uncertain flag than risk a wrong one silently breaking a real server.
 
 export type GameId = 'ark-ascended' | 'ark-evolved'
 
@@ -31,6 +31,15 @@ export interface GameDefinition {
   supportsWorkshopMods: boolean
   /** Whether this game's install/update goes through SteamCMD. */
   usesSteamCmd: boolean
+  /** SteamCMD app id for the dedicated server (anonymous login) - only meaningful when
+   *  usesSteamCmd is true. */
+  steamAppId: string
+  /** Dedicated server executable path, relative to the install directory. */
+  executableWin: string
+  executableLinux: string
+  /** Whether this game's launch line needs a QueryPort distinct from the game Port (ARK:SE
+   *  does; ARK:SA merged the two - see ServerProfile.queryPort). */
+  usesQueryPort: boolean
   /** Whether this game exposes a "wipe wild dinos" RCON action independent of restarts
    *  (ARK-specific terminology/feature - kept as its own flag rather than generalized,
    *  since a future non-ARK game is unlikely to have a directly equivalent concept). */
@@ -52,17 +61,25 @@ export const GAMES: Record<GameId, GameDefinition> = {
     supportsMaps: true,
     supportsWorkshopMods: true,
     usesSteamCmd: true,
+    steamAppId: '2430930',
+    executableWin: 'ShooterGame/Binaries/Win64/ArkAscendedServer.exe',
+    executableLinux: 'ShooterGame/Binaries/Linux/ArkAscendedServer',
+    usesQueryPort: false,
     supportsDinoWipe: true,
     supportsPlayerProfileBackups: true
   },
   'ark-evolved': {
     id: 'ark-evolved',
     displayName: 'ARK: Survival Evolved',
-    status: 'planned',
+    status: 'available',
     iconFileName: 'ark-evolved.png',
     supportsMaps: true,
     supportsWorkshopMods: true,
     usesSteamCmd: true,
+    steamAppId: '376030',
+    executableWin: 'ShooterGame/Binaries/Win64/ShooterGameServer.exe',
+    executableLinux: 'ShooterGame/Binaries/Linux/ShooterGameServer',
+    usesQueryPort: true,
     supportsDinoWipe: true,
     supportsPlayerProfileBackups: false
   }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildLaunchArgs } from '../src/main/lib/serverProcess'
+import path from 'node:path'
+import { platform } from 'node:process'
+import { buildLaunchArgs, getExecutablePath } from '../src/main/lib/serverProcess'
 import type { ServerProfile } from '../shared/types'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
@@ -12,6 +14,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     moddedMapId: '',
     gamePort: 7777,
     rconPort: 27020,
+    queryPort: 27015,
     serverPlatform: 'PC',
     maxPlayers: 70,
     backupDir: '',
@@ -236,5 +239,50 @@ describe('buildLaunchArgs', () => {
   it('passes -MapModID= when moddedMapEnabled is true and moddedMapId is set', () => {
     const args = buildLaunchArgs(makeProfile({ moddedMapEnabled: true, moddedMapId: '123456' }))
     expect(args).toContain('-MapModID=123456')
+  })
+
+  describe('getExecutablePath', () => {
+    it('resolves the right executable name per game, on this platform', () => {
+      const ascendedPath = getExecutablePath(makeProfile({ game: 'ark-ascended', installDir: '/tmp/ark' }))
+      const evolvedPath = getExecutablePath(makeProfile({ game: 'ark-evolved', installDir: '/tmp/ark' }))
+      const ascendedExe = platform === 'win32' ? 'ArkAscendedServer.exe' : 'ArkAscendedServer'
+      const evolvedExe = platform === 'win32' ? 'ShooterGameServer.exe' : 'ShooterGameServer'
+      expect(ascendedPath).toBe(path.join('/tmp/ark', 'ShooterGame', 'Binaries', platform === 'win32' ? 'Win64' : 'Linux', ascendedExe))
+      expect(evolvedPath).toBe(path.join('/tmp/ark', 'ShooterGame', 'Binaries', platform === 'win32' ? 'Win64' : 'Linux', evolvedExe))
+      expect(ascendedPath).not.toBe(evolvedPath)
+    })
+  })
+
+  describe('ark-evolved specific behavior', () => {
+    it('adds QueryPort= to the ?-string, distinct from Port=', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', gamePort: 7777, queryPort: 27015 }))
+      expect(args[0]).toContain('?Port=7777?QueryPort=27015?RCONEnabled=True')
+    })
+
+    it('never omits QueryPort= for ark-ascended, which merges it into Port=', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-ascended', gamePort: 7777, queryPort: 27015 }))
+      expect(args[0]).not.toContain('QueryPort=')
+    })
+
+    it('omits -ServerPlatform=, unconfirmed for ark-evolved', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', serverPlatform: 'ALL' }))
+      expect(args.some((a) => a.startsWith('-ServerPlatform='))).toBe(false)
+    })
+
+    it('omits -DestroyTamesOverLevel=, unconfirmed for ark-evolved, even when maxDinoLevel is set', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', maxDinoLevel: '150' }))
+      expect(args.some((a) => a.startsWith('-DestroyTamesOverLevel='))).toBe(false)
+    })
+
+    it('loads a passive mod as a normal active mod instead of via -passivemods=, unconfirmed for ark-evolved', () => {
+      const args = buildLaunchArgs(
+        makeProfile({
+          game: 'ark-evolved',
+          mods: [{ id: '111', enabled: true, passive: true, dev: false }]
+        })
+      )
+      expect(args).toContain('-mods=111')
+      expect(args.some((a) => a.startsWith('-passivemods='))).toBe(false)
+    })
   })
 })

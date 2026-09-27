@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { MapDefinition, ServerProfile } from '@shared/types'
+import { type GameId, getGameDefinition, listGameDefinitions } from '@shared/games'
 
 interface SettingsTabProps {
   profile: ServerProfile
@@ -14,17 +15,18 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   const [refreshingMaps, setRefreshingMaps] = useState(false)
   const [customMaps, setCustomMaps] = useState<MapDefinition[]>([])
   const [refreshingCustomMaps, setRefreshingCustomMaps] = useState(false)
+  const gameDef = getGameDefinition(form.game)
 
   useEffect(() => {
-    void refreshMaps()
+    void refreshMaps(form.game)
     void refreshCustomMaps()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [form.game])
 
-  async function refreshMaps(): Promise<void> {
+  async function refreshMaps(game: GameId): Promise<void> {
     setRefreshingMaps(true)
     try {
-      setMaps(await window.api.maps.list())
+      setMaps(await window.api.maps.list(game))
     } finally {
       setRefreshingMaps(false)
     }
@@ -47,6 +49,15 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
 
   function update<K extends keyof ServerProfile>(key: K, value: ServerProfile[K]): void {
     const next = { ...form, [key]: value }
+    setForm(next)
+    void persist(next)
+  }
+
+  // Clears the map - the previous game's map ids aren't valid for the new one (e.g. ARK:
+  // Survival Ascended's "TheIsland_WP" vs ARK: Survival Evolved's "TheIsland") - and the map
+  // list itself refetches for the new game via the effect above watching form.game.
+  function changeGame(game: GameId): void {
+    const next = { ...form, game, map: '' }
     setForm(next)
     void persist(next)
   }
@@ -88,6 +99,18 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
       <section className="cluster-section">
         <h3>Server</h3>
         <label>
+          Game
+          <select value={form.game} onChange={(e) => changeGame(e.target.value as GameId)}>
+            {listGameDefinitions()
+              .filter((g) => g.status === 'available')
+              .map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.displayName}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label>
           Name
           <input value={form.name} onChange={(e) => update('name', e.target.value)} />
         </label>
@@ -121,16 +144,28 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
               onChange={(e) => update('rconPort', Number(e.target.value))}
             />
           </label>
-          <label>
-            Server Platform
-            <select
-              value={form.serverPlatform}
-              onChange={(e) => update('serverPlatform', e.target.value as ServerProfile['serverPlatform'])}
-            >
-              <option value="PC">PC</option>
-              <option value="ALL">ALL</option>
-            </select>
-          </label>
+          {gameDef.usesQueryPort && (
+            <label>
+              Query port
+              <input
+                type="number"
+                value={form.queryPort}
+                onChange={(e) => update('queryPort', Number(e.target.value))}
+              />
+            </label>
+          )}
+          {form.game === 'ark-ascended' && (
+            <label>
+              Server Platform
+              <select
+                value={form.serverPlatform}
+                onChange={(e) => update('serverPlatform', e.target.value as ServerProfile['serverPlatform'])}
+              >
+                <option value="PC">PC</option>
+                <option value="ALL">ALL</option>
+              </select>
+            </label>
+          )}
           <label>
             Max Players
             <input
@@ -173,7 +208,7 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
               <button
                 type="button"
                 onClick={() => {
-                  void refreshMaps()
+                  void refreshMaps(form.game)
                   void refreshCustomMaps()
                 }}
                 disabled={refreshingMaps || refreshingCustomMaps}
@@ -270,10 +305,12 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           <input type="checkbox" checked={form.noSound} onChange={(e) => update('noSound', e.target.checked)} />
           No Sound
         </label>
-        <label>
-          Max Dino Level
-          <input value={form.maxDinoLevel} onChange={(e) => update('maxDinoLevel', e.target.value)} />
-        </label>
+        {form.game === 'ark-ascended' && (
+          <label>
+            Max Dino Level
+            <input value={form.maxDinoLevel} onChange={(e) => update('maxDinoLevel', e.target.value)} />
+          </label>
+        )}
         <label>
           Dashboard group
           <input
