@@ -1412,3 +1412,12 @@ async function findProfileIdByName(name) {
   game yet since that also needs its executable name/path, SteamCMD app id, and exact
   launch-arg differences (e.g. ARK Evolved's separate `QueryPort`, which ARK Ascended
   dropped) confirmed against a real install first.
+- The `game` backfill above is now also persisted to disk the first time any profile list
+  is read (`store.ts`'s `migrateProfilesToDiskOnce`, same one-time-flag pattern as the role
+  migration below), not just applied in memory - so `config.json` reflects it after simply
+  opening the app once, without needing to edit a profile first.
+- Every server card (desktop Dashboard grid and the Web Dashboard's own cards) now shows a
+  small icon next to the server name for which game it's running, sourced from the same
+  `shared/games.ts` registry and its `build/games/*.png` artwork - the Web Dashboard serves
+  these from a new `GET /game-icons/<fileName>` route (same ETag/no-cache pattern as
+  `/favicon.png`), restricted to the exact set of file names the registry knows about.

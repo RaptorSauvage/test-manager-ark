@@ -3,13 +3,7 @@ import type { AppSettings, AppUpdateStatus } from '@shared/types'
 import { listGameDefinitions } from '@shared/games'
 import AccessTokensSection from './AccessTokensSection'
 import ApiKeysSection from './ApiKeysSection'
-import arkAscendedIcon from '../assets/games/ark-ascended.png'
-import arkEvolvedIcon from '../assets/games/ark-evolved.png'
-
-const GAME_ICONS: Record<string, string> = {
-  'ark-ascended.png': arkAscendedIcon,
-  'ark-evolved.png': arkEvolvedIcon
-}
+import { GAME_ICONS } from '../lib/gameIcons'
 
 interface DataSettingsViewProps {
   onBack: () => void

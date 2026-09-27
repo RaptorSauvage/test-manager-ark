@@ -65,6 +65,10 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "build/games",
+        "to": "games"
       }
     ],
     "win": {

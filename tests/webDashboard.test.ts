@@ -34,6 +34,7 @@ let mockProfiles: any[] = [
   {
     id: 'p1',
     name: 'Test Server',
+    game: 'ark-ascended',
     installDir: EMPTY_INSTALL_DIR,
     startOnManagerLaunch: false,
     hidden: false,
@@ -47,6 +48,7 @@ let mockProfiles: any[] = [
   {
     id: 'p2',
     name: 'Logged Server',
+    game: 'ark-ascended',
     installDir: LOGGED_INSTALL_DIR,
     startOnManagerLaunch: false,
     hidden: false,
@@ -283,6 +285,23 @@ describe('web dashboard HTTP server', () => {
     expect(res.body).toBe('')
   })
 
+  it('serves a known game icon as a PNG at /game-icons/<fileName>', async () => {
+    const res = await request('/game-icons/ark-ascended.png')
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toBe('image/png')
+    expect(res.body.length).toBeGreaterThan(0)
+  })
+
+  it('404s /game-icons/<fileName> for a file name not in the game registry', async () => {
+    const res = await request('/game-icons/not-a-real-game.png')
+    expect(res.status).toBe(404)
+  })
+
+  it('rejects a path-traversal attempt at /game-icons/<fileName>', async () => {
+    const res = await request('/game-icons/..%2F..%2Fpackage.json')
+    expect(res.status).toBe(404)
+  })
+
   it('lists servers with their live status', async () => {
     const res = await request('/api/servers')
     expect(res.status).toBe(200)
@@ -297,7 +316,9 @@ describe('web dashboard HTTP server', () => {
         memoryMB: 512,
         startedAt: null,
         gameVersion: null,
-        statsEnabled: undefined
+        statsEnabled: undefined,
+        gameIconUrl: '/game-icons/ark-ascended.png',
+        gameDisplayName: 'ARK: Survival Ascended'
       },
       {
         id: 'p2',
@@ -309,7 +330,9 @@ describe('web dashboard HTTP server', () => {
         memoryMB: 512,
         startedAt: null,
         gameVersion: '92.28',
-        statsEnabled: undefined
+        statsEnabled: undefined,
+        gameIconUrl: '/game-icons/ark-ascended.png',
+        gameDisplayName: 'ARK: Survival Ascended'
       }
     ])
   })

@@ -39,6 +39,9 @@ import { readUpdateLog } from './steamcmd'
 import { listMapFolders, createMapFolder, deleteMapFolder } from './mapManagement'
 import { listMaps } from './maps'
 import { listCustomMaps } from './customMaps'
+import { getGameDefinition, listGameDefinitions } from '@shared/games'
+
+const KNOWN_GAME_ICON_FILE_NAMES = new Set(listGameDefinitions().map((g) => g.iconFileName))
 
 /** Same side effects the desktop Manager's own IPC profile-save handler applies
  *  (src/main/ipc/profiles.ts) - re-arming the backup/restart/dino-wipe schedules and the
@@ -81,6 +84,27 @@ function getFaviconBuffer(): { buffer: Buffer; etag: string } | null {
     faviconCache = null
   }
   return faviconCache ? { buffer: faviconCache, etag: faviconETag } : null
+}
+
+// Per-game icons (shared/games.ts's GameDefinition.iconFileName), same read-once/ETag
+// caching as the favicon above. Keyed by the exact set of file names the registry knows
+// about rather than trusting the request path directly, so a crafted /game-icons/../../x
+// request can't be used to read arbitrary files off disk.
+const gameIconCache = new Map<string, { buffer: Buffer; etag: string } | null>()
+function getGameIconBuffer(fileName: string): { buffer: Buffer; etag: string } | null {
+  if (gameIconCache.has(fileName)) return gameIconCache.get(fileName) ?? null
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'games', fileName)
+    : path.join(process.cwd(), 'build/games', fileName)
+  let result: { buffer: Buffer; etag: string } | null = null
+  try {
+    const buffer = fs.readFileSync(iconPath)
+    result = { buffer, etag: `"${crypto.createHash('md5').update(buffer).digest('hex')}"` }
+  } catch {
+    result = null
+  }
+  gameIconCache.set(fileName, result)
+  return result
 }
 
 /** Event categories that can be individually hidden from the web dashboard's feed. */
@@ -248,6 +272,25 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  const gameIconMatch = path.match(/^\/game-icons\/([^/]+)$/)
+  if (req.method === 'GET' && gameIconMatch) {
+    const fileName = decodeURIComponent(gameIconMatch[1])
+    const icon = KNOWN_GAME_ICON_FILE_NAMES.has(fileName) ? getGameIconBuffer(fileName) : null
+    if (!icon) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end('Not found')
+      return
+    }
+    if (req.headers['if-none-match'] === icon.etag) {
+      res.writeHead(304)
+      res.end()
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache', ETag: icon.etag })
+    res.end(icon.buffer)
+    return
+  }
+
   if (req.method === 'GET' && path === '/api/whoami') {
     const auth = await requireRole(req, res, 'readonly')
     if (!auth) return
@@ -260,6 +303,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if (!auth) return
     const servers = filterProfilesForAuth(auth, sortProfilesForDisplay(listProfiles())).map((profile) => {
       const status = getStatus(profile.id)
+      const game = getGameDefinition(profile.game)
       return {
         id: profile.id,
         name: profile.name,
@@ -271,7 +315,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         memoryMB: status.memoryMB ?? null,
         startedAt: status.startedAt ?? null,
         gameVersion: getCachedGameVersion(profile.id),
-        statsEnabled: profile.statsEnabled
+        statsEnabled: profile.statsEnabled,
+        gameIconUrl: `/game-icons/${game.iconFileName}`,
+        gameDisplayName: game.displayName
       }
     })
     sendJson(res, 200, servers)
@@ -1072,6 +1118,7 @@ const DASHBOARD_HTML = `<!doctype html>
   #cluster-console-sidecol { overflow-y: auto; }
   .server-card-mobile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
   .server-card-mobile-header { display: flex; align-items: center; gap: 8px; }
+  .server-card-mobile-game-icon { width: 18px; height: 18px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
   .server-card-mobile-header h3 { margin: 0; flex: 1; font-size: 0.98rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .server-card-mobile-menu-btn { flex-shrink: 0; padding: 6px 11px; font-size: 1.1rem; line-height: 1; }
   .server-card-mobile-stats { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
@@ -2694,11 +2741,17 @@ function initDashboard(resolvedRole) {
 
     var header = document.createElement('div');
     header.className = 'server-card-mobile-header';
+    var gameIcon = document.createElement('img');
+    gameIcon.className = 'server-card-mobile-game-icon';
+    gameIcon.src = server.gameIconUrl;
+    gameIcon.alt = '';
+    gameIcon.title = server.gameDisplayName;
     var name = document.createElement('h3');
     name.textContent = server.name;
     var state = document.createElement('span');
     state.className = 'cluster-card-state state-' + server.state;
     state.textContent = server.state;
+    header.appendChild(gameIcon);
     header.appendChild(name);
     header.appendChild(state);
     if (!role || canOperate) {

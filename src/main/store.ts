@@ -35,6 +35,14 @@ interface StoreSchema {
    *  code did) would keep silently promoting every freshly-created Admin token to Global
    *  Admin forever, which is exactly backwards. */
   webDashboardRolesMigrated: boolean
+  /** Set once migrateProfile()'s backfills (game, and every other field added since a given
+   *  profile was first saved) have actually been written back to disk, rather than only
+   *  ever applied in-memory on read (the general pattern `listProfiles()` still also does
+   *  on every call, unconditionally - this flag just controls the one-time persisted write,
+   *  purely so config.json reflects reality without waiting on a profile happening to be
+   *  edited). Unlike the role flag above, re-running this would be harmless (migrateProfile
+   *  is idempotent), but there's no reason to pay for a write on every single read either. */
+  profilesMigratedToDisk: boolean
 }
 
 const store = new Store<StoreSchema>({
@@ -58,7 +66,8 @@ const store = new Store<StoreSchema>({
     runningStartedAt: {},
     webDashboardAccessTokens: [],
     webDashboardApiKeys: [],
-    webDashboardRolesMigrated: false
+    webDashboardRolesMigrated: false,
+    profilesMigratedToDisk: false
   }
 })
 
@@ -75,7 +84,17 @@ function migrateStoredRolesOnce(): void {
   store.set('webDashboardRolesMigrated', true)
 }
 
+/** Persists migrateProfile()'s backfilled fields (game, etc.) back to disk exactly once,
+ *  so config.json stops lagging behind what the app actually uses in memory - see the
+ *  profilesMigratedToDisk doc comment above. */
+function migrateProfilesToDiskOnce(): void {
+  if (store.get('profilesMigratedToDisk')) return
+  store.set('profiles', store.get('profiles').map(migrateProfile))
+  store.set('profilesMigratedToDisk', true)
+}
+
 export function listProfiles(): ServerProfile[] {
+  migrateProfilesToDiskOnce()
   return store.get('profiles').map(migrateProfile)
 }
 

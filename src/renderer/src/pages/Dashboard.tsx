@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { MapDefinition, ServerProfile, ServerRunState } from '@shared/types'
+import { getGameDefinition } from '@shared/games'
 import { useServerStatuses } from '../lib/useServerStatuses'
 import { createDefaultProfile } from '../lib/profile'
 import type { TabKey } from './ServerDetail'
 import OfficialServerStatusPanel from '../components/OfficialServerStatusPanel'
+import { GAME_ICONS } from '../lib/gameIcons'
 
 interface DashboardProps {
   profiles: ServerProfile[]
@@ -219,6 +221,12 @@ export default function Dashboard({
           >
             ⠿
           </span>
+          <img
+            src={GAME_ICONS[getGameDefinition(profile.game).iconFileName]}
+            alt=""
+            title={getGameDefinition(profile.game).displayName}
+            className="server-card-game-icon"
+          />
           <h2>{profile.name}</h2>
           <span className={`badge badge-${state}`}>{state}</span>
         </div>
