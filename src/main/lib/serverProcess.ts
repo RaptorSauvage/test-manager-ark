@@ -1,6 +1,7 @@
 import { spawn, exec, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { platform } from 'node:process'
 import { promisify } from 'node:util'
@@ -446,6 +447,65 @@ export function adoptPersistedProcesses(
   }
 }
 
+/**
+ * Writes a temporary launch script for `profile` and returns its path. Every established
+ * ARK: Survival Evolved server manager launches through a .bat rather than calling
+ * ShooterGameServer.exe directly - its command-line parsing is a much older, less rigorous
+ * UE4 codebase than ARK: Survival Ascended's, and going through cmd.exe (with the raw,
+ * unquoted command line exactly as a person would type it) is the confirmed-working way to
+ * reach it, rather than relying on getting Node's own Windows argument quoting to line up
+ * with what it expects. Regenerated fresh on every start, at a stable per-profile path under
+ * the OS temp dir so it's easy to find and inspect without touching the install directory.
+ */
+function writeLaunchBatchFile(profile: ServerProfile, exe: string, args: string[]): string {
+  const batPath = path.join(os.tmpdir(), `ark-manager-launch-${profile.id}.bat`)
+  const commandLine = [path.basename(exe), ...args].join(' ')
+  fs.writeFileSync(batPath, `@echo off\r\ncd /d "${path.dirname(exe)}"\r\n${commandLine}\r\n`, 'utf-8')
+  return batPath
+}
+
+/**
+ * A .bat-launched server's `child.pid` (see writeLaunchBatchFile) is cmd.exe's own pid, not
+ * ShooterGameServer.exe's - cmd.exe stays alive as its parent for as long as the batch script
+ * runs. Polls for whichever process actually holds `port` (the same `findListeningPid`
+ * technique handleUnexpectedExit already uses for a hand-off) and switches this profile's
+ * tracked pid to it once found, nulling out `process` too so killServer/waitForExitOrKill fall
+ * through to killing that real pid directly instead of the now-irrelevant cmd.exe wrapper -
+ * exactly the same re-attach shape handleUnexpectedExit uses. Until this fires, CPU/RAM
+ * monitoring is unavailable (pidTracked stays false) rather than misleadingly reporting
+ * cmd.exe's own near-zero usage. Stops on its own once handed off, or once the profile is no
+ * longer running under the wrapper pid it started with.
+ */
+function watchForBatchPidHandoff(profileId: string, port: number, wrapperPid: number, intervalMs = 2000): () => void {
+  let stopped = false
+  const interval = setInterval(() => {
+    if (stopped) return
+    void (async () => {
+      const entry = running.get(profileId)
+      if (!entry || entry.pid !== wrapperPid) {
+        stopped = true
+        clearInterval(interval)
+        return
+      }
+      const realPid = await findListeningPid(port)
+      if (realPid && realPid !== wrapperPid && isPidAlive(realPid)) {
+        entry.process = null
+        entry.pid = realPid
+        entry.pidTracked = true
+        entry.status = { ...entry.status, pid: realPid }
+        setRunningPid(profileId, realPid)
+        emitStatus(entry.status)
+        stopped = true
+        clearInterval(interval)
+      }
+    })()
+  }, intervalMs)
+  return () => {
+    stopped = true
+    clearInterval(interval)
+  }
+}
+
 export function startServer(profile: ServerProfile): ServerStatus {
   if (running.has(profile.id)) {
     return running.get(profile.id)!.status
@@ -455,6 +515,13 @@ export function startServer(profile: ServerProfile): ServerStatus {
   const args = buildLaunchArgs(profile)
 
   emitStatus({ profileId: profile.id, state: 'starting', startedAt: Date.now() })
+
+  // ARK: Survival Evolved goes through a .bat/cmd.exe, like every established ARK: Survival
+  // Evolved server manager does - see writeLaunchBatchFile. ARK: Survival Ascended keeps the
+  // direct spawn, unaffected. Windows-only (a .bat is a Windows concept), matching the only
+  // platform this app ships a build for; falls back to the direct spawn elsewhere (e.g. Linux
+  // test/dev runs of this codebase).
+  const launchViaBatch = profile.game === 'ark-evolved' && platform === 'win32'
 
   let child: ChildProcess
   try {
@@ -470,16 +537,17 @@ export function startServer(profile: ServerProfile): ServerStatus {
     // (a manually confirmed working ARK: Survival Evolved launch, for instance, was run from
     // its own Win64 folder), and this keeps the Manager's spawn matching that exactly rather
     // than leaving a working-directory mismatch as one more unverified difference.
-    // windowsVerbatimArguments: true - a confirmed-working ARK: Survival Evolved launch passes
-    // SessionName=<value with spaces> completely unquoted (e.g. typed directly at a cmd
-    // prompt); Node's default Windows quoting would instead wrap that whole ?-string argument
-    // in double quotes because it contains spaces, since it's normally the right thing to do
-    // for a well-behaved argv parser. ARK: Survival Evolved's own command-line parsing dates
-    // back to a much older, less rigorous UE4 codebase than ARK: Survival Ascended's, and
-    // plausibly doesn't handle that added quoting the way a modern argv parser would - this
-    // opts out of Node's quoting entirely so the raw text sent to CreateProcess matches the
-    // confirmed-working, unquoted command line exactly. Ignored on non-Windows platforms.
-    child = spawn(exe, args, { cwd: path.dirname(exe), stdio: 'ignore', detached: true, windowsVerbatimArguments: true })
+    if (launchViaBatch) {
+      const batPath = writeLaunchBatchFile(profile, exe, args)
+      child = spawn('cmd.exe', ['/d', '/c', batPath], { cwd: path.dirname(exe), stdio: 'ignore', detached: true })
+    } else {
+      // windowsVerbatimArguments: true - Node's default Windows quoting wraps a space-
+      // containing argument in double quotes, the normally-correct thing to do for a
+      // well-behaved argv parser. Harmless no-op here (ARK: Survival Ascended's arguments
+      // never contain a bare space) and ignored on non-Windows platforms; kept for parity in
+      // case that ever changes.
+      child = spawn(exe, args, { cwd: path.dirname(exe), stdio: 'ignore', detached: true, windowsVerbatimArguments: true })
+    }
     child.unref()
   } catch (err) {
     const failed: ServerStatus = { profileId: profile.id, state: 'error', lastError: (err as Error).message }
@@ -504,13 +572,17 @@ export function startServer(profile: ServerProfile): ServerStatus {
     pid,
     startedAt
   }
-  running.set(profile.id, { process: child, pid, status, pidTracked: true })
+  // launchViaBatch: `pid` is cmd.exe's own pid, not the real ShooterGameServer.exe's - not
+  // trustworthy for OS-level checks (CPU/RAM, force-kill) until watchForBatchPidHandoff below
+  // finds the real one.
+  running.set(profile.id, { process: child, pid, status, pidTracked: !launchViaBatch })
   setRunningPid(profile.id, pid)
   setRunningStartedAt(profile.id, startedAt)
   emitStatus(status)
 
   const fallback = setTimeout(() => markReady(), STARTUP_FALLBACK_MS)
   const stopWatchingLog = watchLogFileForMarker(profile.installDir, STARTUP_COMPLETE_MARKER, () => markReady())
+  const stopBatchPidHandoff = launchViaBatch ? watchForBatchPidHandoff(profile.id, profile.rconPort, pid) : () => {}
 
   function markReady(): void {
     clearTimeout(fallback)
@@ -524,6 +596,7 @@ export function startServer(profile: ServerProfile): ServerStatus {
   child.on('exit', () => {
     clearTimeout(fallback)
     stopWatchingLog()
+    stopBatchPidHandoff()
     const entry = running.get(profile.id)
     // A deliberate stop/kill/restart already flips the status to 'stopping'/'restarting'
     // before it ever touches the process - so seeing it exit from one of those states is
@@ -540,6 +613,7 @@ export function startServer(profile: ServerProfile): ServerStatus {
   child.on('error', (err) => {
     clearTimeout(fallback)
     stopWatchingLog()
+    stopBatchPidHandoff()
     emitStatus({ profileId: profile.id, state: 'error', lastError: err.message })
   })
 

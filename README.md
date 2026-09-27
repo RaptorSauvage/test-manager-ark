@@ -1497,19 +1497,37 @@ async function findProfileIdByName(name) {
     from inside its own `Win64` folder, cmd's prompt showing as much), so this keeps the
     Manager's spawn matching that exactly instead of leaving the working directory as one more
     unverified difference from a known-working reference. Applies to both games.
-  - `startServer` also now spawns with `windowsVerbatimArguments: true`. A confirmed-working
-    ARK: Survival Evolved launch passes `SessionName=<value with spaces>` completely unquoted
-    (typed straight at a `cmd` prompt); Node's default Windows quoting instead wraps that whole
-    `?`-string argument in double quotes because it contains a space - the normally-correct
-    thing to do for a well-behaved argv parser, but ARK: Survival Evolved's own command-line
-    parsing dates back to a much older, less rigorous codebase than ARK: Survival Ascended's,
-    and plausibly can't handle the added quoting. This opts the whole `args` array out of
-    Node's quoting, so the raw text sent to `CreateProcess` matches the confirmed-working,
-    unquoted command line exactly (a no-op for ARK: Survival Ascended, whose arguments never
-    contain a bare space to begin with). Applies to both games; couldn't be verified against a
-    real Windows ARK: Survival Evolved install from this environment, so it's a best-effort fix
-    for the underlying cause rather than a confirmed one - if the server still won't start,
-    next step is comparing the Debug box's command line against a real working one again.
+  - **ARK: Survival Evolved now launches through a temporary `.bat` file, run via
+    `cmd.exe /d /c <path>`, instead of a direct `spawn()` of the exe** - every established ARK:
+    Survival Evolved server manager launches this way, per further research into how they do
+    it. The `.bat` (regenerated fresh on every start, at a stable per-profile path under the OS
+    temp dir - `writeLaunchBatchFile` in `serverProcess.ts`) contains just a `cd /d` into the
+    executable's own directory followed by the exact, unquoted command line, matching a
+    confirmed-working launch byte-for-byte - this is what a person typing the command directly
+    at a `cmd` prompt actually gets, and sidesteps needing Node's own Windows argument quoting
+    (which wraps a space-containing argument like `SessionName=<value with spaces>` in double
+    quotes - correct for a well-behaved argv parser, but plausibly mishandled by ARK: Survival
+    Evolved's much older, less rigorous command-line parsing) to line up with what it expects.
+    ARK: Survival Ascended is unaffected - still a direct `spawn()`, still with
+    `windowsVerbatimArguments: true` (a harmless no-op there, since its arguments never contain
+    a bare space) kept for parity.
+    - The tricky part: this makes `cmd.exe`, not `ShooterGameServer.exe`, the process Node
+      actually spawned - `child.pid` is cmd.exe's own pid, which would misreport CPU/RAM as
+      cmd.exe's near-zero usage and, if killed directly, could orphan the real game process
+      instead of stopping it (Windows doesn't kill a process's children when the process itself
+      is killed). `watchForBatchPidHandoff` polls (every 2s, the same `findListeningPid`
+      netstat-based technique `handleUnexpectedExit`'s hand-off already used) for whichever
+      process actually holds the RCON port, and once found, re-points this profile's tracked
+      pid at it and nulls out the stored process handle - the exact same re-attach shape
+      `handleUnexpectedExit` uses for its own hand-off case - so `killServer`/the force-kill
+      fallback end up targeting the real pid directly instead of the cmd.exe wrapper. Until that
+      first poll succeeds, CPU/RAM monitoring is simply unavailable (`pidTracked` stays false)
+      rather than showing cmd.exe's misleading numbers. `child.on('exit')` still correctly
+      signals a real stop either way, since `cmd /c` waits for its child before exiting itself.
+    - Couldn't be verified against a real Windows ARK: Survival Evolved install from this
+      environment - if the server still won't start, next step is comparing the Debug box's
+      command line (still shows the raw exe+args either way, not the `.bat` wrapper) against a
+      real working one again.
   - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
     browser) doesn't expose the Game/Query port fields, the new Session Name/Server Password
     fields, or a game-aware map list the way the desktop Settings tab now does - it still
