@@ -1,6 +1,9 @@
 import http from 'node:http'
 import https from 'node:https'
 import os from 'node:os'
+import fs from 'node:fs'
+import path from 'node:path'
+import { app } from 'electron'
 import type { AppSettings, ServerProfile, ServerStatus, WebDashboardRole } from '@shared/types'
 import {
   listProfiles,
@@ -52,6 +55,27 @@ function applyProfileSideEffects(profile: ServerProfile): void {
 let server: http.Server | https.Server | null = null
 let lastError: string | null = null
 let lastHost: string | null = null
+
+// Same icon.png the desktop window/taskbar uses (see src/main/index.ts), read once and
+// cached in memory since it never changes while the app is running.
+let faviconCache: Buffer | null | undefined
+function getFaviconBuffer(): Buffer | null {
+  if (faviconCache !== undefined) return faviconCache
+  // cwd rather than __dirname-relative math: this file sits one level deeper than
+  // src/main/index.ts (which resolves the same dev-mode icon via __dirname), but once
+  // bundled by electron-vite both end up inlined into the same out/main/index.js anyway -
+  // cwd is the one thing that stays correct whether this runs bundled (dev/packaged) or
+  // as an unbundled source file (vitest importing this module directly).
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'icon.png')
+    : path.join(process.cwd(), 'build/icon.png')
+  try {
+    faviconCache = fs.readFileSync(iconPath)
+  } catch {
+    faviconCache = null
+  }
+  return faviconCache
+}
 
 /** Event categories that can be individually hidden from the web dashboard's feed. */
 const ALL_EVENT_LABELS = ['JOIN', 'LEFT', 'CHAT', 'WARN', 'KILL', 'TAME', 'CMD', 'SAVE', 'CRYO', 'MISSION', 'READY']
@@ -198,6 +222,18 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && path === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
     res.end(renderDashboardHtml(getSettings().webDashboardAuthEnabled))
+    return
+  }
+
+  if (req.method === 'GET' && path === '/favicon.png') {
+    const favicon = getFaviconBuffer()
+    if (!favicon) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end('Not found')
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' })
+    res.end(favicon)
     return
   }
 
@@ -923,6 +959,7 @@ const DASHBOARD_HTML = `<!doctype html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Bober Server Manager - Web Console</title>
+<link rel="icon" type="image/png" href="/favicon.png" />
 <style>
   :root {
     color-scheme: dark;

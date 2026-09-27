@@ -115,6 +115,7 @@ vi.mock('../src/main/lib/rcon', async (importOriginal) => {
     }
   }
 })
+vi.mock('electron', () => ({ app: { isPackaged: false } }))
 vi.mock('../src/main/lib/serverActions', () => ({
   doStartServer: vi.fn((profile: { id: string }) => ({ profileId: profile.id, state: 'starting' })),
   doStopServer: vi.fn(async (profile: { id: string }) => ({ profileId: profile.id, state: 'stopping' })),
@@ -137,12 +138,12 @@ const PORT = 47091
 function request(
   reqPath: string,
   options: http.RequestOptions & { body?: string } = {}
-): Promise<{ status: number; body: string }> {
+): Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }> {
   return new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port: PORT, path: reqPath, ...options }, (res) => {
       let body = ''
       res.on('data', (chunk) => (body += chunk))
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }))
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body, headers: res.headers }))
     })
     req.on('error', reject)
     req.end(options.body)
@@ -263,6 +264,14 @@ describe('web dashboard HTTP server', () => {
     const res = await request('/')
     expect(res.status).toBe(200)
     expect(res.body).toContain('<title>Bober Server Manager - Web Console</title>')
+    expect(res.body).toContain('<link rel="icon" type="image/png" href="/favicon.png" />')
+  })
+
+  it('serves the app icon as a PNG at /favicon.png', async () => {
+    const res = await request('/favicon.png')
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toBe('image/png')
+    expect(res.body.length).toBeGreaterThan(0)
   })
 
   it('lists servers with their live status', async () => {
