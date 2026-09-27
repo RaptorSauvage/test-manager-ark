@@ -378,7 +378,20 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
   if (profile.extraArgs.trim()) {
     args.push(...profile.extraArgs.trim().split(/\s+/))
   }
-  return args
+  // extraArgs is free text the user maintains themselves - a flag added there before the
+  // Manager natively supported it (e.g. -servergamelog, -nosound, -NoBattlEye) would otherwise
+  // end up on the command line twice once the Manager starts emitting it too. Keeping only the
+  // first occurrence of each exact token (the map string at index 0 is always kept, since it's
+  // never a duplicate of anything else) is a no-op for a profile whose extraArgs doesn't
+  // overlap with the rest, and silently fixes it for one that does.
+  const seen = new Set<string>()
+  return args.filter((arg, index) => {
+    if (index === 0 || !seen.has(arg)) {
+      seen.add(arg)
+      return true
+    }
+    return false
+  })
 }
 
 export function getStatus(profileId: string): ServerStatus {

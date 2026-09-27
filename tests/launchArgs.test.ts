@@ -128,6 +128,20 @@ describe('buildLaunchArgs', () => {
     expect(args).toEqual(expect.arrayContaining(['-NoBattlEye', '-SomeFlag=test']))
   })
 
+  it('drops an extraArgs flag that exactly duplicates one already emitted natively', () => {
+    // A real report: a profile's Extra launch arguments still had -servergamelog left over
+    // from before the Manager added it natively for ARK: Survival Evolved, so it appeared on
+    // the command line twice.
+    const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', extraArgs: '-nosound -servergamelog' }))
+    expect(args.filter((a) => a === '-servergamelog')).toHaveLength(1)
+    expect(args.filter((a) => a === '-nosound')).toHaveLength(1)
+  })
+
+  it('keeps two different extraArgs flags that are not duplicates of anything', () => {
+    const args = buildLaunchArgs(makeProfile({ extraArgs: '-FlagA -FlagB' }))
+    expect(args).toEqual(expect.arrayContaining(['-FlagA', '-FlagB']))
+  })
+
   it('omits every cluster flag when clusterEnabled is false, even with fields filled in', () => {
     const args = buildLaunchArgs(
       makeProfile({

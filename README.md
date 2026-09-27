@@ -1478,6 +1478,19 @@ async function findProfileIdByName(name) {
     Added directly off the back of the `RuntimeMeshComponent` argument-order issue above, so a
     similarly obscure launch failure can be diagnosed by comparing this against a known-working
     command line instead of guessing blind.
+  - `buildLaunchArgs` now drops an exact-duplicate flag rather than emitting it twice, found via
+    that same Debug box on a real profile whose **Extra launch arguments** field still had
+    `-servergamelog`/`-nosound` typed in manually from before the Manager started adding them
+    natively for ARK: Survival Evolved - the leftover text and the native flag were both firing,
+    putting `-servergamelog` on the command line twice. Only exact duplicates are dropped (first
+    occurrence kept), so this is a no-op for a profile whose `extraArgs` doesn't overlap with
+    anything the Manager already emits. It doesn't fix a *missing* `ServerAdminPassword=` on the
+    command line, though - that's read straight from `GameUserSettings.ini` (`readAdminPassword`,
+    same for both games, by design - see `config.ts`), so a server whose ini doesn't have one set
+    yet (e.g. a first launch of a fresh install, before the ini has even been created) launches
+    without it. `rcon.ts` already surfaces that case with a clear
+    "No ServerAdminPassword set in this server's GameUserSettings.ini" error when a
+    Manager-driven RCON command (Stop/Restart/etc.) is attempted against it.
   - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
     browser) doesn't expose the Game/Query port fields, the new Session Name/Server Password
     fields, or a game-aware map list the way the desktop Settings tab now does - it still
