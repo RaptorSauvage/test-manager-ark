@@ -488,7 +488,6 @@ function watchForBatchPidHandoff(profileId: string, port: number, wrapperPid: nu
 
   let stopped = false
   let attempts = 0
-  let warnedSlow = false
   const interval = setInterval(() => {
     if (stopped) return
     void (async () => {
@@ -531,14 +530,20 @@ function watchForBatchPidHandoff(profileId: string, port: number, wrapperPid: nu
           return
         }
       }
-      if (!warnedSlow && attempts * intervalMs >= 20000) {
-        warnedSlow = true
+      // A real report showed this taking well past 20s for a real ARK: Survival Evolved
+      // world to finish opening its RCON port (30-90s+ isn't unusual) - logging per-attempt
+      // detail only for the first 20s (above) but then going completely silent made it look
+      // like this had given up, when it was actually still retrying (unbounded) the whole
+      // time and eventually succeeded. A periodic reminder (every 15 attempts, ~30s) that
+      // it's still trying - never a final "gave up" message, since it never does - avoids
+      // that false impression without flooding the log the way per-attempt logging would
+      // over a long wait.
+      if (attempts * intervalMs >= 20000 && attempts % 15 === 0) {
         logManagerEvent(
           taskId,
           taskLabel,
           `Still haven't found a process listening on port ${port} after ${Math.round((attempts * intervalMs) / 1000)}s - ` +
-            'CPU/RAM monitoring stays unavailable until it does. Still retrying every 2s.',
-          'error'
+            'CPU/RAM monitoring stays unavailable until it does, but still retrying every 2s in the background (no timeout).'
         )
       }
     })()

@@ -1524,18 +1524,19 @@ async function findProfileIdByName(name) {
       first poll succeeds, CPU/RAM monitoring is simply unavailable (`pidTracked` stays false)
       rather than showing cmd.exe's misleading numbers. `child.on('exit')` still correctly
       signals a real stop either way, since `cmd /c` waits for its child before exiting itself.
-    - Couldn't be verified against a real Windows ARK: Survival Evolved install from this
-      environment - if the server still won't start, next step is comparing the Debug box's
-      command line (still shows the raw exe+args either way, not the `.bat` wrapper) against a
-      real working one again.
-    - A real report confirmed `netstat` itself finds the right pid listening on the RCON port
-      (`netstat -ano | findstr :<port>` showed a clean `LISTENING` line), yet the hand-off
-      still wasn't happening - so `watchForBatchPidHandoff` now logs every attempt (capped to
-      the first 10, ~20s, so a persistently-failing hand-off can't flood the log for as long as
-      the server stays up) to the **Manager Log**, under a `ARK: Survival Evolved pid handoff`
-      task: the wrapper pid it started from, what `findListeningPid` returned on each attempt,
-      and either the pid it handed off to or a warning after ~20s that it's still looking. This
-      turns "still doesn't work" into an actual diagnosable trace instead of another guess.
+    - **Confirmed working end-to-end against a real Windows ARK: Survival Evolved install**:
+      launches, is connectable in-game, and the pid hand-off below eventually completes so
+      CPU/RAM monitoring comes online.
+    - `watchForBatchPidHandoff` logs its progress to the **Manager Log**, under an
+      `ARK: Survival Evolved pid handoff` task: the wrapper pid it started from, what
+      `findListeningPid` returned on each of its first 10 attempts (~20s - capped so a
+      persistently-failing hand-off can't flood the log for as long as the server stays up),
+      and the real pid once found. A real ARK: Survival Evolved world can take well past 20s
+      to open its RCON port (30-90s+ isn't unusual) - the hand-off itself never gives up
+      (keeps retrying every 2s indefinitely), and past that initial 20s window the log gets a
+      periodic reminder every ~30s that it's still looking, rather than either going silent
+      (which looked exactly like it had given up, in a real report where it just needed more
+      time) or framing anything as a final failure (it never is one).
   - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
     browser) doesn't expose the Game/Query port fields, the new Session Name/Server Password
     fields, or a game-aware map list the way the desktop Settings tab now does - it still

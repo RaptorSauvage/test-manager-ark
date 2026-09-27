@@ -181,4 +181,31 @@ describe('startServer - ARK: Survival Evolved batch launch (Windows)', () => {
     expect(isPidTracked(profile.id)).toBe(false)
     expect(getStatus(profile.id).pid).toBe(9001)
   })
+
+  it('never gives up - keeps retrying past 20s with periodic reminders, not a final failure message', async () => {
+    // A real ARK: Survival Evolved world can take well past 20s to open its RCON port - a
+    // one-shot "still hasn't found it" message with no follow-up made this look abandoned
+    // when it was actually still retrying (and later succeeded). Confirms it keeps going
+    // and only reminds periodically, without ever framing it as final.
+    const profile = makeProfile({ id: 'batch-launch-long-wait-test' })
+    mockNetstatOutput('  Proto  Local Address          Foreign Address        State           PID\r\n')
+    startServer(profile)
+
+    // 30 attempts * 2s = 60s - well past the old one-shot 20s warning.
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(isPidTracked(profile.id)).toBe(false)
+
+    const messages = vi.mocked(mockLogManagerEvent).mock.calls.map((call) => call[2])
+    expect(messages.some((m) => m.includes('still retrying'))).toBe(true)
+    expect(messages.some((m) => /gave up|giving up|stopped retrying/i.test(m))).toBe(false)
+
+    // Found it late - the handoff still succeeds after all that.
+    mockNetstatOutput(
+      '  Proto  Local Address          Foreign Address        State           PID\r\n' +
+        `  TCP    0.0.0.0:8202            0.0.0.0:0              LISTENING       ${process.pid}\r\n`
+    )
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(isPidTracked(profile.id)).toBe(true)
+    expect(getStatus(profile.id).pid).toBe(process.pid)
+  })
 })
