@@ -69,9 +69,11 @@ export function registerProfileHandlers(webContents: WebContents): void {
     const detected = detectProfileFields(installDir)
     const existing = listProfiles()
 
+    const name = uniqueProfileName(detected.suggestedName, existing.map((p) => p.name))
+
     const profile: ServerProfile = {
       id: randomUUID(),
-      name: uniqueProfileName(detected.suggestedName, existing.map((p) => p.name)),
+      name,
       game,
       installDir,
       steamBetaEnabled: false,
@@ -102,6 +104,8 @@ export function registerProfileHandlers(webContents: WebContents): void {
       forceRespawnDinos: false,
       noSound: false,
       maxDinoLevel: '',
+      sessionName: name,
+      serverPassword: '',
       extraArgs: '',
       scheduledRestartEnabled: false,
       scheduledRestartTime: '00:00',

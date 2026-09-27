@@ -114,6 +114,26 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           Name
           <input value={form.name} onChange={(e) => update('name', e.target.value)} />
         </label>
+        {form.game === 'ark-evolved' && (
+          <>
+            <label>
+              Session Name
+              <input value={form.sessionName} onChange={(e) => update('sessionName', e.target.value)} />
+            </label>
+            <p className="empty-state">
+              In-game server name shown in the server browser - passed as SessionName=, required for ARK: Survival
+              Evolved.
+            </p>
+            <label>
+              Server Password
+              <input value={form.serverPassword} onChange={(e) => update('serverPassword', e.target.value)} />
+            </label>
+            <p className="empty-state">
+              Join/connect password, distinct from the RCON admin password - passed as ServerPassword=, required for
+              ARK: Survival Evolved. Leave blank for no password.
+            </p>
+          </>
+        )}
         <label>
           Install directory
           <div className="path-input-row">

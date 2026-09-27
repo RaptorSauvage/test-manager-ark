@@ -305,7 +305,11 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
   if (def.usesQueryPort) params.push(`QueryPort=${profile.queryPort}`)
   params.push('RCONEnabled=True', `RCONPort=${profile.rconPort}`)
   if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
-  if (isEvolved) params.push(`MaxPlayers=${profile.maxPlayers}`)
+  if (isEvolved) {
+    // Mandatory for ARK: Survival Evolved - always emitted, even blank (a blank
+    // ServerPassword= means no join password required, a valid, common setting).
+    params.push(`MaxPlayers=${profile.maxPlayers}`, `SessionName=${profile.sessionName}`, `ServerPassword=${profile.serverPassword}`)
+  }
 
   const args = [`${profile.map}?${params.join('?')}`]
   if (isEvolved) {

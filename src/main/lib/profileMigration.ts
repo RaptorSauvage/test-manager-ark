@@ -43,6 +43,8 @@ interface LegacyProfileFields {
  *   so it backfills to 'ark-ascended'
  * - `queryPort` is new and defaults to 27015 (ARK: Survival Evolved's default; unused by
  *   any game whose GameDefinition.usesQueryPort is false)
+ * - `sessionName` is new and defaults to the profile's own `name` (a reasonable starting
+ *   in-game server name); `serverPassword` is new and defaults to '' (no join password)
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -86,6 +88,8 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     forceRespawnDinos: rest.forceRespawnDinos ?? false,
     noSound: rest.noSound ?? false,
     maxDinoLevel: rest.maxDinoLevel ?? '',
+    sessionName: rest.sessionName ?? rest.name,
+    serverPassword: rest.serverPassword ?? '',
     moddedMapEnabled: rest.moddedMapEnabled ?? false,
     moddedMapId: rest.moddedMapId ?? '',
     playerProfileBackupEnabled: rest.playerProfileBackupEnabled ?? false,

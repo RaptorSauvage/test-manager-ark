@@ -34,6 +34,8 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     noSound: false,
     game: 'ark-ascended',
     maxDinoLevel: '',
+    sessionName: '',
+    serverPassword: '',
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',
@@ -154,6 +156,13 @@ describe('migrateProfile', () => {
   it('backfills maxDinoLevel to an empty string on profiles saved before it existed', () => {
     const legacy = baseProfile({ maxDinoLevel: undefined })
     expect(migrateProfile(legacy).maxDinoLevel).toBe('')
+  })
+
+  it('backfills sessionName to the profile name, and serverPassword to blank, on profiles saved before they existed', () => {
+    const legacy = baseProfile({ name: 'My Genesis Server', sessionName: undefined, serverPassword: undefined })
+    const migrated = migrateProfile(legacy)
+    expect(migrated.sessionName).toBe('My Genesis Server')
+    expect(migrated.serverPassword).toBe('')
   })
 
   it('backfills moddedMapEnabled/moddedMapId on profiles saved before they existed', () => {

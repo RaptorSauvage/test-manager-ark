@@ -1434,6 +1434,17 @@ async function findProfileIdByName(name) {
     startup-complete-marker watch depends on), and passes `MaxPlayers=` inline in the
     `?`-string rather than `-WinLiveMaxPlayers=` (an ARK: Survival Ascended/crossplay-only
     flag). ARK: Survival Ascended's launch line is unchanged.
+  - Two new profile fields, **Session Name** and **Server Password** (the in-game display
+    name and join/connect password, distinct from the RCON admin password), are shown in the
+    Settings tab and always passed as `SessionName=`/`ServerPassword=` inline in the
+    `?`-string for ARK: Survival Evolved - mandatory arguments there per that same real
+    working command line, so they're always emitted (even blank - a blank `ServerPassword=`
+    just means no join password). Not emitted, and the fields stay hidden, for ARK: Survival
+    Ascended, which keeps reading its in-game name from `GameUserSettings.ini` as before -
+    forcing it onto the command line there would silently override whatever a user already
+    has configured in the ini for existing servers. A profile migrated from before this field
+    existed backfills `sessionName` to the profile's own Manager name (a reasonable starting
+    value) and `serverPassword` to blank.
   - A handful of ARK: Survival Ascended launch flags have **unconfirmed** ARK: Survival
     Evolved support and are simply never emitted for it, rather than guessed at: crossplay
     (`-ServerPlatform=` - the Settings tab hides that field for ARK: Survival Evolved too),
@@ -1449,7 +1460,8 @@ async function findProfileIdByName(name) {
     `GET /game-icons/<fileName>` route with the same ETag/no-cache pattern as `/favicon.png`)
     are both correctly scoped per game now instead of assuming ARK: Survival Ascended.
   - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
-    browser) doesn't expose the Game/Query port fields or a game-aware map list the way the
-    desktop Settings tab now does - it still assumes ARK: Survival Ascended for those. The
-    Mods tab's passive/dev toggles also still show for an ARK: Survival Evolved profile even
-    though they're inert for it (see above) - not incorrect, just not hidden yet.
+    browser) doesn't expose the Game/Query port fields, the new Session Name/Server Password
+    fields, or a game-aware map list the way the desktop Settings tab now does - it still
+    assumes ARK: Survival Ascended for those. The Mods tab's passive/dev toggles also still
+    show for an ARK: Survival Evolved profile even though they're inert for it (see above) -
+    not incorrect, just not hidden yet.

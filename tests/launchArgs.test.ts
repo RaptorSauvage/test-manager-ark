@@ -35,6 +35,8 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     noSound: false,
     game: 'ark-ascended',
     maxDinoLevel: '',
+    sessionName: '',
+    serverPassword: '',
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',
@@ -292,6 +294,28 @@ describe('buildLaunchArgs', () => {
       const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', maxPlayers: 10 }))
       expect(args[0]).toContain('MaxPlayers=10')
       expect(args.some((a) => a.startsWith('-WinLiveMaxPlayers='))).toBe(false)
+    })
+
+    it('passes SessionName= and ServerPassword= inline in the ?-string, mandatory args', () => {
+      const args = buildLaunchArgs(
+        makeProfile({ game: 'ark-evolved', sessionName: 'My Genesis Server', serverPassword: 'bober' })
+      )
+      expect(args[0]).toContain('SessionName=My Genesis Server')
+      expect(args[0]).toContain('ServerPassword=bober')
+    })
+
+    it('still emits SessionName=/ServerPassword= blank rather than omitting them, since they are mandatory', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', sessionName: '', serverPassword: '' }))
+      expect(args[0]).toContain('SessionName=')
+      expect(args[0]).toContain('ServerPassword=')
+    })
+
+    it('never adds SessionName=/ServerPassword= for ark-ascended', () => {
+      const args = buildLaunchArgs(
+        makeProfile({ game: 'ark-ascended', sessionName: 'My Genesis Server', serverPassword: 'bober' })
+      )
+      expect(args[0]).not.toContain('SessionName=')
+      expect(args[0]).not.toContain('ServerPassword=')
     })
 
     it('still passes -WinLiveMaxPlayers= for ark-ascended, without MaxPlayers= inline', () => {
