@@ -292,35 +292,49 @@ export function getExecutablePath(profile: ServerProfile): string {
  * escape hatch for anything not covered here.
  */
 export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: string): string[] {
-  const def = getGameDefinition(profile.game)
   const isEvolved = profile.game === 'ark-evolved'
   const adminPassword = adminPasswordOverride ?? readAdminPassword(profile.installDir)
-  // '?listen', '-server -log', and '-WinLiveMaxPlayers=' are confirmed ARK: Survival Ascended
-  // behavior but were confirmed absent from a real, working ARK: Survival Evolved launch line
-  // (ShooterGameServer.exe doesn't take them) - ASE instead takes MaxPlayers= inline in the
-  // ?-string and needs -servergamelog for its own log file (what startServer's marker-watch
-  // relies on) to be written at all.
-  const params = isEvolved ? [] : ['listen']
-  params.push(`Port=${profile.gamePort}`)
-  if (def.usesQueryPort) params.push(`QueryPort=${profile.queryPort}`)
-  params.push('RCONEnabled=True', `RCONPort=${profile.rconPort}`)
-  if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
-  if (isEvolved) {
-    // Mandatory for ARK: Survival Evolved - always emitted, even blank (a blank
-    // ServerPassword= means no join password required, a valid, common setting).
-    params.push(`MaxPlayers=${profile.maxPlayers}`, `SessionName=${profile.sessionName}`, `ServerPassword=${profile.serverPassword}`)
-  }
 
-  const args = [`${profile.map}?${params.join('?')}`]
+  let args: string[]
+
   if (isEvolved) {
+    // Every detail here - the exact ?-string param order and the exact flag order below -
+    // is copied from a real, working ShooterGameServer.exe command line, confirmed the hard
+    // way: reordering these (e.g. putting -servergamelog right after the map string instead
+    // of after -NoBattlEye/-ForceRespawnDinos, like the ARK: Survival Ascended shape used to)
+    // reproducibly caused a blocking "Plugin 'RuntimeMeshComponent' failed to load" dialog on
+    // launch. Why order would matter for a plugin load isn't obvious, but the fix is
+    // empirically confirmed, so it's kept exact here rather than normalized.
+    const params = [
+      `Port=${profile.gamePort}`,
+      `QueryPort=${profile.queryPort}`,
+      `RCONPort=${profile.rconPort}`,
+      'RCONEnabled=True',
+      `MaxPlayers=${profile.maxPlayers}`
+    ]
+    if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
+    // SessionName=/ServerPassword= are mandatory for ARK: Survival Evolved - always emitted,
+    // even blank (a blank ServerPassword= means no join password required, a valid, common
+    // setting).
+    params.push(`SessionName=${profile.sessionName}`, `ServerPassword=${profile.serverPassword}`)
+
+    args = [`${profile.map}?${params.join('?')}`]
+    if (profile.disableBattlEye) args.push('-NoBattlEye')
+    if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
     args.push('-servergamelog')
+    if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
   } else {
-    args.push('-server', '-log')
+    const params = ['listen', `Port=${profile.gamePort}`, 'RCONEnabled=True', `RCONPort=${profile.rconPort}`]
+    if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
+
+    args = [
+      `${profile.map}?${params.join('?')}`,
+      '-server',
+      '-log',
+      `-ServerPlatform=${profile.serverPlatform}`,
+      `-WinLiveMaxPlayers=${profile.maxPlayers}`
+    ]
   }
-  // Crossplay platform selection - ARK: Survival Ascended only; unconfirmed for ARK: Survival
-  // Evolved, so never emitted for it rather than guessed at (see shared/games.ts).
-  if (profile.game === 'ark-ascended') args.push(`-ServerPlatform=${profile.serverPlatform}`)
-  if (!isEvolved) args.push(`-WinLiveMaxPlayers=${profile.maxPlayers}`)
 
   const enabledMods = profile.mods.filter((mod) => mod.enabled)
   const formatModId = (mod: ServerMod): string => (mod.dev ? `${mod.id}-dev` : mod.id)
@@ -345,9 +359,12 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
   }
 
   if (profile.cultureSettings !== 'none') args.push(`-culture=${profile.cultureSettings}`)
-  if (profile.disableBattlEye) args.push('-NoBattlEye')
-  if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
-  if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
+  // Already pushed above, in the exact confirmed position, for ARK: Survival Evolved.
+  if (!isEvolved) {
+    if (profile.disableBattlEye) args.push('-NoBattlEye')
+    if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
+    if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
+  }
   if (profile.noSound) args.push('-nosound')
   // -DestroyTamesOverLevel= is an ARK: Survival Ascended addition with unconfirmed ARK:
   // Survival Evolved support - never emitted for it (see shared/games.ts). Falls back to ''

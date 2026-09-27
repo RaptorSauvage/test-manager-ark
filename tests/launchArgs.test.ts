@@ -258,7 +258,42 @@ describe('buildLaunchArgs', () => {
   describe('ark-evolved specific behavior', () => {
     it('adds QueryPort= to the ?-string, distinct from Port=', () => {
       const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', gamePort: 7777, queryPort: 27015 }))
-      expect(args[0]).toContain('Port=7777?QueryPort=27015?RCONEnabled=True')
+      expect(args[0]).toContain('Port=7777?QueryPort=27015?RCONPort=')
+    })
+
+    it('matches the exact ?-string param order and flag order of a real, working launch line', () => {
+      // A previous version that reordered these (e.g. RCONEnabled= before RCONPort=, or
+      // -servergamelog right after the map string instead of after -NoBattlEye/
+      // -ForceRespawnDinos) reproducibly caused a blocking "Plugin 'RuntimeMeshComponent'
+      // failed to load" dialog on launch - this pins the exact confirmed-working shape so a
+      // future refactor can't silently reintroduce that.
+      const args = buildLaunchArgs(
+        makeProfile({
+          game: 'ark-evolved',
+          map: 'Gen2',
+          gamePort: 8004,
+          queryPort: 8102,
+          rconPort: 8202,
+          maxPlayers: 10,
+          sessionName: '[Genesis Part.II] Culte de Bober',
+          serverPassword: 'bober',
+          disableBattlEye: true,
+          forceRespawnDinos: true,
+          rconTribeLog: true
+        }),
+        'bober'
+      )
+      expect(args[0]).toBe(
+        'Gen2?Port=8004?QueryPort=8102?RCONPort=8202?RCONEnabled=True?MaxPlayers=10' +
+          '?ServerAdminPassword=bober?SessionName=[Genesis Part.II] Culte de Bober?ServerPassword=bober'
+      )
+      expect(args.slice(1)).toEqual([
+        '-NoBattlEye',
+        '-ForceRespawnDinos',
+        '-servergamelog',
+        '-servergamelogincludetribelogs',
+        '-ServerRCONOutputTribeLogs'
+      ])
     })
 
     it('never omits QueryPort= for ark-ascended, which merges it into Port=', () => {

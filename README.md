@@ -1445,6 +1445,18 @@ async function findProfileIdByName(name) {
     has configured in the ini for existing servers. A profile migrated from before this field
     existed backfills `sessionName` to the profile's own Manager name (a reasonable starting
     value) and `serverPassword` to blank.
+  - ARK: Survival Evolved's launch line's exact **argument order** matters, confirmed the hard
+    way: an earlier version reused ARK: Survival Ascended's ordering (`RCONEnabled=` right
+    after `QueryPort=`, `-servergamelog` right after the map string) and that reproducibly
+    caused a blocking `Plugin 'RuntimeMeshComponent' failed to load` dialog on launch - since
+    the Manager starts the process detached with no visible window, nothing was there to
+    dismiss it and the server hung forever. `buildLaunchArgs` now builds ARK: Survival
+    Evolved's `?`-string (`Port=`, `QueryPort=`, `RCONPort=`, `RCONEnabled=`, `MaxPlayers=`,
+    `ServerAdminPassword=`, `SessionName=`, `ServerPassword=`) and flag order (`-NoBattlEye`,
+    `-ForceRespawnDinos`, `-servergamelog`, `-servergamelogincludetribelogs`,
+    `-ServerRCONOutputTribeLogs`) to match a real, confirmed-working command line exactly,
+    pinned by a dedicated test. Why order affects a native plugin load isn't obvious, but the
+    fix is empirically confirmed. ARK: Survival Ascended's order is unchanged.
   - A handful of ARK: Survival Ascended launch flags have **unconfirmed** ARK: Survival
     Evolved support and are simply never emitted for it, rather than guessed at: crossplay
     (`-ServerPlatform=` - the Settings tab hides that field for ARK: Survival Evolved too),
