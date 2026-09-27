@@ -1402,3 +1402,10 @@ async function findProfileIdByName(name) {
   blocking the Manager's `.exe` and/or `cmd.exe`/`steamcmd.exe` - add an exception for both
   and retry. This was confirmed as the actual root cause in one real case, after disk
   space, admin rights, and a stuck SteamCMD manifest state had all been ruled out first.
+- **The "New update" check** (`updateCheck.ts`) used to intermittently show "Could not
+  find a public branch build id in SteamCMD's app_info_print output." even though Update
+  itself worked fine - it listened for the child process's `exit` event, which can fire
+  before all of stdout has actually been delivered, occasionally truncating the (fairly
+  large) `app_info_print` dump right before the section this reads. Fixed by switching to
+  `close` (which Node guarantees fires only once all stdio data has arrived), matching the
+  same fix already applied to the real update/download path in `steamcmd.ts`.

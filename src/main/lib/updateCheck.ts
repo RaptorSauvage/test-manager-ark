@@ -58,7 +58,13 @@ export function checkLatestBuildId(steamCmdPath: string): Promise<string> {
     child.stderr?.on('data', (chunk) => (output += chunk))
 
     child.on('error', reject)
-    child.on('exit', () => {
+    // 'close' (not 'exit') - it fires only after stdout/stderr have finished emitting all
+    // their data, so app_info_print's (fairly large) VDF dump is fully captured in `output`
+    // before parsing it. 'exit' can fire first and race ahead of the last chunk(s) of
+    // stdout arriving, which intermittently truncated the output right before the
+    // "branches"/"public"/"buildid" section this looks for - the same race already found
+    // and fixed in steamcmd.ts's own update-download child process.
+    child.on('close', () => {
       const buildId = parseLatestPublicBuildId(output)
       if (buildId) resolve(buildId)
       else reject(new Error("Could not find a public branch build id in SteamCMD's app_info_print output."))
