@@ -49,13 +49,20 @@ const KNOWN_GAME_ICON_FILE_NAMES = new Set(listGameDefinitions().map((g) => g.ic
  *  player-backup log watcher against whatever the save just changed. Every web dashboard
  *  route that calls saveProfile() must call this too, or an edit made there (e.g. toggling
  *  a schedule on, or changing its cron/time) silently has no effect until the Manager is
- *  next restarted or the same profile happens to get saved from the desktop UI too. */
-function applyProfileSideEffects(profile: ServerProfile): void {
+ *  next restarted or the same profile happens to get saved from the desktop UI too.
+ *
+ *  syncMods must only be true when the request body actually intended to change mods (i.e.
+ *  it has a `mods` key) - otherwise an unrelated save (any other Settings field, a schedule
+ *  toggle, ...) would re-write ActiveMods=/[ModInstaller] from the profile's last-known mod
+ *  list and clobber real pre-existing ini content that reconcileAseModsFromIni is meant to
+ *  pick up instead. Same reasoning as why ipc/profiles.ts's generic profilesSave handler
+ *  doesn't call syncAseModsToIni either - only ipc/mods.ts's dedicated modsSave handler does. */
+function applyProfileSideEffects(profile: ServerProfile, syncMods: boolean): void {
   applyBackupSchedule(profile)
   syncPlayerBackupWatch(profile)
   applyScheduledRestart(profile)
   applyScheduledDinoWipe(profile)
-  syncAseModsToIni(profile)
+  if (syncMods) syncAseModsToIni(profile)
 }
 
 let server: http.Server | https.Server | null = null
@@ -784,7 +791,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         // tabs can already do to this same profile via profiles.save.
         const updated = saveProfile({ ...profile, ...body, id: profile.id } as ServerProfile)
         const saved = updated.find((p) => p.id === profile.id)
-        if (saved) applyProfileSideEffects(saved)
+        if (saved) applyProfileSideEffects(saved, typeof body === 'object' && body !== null && 'mods' in body)
         sendJson(res, 200, { ok: true, profile: saved })
       })
       .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
@@ -848,7 +855,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         }
         const updated = saveProfile({ ...profile, ...patch, id: profile.id } as ServerProfile)
         const saved = updated.find((p) => p.id === profile.id)
-        if (saved) applyProfileSideEffects(saved)
+        // Server Management's field whitelist never includes 'mods', so this save never needs
+        // to touch the ini.
+        if (saved) applyProfileSideEffects(saved, false)
         sendJson(res, 200, { ok: true, profile: saved && pickServerManagementFields(saved) })
       })
       .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))

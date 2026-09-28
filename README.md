@@ -1549,9 +1549,9 @@ async function findProfileIdByName(name) {
   - **ARK: Survival Evolved has no command-line mechanism for mods at all - confirmed, not
     just unconfirmed support as before.** It has neither passive mods nor a `-dev` suffix
     either, so the desktop Mods tab hides both columns for it. Its mods are instead written,
-    on every profile save (the dedicated Mods tab save, a general Settings-tab save, a
-    profile import, and the Web Dashboard's equivalents - anywhere `saveProfile()` is
-    called), to:
+    only when a mods edit is actually the thing being saved (the dedicated Mods tab save, and
+    the Web Dashboard's Mods tab, which posts `{mods: ...}` to the same profile-save route),
+    to:
     - `GameUserSettings.ini`'s `[ServerSettings]` → `ActiveMods=<id>,<id>,...` (comma-separated,
       enabled mods only, in order)
     - `Game.ini`'s `[ModInstaller]` → one `ModIDS=<id>` line per enabled mod
@@ -1563,9 +1563,28 @@ async function findProfileIdByName(name) {
       never been started once). This is the first thing in the app that writes to either
       file - previously strictly read-only, since ARK: Survival Ascended's mods are
       launch-flag only and never needed it.
+    - **Fixed a clobbering bug found via live testing before it ever shipped**: `syncAseModsToIni`
+      was originally wired into every generic profile save (`profiles:save`, profile import, the
+      Web Dashboard's own generic profile-save route) rather than just the dedicated mods-save
+      paths. That meant saving any unrelated field - even the very first save of a brand-new
+      profile - rewrote `ActiveMods=`/`[ModInstaller]` from `profile.mods`, silently overwriting
+      real pre-existing ini content. Fixed by removing the call from every generic save path and
+      keeping it only where a mods edit is actually the save in question; the Web Dashboard's
+      shared `/api/servers/:id/profile` route now only syncs when the posted body actually has a
+      `mods` key.
+  - The desktop Mods tab now also **reads mods back out of the ini**: opening it for an ARK:
+    Survival Evolved profile calls `reconcileAseModsFromIni`, which picks up any mod id already
+    present in `ActiveMods=` that the Manager doesn't know about yet (added by hand-editing the
+    ini, or from before the profile was ever opened here) and adds it as a new enabled entry.
+    Additive only - it never removes or disables an existing entry, since a disabled mod is
+    *correctly* absent from `ActiveMods=`, not a state to "fix". Wired via a new
+    `mods:reconcile-from-ini` IPC call (`ipc/mods.ts`); not yet exposed on the Web Dashboard's
+    Mods tab.
   - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
     browser) doesn't expose the Game/Query port fields, the new Server Password/Auto Manage
     Mod fields, or a game-aware map list the way the desktop Settings tab now does - it still
     assumes ARK: Survival Ascended for those. Its own Mods tab also still shows the
-    passive/dev toggles for an ARK: Survival Evolved profile (the desktop one now hides
-    them) - inert rather than incorrect, since nothing reads them for it, but not hidden yet.
+    passive/dev toggles and the `-mods=`/`-passivemods=` wording for an ARK: Survival Evolved
+    profile (the desktop one now hides/rewords all of that) - inert rather than incorrect,
+    since nothing reads them for it, but not hidden yet - and it has no equivalent of the
+    reconcile-from-ini pickup either.

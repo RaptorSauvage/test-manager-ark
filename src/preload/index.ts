@@ -58,7 +58,8 @@ const api: Api = {
   },
   mods: {
     save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods),
-    parseText: (text: string) => ipcRenderer.invoke(IPC.modsParseText, text)
+    parseText: (text: string) => ipcRenderer.invoke(IPC.modsParseText, text),
+    reconcileFromIni: (profileId: string) => ipcRenderer.invoke(IPC.modsReconcileFromIni, profileId)
   },
   backup: {
     create: (profileId: string) => ipcRenderer.invoke(IPC.backupCreate, profileId),

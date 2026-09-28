@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { ServerProfile } from '@shared/types'
-import { resolveConfigDir } from './config'
+import type { ServerMod, ServerProfile } from '@shared/types'
+import { resolveConfigDir, readIniFile } from './config'
 
 /**
  * Surgical writes into GameUserSettings.ini/Game.ini - unlike config.ts (which only ever
@@ -125,4 +125,32 @@ export function syncAseModsToIni(profile: ServerProfile): void {
   const configDir = resolveConfigDir(profile.installDir)
   upsertIniKey(path.join(configDir, 'GameUserSettings.ini'), 'ServerSettings', 'ActiveMods', modIds.join(','))
   upsertIniRepeatedKey(path.join(configDir, 'Game.ini'), 'ModInstaller', 'ModIDS', modIds)
+}
+
+/**
+ * The other direction - reads whatever GameUserSettings.ini's `ActiveMods=` already has
+ * (e.g. a server the user was running before pointing the Manager at it, or one whose mods
+ * were added by hand-editing the ini directly) and returns `profile.mods` with any id found
+ * there that isn't already present added as a new enabled entry. Additive only: never
+ * removes or disables an existing entry, since a mod already tracked by the Manager but
+ * currently disabled is *correctly* absent from ActiveMods= - that's not something to
+ * "fix". Returns the exact same array reference when there's nothing new to add, so a caller
+ * can cheaply tell whether anything actually changed.
+ */
+export function reconcileAseModsFromIni(profile: ServerProfile): ServerMod[] {
+  if (profile.game !== 'ark-evolved') return profile.mods
+  const configDir = resolveConfigDir(profile.installDir)
+  const gus = readIniFile(path.join(configDir, 'GameUserSettings.ini'))
+  const iniModIds = String(gus.ServerSettings?.ActiveMods ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean)
+
+  const known = new Set(profile.mods.map((mod) => mod.id))
+  const newMods: ServerMod[] = iniModIds
+    .filter((id) => !known.has(id))
+    .map((id) => ({ id, enabled: true, passive: false, dev: false }))
+
+  if (newMods.length === 0) return profile.mods
+  return [...profile.mods, ...newMods]
 }

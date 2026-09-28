@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ServerProfile, ServerMod } from '@shared/types'
 
 interface ModsTabProps {
@@ -16,6 +16,34 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   // written straight to GameUserSettings.ini/Game.ini (see gameConfigWrite.ts), where every
   // enabled mod counts the same way, full stop.
   const isEvolved = profile.game === 'ark-evolved'
+
+  // Picks up any mod already sitting in GameUserSettings.ini's ActiveMods= that the Manager
+  // doesn't know about yet - e.g. a server that had mods added by hand-editing the ini, or
+  // from before this profile was ever opened here. Additive only (see
+  // reconcileAseModsFromIni) - never touches an existing entry, so this can't clobber a
+  // deliberately-disabled mod. Re-checks whenever a different server's Mods tab is opened.
+  useEffect(() => {
+    if (!isEvolved) return
+    let cancelled = false
+    window.api.mods.reconcileFromIni(profile.id).then((updated) => {
+      if (cancelled) return
+      if (updated.mods !== profile.mods) {
+        const addedCount = updated.mods.length - profile.mods.length
+        setMods(updated.mods)
+        onProfileChange(updated)
+        setStatus(
+          `Found ${addedCount} mod${addedCount === 1 ? '' : 's'} already active in GameUserSettings.ini and added ${
+            addedCount === 1 ? 'it' : 'them'
+          } here.`
+        )
+        setTimeout(() => setStatus(''), 4000)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.id, isEvolved])
 
   async function persist(next: ServerMod[]): Promise<void> {
     setError('')
@@ -104,8 +132,11 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
             Mod IDs, applied in this order. <strong>Enabled</strong> mods are written to
             GameUserSettings.ini&apos;s <code>ActiveMods=</code> and Game.ini&apos;s{' '}
             <code>[ModInstaller]</code> block at the next save - ARK: Survival Evolved has no
-            passive/dev mod concept. Mod Name is just your own label, typed in by hand - not looked up
-            automatically. Changes save immediately - restart the server to actually apply them.
+            passive/dev mod concept. Any mod id already in <code>ActiveMods=</code> that
+            isn&apos;t listed below yet (e.g. added by hand-editing the ini, or from before this
+            server was opened here) is picked up automatically when this tab loads. Mod Name is
+            just your own label, typed in by hand - not looked up automatically. Changes save
+            immediately - restart the server to actually apply them.
           </>
         ) : (
           <>

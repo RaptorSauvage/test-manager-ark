@@ -418,6 +418,7 @@ export const IPC = {
 
   modsSave: 'mods:save',
   modsParseText: 'mods:parse-text',
+  modsReconcileFromIni: 'mods:reconcile-from-ini',
 
   backupCreate: 'backup:create',
   backupList: 'backup:list',
@@ -632,6 +633,13 @@ export interface Api {
      *  reached from pasted text instead of a file. Throws with a readable message on
      *  malformed input rather than silently dropping bad entries. */
     parseText: (text: string) => Promise<ServerMod[]>
+    /** ARK: Survival Evolved only - reads GameUserSettings.ini's ActiveMods= and adds any mod
+     *  id found there that isn't already in the profile's mods list yet, as a new enabled
+     *  entry (never removes or disables an existing one - additive only, so a mod the
+     *  Manager already knows about but currently has disabled, which is why it's correctly
+     *  absent from ActiveMods=, is never touched). A no-op, returning the profile unchanged,
+     *  for ARK: Survival Ascended or when there's nothing new to add. */
+    reconcileFromIni: (profileId: string) => Promise<ServerProfile>
   }
   backup: {
     create: (profileId: string) => Promise<BackupEntry>

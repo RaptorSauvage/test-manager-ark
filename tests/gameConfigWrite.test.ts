@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
-import { upsertIniKey, upsertIniRepeatedKey, syncAseModsToIni } from '../src/main/lib/gameConfigWrite'
+import { upsertIniKey, upsertIniRepeatedKey, syncAseModsToIni, reconcileAseModsFromIni } from '../src/main/lib/gameConfigWrite'
 import type { ServerProfile } from '../shared/types'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
@@ -261,5 +261,76 @@ describe('syncAseModsToIni', () => {
     const gameIni = fs.readFileSync(gameIniPath, 'utf-8')
     expect(gameIni).not.toContain('ModIDS=')
     expect(gameIni).toContain('[Other]\nFoo=1')
+  })
+})
+
+describe('reconcileAseModsFromIni', () => {
+  let tmpDir: string
+  let installDir: string
+  let gusPath: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ase-mods-reconcile-test-'))
+    installDir = path.join(tmpDir, 'install')
+    const configDir = path.join(installDir, 'ShooterGame', 'Saved', 'Config', 'WindowsServer')
+    fs.mkdirSync(configDir, { recursive: true })
+    gusPath = path.join(configDir, 'GameUserSettings.ini')
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('adds a mod id found in ActiveMods= that the profile does not have yet, as a new enabled entry', () => {
+    fs.writeFileSync(gusPath, '[ServerSettings]\nActiveMods=111,222\n', 'utf-8')
+    const profile = makeProfile({ installDir, mods: [{ id: '111', enabled: true, passive: false, dev: false }] })
+
+    const mods = reconcileAseModsFromIni(profile)
+
+    expect(mods).toEqual([
+      { id: '111', enabled: true, passive: false, dev: false },
+      { id: '222', enabled: true, passive: false, dev: false }
+    ])
+  })
+
+  it('returns the exact same array reference when nothing new is found (cheap no-op check)', () => {
+    fs.writeFileSync(gusPath, '[ServerSettings]\nActiveMods=111\n', 'utf-8')
+    const profile = makeProfile({ installDir, mods: [{ id: '111', enabled: true, passive: false, dev: false }] })
+
+    expect(reconcileAseModsFromIni(profile)).toBe(profile.mods)
+  })
+
+  it('never touches an existing entry - a disabled mod stays disabled, correctly absent from ActiveMods=', () => {
+    fs.writeFileSync(gusPath, '[ServerSettings]\nActiveMods=111\n', 'utf-8')
+    const profile = makeProfile({
+      installDir,
+      mods: [
+        { id: '111', enabled: true, passive: false, dev: false },
+        { id: '999', enabled: false, passive: false, dev: false, name: 'Kept disabled' }
+      ]
+    })
+
+    const mods = reconcileAseModsFromIni(profile)
+
+    expect(mods).toBe(profile.mods)
+    expect(mods.find((m) => m.id === '999')).toEqual({
+      id: '999',
+      enabled: false,
+      passive: false,
+      dev: false,
+      name: 'Kept disabled'
+    })
+  })
+
+  it('is a no-op for ark-ascended', () => {
+    fs.writeFileSync(gusPath, '[ServerSettings]\nActiveMods=111\n', 'utf-8')
+    const profile = makeProfile({ game: 'ark-ascended', installDir, mods: [] })
+
+    expect(reconcileAseModsFromIni(profile)).toBe(profile.mods)
+  })
+
+  it('is a no-op when GameUserSettings.ini does not exist yet', () => {
+    const profile = makeProfile({ installDir: path.join(tmpDir, 'never-started'), mods: [] })
+    expect(reconcileAseModsFromIni(profile)).toBe(profile.mods)
   })
 })

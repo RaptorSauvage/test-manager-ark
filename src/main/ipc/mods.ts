@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { IPC, type ServerMod } from '@shared/types'
 import { getProfile, saveProfile } from '../store'
 import { parseImportedMods } from '../lib/modsExport'
-import { syncAseModsToIni } from '../lib/gameConfigWrite'
+import { syncAseModsToIni, reconcileAseModsFromIni } from '../lib/gameConfigWrite'
 
 function requireProfile(profileId: string) {
   const profile = getProfile(profileId)
@@ -22,4 +22,13 @@ export function registerModsHandlers(): void {
   })
 
   ipcMain.handle(IPC.modsParseText, (_event, text: string) => parseImportedMods(text))
+
+  ipcMain.handle(IPC.modsReconcileFromIni, (_event, profileId: string) => {
+    const profile = requireProfile(profileId)
+    const mods = reconcileAseModsFromIni(profile)
+    if (mods === profile.mods) return profile
+    const updated = { ...profile, mods }
+    saveProfile(updated)
+    return updated
+  })
 }
