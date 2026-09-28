@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { MapDefinition, ServerProfile, ServerRunState } from '@shared/types'
+import type { AppSettings, MapDefinition, ServerProfile, ServerRunState } from '@shared/types'
 import { getGameDefinition, listGameDefinitions } from '@shared/games'
 import { useServerStatuses } from '../lib/useServerStatuses'
 import { createDefaultProfile } from '../lib/profile'
@@ -28,17 +28,56 @@ export default function Dashboard({
   const visibleProfiles = profiles.filter((p) => !p.hidden)
   const hiddenProfiles = profiles.filter((p) => p.hidden)
   const ungroupedProfiles = visibleProfiles.filter((p) => !p.group.trim())
-  const groupNames = Array.from(new Set(visibleProfiles.filter((p) => p.group.trim()).map((p) => p.group.trim()))).sort(
-    (a, b) => a.localeCompare(b)
-  )
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
   const [dragId, setDragId] = useState<string | null>(null)
+  const [dragGroupName, setDragGroupName] = useState<string | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [installedById, setInstalledById] = useState<Record<string, boolean>>({})
   const [gameVersionById, setGameVersionById] = useState<Record<string, string | null>>({})
   const [maps, setMaps] = useState<MapDefinition[]>([])
+  const [settings, setSettings] = useState<AppSettings | null>(null)
+
+  useEffect(() => {
+    window.api.settings.get().then(setSettings)
+  }, [])
+
+  async function persistSettings(next: AppSettings): Promise<void> {
+    setSettings(next)
+    await window.api.settings.save(next)
+  }
+
+  // Explicitly-ordered names first (in that order), then any group not mentioned yet -
+  // a brand new group name just appears at the end, alphabetically among its peers, rather
+  // than needing to be added to the order first.
+  const groupNamesRaw = Array.from(new Set(visibleProfiles.filter((p) => p.group.trim()).map((p) => p.group.trim())))
+  const groupOrder = settings?.groupOrder ?? []
+  const groupNames = [
+    ...groupOrder.filter((name) => groupNamesRaw.includes(name)),
+    ...groupNamesRaw.filter((name) => !groupOrder.includes(name)).sort((a, b) => a.localeCompare(b))
+  ]
+  const collapsedGroups = settings?.collapsedGroups ?? []
+
+  function setGroupCollapsed(name: string, collapsed: boolean): void {
+    if (!settings) return
+    const next = new Set(settings.collapsedGroups)
+    if (collapsed) next.add(name)
+    else next.delete(name)
+    void persistSettings({ ...settings, collapsedGroups: Array.from(next) })
+  }
+
+  async function handleGroupDrop(targetName: string): Promise<void> {
+    const sourceName = dragGroupName
+    setDragGroupName(null)
+    if (!settings || !sourceName || sourceName === targetName) return
+    const reordered = groupNames.slice()
+    const fromIndex = reordered.indexOf(sourceName)
+    const toIndex = reordered.indexOf(targetName)
+    if (fromIndex === -1 || toIndex === -1) return
+    reordered.splice(toIndex, 0, reordered.splice(fromIndex, 1)[0])
+    await persistSettings({ ...settings, groupOrder: reordered })
+  }
 
   useEffect(() => {
     // Merged across every known game, not just the profiles currently on this dashboard - map
@@ -409,8 +448,30 @@ export default function Dashboard({
           <div className="server-grid">{ungroupedProfiles.map(renderCard)}</div>
 
           {groupNames.map((groupName) => (
-            <details className="server-group" key={groupName} open>
-              <summary>{groupName}</summary>
+            <details
+              className={`server-group${dragGroupName === groupName ? ' dragging' : ''}`}
+              key={groupName}
+              open={!collapsedGroups.includes(groupName)}
+              onToggle={(e) => setGroupCollapsed(groupName, !(e.currentTarget as HTMLDetailsElement).open)}
+            >
+              <summary
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => void handleGroupDrop(groupName)}
+              >
+                <span
+                  className="drag-handle"
+                  draggable
+                  onDragStart={(e) => {
+                    e.stopPropagation()
+                    setDragGroupName(groupName)
+                  }}
+                  onDragEnd={() => setDragGroupName(null)}
+                  title="Drag to reorder groups"
+                >
+                  ⠿
+                </span>
+                {groupName}
+              </summary>
               <div className="server-grid">
                 {visibleProfiles.filter((p) => p.group.trim() === groupName).map(renderCard)}
               </div>

@@ -831,6 +831,16 @@ label.checkbox {
   margin-bottom: 12px;
 }
 
+.server-group summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.server-group.dragging {
+  opacity: 0.4;
+}
+
 .hidden-servers .server-grid,
 .server-group .server-grid {
   margin-top: 12px;

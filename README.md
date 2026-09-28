@@ -1588,3 +1588,83 @@ async function findProfileIdByName(name) {
     profile (the desktop one now hides/rewords all of that) - inert rather than incorrect,
     since nothing reads them for it, but not hidden yet - and it has no equivalent of the
     reconcile-from-ini pickup either.
+
+- **Dashboard groups: reorderable, collapse persists, minimized groups skip the aggregate views.**
+  - Groups on the Dashboard can now be dragged to reorder (same `⠿` drag-handle pattern as
+    server cards), persisted manager-wide as `AppSettings.groupOrder`. A group not yet in that
+    list falls back to alphabetical order, appended after every explicitly-ordered one, so a
+    brand new group name just appears without needing to be added to the order first.
+  - Collapsing/expanding a group (the native `<details>` triangle) now persists too
+    (`AppSettings.collapsedGroups`) - previously the `open` attribute was hardcoded, so any
+    re-render (a status tick, a new profile) silently re-expanded a group the user had just
+    collapsed.
+  - A collapsed group's servers are also left out of the Cluster Dashboard
+    (`ClusterDataView.tsx`) and both of the Web Dashboard's own aggregate views (its
+    "Dashboard" card-grid tab and its own "Cluster Dashboard" tab) - not just visually
+    minimized on the Manager's own Dashboard. The server itself stays fully manageable
+    everywhere else (still listed in every Web Dashboard server picker, still reachable by
+    its own direct Console/Settings/etc.) - only the aggregate summary views skip it. The Web
+    Dashboard's `/api/servers` response carries a new `groupCollapsed` boolean per server for
+    this, computed server-side from the same `AppSettings.collapsedGroups`.
+
+- **New Manager-wide setting: "Show the server's own console/debug window"** (Settings →
+  General → Startup & Safety, `AppSettings.showServerConsoleWindow`, default on - unchanged
+  behavior). Both games allocate their own small-font console window the moment their exe is
+  spawned (ARK: Survival Evolved's through the `.bat`/cmd.exe it launches via, ARK: Survival
+  Ascended's directly) - there's no launch flag that suppresses it and no way to resize its
+  font from the Manager. Unchecking this passes Node's own `windowsHide` to both spawn calls
+  instead, which stops Windows from ever creating the window - the server itself, and its own
+  log file, are unaffected either way. No-op on non-Windows.
+
+- **ARK: Survival Evolved: Backup tab's Player Profile Backups section removed.** Its own
+  `.profilebak`/log format for this isn't verified the way ARK: Survival Ascended's is (see
+  `GameDefinition.supportsPlayerProfileBackups`, already `false` for it) - the desktop
+  Backups tab now actually hides the whole section (checkbox, backups-to-keep field, and the
+  browse/restore panel) instead of showing controls for a feature that was already a silent
+  no-op. The Web Dashboard's own Backup tab still shows it unconditionally for every game -
+  not yet fixed there (same class of gap as the "Not yet done" note above).
+
+- **ARK: Survival Evolved: update checking turned off.** Its dedicated server is no longer
+  developed - SteamCMD's public branch build id for it essentially never changes, so
+  comparing against it had nothing useful to say and could only ever show a permanently-stale
+  "No new update available." New `GameDefinition.supportsUpdateCheck` flag (`false` for it,
+  `true` for ARK: Survival Ascended) gates both the background poller (`updateCheck.ts`, was
+  polling SteamCMD for every SteamCMD-based game every 30 minutes regardless of whether
+  anything displayed it) and the Analytics tab's "New update"/"A server update is available"
+  panel. The SteamCMD **install/update** button itself (Dashboard card, Update Log tab) is
+  untouched - installing/updating ARK: Survival Evolved's server files still works exactly as
+  before, this only turns off the separate "is a newer build available" check.
+
+- **ARK: Survival Evolved: game version display made more robust, cause of the original
+  report not conclusively found.** A real report said the Analytics/Dashboard version display
+  still wasn't updating for ARK: Survival Evolved servers, even after the earlier fix that
+  confirmed the version-line regex itself matches a real log line
+  (`serverVersion.test.ts`). Static review of the whole pipeline (log path, the edge-triggered
+  cache in `serverVersionWatcher.ts`, the 'running'-transition/fallback timing, the .bat/pid
+  hand-off code) found nothing ARK: Survival Evolved-specific - every step is shared,
+  game-agnostic code already exercised by ARK: Survival Ascended working correctly. One real
+  gap was found and fixed regardless: `IPC.serverGetGameVersion` only ever returned whatever
+  `serverVersionWatcher.ts`'s edge-triggered state tracking had already cached, so if that
+  tracking ever missed the right transition for any reason, the polling both the Dashboard and
+  Analytics tab already do would keep re-reading the same stale (possibly still-null) cache
+  forever rather than ever re-checking the log file directly. It now falls back to a live log
+  read whenever nothing's cached yet, caching whatever it finds - this can only help, but
+  wasn't confirmed to be *the* cause, since the mechanism this replaces looked structurally
+  sound on inspection. If the version still doesn't appear after this, that points at
+  something below this app's own version-reading code (e.g. the log file's actual on-disk
+  path/content on a real installation) rather than the cache/polling layer.
+
+- **Not investigated further, needs more information**: two more ARK: Survival Evolved
+  reports - the Web Dashboard's and Cluster Console's live console showing nothing at all, and
+  stats/online-state polling not promptly reflecting a server that was just stopped - share no
+  ARK: Survival Evolved-specific code path with ARK: Survival Ascended anywhere in
+  `logEvents.ts`, `groupConsole.ts`, `webDashboard.ts`'s console route, or `monitor.ts`'s
+  `state === 'running'` gating; everything read is shared, game-agnostic, and already proven
+  correct for ARK: Survival Ascended. Also notable: adding `-log` back to ARK: Survival
+  Evolved's launch args (on the theory that `ShooterGame.log` might need it to fill in the way
+  the Manager expects) was considered and rejected - `launchArgs.test.ts` already encodes,
+  from an earlier real-hardware confirmation, that `-log` is deliberately *not* passed for it.
+  Diagnosing further needs something this environment can't produce: a Manager Log excerpt
+  from a real ARK: Survival Evolved run showing whether the pid hand-off actually completed,
+  and confirmation of whether `ShooterGame.log` itself is actually growing on disk while the
+  server runs.

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { BackupScheduleStatus, ServerProfile } from '@shared/types'
 import { formatCountdown } from '@shared/scheduleTime'
+import { getGameDefinition } from '@shared/games'
 import { useServerStatuses } from '../../lib/useServerStatuses'
 import {
   STATS_TIME_SCALES,
@@ -235,7 +236,9 @@ export default function AnalyticsTab({ profile, onProfileChange }: AnalyticsTabP
             {isRunning && status?.statsError && (
               <p className="error-message">CPU/RAM unavailable: {status.statsError}</p>
             )}
-            <UpdateCheckPanel profileIds={[profile.id]} game={profile.game} compact />
+            {getGameDefinition(profile.game).supportsUpdateCheck && (
+              <UpdateCheckPanel profileIds={[profile.id]} game={profile.game} compact />
+            )}
           </div>
           <div className="file-shortcuts">
             <span className="file-shortcuts-label">File Shortcuts</span>

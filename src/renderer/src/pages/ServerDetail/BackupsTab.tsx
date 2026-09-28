@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { BackupEntry, ServerProfile } from '@shared/types'
+import { getGameDefinition } from '@shared/games'
 import PlayerBackupsSection from './PlayerBackupsSection'
 import BackupLogPanel from './BackupLogPanel'
 import { useServerStatuses } from '../../lib/useServerStatuses'
@@ -27,6 +28,9 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   const canRestore = !status || status.state === 'stopped'
 
   const [form, setForm] = useState<ServerProfile>(profile)
+  // ARK: Survival Evolved's own .profilebak/log format for this isn't verified the way
+  // ARK: Survival Ascended's is - see GameDefinition.supportsPlayerProfileBackups.
+  const supportsPlayerProfileBackups = getGameDefinition(profile.game).supportsPlayerProfileBackups
 
   function update<K extends keyof ServerProfile>(key: K, value: ServerProfile[K]): void {
     const next = { ...form, [key]: value }
@@ -199,34 +203,36 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
           </label>
         </form>
 
-        <form className="settings-tab backup-settings" onSubmit={(e) => e.preventDefault()}>
-          <h3>Player Profile Backups</h3>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={form.playerProfileBackupEnabled}
-              onChange={(e) => update('playerProfileBackupEnabled', e.target.checked)}
-            />
-            Back up player profiles on join/leave
-          </label>
-          <label>
-            Backups to keep per player
-            <input
-              type="number"
-              min={1}
-              value={form.playerProfileBackupMaxPerPlayer}
-              onChange={(e) => update('playerProfileBackupMaxPerPlayer', Number(e.target.value))}
-              disabled={!form.playerProfileBackupEnabled}
-            />
-          </label>
-          <p className="empty-state">
-            Watches this server&apos;s own log for players joining/leaving and zips the{' '}
-            <code>.profilebak</code> file ARK itself writes for that player into{' '}
-            <code>PlayerBackups/&lt;player&gt;/</code> under the backup directory (left). Requires a backup
-            directory to be set. Toggling this takes effect immediately, even while the server is running -
-            no restart needed.
-          </p>
-        </form>
+        {supportsPlayerProfileBackups && (
+          <form className="settings-tab backup-settings" onSubmit={(e) => e.preventDefault()}>
+            <h3>Player Profile Backups</h3>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={form.playerProfileBackupEnabled}
+                onChange={(e) => update('playerProfileBackupEnabled', e.target.checked)}
+              />
+              Back up player profiles on join/leave
+            </label>
+            <label>
+              Backups to keep per player
+              <input
+                type="number"
+                min={1}
+                value={form.playerProfileBackupMaxPerPlayer}
+                onChange={(e) => update('playerProfileBackupMaxPerPlayer', Number(e.target.value))}
+                disabled={!form.playerProfileBackupEnabled}
+              />
+            </label>
+            <p className="empty-state">
+              Watches this server&apos;s own log for players joining/leaving and zips the{' '}
+              <code>.profilebak</code> file ARK itself writes for that player into{' '}
+              <code>PlayerBackups/&lt;player&gt;/</code> under the backup directory (left). Requires a backup
+              directory to be set. Toggling this takes effect immediately, even while the server is running -
+              no restart needed.
+            </p>
+          </form>
+        )}
       </div>
 
       <div className="form-actions">
@@ -326,7 +332,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
           </table>
         </section>
 
-        <PlayerBackupsSection profile={profile} />
+        {supportsPlayerProfileBackups && <PlayerBackupsSection profile={profile} />}
         <BackupLogPanel profileId={profile.id} />
       </div>
     </div>

@@ -9,7 +9,7 @@ import type { ServerMod, ServerProfile, ServerStatus } from '@shared/types'
 import { getGameDefinition } from '@shared/games'
 import { sendRconCommand } from './rcon'
 import { readAdminPassword } from './config'
-import { setRunningPid, setRunningStartedAt } from '../store'
+import { setRunningPid, setRunningStartedAt, getSettings } from '../store'
 import { delay } from './delay'
 import { logManagerEvent, newTaskId } from './managerLog'
 
@@ -577,6 +577,13 @@ export function startServer(profile: ServerProfile): ServerStatus {
   // test/dev runs of this codebase).
   const launchViaBatch = profile.game === 'ark-evolved' && platform === 'win32'
 
+  // Both games allocate their own console window the moment their exe is spawned (or, for
+  // ARK: Survival Evolved, the moment cmd.exe spawns it from within the .bat) - there's no
+  // launch flag that suppresses it and no way to resize its font from here, so the "General"
+  // Manager settings toggle instead controls Node's own windowsHide, which stops Windows
+  // from ever creating that window in the first place. No-op on non-Windows.
+  const windowsHide = !getSettings().showServerConsoleWindow
+
   let child: ChildProcess
   try {
     // stdio: 'ignore' - ARK's dedicated server allocates its own console on
@@ -593,14 +600,20 @@ export function startServer(profile: ServerProfile): ServerStatus {
     // than leaving a working-directory mismatch as one more unverified difference.
     if (launchViaBatch) {
       const batPath = writeLaunchBatchFile(profile, exe, args)
-      child = spawn('cmd.exe', ['/d', '/c', batPath], { cwd: path.dirname(exe), stdio: 'ignore', detached: true })
+      child = spawn('cmd.exe', ['/d', '/c', batPath], { cwd: path.dirname(exe), stdio: 'ignore', detached: true, windowsHide })
     } else {
       // windowsVerbatimArguments: true - Node's default Windows quoting wraps a space-
       // containing argument in double quotes, the normally-correct thing to do for a
       // well-behaved argv parser. Harmless no-op here (ARK: Survival Ascended's arguments
       // never contain a bare space) and ignored on non-Windows platforms; kept for parity in
       // case that ever changes.
-      child = spawn(exe, args, { cwd: path.dirname(exe), stdio: 'ignore', detached: true, windowsVerbatimArguments: true })
+      child = spawn(exe, args, {
+        cwd: path.dirname(exe),
+        stdio: 'ignore',
+        detached: true,
+        windowsVerbatimArguments: true,
+        windowsHide
+      })
     }
     child.unref()
   } catch (err) {

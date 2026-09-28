@@ -18,7 +18,10 @@ export default function SteamCmdView({ onBack }: SteamCmdViewProps): JSX.Element
     serverAutoStartStaggerSeconds: 10,
     iniLockEnabled: true,
     statsHistoryMaxSizeMB: 1024,
-    statsHistoryMaxAgeHours: 24
+    statsHistoryMaxAgeHours: 24,
+    showServerConsoleWindow: true,
+    groupOrder: [],
+    collapsedGroups: []
   })
   const [status, setStatus] = useState('')
   const [managedPath, setManagedPath] = useState<string | null>(null)

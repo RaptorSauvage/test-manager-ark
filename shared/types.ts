@@ -232,6 +232,20 @@ export interface AppSettings {
    *  a long-running Manager's stats file (and the read/parse cost of ever touching it) from
    *  growing indefinitely just because nothing has hit the byte budget yet. Default 24. */
   statsHistoryMaxAgeHours: number
+  /** When true (default), a running server's own console window is left visible (Windows
+   *  only - both games allocate one the moment their exe is spawned, regardless of any
+   *  launch flag). Unchecking spawns it with Node's `windowsHide` instead, since there's no
+   *  way to resize its font from here and no ARK launch flag suppresses the window itself. */
+  showServerConsoleWindow: boolean
+  /** Manager-wide display order for server groups (ServerProfile.group values) on the
+   *  Dashboard. A group name not listed here falls back to alphabetical order, appended
+   *  after every explicitly-ordered one - so a brand new group shows up without needing to
+   *  be added here first. */
+  groupOrder: string[]
+  /** Group names currently collapsed on the Dashboard. A collapsed group's servers are also
+   *  left out of the Cluster Dashboard and the Web Dashboard's own Dashboard tab, not just
+   *  visually minimized on the Manager's own Dashboard. */
+  collapsedGroups: string[]
 }
 
 /** Four tiers, highest to lowest: `globalAdmin` (everything, every server, regardless of any

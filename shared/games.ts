@@ -50,6 +50,12 @@ export interface GameDefinition {
    *  Evolved until its own log format/.profilebak naming is verified, even though the
    *  underlying game concept (a player profile file) does exist there too. */
   supportsPlayerProfileBackups: boolean
+  /** Whether checking SteamCMD's public branch build id against the installed one (the
+   *  "New update"/"A server update is available" check) is meaningful for this game.
+   *  ARK: Survival Evolved's dedicated server is no longer developed - its branch build id
+   *  essentially never changes, so the check has nothing useful to say and is skipped
+   *  entirely rather than showing a permanently-stale "No new update available." */
+  supportsUpdateCheck: boolean
 }
 
 export const GAMES: Record<GameId, GameDefinition> = {
@@ -66,7 +72,8 @@ export const GAMES: Record<GameId, GameDefinition> = {
     executableLinux: 'ShooterGame/Binaries/Linux/ArkAscendedServer',
     usesQueryPort: false,
     supportsDinoWipe: true,
-    supportsPlayerProfileBackups: true
+    supportsPlayerProfileBackups: true,
+    supportsUpdateCheck: true
   },
   'ark-evolved': {
     id: 'ark-evolved',
@@ -81,7 +88,8 @@ export const GAMES: Record<GameId, GameDefinition> = {
     executableLinux: 'ShooterGame/Binaries/Linux/ShooterGameServer',
     usesQueryPort: true,
     supportsDinoWipe: true,
-    supportsPlayerProfileBackups: false
+    supportsPlayerProfileBackups: false,
+    supportsUpdateCheck: false
   }
 }
 

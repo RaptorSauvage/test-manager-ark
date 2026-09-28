@@ -85,7 +85,11 @@ async function pollOnceForGame(game: GameId): Promise<void> {
 }
 
 async function pollOnce(): Promise<void> {
-  await Promise.all(listGameDefinitions().filter((g) => g.usesSteamCmd).map((g) => pollOnceForGame(g.id)))
+  await Promise.all(
+    listGameDefinitions()
+      .filter((g) => g.usesSteamCmd && g.supportsUpdateCheck)
+      .map((g) => pollOnceForGame(g.id))
+  )
 }
 
 /** Starts polling SteamCMD for every SteamCMD-based game's latest dedicated server build id,

@@ -51,7 +51,10 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     serverAutoStartStaggerSeconds: 10,
     iniLockEnabled: true,
     statsHistoryMaxSizeMB: 1024,
-    statsHistoryMaxAgeHours: 24
+    statsHistoryMaxAgeHours: 24,
+    showServerConsoleWindow: true,
+    groupOrder: [],
+    collapsedGroups: []
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
   const [status, setStatus] = useState('')
@@ -206,6 +209,20 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                   <p className="empty-state">
                     Makes <code>GameUserSettings.ini</code>/<code>Game.ini</code> read-only while that server runs,
                     as a guard against editing it by accident.
+                  </p>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.showServerConsoleWindow}
+                      onChange={(e) => setSettings({ ...settings, showServerConsoleWindow: e.target.checked })}
+                    />
+                    Show the server&apos;s own console/debug window
+                  </label>
+                  <p className="empty-state">
+                    Both games open their own small-font console window (Windows only) the moment a server starts -
+                    there&apos;s no launch flag to resize or suppress it. Unchecking this hides that window
+                    entirely; the server itself is unaffected, and its own log file keeps updating either way.
+                    Takes effect on the next start.
                   </p>
                 </section>
 

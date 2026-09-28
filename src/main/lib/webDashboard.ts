@@ -310,6 +310,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && path === '/api/servers') {
     const auth = await requireRole(req, res, 'readonly')
     if (!auth) return
+    const collapsedGroups = new Set(getSettings().collapsedGroups)
     const servers = filterProfilesForAuth(auth, sortProfilesForDisplay(listProfiles())).map((profile) => {
       const status = getStatus(profile.id)
       const game = getGameDefinition(profile.game)
@@ -317,6 +318,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         id: profile.id,
         name: profile.name,
         group: profile.group.trim(),
+        // A group minimized on the desktop Manager's own Dashboard - the server itself stays
+        // fully manageable here (still listed in every server picker), but the Dashboard/
+        // Cluster Dashboard tabs' own card grids leave it out, matching the desktop.
+        groupCollapsed: collapsedGroups.has(profile.group.trim()),
         maxPlayers: profile.maxPlayers,
         state: status.state,
         players: status.players ?? [],
@@ -2485,7 +2490,11 @@ function initDashboard(resolvedRole) {
   // has; the desktop-only stats chart (same persistent store + 6h/12h/24h/All scales as
   // the Manager) is fetched per group from /api/groups/:group/stats and swapped in once it
   // resolves, so a slow/failed fetch never blocks the totals from updating.
-  function renderClusterCards(servers) {
+  function renderClusterCards(allServers) {
+    // A group minimized on the desktop Manager's own Dashboard is left out here too - the
+    // server itself stays fully manageable (still in every server picker), just not counted
+    // into this aggregate view.
+    var servers = allServers.filter(function (s) { return !s.groupCollapsed; });
     if (clusterTimeScaleEl) clusterTimeScaleEl.style.display = servers.length > 0 ? '' : 'none';
     var byGroup = {};
     var order = [];
@@ -2815,7 +2824,9 @@ function initDashboard(resolvedRole) {
   // mobile column, and grouped like the Settings map dropdown/server pickers - a run of
   // consecutive same-group servers (servers already arrive pre-sorted ungrouped-first-then-
   // alphabetical-by-group) becomes one labeled grid section.
-  function renderDashboardCards(servers) {
+  function renderDashboardCards(allServers) {
+    // Same minimized-group exclusion as renderClusterCards above.
+    var servers = allServers.filter(function (s) { return !s.groupCollapsed; });
     dashboardCardsEl.innerHTML = '';
     if (servers.length === 0) {
       var empty = document.createElement('p');

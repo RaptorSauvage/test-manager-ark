@@ -60,7 +60,10 @@ const store = new Store<StoreSchema>({
       serverAutoStartStaggerSeconds: 10,
       iniLockEnabled: true,
       statsHistoryMaxSizeMB: 1024,
-      statsHistoryMaxAgeHours: 24
+      statsHistoryMaxAgeHours: 24,
+      showServerConsoleWindow: true,
+      groupOrder: [],
+      collapsedGroups: []
     },
     runningPids: {},
     runningStartedAt: {},
@@ -151,6 +154,9 @@ export function getSettings(): AppSettings {
     iniLockEnabled: true,
     statsHistoryMaxSizeMB: 1024,
     statsHistoryMaxAgeHours: 24,
+    showServerConsoleWindow: true,
+    groupOrder: [],
+    collapsedGroups: [],
     ...settings
   }
 }

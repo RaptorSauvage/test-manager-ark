@@ -28,14 +28,21 @@ const STATS_SCALE_KEY = 'cluster-data-stats-scale'
  * GroupConsoleView). Hidden servers are excluded, matching the Dashboard.
  */
 export default function ClusterDataView({ profiles, onOpenGroup }: ClusterDataViewProps): JSX.Element {
-  const visibleIds = profiles.filter((p) => !p.hidden).map((p) => p.id)
+  const [collapsedGroups, setCollapsedGroups] = useState<string[]>([])
+  useEffect(() => {
+    window.api.settings.get().then((s) => setCollapsedGroups(s.collapsedGroups))
+  }, [])
+  // A group minimized on the Dashboard is left out here too, not just visually collapsed
+  // there - same reasoning as excluding hidden servers below.
+  const uncollapsedProfiles = profiles.filter((p) => !collapsedGroups.includes(p.group.trim()))
+  const visibleIds = uncollapsedProfiles.filter((p) => !p.hidden).map((p) => p.id)
   const statuses = useServerStatuses(visibleIds)
-  const groupStats = computeClusterGroupStats(profiles, statuses)
+  const groupStats = computeClusterGroupStats(uncollapsedProfiles, statuses)
   const [now, setNow] = useState(() => Date.now())
   const [statsScale, setStatsScale] = useState(() => loadStoredScale(STATS_SCALE_KEY, STATS_DEFAULT_SCALE_MS))
   const [historyByGroup, setHistoryByGroup] = useState<Record<string, StatSample[]>>({})
-  const profilesRef = useRef(profiles)
-  profilesRef.current = profiles
+  const profilesRef = useRef(uncollapsedProfiles)
+  profilesRef.current = uncollapsedProfiles
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000)
