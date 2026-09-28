@@ -280,7 +280,9 @@ describe('buildLaunchArgs', () => {
       // -servergamelog right after the map string instead of after -NoBattlEye/
       // -ForceRespawnDinos) reproducibly caused a blocking "Plugin 'RuntimeMeshComponent'
       // failed to load" dialog on launch - this pins the exact confirmed-working shape so a
-      // future refactor can't silently reintroduce that.
+      // future refactor can't silently reintroduce that. -log was added after -servergamelog
+      // later (see buildLaunchArgs) - -servergamelog's own position is the one that's
+      // order-sensitive, not -log's.
       const args = buildLaunchArgs(
         makeProfile({
           game: 'ark-evolved',
@@ -304,6 +306,7 @@ describe('buildLaunchArgs', () => {
         '-NoBattlEye',
         '-ForceRespawnDinos',
         '-servergamelog',
+        '-log',
         '-servergamelogincludetribelogs',
         '-ServerRCONOutputTribeLogs'
       ])
@@ -324,11 +327,15 @@ describe('buildLaunchArgs', () => {
       expect(args[0]).toMatch(/\?listen(\?|$)/)
     })
 
-    it('omits -server/-log, adding -servergamelog instead', () => {
+    it('omits -server (ARK: Survival Ascended-only), but adds both -servergamelog and -log', () => {
+      // -log alone (without -servergamelog) is what ARK: Survival Ascended passes; ARK:
+      // Survival Evolved needs both - -servergamelog for the dated tribe-log files, -log for
+      // the engine's own ShooterGame.log the Manager's Console/version-detection actually
+      // read (a real report showed both staying empty without it).
       const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved' }))
       expect(args).not.toContain('-server')
-      expect(args).not.toContain('-log')
       expect(args).toContain('-servergamelog')
+      expect(args).toContain('-log')
     })
 
     it('still passes -server -log for ark-ascended, without -servergamelog', () => {

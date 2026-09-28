@@ -1654,17 +1654,38 @@ async function findProfileIdByName(name) {
   something below this app's own version-reading code (e.g. the log file's actual on-disk
   path/content on a real installation) rather than the cache/polling layer.
 
-- **Not investigated further, needs more information**: two more ARK: Survival Evolved
-  reports - the Web Dashboard's and Cluster Console's live console showing nothing at all, and
-  stats/online-state polling not promptly reflecting a server that was just stopped - share no
-  ARK: Survival Evolved-specific code path with ARK: Survival Ascended anywhere in
-  `logEvents.ts`, `groupConsole.ts`, `webDashboard.ts`'s console route, or `monitor.ts`'s
-  `state === 'running'` gating; everything read is shared, game-agnostic, and already proven
-  correct for ARK: Survival Ascended. Also notable: adding `-log` back to ARK: Survival
-  Evolved's launch args (on the theory that `ShooterGame.log` might need it to fill in the way
-  the Manager expects) was considered and rejected - `launchArgs.test.ts` already encodes,
-  from an earlier real-hardware confirmation, that `-log` is deliberately *not* passed for it.
-  Diagnosing further needs something this environment can't produce: a Manager Log excerpt
-  from a real ARK: Survival Evolved run showing whether the pid hand-off actually completed,
-  and confirmation of whether `ShooterGame.log` itself is actually growing on disk while the
-  server runs.
+- **Root cause found for both the empty console and the missing version: `-log` is required
+  after all.** A previous pass here considered and rejected adding `-log` back to ARK:
+  Survival Evolved's launch args, on the strength of a test that encoded an earlier
+  real-hardware confirmation that it was deliberately left out. A real report has since
+  confirmed the opposite: without it, `ShooterGame.log` - the file the Manager's Console/
+  Cluster Console/Web Dashboard console and version detection all read - never fills in the
+  way the Manager needs, even though `-servergamelog` is also passed. `-servergamelog` turns
+  out to control a separate, dated tribe-log feature (`ServerGame.<date>.txt`), not the
+  engine's own log; `-log` is what actually was missing. `buildLaunchArgs` now pushes both for
+  ARK: Survival Evolved (`-servergamelog` for the tribe logs, `-log` right after it for the
+  engine log), and `launchArgs.test.ts` is updated to match. The earlier "-log deliberately
+  omitted" confirmation was apparently about getting the server to *launch* successfully, not
+  about whether the file the Manager reads actually fills in - two different things that
+  happened to get conflated.
+
+- **ARK: Survival Evolved: Zombie Detection now also watches for a frozen world while
+  running, not just a stuck startup.** A real report described a server that stayed "running"
+  (process alive, sometimes still RCON-reachable) with its actual game loop frozen - the
+  existing Zombie Detection (`zombieDetection.ts`) only ever watched the `starting` phase, so
+  it had nothing to say about that. It now also arms, ARK: Survival Evolved only, the moment a
+  profile reaches `running`: every minute it checks whether `ShooterGame.log` has grown at all
+  since the last check; if it stays exactly the same size for a full
+  `zombieDetectionTimeoutMinutes`, that's treated as a frozen world tick and killed the same
+  way (optionally auto-restarted), reusing the same settings already on the Server Management
+  tab. A momentarily-unreadable log (a stat error, a rotation race) is never itself treated as
+  zombie evidence - only a confirmed *unchanged* size counts, so a transient glitch can't cause
+  a false-positive kill. ARK: Survival Ascended doesn't get this second watch - its own
+  startup-stuck check already covers the zombie scenario actually reported for it, and this
+  would otherwise be an unverified, unrequested behavior change. (The specific example log line
+  a report pointed at - a seasonal "Set `<event>` event location: ..." line written once during
+  world init - wasn't used as the literal signal: it's not confirmed to repeat during normal
+  running, and every seasonal event's location line apparently gets logged at boot regardless
+  of the calendar, so hardcoding one particular event's text would be both fragile and
+  unnecessary. Watching whether the log is growing *at all* is the same idea, generalized
+  safely to whatever a real server actually logs on its own.)

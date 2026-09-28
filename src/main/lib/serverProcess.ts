@@ -326,6 +326,16 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
     if (profile.disableBattlEye) args.push('-NoBattlEye')
     if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
     args.push('-servergamelog')
+    // -log: originally left out here on the assumption -servergamelog alone was enough to
+    // get a useful ShooterGame.log (the file the Manager's Console/version-detection read) -
+    // a real report showed the Manager's live console and version display staying empty for
+    // ARK: Survival Evolved even though the server itself ran fine, which -servergamelog
+    // alone apparently doesn't fix (it's the separate dated ServerGame.<date>.txt tribe-log
+    // feature, not the engine's own log). Added back after that report, right after
+    // -servergamelog rather than up near -server/-log's usual ARK: Survival Ascended spot -
+    // the position empirically confirmed to matter (see the comment above) is
+    // -servergamelog's, relative to -NoBattlEye/-ForceRespawnDinos, not this one's.
+    args.push('-log')
     if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
     // Tells the server to download/update its own workshop mods (from ActiveMods=, written
     // to GameUserSettings.ini by gameConfigWrite.ts) instead of relying on them being

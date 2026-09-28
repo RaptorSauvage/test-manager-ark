@@ -287,3 +287,211 @@ describe('handleStatusForZombieDetection', () => {
     expect(() => cancelPendingZombieCheck('zombie-nothing-pending')).not.toThrow()
   })
 })
+
+describe('handleStatusForZombieDetection - running-phase log-activity watch (ARK: Survival Evolved only)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    mockGetStatus.mockReset().mockImplementation((id: string) => ({ profileId: id, state: 'running' }))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    mockServerEvents.removeAllListeners()
+  })
+
+  it('kills after the timeout if the log never grows while running', () => {
+    const profile = makeProfile({ id: 'zombie-running-stuck', game: 'ark-evolved', zombieDetectionTimeoutMinutes: 5 })
+    const killServer = vi.fn()
+    const startServer = vi.fn()
+    const getLogSize = vi.fn().mockReturnValue(1000)
+
+    handleStatusForZombieDetection(
+      { profileId: profile.id, state: 'running' },
+      killServer,
+      startServer,
+      () => profile,
+      getLogSize,
+      60_000
+    )
+    expect(killServer).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(5 * 60_000)
+
+    expect(killServer).toHaveBeenCalledWith(profile.id)
+  })
+
+  it('never kills as long as the log keeps growing', () => {
+    const profile = makeProfile({ id: 'zombie-running-healthy', game: 'ark-evolved', zombieDetectionTimeoutMinutes: 5 })
+    const killServer = vi.fn()
+    const startServer = vi.fn()
+    let size = 1000
+    const getLogSize = vi.fn(() => size)
+
+    handleStatusForZombieDetection(
+      { profileId: profile.id, state: 'running' },
+      killServer,
+      startServer,
+      () => profile,
+      getLogSize,
+      60_000
+    )
+
+    for (let i = 0; i < 10; i++) {
+      size += 10
+      vi.advanceTimersByTime(60_000)
+    }
+
+    expect(killServer).not.toHaveBeenCalled()
+  })
+
+  it('does not arm for ARK: Survival Ascended, even with zombie detection enabled', () => {
+    const profile = makeProfile({ id: 'zombie-running-ascended', game: 'ark-ascended', zombieDetectionTimeoutMinutes: 5 })
+    const killServer = vi.fn()
+    const startServer = vi.fn()
+    const getLogSize = vi.fn().mockReturnValue(1000)
+
+    handleStatusForZombieDetection(
+      { profileId: profile.id, state: 'running' },
+      killServer,
+      startServer,
+      () => profile,
+      getLogSize,
+      60_000
+    )
+    vi.advanceTimersByTime(60 * 60_000)
+
+    expect(killServer).not.toHaveBeenCalled()
+    expect(getLogSize).not.toHaveBeenCalled()
+  })
+
+  it('does not arm when zombie detection is disabled', () => {
+    const profile = makeProfile({
+      id: 'zombie-running-disabled',
+      game: 'ark-evolved',
+      zombieDetectionEnabled: false,
+      zombieDetectionTimeoutMinutes: 5
+    })
+    const killServer = vi.fn()
+    const startServer = vi.fn()
+    const getLogSize = vi.fn().mockReturnValue(1000)
+
+    handleStatusForZombieDetection(
+      { profileId: profile.id, state: 'running' },
+      killServer,
+      startServer,
+      () => profile,
+      getLogSize,
+      60_000
+    )
+    vi.advanceTimersByTime(60 * 60_000)
+
+    expect(killServer).not.toHaveBeenCalled()
+  })
+
+  it('stops watching once the server leaves running, so a later unrelated stop never kills it', () => {
+    const profile = makeProfile({ id: 'zombie-running-left', game: 'ark-evolved', zombieDetectionTimeoutMinutes: 5 })
+    const killServer = vi.fn()
+    const startServer = vi.fn()
+    const getLogSize = vi.fn().mockReturnValue(1000)
+
+    handleStatusForZombieDetection(
+      { profileId: profile.id, state: 'running' },
+      killServer,
+      startServer,
+      () => profile,
+      getLogSize,
+      60_000
+    )
+    mockGetStatus.mockReturnValue({ profileId: profile.id, state: 'stopped' })
+    handleStatusForZombieDetection(
+      { profileId: profile.id, state: 'stopped' },
+      killServer,
+      startServer,
+      () => profile,
+      getLogSize,
+      60_000
+    )
+
+    vi.advanceTimersByTime(60 * 60_000)
+
+    expect(killServer).not.toHaveBeenCalled()
+  })
+
+  it('a null log size (unreadable) never counts as zombie evidence, and does not reset the clock either', () => {
+    const profile = makeProfile({ id: 'zombie-running-null', game: 'ark-evolved', zombieDetectionTimeoutMinutes: 5 })
+    const killServer = vi.fn()
+    const startServer = vi.fn()
+    const getLogSize = vi.fn().mockReturnValue(null)
+
+    handleStatusForZombieDetection(
+      { profileId: profile.id, state: 'running' },
+      killServer,
+      startServer,
+      () => profile,
+      getLogSize,
+      60_000
+    )
+    vi.advanceTimersByTime(60 * 60_000)
+
+    expect(killServer).not.toHaveBeenCalled()
+  })
+
+  it('kills then restarts once the kill is confirmed stopped, when auto-restart is enabled', async () => {
+    const profile = makeProfile({
+      id: 'zombie-running-auto-restart',
+      game: 'ark-evolved',
+      zombieDetectionTimeoutMinutes: 5,
+      zombieDetectionAutoRestart: true
+    })
+    const killServer = vi.fn()
+    const startServer = vi.fn()
+    const getLogSize = vi.fn().mockReturnValue(1000)
+
+    handleStatusForZombieDetection(
+      { profileId: profile.id, state: 'running' },
+      killServer,
+      startServer,
+      () => profile,
+      getLogSize,
+      60_000
+    )
+    vi.advanceTimersByTime(5 * 60_000)
+
+    expect(killServer).toHaveBeenCalledWith(profile.id)
+    expect(startServer).not.toHaveBeenCalled()
+
+    mockServerEvents.emit('status', { profileId: profile.id, state: 'stopped' })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(startServer).toHaveBeenCalledWith(profile)
+  })
+
+  it('does not re-arm (or reset the clock) on a repeated running tick', () => {
+    const profile = makeProfile({ id: 'zombie-running-no-rearm', game: 'ark-evolved', zombieDetectionTimeoutMinutes: 10 })
+    const killServer = vi.fn()
+    const startServer = vi.fn()
+    const getLogSize = vi.fn().mockReturnValue(1000)
+
+    handleStatusForZombieDetection(
+      { profileId: profile.id, state: 'running' },
+      killServer,
+      startServer,
+      () => profile,
+      getLogSize,
+      60_000
+    )
+    vi.advanceTimersByTime(5 * 60_000)
+    handleStatusForZombieDetection(
+      { profileId: profile.id, state: 'running' },
+      killServer,
+      startServer,
+      () => profile,
+      getLogSize,
+      60_000
+    )
+    vi.advanceTimersByTime(5 * 60_000) // 10 total minutes since the first, real arm
+
+    expect(killServer).toHaveBeenCalledTimes(1)
+  })
+})
