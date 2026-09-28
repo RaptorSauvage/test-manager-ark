@@ -53,6 +53,39 @@ describe('parseLogLine', () => {
     })
   })
 
+  it('parses an ARK: Survival Evolved join line (no [UniqueNetId:...] bracket, Steam ID + TribeID in parens instead)', () => {
+    const line = '[2026.09.28-15.36.54:263][595]LeRaptorSauvage joined this ARK! (76561198295665547) (TribeID: 1832986073)'
+    expect(parseLogLine(line, createLogEventCaches())).toEqual({
+      label: 'JOIN',
+      cls: 'join',
+      text: `${hl('LeRaptorSauvage')} joined the server (ID: 76561198295665547)`,
+      ts: '15:36:54'
+    })
+  })
+
+  it('parses an ARK: Survival Evolved join line with no tribe yet (TribeID part absent)', () => {
+    const line = '[2026.09.28-15.36.54:263][595]LeRaptorSauvage joined this ARK! (76561198295665547)'
+    expect(parseLogLine(line, createLogEventCaches())?.label).toBe('JOIN')
+  })
+
+  it('parses an ARK: Survival Evolved leave line the same way', () => {
+    const line = '[2026.09.28-15.41.06:527][ 64]LeRaptorSauvage left this ARK! (76561198295665547) (TribeID: 1832986073)'
+    expect(parseLogLine(line, createLogEventCaches())).toEqual({
+      label: 'LEFT',
+      cls: 'leave',
+      text: `${hl('LeRaptorSauvage')} left the server`,
+      ts: '15:41:06'
+    })
+  })
+
+  it('drops the complementary bare "<Player> joined/left this ARK!" line ARK: Survival Evolved also writes, to avoid a duplicate', () => {
+    // The same real log carries this line (inner-timestamped, no Steam ID) right alongside
+    // the one above for the same event - only the Steam-ID-bearing one should produce an
+    // event, the same "avoid the duplicate" pattern as "Frozen by ID" below.
+    const line = '[2026.09.28-15.36.54:263][595]2026.09.28_15.36.54: LeRaptorSauvage joined this ARK!'
+    expect(parseLogLine(line, createLogEventCaches())).toBeNull()
+  })
+
   it('parses in-game chat', () => {
     const line = '[2026.07.27-21.26.00:000][100]LeRaptorSauvage (Raptor): Hello world'
     expect(parseLogLine(line, createLogEventCaches())).toEqual({
@@ -151,6 +184,19 @@ describe('parseLogLine', () => {
       text: 'LeRaptorSauvage was killed by a Rex!',
       ts: '21:31:00'
     })
+  })
+
+  it('parses a real ARK: Survival Evolved tribe-log kill line (RichColor-wrapped, tribe/day prefix)', () => {
+    const line =
+      '[2026.09.28-15.38.50:567][ 63]2026.09.28_15.38.50: Tribe Wax, ID 1832986073: Day 5854, 03:53:54: ' +
+      '<RichColor Color="1, 0, 0, 1">Your M GA0 - Lvl 269 (Deinonychus) was killed by LeGigaRaptor - Lvl 205 (Wax)!</>)'
+    expect(parseLogLine(line, createLogEventCaches())?.label).toBe('KILL')
+  })
+
+  it('parses the plain global-log echo of the same ARK: Survival Evolved kill, with the killer Steam ID', () => {
+    const line =
+      '[2026.09.28-15.41.06:513][ 63]2026.09.28_15.41.06: M GA0 - Lvl 269 (Deinonychus) () was killed by LeGigaRaptor - Lvl 205 (Wax)! [KillerSID: 335390772]'
+    expect(parseLogLine(line, createLogEventCaches())?.label).toBe('KILL')
   })
 
   it('parses save start/complete lines', () => {

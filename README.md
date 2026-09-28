@@ -1689,3 +1689,21 @@ async function findProfileIdByName(name) {
   of the calendar, so hardcoding one particular event's text would be both fragile and
   unnecessary. Watching whether the log is growing *at all* is the same idea, generalized
   safely to whatever a real server actually logs on its own.)
+
+- **ARK: Survival Evolved: join/leave events now show up in the Console/Cluster Console/Web
+  Dashboard.** With `-log` now filling in `ShooterGame.log` for it, a real excerpt showed its
+  join/leave wording is simply different from ARK: Survival Ascended's, not just delayed -
+  `logEvents.ts`'s `JOIN_LEFT_RE` requires a `[UniqueNetId: ... Platform: ...]` bracket ARK:
+  Survival Evolved never writes at all. It instead logs `<Player> joined/left this ARK!
+  (<SteamID64>)` with an optional trailing `(TribeID: <id>)`, on a plain line with no bracket
+  - now matched by a new `JOIN_LEFT_ALT_RE`, tried whenever the first one doesn't match. The
+  same real excerpt also showed ARK: Survival Evolved writing a second, earlier line for the
+  very same join/leave (inner-timestamped, no Steam ID, no bracket either) - deliberately left
+  unmatched by requiring the Steam ID group, the same "avoid a duplicate" pattern already used
+  for "Frozen by ID" just below it, rather than emitting the same join/leave twice. Kill events
+  needed no change - `rest.includes('was killed by')` already isn't wording-specific enough to
+  care which game wrote it, confirmed against a real (RichColor-wrapped, tribe/day-prefixed)
+  ARK: Survival Evolved kill line and its plainer global-log echo, both already categorized
+  correctly (if the tribe-log-styled one is displayed with a bit of leftover
+  `Tribe X, ID Y: Day N, HH:MM:SS:` prefix and a stray trailing `)` from the engine's own
+  formatting - cosmetic, not a bug, and not new to ARK: Survival Evolved).
