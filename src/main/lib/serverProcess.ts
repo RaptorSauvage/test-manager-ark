@@ -315,10 +315,12 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
       `MaxPlayers=${profile.maxPlayers}`
     ]
     if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
-    // SessionName=/ServerPassword= are mandatory for ARK: Survival Evolved - always emitted,
-    // even blank (a blank ServerPassword= means no join password required, a valid, common
-    // setting).
-    params.push(`SessionName=${profile.sessionName}`, `ServerPassword=${profile.serverPassword}`)
+    // ServerPassword= is mandatory for ARK: Survival Evolved - always emitted, even blank (a
+    // blank value means no join password required, a valid, common setting). SessionName= is
+    // deliberately not passed here - GameUserSettings.ini's SessionSettings.SessionName
+    // already covers it (same as ARK: Survival Ascended), so the launch-arg duplicate was
+    // unnecessary.
+    params.push(`ServerPassword=${profile.serverPassword}`)
 
     args = [`${profile.map}?${params.join('?')}`]
     if (profile.disableBattlEye) args.push('-NoBattlEye')

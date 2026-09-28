@@ -67,7 +67,6 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     forceRespawnDinos: true,
     noSound: false,
     maxDinoLevel: '',
-    sessionName: '[Genesis Part.II] Culte de Bober',
     serverPassword: 'bober',
     extraArgs: '',
     scheduledRestartEnabled: false,
@@ -131,9 +130,10 @@ describe('startServer - ARK: Survival Evolved batch launch (Windows)', () => {
     expect(content).toContain(`cd /d "${expectedDir}"`)
     expect(content).toContain(
       'ShooterGameServer.exe Gen2?Port=8004?QueryPort=8102?RCONPort=8202?RCONEnabled=True?MaxPlayers=10' +
-        '?SessionName=[Genesis Part.II] Culte de Bober?ServerPassword=bober -NoBattlEye -ForceRespawnDinos -servergamelog'
+        '?ServerPassword=bober -NoBattlEye -ForceRespawnDinos -servergamelog'
     )
-    // Never quoted - a quoted SessionName is exactly what didn't work.
+    expect(content).not.toContain('SessionName=')
+    // Never quoted.
     expect(content).not.toContain('"Gen2?')
   })
 

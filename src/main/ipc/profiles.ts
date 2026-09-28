@@ -104,7 +104,6 @@ export function registerProfileHandlers(webContents: WebContents): void {
       forceRespawnDinos: false,
       noSound: false,
       maxDinoLevel: '',
-      sessionName: name,
       serverPassword: '',
       extraArgs: '',
       scheduledRestartEnabled: false,

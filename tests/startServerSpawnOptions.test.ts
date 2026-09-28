@@ -46,7 +46,6 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     forceRespawnDinos: false,
     noSound: false,
     maxDinoLevel: '',
-    sessionName: '',
     serverPassword: '',
     extraArgs: '',
     scheduledRestartEnabled: false,
@@ -82,13 +81,9 @@ describe('startServer spawn options', () => {
     expect(options.cwd).not.toBe(profile.installDir)
   })
 
-  it('spawns with windowsVerbatimArguments so Node never quotes a space-containing argument', () => {
-    // A confirmed-working ARK: Survival Evolved launch passes SessionName=<value with spaces>
-    // completely unquoted - Node's default Windows quoting would instead wrap that whole
-    // ?-string argument in double quotes because it contains spaces, which ARK: Survival
-    // Evolved's own (much older, less rigorous) command-line parsing plausibly can't handle.
+  it('spawns with windowsVerbatimArguments (a harmless no-op for a direct-spawned profile, kept for parity)', () => {
     spawnMock.mockClear()
-    startServer(makeProfile({ id: 'verbatim-test', sessionName: 'My Server With Spaces' }))
+    startServer(makeProfile({ id: 'verbatim-test' }))
 
     const [, , options] = spawnMock.mock.calls[0]
     expect(options.windowsVerbatimArguments).toBe(true)

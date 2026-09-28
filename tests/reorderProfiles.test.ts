@@ -32,7 +32,6 @@ function profile(id: string): ServerProfile {
     noSound: false,
     game: 'ark-ascended',
     maxDinoLevel: '',
-    sessionName: '',
     serverPassword: '',
     extraArgs: '',
     scheduledRestartEnabled: false,

@@ -34,7 +34,6 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     noSound: false,
     game: 'ark-ascended',
     maxDinoLevel: '',
-    sessionName: '',
     serverPassword: '',
     extraArgs: '',
     scheduledRestartEnabled: false,
@@ -158,11 +157,15 @@ describe('migrateProfile', () => {
     expect(migrateProfile(legacy).maxDinoLevel).toBe('')
   })
 
-  it('backfills sessionName to the profile name, and serverPassword to blank, on profiles saved before they existed', () => {
-    const legacy = baseProfile({ name: 'My Genesis Server', sessionName: undefined, serverPassword: undefined })
+  it('backfills serverPassword to blank on profiles saved before it existed', () => {
+    const legacy = baseProfile({ serverPassword: undefined })
+    expect(migrateProfile(legacy).serverPassword).toBe('')
+  })
+
+  it('drops the removed sessionName field from profiles that still have it on disk', () => {
+    const legacy = baseProfile({ sessionName: 'My Genesis Server' })
     const migrated = migrateProfile(legacy)
-    expect(migrated.sessionName).toBe('My Genesis Server')
-    expect(migrated.serverPassword).toBe('')
+    expect('sessionName' in migrated).toBe(false)
   })
 
   it('backfills moddedMapEnabled/moddedMapId on profiles saved before they existed', () => {

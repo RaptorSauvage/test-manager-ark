@@ -34,7 +34,6 @@ export function createDefaultProfile(name: string): ServerProfile {
     forceRespawnDinos: false,
     noSound: false,
     maxDinoLevel: '',
-    sessionName: name,
     serverPassword: '',
     extraArgs: '',
     scheduledRestartEnabled: false,

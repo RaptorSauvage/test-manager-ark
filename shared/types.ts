@@ -80,11 +80,6 @@ export interface ServerProfile {
   noSound: boolean
   /** Passed as -DestroyTamesOverLevel=<value> when non-empty */
   maxDinoLevel: string
-  /** In-game server name shown in the server browser, passed as SessionName=<value> inline
-   *  in the map's ?-string. A mandatory argument for ARK: Survival Evolved (always emitted,
-   *  even blank) - not currently emitted for ARK: Survival Ascended, which instead reads it
-   *  from GameUserSettings.ini's SessionSettings.SessionName (see shared/games.ts). */
-  sessionName: string
   /** Join/connect password (distinct from the RCON/admin one above), passed as
    *  ServerPassword=<value> inline in the map's ?-string. A mandatory argument for ARK:
    *  Survival Evolved (always emitted, even blank meaning no password) - not currently

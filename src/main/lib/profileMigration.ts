@@ -14,6 +14,9 @@ interface LegacyProfileFields {
   savedArksSubPath?: string
   /** Removed - folded into the separate, independent scheduled dino wipe instead */
   scheduledRestartDestroyWildDinosAfter?: boolean
+  /** Removed - GameUserSettings.ini's SessionSettings.SessionName already covers this (same
+   *  as ARK: Survival Ascended), so the launch-arg duplicate was unnecessary. */
+  sessionName?: string
 }
 
 /**
@@ -43,8 +46,9 @@ interface LegacyProfileFields {
  *   so it backfills to 'ark-ascended'
  * - `queryPort` is new and defaults to 27015 (ARK: Survival Evolved's default; unused by
  *   any game whose GameDefinition.usesQueryPort is false)
- * - `sessionName` is new and defaults to the profile's own `name` (a reasonable starting
- *   in-game server name); `serverPassword` is new and defaults to '' (no join password)
+ * - `serverPassword` is new and defaults to '' (no join password)
+ * - `sessionName` was added then removed again before release - dropped from any profile
+ *   that still has it on disk
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -52,6 +56,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     rconPassword: _rconPassword,
     savedArksSubPath: _savedArksSubPath,
     scheduledRestartDestroyWildDinosAfter: _scheduledRestartDestroyWildDinosAfter,
+    sessionName: _sessionName,
     ...rest
   } = raw
   const sourceMods: Array<Partial<ServerMod> & { id: string }> = Array.isArray(rest.mods)
@@ -88,7 +93,6 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     forceRespawnDinos: rest.forceRespawnDinos ?? false,
     noSound: rest.noSound ?? false,
     maxDinoLevel: rest.maxDinoLevel ?? '',
-    sessionName: rest.sessionName ?? rest.name,
     serverPassword: rest.serverPassword ?? '',
     moddedMapEnabled: rest.moddedMapEnabled ?? false,
     moddedMapId: rest.moddedMapId ?? '',

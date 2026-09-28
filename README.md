@@ -1434,17 +1434,17 @@ async function findProfileIdByName(name) {
     startup-complete-marker watch depends on), and passes `MaxPlayers=` inline in the
     `?`-string rather than `-WinLiveMaxPlayers=` (an ARK: Survival Ascended/crossplay-only
     flag). ARK: Survival Ascended's launch line is unchanged.
-  - Two new profile fields, **Session Name** and **Server Password** (the in-game display
-    name and join/connect password, distinct from the RCON admin password), are shown in the
-    Settings tab and always passed as `SessionName=`/`ServerPassword=` inline in the
-    `?`-string for ARK: Survival Evolved - mandatory arguments there per that same real
-    working command line, so they're always emitted (even blank - a blank `ServerPassword=`
-    just means no join password). Not emitted, and the fields stay hidden, for ARK: Survival
-    Ascended, which keeps reading its in-game name from `GameUserSettings.ini` as before -
-    forcing it onto the command line there would silently override whatever a user already
-    has configured in the ini for existing servers. A profile migrated from before this field
-    existed backfills `sessionName` to the profile's own Manager name (a reasonable starting
-    value) and `serverPassword` to blank.
+  - A new **Server Password** profile field (the join/connect password, distinct from the RCON
+    admin password) is shown in the Settings tab and always passed as `ServerPassword=` inline
+    in the `?`-string for ARK: Survival Evolved - a mandatory argument there per a real working
+    command line, so it's always emitted (even blank, which just means no join password). Not
+    emitted, and the field stays hidden, for ARK: Survival Ascended. A profile migrated from
+    before this field existed backfills it to blank.
+    - A **Session Name** field/`SessionName=` argument was added alongside this at first, then
+      removed again: `GameUserSettings.ini`'s `SessionSettings.SessionName` already covers the
+      in-game display name for both games, so the launch-arg duplicate for ARK: Survival
+      Evolved was unnecessary. `migrateProfile` drops a stray `sessionName` from any profile
+      that still has one on disk from that brief window.
   - ARK: Survival Evolved's launch line's exact **argument order** matters, confirmed the hard
     way: an earlier version reused ARK: Survival Ascended's ordering (`RCONEnabled=` right
     after `QueryPort=`, `-servergamelog` right after the map string) and that reproducibly
@@ -1452,7 +1452,8 @@ async function findProfileIdByName(name) {
     the Manager starts the process detached with no visible window, nothing was there to
     dismiss it and the server hung forever. `buildLaunchArgs` now builds ARK: Survival
     Evolved's `?`-string (`Port=`, `QueryPort=`, `RCONPort=`, `RCONEnabled=`, `MaxPlayers=`,
-    `ServerAdminPassword=`, `SessionName=`, `ServerPassword=`) and flag order (`-NoBattlEye`,
+    `ServerAdminPassword=`, `ServerPassword=` - `SessionName=` was here too at first, since
+    removed, see above) and flag order (`-NoBattlEye`,
     `-ForceRespawnDinos`, `-servergamelog`, `-servergamelogincludetribelogs`,
     `-ServerRCONOutputTribeLogs`) to match a real, confirmed-working command line exactly,
     pinned by a dedicated test. Why order affects a native plugin load isn't obvious, but the
@@ -1538,8 +1539,8 @@ async function findProfileIdByName(name) {
       (which looked exactly like it had given up, in a real report where it just needed more
       time) or framing anything as a final failure (it never is one).
   - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
-    browser) doesn't expose the Game/Query port fields, the new Session Name/Server Password
-    fields, or a game-aware map list the way the desktop Settings tab now does - it still
+    browser) doesn't expose the Game/Query port fields, the new Server Password field, or a
+    game-aware map list the way the desktop Settings tab now does - it still
     assumes ARK: Survival Ascended for those. The Mods tab's passive/dev toggles also still
     show for an ARK: Survival Evolved profile even though they're inert for it (see above) -
     not incorrect, just not hidden yet.

@@ -39,7 +39,6 @@ function makeProfile(id: string, overrides: Partial<ServerProfile> = {}): Server
     noSound: false,
     game: 'ark-ascended',
     maxDinoLevel: '',
-    sessionName: '',
     serverPassword: '',
     extraArgs: '',
     scheduledRestartEnabled: false,

@@ -151,14 +151,6 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         {form.game === 'ark-evolved' && (
           <>
             <label>
-              Session Name
-              <input value={form.sessionName} onChange={(e) => update('sessionName', e.target.value)} />
-            </label>
-            <p className="empty-state">
-              In-game server name shown in the server browser - passed as SessionName=, required for ARK: Survival
-              Evolved.
-            </p>
-            <label>
               Server Password
               <input value={form.serverPassword} onChange={(e) => update('serverPassword', e.target.value)} />
             </label>
