@@ -10,18 +10,26 @@ export async function sendRconCommand(profile: ServerProfile, command: string): 
 
   let rcon: Rcon | undefined
   try {
-    rcon = await Rcon.connect({
+    // Constructed directly (rather than the Rcon.connect(config) static helper) so the
+    // no-op 'error' listener below can be attached *before* connect() ever runs. rcon-client
+    // re-emits socket errors (e.g. ECONNRESET) on this instance's own EventEmitter, and with
+    // no listener, Node's default behavior for an unhandled 'error' event is to throw and
+    // crash the whole process. Using the static helper left a real gap: connect() itself
+    // authenticates over the socket, and a reset during that authentication exchange fires
+    // 'error' before Rcon.connect()'s promise (and therefore our own rcon.on('error', ...))
+    // ever resolves - a real report showed exactly this, as a flood of uncaught "read
+    // ECONNRESET" exceptions logged to the console (not crashing the Manager outright, but
+    // still an unhandled exception on every occurrence - RCON is polled every few seconds,
+    // and the server can drop a connection at any time: restart, shutdown, brief hiccup, or
+    // mid-authentication).
+    rcon = new Rcon({
       host: '127.0.0.1',
       port: profile.rconPort,
       password,
       timeout: 5000
     })
-    // rcon-client re-emits socket errors (e.g. ECONNRESET) on this instance's own
-    // EventEmitter. With no listener, Node's default behavior for an unhandled
-    // 'error' event is to throw and crash the whole process - a real risk here
-    // since RCON gets polled every few seconds and the server can drop the
-    // connection at any time (restart, shutdown, brief hiccup).
     rcon.on('error', () => {})
+    await rcon.connect()
     const response = await rcon.send(command)
     return { ok: true, response }
   } catch (err) {

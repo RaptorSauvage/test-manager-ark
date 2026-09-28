@@ -1707,3 +1707,21 @@ async function findProfileIdByName(name) {
   correctly (if the tribe-log-styled one is displayed with a bit of leftover
   `Tribe X, ID Y: Day N, HH:MM:SS:` prefix and a stray trailing `)` from the engine's own
   formatting - cosmetic, not a bug, and not new to ARK: Survival Evolved).
+
+- **Fixed a real bug, unrelated to ARK: Survival Evolved specifically: RCON could flood the
+  console with uncaught "read ECONNRESET" exceptions.** A real report showed dozens of these
+  in the Manager's own terminal/command-prompt window (not crashing it, but clearly a bug) -
+  traced to a genuine gap in the `rcon-client` package. `sendRconCommand` (`rcon.ts`) already
+  attached a no-op `'error'` listener to guard against exactly this, but only *after*
+  `Rcon.connect()` resolved - and `connect()` itself authenticates over the socket as its last
+  step. A connection reset during that authentication exchange fires the socket's `'error'`
+  event - which `rcon-client` re-emits on the `Rcon` instance's own `EventEmitter` - before
+  `connect()`'s promise (and therefore our listener) exists yet. With no listener at that
+  moment, Node's default behavior for an unhandled `'error'` event is to throw, once per RCON
+  call that happens to land in that window - and RCON gets polled every few seconds. Fixed by
+  constructing the `Rcon` instance directly (`new Rcon(config)`) and attaching the listener
+  *before* calling `.connect()`, rather than using the `Rcon.connect(config)` static helper -
+  closes the window entirely rather than narrowing it. Reproduced and locked in with a real
+  test (`tests/rcon.test.ts`): a fake TCP server that accepts the connection and resets it the
+  moment it receives the auth packet, confirmed to genuinely throw an uncaught `ECONNRESET`
+  against the pre-fix code and pass cleanly against the fix.
