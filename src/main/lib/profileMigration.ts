@@ -49,6 +49,7 @@ interface LegacyProfileFields {
  * - `serverPassword` is new and defaults to '' (no join password)
  * - `sessionName` was added then removed again before release - dropped from any profile
  *   that still has it on disk
+ * - `autoManageMods` is new and defaults to false (ARK: Survival Evolved only)
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -94,6 +95,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     noSound: rest.noSound ?? false,
     maxDinoLevel: rest.maxDinoLevel ?? '',
     serverPassword: rest.serverPassword ?? '',
+    autoManageMods: rest.autoManageMods ?? false,
     moddedMapEnabled: rest.moddedMapEnabled ?? false,
     moddedMapId: rest.moddedMapId ?? '',
     playerProfileBackupEnabled: rest.playerProfileBackupEnabled ?? false,

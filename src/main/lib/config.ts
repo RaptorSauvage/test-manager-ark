@@ -7,9 +7,10 @@ import ini from 'ini'
  * on most Linux installs. If a LinuxServer folder exists instead (some
  * community builds), prefer it.
  *
- * The app only reads this file, as a best-effort hint when importing an
- * existing install (session name, RCON password) - it never writes to it.
- * Users manage GameUserSettings.ini/Game.ini themselves.
+ * This module (config.ts) only reads these files, as a best-effort hint when importing an
+ * existing install (session name, RCON password) - it never writes to them. Users manage
+ * GameUserSettings.ini/Game.ini themselves - except for ARK: Survival Evolved's mods, which
+ * have no other mechanism (see gameConfigWrite.ts, called from ipc/mods.ts).
  */
 export function resolveConfigDir(installDir: string): string {
   const winDir = path.join(installDir, 'ShooterGame', 'Saved', 'Config', 'WindowsServer')

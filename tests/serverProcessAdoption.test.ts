@@ -33,6 +33,7 @@ function makeProfile(id: string): ServerProfile {
     game: 'ark-ascended',
     maxDinoLevel: '',
     serverPassword: '',
+    autoManageMods: false,
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',

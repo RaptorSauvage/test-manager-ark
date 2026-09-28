@@ -35,6 +35,7 @@ export function createDefaultProfile(name: string): ServerProfile {
     noSound: false,
     maxDinoLevel: '',
     serverPassword: '',
+    autoManageMods: false,
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',

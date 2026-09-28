@@ -1538,9 +1538,34 @@ async function findProfileIdByName(name) {
       periodic reminder every ~30s that it's still looking, rather than either going silent
       (which looked exactly like it had given up, in a real report where it just needed more
       time) or framing anything as a final failure (it never is one).
+  - The game-version display (Analytics tab, read from `ShooterGame.log`'s `ARK Version:
+    X.Y` line) needed no ARK: Survival Evolved-specific work at all - confirmed against a
+    real ARK: Survival Evolved log line (`[2026.09.28-13.19.58:026][  0]ARK Version:
+    358.24`), the exact same regex already matched it.
+  - A new **Auto Manage Mod** checkbox (Settings tab, Extra Settings, right before Dashboard
+    group - ARK: Survival Evolved only) passes `-automanagedmods`, telling the server to
+    download/update its own workshop mods itself instead of relying on them being
+    pre-installed.
+  - **ARK: Survival Evolved has no command-line mechanism for mods at all - confirmed, not
+    just unconfirmed support as before.** It has neither passive mods nor a `-dev` suffix
+    either, so the desktop Mods tab hides both columns for it. Its mods are instead written,
+    on every profile save (the dedicated Mods tab save, a general Settings-tab save, a
+    profile import, and the Web Dashboard's equivalents - anywhere `saveProfile()` is
+    called), to:
+    - `GameUserSettings.ini`'s `[ServerSettings]` → `ActiveMods=<id>,<id>,...` (comma-separated,
+      enabled mods only, in order)
+    - `Game.ini`'s `[ModInstaller]` → one `ModIDS=<id>` line per enabled mod
+    - `gameConfigWrite.ts`'s `syncAseModsToIni` does this surgically - editing only the lines
+      that belong to those exact keys, not parsing+re-stringifying the whole file with the
+      `ini` package (which would reorder/reformat every other section, comment and key the
+      user has in a file they hand-edit themselves) - and creates the
+      `Config/WindowsServer` folder tree if it doesn't exist yet (a profile whose install has
+      never been started once). This is the first thing in the app that writes to either
+      file - previously strictly read-only, since ARK: Survival Ascended's mods are
+      launch-flag only and never needed it.
   - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
-    browser) doesn't expose the Game/Query port fields, the new Server Password field, or a
-    game-aware map list the way the desktop Settings tab now does - it still
-    assumes ARK: Survival Ascended for those. The Mods tab's passive/dev toggles also still
-    show for an ARK: Survival Evolved profile even though they're inert for it (see above) -
-    not incorrect, just not hidden yet.
+    browser) doesn't expose the Game/Query port fields, the new Server Password/Auto Manage
+    Mod fields, or a game-aware map list the way the desktop Settings tab now does - it still
+    assumes ARK: Survival Ascended for those. Its own Mods tab also still shows the
+    passive/dev toggles for an ARK: Survival Evolved profile (the desktop one now hides
+    them) - inert rather than incorrect, since nothing reads them for it, but not hidden yet.

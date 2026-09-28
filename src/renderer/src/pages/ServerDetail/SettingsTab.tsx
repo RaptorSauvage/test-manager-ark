@@ -357,6 +357,16 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
             <input value={form.maxDinoLevel} onChange={(e) => update('maxDinoLevel', e.target.value)} />
           </label>
         )}
+        {form.game === 'ark-evolved' && (
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={form.autoManageMods}
+              onChange={(e) => update('autoManageMods', e.target.checked)}
+            />
+            Auto Manage Mod
+          </label>
+        )}
         <label>
           Dashboard group
           <input

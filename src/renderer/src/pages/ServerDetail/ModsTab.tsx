@@ -12,6 +12,10 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   const [newModId, setNewModId] = useState('')
   const [error, setError] = useState('')
   const [pasteText, setPasteText] = useState('')
+  // ARK: Survival Evolved has neither passive mods nor a -dev suffix - its mods are instead
+  // written straight to GameUserSettings.ini/Game.ini (see gameConfigWrite.ts), where every
+  // enabled mod counts the same way, full stop.
+  const isEvolved = profile.game === 'ark-evolved'
 
   async function persist(next: ServerMod[]): Promise<void> {
     setError('')
@@ -95,12 +99,24 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   return (
     <div className="mods-tab">
       <p>
-        Mod IDs, applied in this order. <strong>Enabled</strong> mods are passed via the server&apos;s{' '}
-        <code>-mods=</code> launch flag at the next start, unless <strong>Passive</strong> is checked, in
-        which case they go via <code>-passivemods=</code> instead. Check <strong>Dev</strong> to load a
-        mod&apos;s in-development build (appends <code>-dev</code> to its ID). Mod Name is just your own
-        label, typed in by hand - not looked up automatically. Changes save immediately - restart the server
-        to actually apply them.
+        {isEvolved ? (
+          <>
+            Mod IDs, applied in this order. <strong>Enabled</strong> mods are written to
+            GameUserSettings.ini&apos;s <code>ActiveMods=</code> and Game.ini&apos;s{' '}
+            <code>[ModInstaller]</code> block at the next save - ARK: Survival Evolved has no
+            passive/dev mod concept. Mod Name is just your own label, typed in by hand - not looked up
+            automatically. Changes save immediately - restart the server to actually apply them.
+          </>
+        ) : (
+          <>
+            Mod IDs, applied in this order. <strong>Enabled</strong> mods are passed via the server&apos;s{' '}
+            <code>-mods=</code> launch flag at the next start, unless <strong>Passive</strong> is checked, in
+            which case they go via <code>-passivemods=</code> instead. Check <strong>Dev</strong> to load a
+            mod&apos;s in-development build (appends <code>-dev</code> to its ID). Mod Name is just your own
+            label, typed in by hand - not looked up automatically. Changes save immediately - restart the server
+            to actually apply them.
+          </>
+        )}
       </p>
       <div className="mods-add">
         <input
@@ -131,30 +147,34 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
                 <span>Enable</span>
               </div>
             </th>
-            <th className="mods-select-col">
-              <div className="mods-select-col-header">
-                <input
-                  type="checkbox"
-                  checked={mods.length > 0 && mods.every((m) => m.passive)}
-                  onChange={() => toggleAll('passive')}
-                  disabled={mods.length === 0}
-                  title="Mark all as passive"
-                />
-                <span>Passive</span>
-              </div>
-            </th>
-            <th className="mods-select-col">
-              <div className="mods-select-col-header">
-                <input
-                  type="checkbox"
-                  checked={mods.length > 0 && mods.every((m) => m.dev)}
-                  onChange={() => toggleAll('dev')}
-                  disabled={mods.length === 0}
-                  title="Mark all as dev"
-                />
-                <span>Dev</span>
-              </div>
-            </th>
+            {!isEvolved && (
+              <th className="mods-select-col">
+                <div className="mods-select-col-header">
+                  <input
+                    type="checkbox"
+                    checked={mods.length > 0 && mods.every((m) => m.passive)}
+                    onChange={() => toggleAll('passive')}
+                    disabled={mods.length === 0}
+                    title="Mark all as passive"
+                  />
+                  <span>Passive</span>
+                </div>
+              </th>
+            )}
+            {!isEvolved && (
+              <th className="mods-select-col">
+                <div className="mods-select-col-header">
+                  <input
+                    type="checkbox"
+                    checked={mods.length > 0 && mods.every((m) => m.dev)}
+                    onChange={() => toggleAll('dev')}
+                    disabled={mods.length === 0}
+                    title="Mark all as dev"
+                  />
+                  <span>Dev</span>
+                </div>
+              </th>
+            )}
             <th>Mod Name</th>
             <th>Mod ID</th>
             <th></th>
@@ -166,12 +186,16 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
               <td className="mods-select-col">
                 <input type="checkbox" checked={mod.enabled} onChange={() => toggleField(mod.id, 'enabled')} />
               </td>
-              <td className="mods-select-col">
-                <input type="checkbox" checked={mod.passive} onChange={() => toggleField(mod.id, 'passive')} />
-              </td>
-              <td className="mods-select-col">
-                <input type="checkbox" checked={mod.dev} onChange={() => toggleField(mod.id, 'dev')} />
-              </td>
+              {!isEvolved && (
+                <td className="mods-select-col">
+                  <input type="checkbox" checked={mod.passive} onChange={() => toggleField(mod.id, 'passive')} />
+                </td>
+              )}
+              {!isEvolved && (
+                <td className="mods-select-col">
+                  <input type="checkbox" checked={mod.dev} onChange={() => toggleField(mod.id, 'dev')} />
+                </td>
+              )}
               <td>
                 <input
                   className="mod-name-input"
@@ -202,7 +226,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
           ))}
           {mods.length === 0 && (
             <tr>
-              <td colSpan={6} className="empty-state">
+              <td colSpan={isEvolved ? 4 : 6} className="empty-state">
                 No mods configured.
               </td>
             </tr>

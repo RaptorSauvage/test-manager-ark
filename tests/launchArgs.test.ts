@@ -36,6 +36,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     game: 'ark-ascended',
     maxDinoLevel: '',
     serverPassword: '',
+    autoManageMods: false,
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',
@@ -381,15 +382,30 @@ describe('buildLaunchArgs', () => {
       expect(args.some((a) => a.startsWith('-DestroyTamesOverLevel='))).toBe(false)
     })
 
-    it('loads a passive mod as a normal active mod instead of via -passivemods=, unconfirmed for ark-evolved', () => {
+    it('never emits -mods=/-passivemods= for ark-evolved, confirmed to have no such mechanism at all', () => {
       const args = buildLaunchArgs(
         makeProfile({
           game: 'ark-evolved',
-          mods: [{ id: '111', enabled: true, passive: true, dev: false }]
+          mods: [
+            { id: '111', enabled: true, passive: false, dev: false },
+            { id: '222', enabled: true, passive: true, dev: true }
+          ]
         })
       )
-      expect(args).toContain('-mods=111')
+      expect(args.some((a) => a.startsWith('-mods='))).toBe(false)
       expect(args.some((a) => a.startsWith('-passivemods='))).toBe(false)
+    })
+
+    it('passes -automanagedmods only when autoManageMods is true, ark-evolved only', () => {
+      expect(buildLaunchArgs(makeProfile({ game: 'ark-evolved', autoManageMods: false }))).not.toContain(
+        '-automanagedmods'
+      )
+      expect(buildLaunchArgs(makeProfile({ game: 'ark-evolved', autoManageMods: true }))).toContain(
+        '-automanagedmods'
+      )
+      expect(buildLaunchArgs(makeProfile({ game: 'ark-ascended', autoManageMods: true }))).not.toContain(
+        '-automanagedmods'
+      )
     })
   })
 })

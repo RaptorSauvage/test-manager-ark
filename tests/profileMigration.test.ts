@@ -35,6 +35,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     game: 'ark-ascended',
     maxDinoLevel: '',
     serverPassword: '',
+    autoManageMods: false,
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',
@@ -160,6 +161,11 @@ describe('migrateProfile', () => {
   it('backfills serverPassword to blank on profiles saved before it existed', () => {
     const legacy = baseProfile({ serverPassword: undefined })
     expect(migrateProfile(legacy).serverPassword).toBe('')
+  })
+
+  it('backfills autoManageMods to false on profiles saved before it existed', () => {
+    const legacy = baseProfile({ autoManageMods: undefined })
+    expect(migrateProfile(legacy).autoManageMods).toBe(false)
   })
 
   it('drops the removed sessionName field from profiles that still have it on disk', () => {

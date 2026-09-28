@@ -32,6 +32,7 @@ import { listPlayerBackupFolders, listPlayerBackups } from './playerBackup'
 import { getBackupScheduleStatus, applyBackupSchedule } from './schedule'
 import { applyScheduledRestart, applyScheduledDinoWipe } from './scheduledActions'
 import { syncPlayerBackupWatch } from './playerBackupWatch'
+import { syncAseModsToIni } from './gameConfigWrite'
 import { getCachedGameVersion } from './serverVersion'
 import { getOrCreateCert } from './tlsCert'
 import { verifyPassword, roleAtLeast, getBearerTokenFromRequest, parseApiKey } from './auth'
@@ -54,6 +55,7 @@ function applyProfileSideEffects(profile: ServerProfile): void {
   syncPlayerBackupWatch(profile)
   applyScheduledRestart(profile)
   applyScheduledDinoWipe(profile)
+  syncAseModsToIni(profile)
 }
 
 let server: http.Server | https.Server | null = null

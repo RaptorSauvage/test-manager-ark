@@ -14,6 +14,7 @@ import { detectGameFromInstall, detectProfileFields, uniqueProfileName } from '.
 import { serializeProfile, parseImportedProfile } from '../lib/profileExport'
 import { syncPlayerBackupWatch } from '../lib/playerBackupWatch'
 import { copyProfile, moveProfile } from '../lib/profileCopyMove'
+import { syncAseModsToIni } from '../lib/gameConfigWrite'
 
 function requireProfile(profileId: string): ServerProfile {
   const profile = listProfiles().find((p) => p.id === profileId)
@@ -34,6 +35,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     syncPlayerBackupWatch(profile)
     applyScheduledRestart(profile)
     applyScheduledDinoWipe(profile)
+    syncAseModsToIni(profile)
     return profiles
   })
 
@@ -57,6 +59,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     applyBackupSchedule(profile)
     applyScheduledRestart(profile)
     applyScheduledDinoWipe(profile)
+    syncAseModsToIni(profile)
     return { profile, profiles }
   })
 
@@ -105,6 +108,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
       noSound: false,
       maxDinoLevel: '',
       serverPassword: '',
+      autoManageMods: false,
       extraArgs: '',
       scheduledRestartEnabled: false,
       scheduledRestartTime: '00:00',

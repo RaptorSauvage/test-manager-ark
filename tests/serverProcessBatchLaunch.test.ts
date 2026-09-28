@@ -68,6 +68,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     noSound: false,
     maxDinoLevel: '',
     serverPassword: 'bober',
+    autoManageMods: false,
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',

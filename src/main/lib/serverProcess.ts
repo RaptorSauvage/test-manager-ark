@@ -327,6 +327,10 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
     if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
     args.push('-servergamelog')
     if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
+    // Tells the server to download/update its own workshop mods (from ActiveMods=, written
+    // to GameUserSettings.ini by gameConfigWrite.ts) instead of relying on them being
+    // pre-installed. ARK: Survival Evolved only - has no equivalent on ARK: Survival Ascended.
+    if (profile.autoManageMods) args.push('-automanagedmods')
   } else {
     const params = ['listen', `Port=${profile.gamePort}`, 'RCONEnabled=True', `RCONPort=${profile.rconPort}`]
     if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
@@ -340,17 +344,17 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
     ]
   }
 
-  const enabledMods = profile.mods.filter((mod) => mod.enabled)
-  const formatModId = (mod: ServerMod): string => (mod.dev ? `${mod.id}-dev` : mod.id)
-  // Passive mods (-passivemods=, and the -dev suffix) are an ARK: Survival Ascended addition
-  // with unconfirmed ARK: Survival Evolved support - on an ASE profile a passive-flagged mod
-  // is simply loaded as a normal active mod instead of being dropped entirely, since that's
-  // closer to what enabling it was actually meant to do.
-  const activeModIds = enabledMods.filter((mod) => profile.game !== 'ark-ascended' || !mod.passive).map(formatModId)
-  if (activeModIds.length > 0) {
-    args.push(`-mods=${activeModIds.join(',')}`)
-  }
-  if (profile.game === 'ark-ascended') {
+  // ARK: Survival Evolved has no command-line mechanism for mods at all (confirmed - not
+  // just unconfirmed support) - its mods are instead written to GameUserSettings.ini/Game.ini
+  // by gameConfigWrite.ts whenever the Mods tab saves (see ipc/mods.ts), so nothing belongs
+  // on its command line here.
+  if (!isEvolved) {
+    const enabledMods = profile.mods.filter((mod) => mod.enabled)
+    const formatModId = (mod: ServerMod): string => (mod.dev ? `${mod.id}-dev` : mod.id)
+    const activeModIds = enabledMods.filter((mod) => !mod.passive).map(formatModId)
+    if (activeModIds.length > 0) {
+      args.push(`-mods=${activeModIds.join(',')}`)
+    }
     const passiveModIds = enabledMods.filter((mod) => mod.passive).map(formatModId)
     if (passiveModIds.length > 0) args.push(`-passivemods=${passiveModIds.join(',')}`)
   }

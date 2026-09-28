@@ -40,6 +40,7 @@ function makeProfile(id: string, overrides: Partial<ServerProfile> = {}): Server
     game: 'ark-ascended',
     maxDinoLevel: '',
     serverPassword: '',
+    autoManageMods: false,
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',

@@ -87,6 +87,7 @@ function makeProfile(id: string, rconPort: number): ServerProfile {
     game: 'ark-ascended',
     maxDinoLevel: '',
     serverPassword: '',
+    autoManageMods: false,
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',

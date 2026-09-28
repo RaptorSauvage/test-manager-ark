@@ -53,9 +53,13 @@ export interface ServerProfile {
   /** How many of the snapshots above to keep per player before pruning the oldest */
   playerProfileBackupMaxPerPlayer: number
   /**
-   * Mods, in load order. Only enabled mods are passed via the server's
-   * `-mods=` launch flag (ARK:SA does not use Steam Workshop or
-   * GameUserSettings.ini for mods - the launch flag is the only mechanism).
+   * Mods, in load order. For ARK: Survival Ascended, only enabled mods are passed via the
+   * server's `-mods=`/`-passivemods=` launch flags (it does not use GameUserSettings.ini for
+   * mods at all - the launch flags are the only mechanism). ARK: Survival Evolved has no
+   * command-line mechanism for mods and doesn't support passive/dev mods either - only
+   * enabled mods are instead written to GameUserSettings.ini's `ActiveMods=` and Game.ini's
+   * `[ModInstaller]` block (see gameConfigWrite.ts), which is the only thing that actually
+   * makes a Mods tab change apply the next time it starts.
    */
   mods: ServerMod[]
   /** Whether the cluster options below are actually applied at launch */
@@ -85,6 +89,10 @@ export interface ServerProfile {
    *  Survival Evolved (always emitted, even blank meaning no password) - not currently
    *  emitted for ARK: Survival Ascended. */
   serverPassword: string
+  /** ARK: Survival Evolved only - passed as -automanagedmods when true, telling the server to
+   *  download/update its own workshop mods (from ActiveMods=, see ServerMod below) instead of
+   *  relying on them being pre-installed. Unused by ARK: Survival Ascended. */
+  autoManageMods: boolean
   /** Free-form extra launch arguments appended to the command line */
   extraArgs: string
   /**
@@ -167,9 +175,11 @@ export interface ServerMod {
   /** User-supplied label, purely cosmetic - not looked up automatically. */
   name?: string
   enabled: boolean
-  /** When true, the id is passed via -passivemods= instead of -mods=. */
+  /** ARK: Survival Ascended only - when true, the id is passed via -passivemods= instead of
+   *  -mods=. ARK: Survival Evolved has no such concept; ignored for it. */
   passive: boolean
-  /** When true, the id is passed as "<id>-dev" so ARK loads the mod's in-development build. */
+  /** ARK: Survival Ascended only - when true, the id is passed as "<id>-dev" so ARK loads the
+   *  mod's in-development build. ARK: Survival Evolved has no such concept; ignored for it. */
   dev: boolean
 }
 
