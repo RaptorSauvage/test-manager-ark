@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { MinecraftProfile, MinecraftRunState, MinecraftServerType } from '@shared/minecraft'
 import { useMinecraftServerStatuses } from '../lib/useMinecraftServerStatuses'
 import { createDefaultMinecraftProfile } from '../lib/minecraftProfile'
@@ -31,6 +31,42 @@ export default function MinecraftDashboard({
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
+  const [portById, setPortById] = useState<Record<string, string>>({})
+  const [localIp, setLocalIp] = useState('localhost')
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    void window.api.webDashboard.getLocalIps().then((ips) => {
+      if (ips[0]) setLocalIp(ips[0])
+    })
+  }, [])
+
+  // One read of server.properties per profile, for the server-port shown on its card - not
+  // wired up to live-refresh on every change, since the port practically never changes while
+  // the Manager is open; re-fetched whenever the profile list itself changes (import/create/
+  // delete), same "cheap, not polled" pattern as Dashboard.tsx's own installedById/
+  // gameVersionById effects.
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all(
+      profiles.map(async (p) => {
+        const props = await window.api.minecraft.properties.get(p.id)
+        return [p.id, props['server-port'] ?? '25565'] as const
+      })
+    ).then((entries) => {
+      if (!cancelled) setPortById(Object.fromEntries(entries))
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles.map((p) => p.id).join(',')])
+
+  async function copyAddress(profileId: string, address: string): Promise<void> {
+    await navigator.clipboard.writeText(address)
+    setCopiedId(profileId)
+    setTimeout(() => setCopiedId((prev) => (prev === profileId ? null : prev)), 1500)
+  }
 
   async function handleImport(): Promise<void> {
     setImportError('')
@@ -108,6 +144,19 @@ export default function MinecraftDashboard({
           <div>
             <dt>Type</dt>
             <dd>{SERVER_TYPE_LABELS[profile.serverType]}</dd>
+          </div>
+          <div>
+            <dt>Address</dt>
+            <dd>
+              <button
+                type="button"
+                className="copyable-address"
+                onClick={() => void copyAddress(profile.id, `${localIp}:${portById[profile.id] ?? '25565'}`)}
+                title="Click to copy"
+              >
+                {copiedId === profile.id ? 'Copied!' : `${localIp}:${portById[profile.id] ?? '25565'}`}
+              </button>
+            </dd>
           </div>
           {status?.players && (
             <div>

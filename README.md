@@ -1756,6 +1756,37 @@ async function findProfileIdByName(name) {
     file at its own startup, so an edit here takes effect on the server's next start, not
     live, same as editing it by hand always did.
 
+- **Minecraft follow-up 2: layout fix, address on the card, fuller console, chat mode, icon switch.**
+  - **Fixed the Server Settings tab's broken layout** (a real report, with a screenshot
+    showing a large blank area and the sections not lining up). Root cause: the intro
+    paragraph ("You are editing server.properties...") was a direct child of the flex-wrap
+    row (`.server-settings-tab`) with no width rule of its own, so the browser sized it by
+    its *unwrapped, single-line* intrinsic width - a very wide phantom flex item that pushed
+    every section after it onto its own row with a large gap. The same row-wrap layout is
+    shared with Server Management's `.schedule-section` row, so the CSS fix (an explicit
+    `flex: 1 1 100%` for any stray `.empty-state`/`.error-message` text directly in either
+    row, matching the rule that already existed just for `.error-message`) was applied to
+    both, defensively.
+  - **Dashboard card shows player count and a clickable IP:Port**, next to the existing
+    server type - the port is read once per profile via the new `minecraft.properties.get`
+    call (server-port from server.properties), the host is the machine's own first
+    non-internal local network IP (`webDashboard.getLocalIps()`, already used elsewhere -
+    reused rather than duplicated). Click copies `<ip>:<port>` to the clipboard (a brief
+    "Copied!" replaces the text), meant for handing straight to a friend to connect with -
+    `localhost` wouldn't work for anyone but the host machine, which is why this doesn't
+    just show that instead.
+  - **Console tab now fills the available window height** instead of leaving a large empty
+    area below a fixed `60vh` box, regardless of window size.
+  - **Chat mode** - a new checkbox next to Auto-scroll; while checked, whatever's typed into
+    the command box is sent as `say <text>` (a broadcast chat message) instead of being sent
+    as a raw server command, so the same box doubles as a way to talk to players without
+    typing `say ` by hand every time.
+  - **ARK/MC sidebar switch now uses icons instead of text** - the existing ARK: Survival
+    Evolved game icon (already bundled for the Dashboard's own per-card game icon) for ARK,
+    and a new bundled Minecraft icon (`assets/games/minecraft.png`) for MC - dimmed when not
+    the active mode, full opacity when active, same "muted until active" language as the
+    rest of the sidebar.
+
 - **Dashboard groups: reorderable, collapse persists, minimized groups skip the aggregate views.**
   - Groups on the Dashboard can now be dragged to reorder (same `⠿` drag-handle pattern as
     server cards), persisted manager-wide as `AppSettings.groupOrder`. A group not yet in that

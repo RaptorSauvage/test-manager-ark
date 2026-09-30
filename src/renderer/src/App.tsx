@@ -11,6 +11,8 @@ import DataSettingsView from './pages/DataSettingsView'
 import ProfileManagementView from './pages/ProfileManagementView'
 import MinecraftDashboard from './pages/MinecraftDashboard'
 import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftServerDetail'
+import { GAME_ICONS } from './lib/gameIcons'
+import minecraftIcon from './assets/games/minecraft.png'
 
 type MainPage = 'dashboard' | 'clusterData' | 'managerLog'
 type GameMode = 'ark' | 'minecraft'
@@ -21,11 +23,21 @@ type GameMode = 'ark' | 'minecraft'
 function GameSwitch({ mode, onChange }: { mode: GameMode; onChange: (mode: GameMode) => void }): JSX.Element {
   return (
     <div className="app-sidebar-game-switch">
-      <button type="button" className={mode === 'ark' ? 'active' : ''} onClick={() => onChange('ark')}>
-        ARK
+      <button
+        type="button"
+        className={mode === 'ark' ? 'active' : ''}
+        onClick={() => onChange('ark')}
+        title="ARK: Survival Evolved / Ascended"
+      >
+        <img src={GAME_ICONS['ark-evolved.png']} alt="ARK" />
       </button>
-      <button type="button" className={mode === 'minecraft' ? 'active' : ''} onClick={() => onChange('minecraft')}>
-        MC
+      <button
+        type="button"
+        className={mode === 'minecraft' ? 'active' : ''}
+        onClick={() => onChange('minecraft')}
+        title="Minecraft"
+      >
+        <img src={minecraftIcon} alt="Minecraft" />
       </button>
     </div>
   )

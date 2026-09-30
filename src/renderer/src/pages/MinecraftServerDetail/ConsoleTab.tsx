@@ -14,6 +14,7 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
   const [command, setCommand] = useState('')
   const [sendError, setSendError] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
+  const [chatMode, setChatMode] = useState(false)
   const feedRef = useRef<HTMLDivElement>(null)
   const didInitialScroll = useRef(false)
   const statuses = useMinecraftServerStatuses([profile.id])
@@ -59,7 +60,12 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
     if (!trimmed) return
     setSendError('')
     setCommand('')
-    const result = await window.api.minecraft.server.sendCommand(profile.id, trimmed)
+    // Chat mode sends whatever was typed as a broadcast chat message (Minecraft's own /say
+    // command, same whether it reaches the server via stdin or RCON) instead of treating it
+    // as a full server command - lets this box double as a way to talk to players without
+    // typing "say " by hand every time.
+    const toSend = chatMode ? `say ${trimmed}` : trimmed
+    const result = await window.api.minecraft.server.sendCommand(profile.id, toSend)
     if (!result.ok) setSendError(result.error ?? 'Failed to send command.')
   }
 
@@ -69,6 +75,10 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
         <label className="checkbox">
           <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
           Auto-scroll
+        </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={chatMode} onChange={(e) => setChatMode(e.target.checked)} />
+          Chat mode (sends as /say)
         </label>
       </div>
       {state === 'running' && !consoleAvailable && (
@@ -93,7 +103,9 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
       <form className="group-console-rcon" onSubmit={(e) => void handleSend(e)}>
         <input
           type="text"
-          placeholder={state === 'running' ? 'Type a server command...' : 'Server is not running'}
+          placeholder={
+            state !== 'running' ? 'Server is not running' : chatMode ? 'Type a chat message...' : 'Type a server command...'
+          }
           value={command}
           onChange={(e) => setCommand(e.target.value)}
           disabled={state !== 'running'}

@@ -216,19 +216,33 @@ label.checkbox {
 
 .app-sidebar-game-switch button {
   flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   border-left: none;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 6px 4px;
-  font-size: 0.85rem;
-  font-weight: 600;
+  padding: 6px;
+}
+
+.app-sidebar-game-switch button img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  /* Dims the icon when its mode isn't the active one - same "muted until active" language
+     the rest of the sidebar's text buttons already use. */
+  opacity: 0.55;
 }
 
 .app-sidebar-game-switch button.active {
   border-color: var(--accent);
   background: rgba(79, 140, 255, 0.15);
   color: var(--text);
+}
+
+.app-sidebar-game-switch button.active img {
+  opacity: 1;
 }
 
 .app-content {
@@ -634,7 +648,10 @@ label.checkbox {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  height: 60vh;
+  /* Fills essentially the full window height minus the page's own fixed-height chrome
+     (header, tab nav, padding) - a plain 60vh (the previous value) left a large empty gap
+     below the feed on anything but a short window. */
+  height: calc(100vh - 200px);
 }
 
 .mc-console-line {
@@ -995,6 +1012,22 @@ label.checkbox {
   color: var(--muted);
 }
 
+.copyable-address {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.copyable-address:hover {
+  color: var(--accent);
+}
+
 .analytics-tab {
   display: flex;
   flex-direction: column;
@@ -1180,7 +1213,8 @@ label.checkbox {
 }
 
 .server-settings-tab > .form-actions,
-.server-settings-tab > .error-message {
+.server-settings-tab > .error-message,
+.server-settings-tab > .empty-state {
   flex: 1 1 100%;
   max-width: none;
 }
@@ -1586,6 +1620,16 @@ label.checkbox {
 .server-management-tab > .schedule-section {
   flex: 1 1 380px;
   max-width: 480px;
+}
+
+/* Any stray text directly in this flex-wrap row (not inside a .schedule-section) needs an
+   explicit full-width flex-basis, or its intrinsic (unwrapped, single-line) width is used
+   for flex sizing instead - the same bug fixed for .server-settings-tab above, guarded
+   here too since both tabs share this row-wrap layout. */
+.server-management-tab > .error-message,
+.server-management-tab > .empty-state {
+  flex: 1 1 100%;
+  max-width: none;
 }
 
 .schedule-section {
