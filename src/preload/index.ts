@@ -13,6 +13,7 @@ import {
   type RconResult,
   type ManagerLogEntry
 } from '@shared/types'
+import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine } from '@shared/minecraft'
 
 const api: Api = {
   profiles: {
@@ -186,6 +187,42 @@ const api: Api = {
       ipcRenderer.invoke(IPC.statsHistoryGetForGroup, profileIds, sinceMs, maxPoints),
     getForGroups: (groupProfileIds: Record<string, string[]>, sinceMs: number | null, maxPoints?: number) =>
       ipcRenderer.invoke(IPC.statsHistoryGetForGroups, groupProfileIds, sinceMs, maxPoints)
+  },
+  minecraft: {
+    profiles: {
+      list: () => ipcRenderer.invoke(IPC.minecraftProfilesList),
+      save: (profile: MinecraftProfile) => ipcRenderer.invoke(IPC.minecraftProfilesSave, profile),
+      delete: (id: string) => ipcRenderer.invoke(IPC.minecraftProfilesDelete, id),
+      importFromInstall: (installDir: string) => ipcRenderer.invoke(IPC.minecraftProfilesImport, installDir),
+      onChanged: (callback: (profiles: MinecraftProfile[]) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, profiles: MinecraftProfile[]): void => callback(profiles)
+        ipcRenderer.on(IPC.minecraftProfilesChanged, listener)
+        return () => ipcRenderer.removeListener(IPC.minecraftProfilesChanged, listener)
+      }
+    },
+    detectLaunchable: (installDir: string) => ipcRenderer.invoke(IPC.minecraftDetectLaunchable, installDir),
+    server: {
+      start: (profileId: string) => ipcRenderer.invoke(IPC.minecraftServerStart, profileId),
+      stop: (profileId: string) => ipcRenderer.invoke(IPC.minecraftServerStop, profileId),
+      kill: (profileId: string) => ipcRenderer.invoke(IPC.minecraftServerKill, profileId),
+      getStatus: (profileId: string) => ipcRenderer.invoke(IPC.minecraftServerStatus, profileId),
+      onStatusChanged: (callback: (status: MinecraftServerStatus) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, status: MinecraftServerStatus): void => callback(status)
+        ipcRenderer.on(IPC.minecraftServerStatusChanged, listener)
+        return () => ipcRenderer.removeListener(IPC.minecraftServerStatusChanged, listener)
+      },
+      sendCommand: (profileId: string, command: string): Promise<RconResult> =>
+        ipcRenderer.invoke(IPC.minecraftServerSendCommand, profileId, command)
+    },
+    console: {
+      getBacklog: (profileId: string) => ipcRenderer.invoke(IPC.minecraftConsoleBacklog, profileId),
+      onLine: (callback: (profileId: string, line: MinecraftConsoleLine) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, profileId: string, line: MinecraftConsoleLine): void =>
+          callback(profileId, line)
+        ipcRenderer.on(IPC.minecraftConsoleLine, listener)
+        return () => ipcRenderer.removeListener(IPC.minecraftConsoleLine, listener)
+      }
+    }
   }
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ServerProfile } from '@shared/types'
+import type { MinecraftProfile } from '@shared/minecraft'
 import Dashboard from './pages/Dashboard'
 import ClusterDataView from './pages/ClusterDataView'
 import GroupConsoleView from './pages/GroupConsoleView'
@@ -8,10 +9,15 @@ import ServerDetail, { type TabKey } from './pages/ServerDetail'
 import SteamCmdView from './pages/SteamCmdView'
 import DataSettingsView from './pages/DataSettingsView'
 import ProfileManagementView from './pages/ProfileManagementView'
+import MinecraftDashboard from './pages/MinecraftDashboard'
+import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftServerDetail'
 
 type MainPage = 'dashboard' | 'clusterData' | 'managerLog'
+type GameMode = 'ark' | 'minecraft'
 
 export default function App(): JSX.Element {
+  const [gameMode, setGameMode] = useState<GameMode>('ark')
+
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [initialTab, setInitialTab] = useState<TabKey | undefined>(undefined)
@@ -24,10 +30,31 @@ export default function App(): JSX.Element {
   )
   const [loaded, setLoaded] = useState(false)
 
+  const [minecraftProfiles, setMinecraftProfiles] = useState<MinecraftProfile[]>([])
+  const [minecraftSelectedId, setMinecraftSelectedId] = useState<string | null>(null)
+  const [minecraftInitialTab, setMinecraftInitialTab] = useState<MinecraftTabKey | undefined>(undefined)
+  const [minecraftLoaded, setMinecraftLoaded] = useState(false)
+
   useEffect(() => {
     window.api.profiles.list().then((list) => {
       setProfiles(list)
       setLoaded(true)
+    })
+  }, [])
+
+  useEffect(() => {
+    window.api.minecraft.profiles.list().then((list) => {
+      setMinecraftProfiles(list)
+      setMinecraftLoaded(true)
+    })
+  }, [])
+
+  // Same reasoning as the ARK profiles.onChanged effect below - keeps this window's
+  // Minecraft profile list live if it's ever changed from outside it.
+  useEffect(() => {
+    return window.api.minecraft.profiles.onChanged((updated) => {
+      setMinecraftProfiles(updated)
+      setMinecraftSelectedId((prev) => (prev && !updated.some((p) => p.id === prev) ? null : prev))
     })
   }, [])
 
@@ -44,11 +71,12 @@ export default function App(): JSX.Element {
     })
   }, [])
 
-  if (!loaded) {
+  if (!loaded || !minecraftLoaded) {
     return <div className="loading">Loading...</div>
   }
 
   const selected = profiles.find((p) => p.id === selectedId) ?? null
+  const minecraftSelected = minecraftProfiles.find((p) => p.id === minecraftSelectedId) ?? null
 
   function handleProfilesChange(updated: ServerProfile[]): void {
     setProfiles(updated)
@@ -68,6 +96,52 @@ export default function App(): JSX.Element {
 
   function handleOpenGroup(groupName: string, groupProfiles: ServerProfile[]): void {
     setGroupConsoleTarget({ groupName, profileIds: groupProfiles.map((p) => p.id) })
+  }
+
+  function handleMinecraftProfilesChange(updated: MinecraftProfile[]): void {
+    setMinecraftProfiles(updated)
+    if (minecraftSelectedId && !updated.find((p) => p.id === minecraftSelectedId)) {
+      setMinecraftSelectedId(null)
+    }
+  }
+
+  function handleMinecraftProfileChange(updated: MinecraftProfile): void {
+    setMinecraftProfiles((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+  }
+
+  function handleOpenMinecraftProfile(id: string, tab?: MinecraftTabKey): void {
+    setMinecraftSelectedId(id)
+    setMinecraftInitialTab(tab)
+  }
+
+  if (gameMode === 'minecraft') {
+    if (minecraftSelected) {
+      return (
+        <MinecraftServerDetail
+          profile={minecraftSelected}
+          initialTab={minecraftInitialTab}
+          onBack={() => setMinecraftSelectedId(null)}
+          onProfileChange={handleMinecraftProfileChange}
+        />
+      )
+    }
+
+    return (
+      <div className="app-shell">
+        <nav className="app-sidebar">
+          <button type="button" className="active" onClick={() => setGameMode('ark')}>
+            &larr; ARK
+          </button>
+        </nav>
+        <div className="app-content">
+          <MinecraftDashboard
+            profiles={minecraftProfiles}
+            onProfilesChange={handleMinecraftProfilesChange}
+            onOpenProfile={handleOpenMinecraftProfile}
+          />
+        </div>
+      </div>
+    )
   }
 
   if (showSteamCmd) {
@@ -134,6 +208,9 @@ export default function App(): JSX.Element {
           onClick={() => setMainPage('managerLog')}
         >
           Log
+        </button>
+        <button type="button" onClick={() => setGameMode('minecraft')}>
+          Minecraft &rarr;
         </button>
       </nav>
       <div className="app-content">

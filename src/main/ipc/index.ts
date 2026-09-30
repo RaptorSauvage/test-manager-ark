@@ -19,6 +19,7 @@ import { registerMapManagementHandlers } from './mapManagement'
 import { registerGroupConsoleHandlers } from './groupConsole'
 import { registerManagerLogHandlers } from './managerLog'
 import { registerStatsHistoryHandlers } from './statsHistory'
+import { registerMinecraftHandlers } from './minecraft'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers(mainWindow.webContents)
@@ -41,4 +42,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerGroupConsoleHandlers(mainWindow.webContents)
   registerManagerLogHandlers(mainWindow.webContents)
   registerStatsHistoryHandlers()
+  registerMinecraftHandlers(mainWindow.webContents)
 }

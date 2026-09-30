@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import Store from 'electron-store'
 import type { ServerProfile, AppSettings, WebDashboardAccessToken, WebDashboardApiKey } from '@shared/types'
+import type { MinecraftProfile } from '@shared/minecraft'
 import { migrateProfile } from './lib/profileMigration'
 import { reorderProfiles } from './lib/reorder'
 import { stripWrappingQuotes } from './lib/pathSanitize'
@@ -14,8 +15,12 @@ import { migrateLegacyRole } from './lib/auth'
  *  to the renderer as IPC.profilesChanged. */
 export const profileEvents = new EventEmitter()
 
+/** Same idea as profileEvents, for Minecraft profiles - see ipc/minecraft.ts. */
+export const minecraftProfileEvents = new EventEmitter()
+
 interface StoreSchema {
   profiles: ServerProfile[]
+  minecraftProfiles: MinecraftProfile[]
   settings: AppSettings
   /** profileId -> OS pid, so a re-launched app can find a server that's still running. */
   runningPids: Record<string, number>
@@ -48,6 +53,7 @@ interface StoreSchema {
 const store = new Store<StoreSchema>({
   defaults: {
     profiles: [],
+    minecraftProfiles: [],
     settings: {
       steamCmdPath: '',
       dataDir: '',
@@ -134,6 +140,32 @@ export function deleteProfile(id: string): ServerProfile[] {
   setRunningPid(id, null)
   setRunningStartedAt(id, null)
   profileEvents.emit('changed', profiles)
+  return profiles
+}
+
+export function listMinecraftProfiles(): MinecraftProfile[] {
+  return store.get('minecraftProfiles') ?? []
+}
+
+export function getMinecraftProfile(id: string): MinecraftProfile | undefined {
+  return listMinecraftProfiles().find((p) => p.id === id)
+}
+
+export function saveMinecraftProfile(profile: MinecraftProfile): MinecraftProfile[] {
+  const sanitized: MinecraftProfile = { ...profile, installDir: stripWrappingQuotes(profile.installDir) }
+  const profiles = listMinecraftProfiles()
+  const idx = profiles.findIndex((p) => p.id === sanitized.id)
+  if (idx >= 0) profiles[idx] = sanitized
+  else profiles.push(sanitized)
+  store.set('minecraftProfiles', profiles)
+  minecraftProfileEvents.emit('changed', profiles)
+  return profiles
+}
+
+export function deleteMinecraftProfile(id: string): MinecraftProfile[] {
+  const profiles = listMinecraftProfiles().filter((p) => p.id !== id)
+  store.set('minecraftProfiles', profiles)
+  minecraftProfileEvents.emit('changed', profiles)
   return profiles
 }
 

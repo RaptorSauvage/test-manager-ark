@@ -3,6 +3,7 @@
 // of the IPC boundary drifting apart.
 
 import type { GameId } from './games'
+import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine } from './minecraft'
 
 export interface ServerProfile {
   id: string
@@ -504,7 +505,22 @@ export const IPC = {
 
   statsHistoryGet: 'stats-history:get',
   statsHistoryGetForGroup: 'stats-history:get-for-group',
-  statsHistoryGetForGroups: 'stats-history:get-for-groups'
+  statsHistoryGetForGroups: 'stats-history:get-for-groups',
+
+  minecraftProfilesList: 'minecraft-profiles:list',
+  minecraftProfilesSave: 'minecraft-profiles:save',
+  minecraftProfilesDelete: 'minecraft-profiles:delete',
+  minecraftProfilesImport: 'minecraft-profiles:import',
+  minecraftProfilesChanged: 'minecraft-profiles:changed',
+  minecraftDetectLaunchable: 'minecraft:detect-launchable',
+  minecraftServerStart: 'minecraft-server:start',
+  minecraftServerStop: 'minecraft-server:stop',
+  minecraftServerKill: 'minecraft-server:kill',
+  minecraftServerStatus: 'minecraft-server:status',
+  minecraftServerStatusChanged: 'minecraft-server:status-changed',
+  minecraftServerSendCommand: 'minecraft-server:send-command',
+  minecraftConsoleBacklog: 'minecraft-console:backlog',
+  minecraftConsoleLine: 'minecraft-console:line'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -773,5 +789,37 @@ export interface Api {
       sinceMs: number | null,
       maxPoints?: number
     ) => Promise<Record<string, StatSample[]>>
+  }
+  minecraft: {
+    profiles: {
+      list: () => Promise<MinecraftProfile[]>
+      save: (profile: MinecraftProfile) => Promise<MinecraftProfile[]>
+      delete: (id: string) => Promise<MinecraftProfile[]>
+      /** Points at an existing, already-set-up Minecraft server folder and returns a
+       *  best-effort profile detected from it (see minecraftDetect.ts) - not yet saved,
+       *  the same "review before it's real" pattern as ServerProfile's own import. */
+      importFromInstall: (installDir: string) => Promise<MinecraftProfile>
+      onChanged: (callback: (profiles: MinecraftProfile[]) => void) => () => void
+    }
+    /** Re-detects the launchable jar/script in installDir - used by the Settings tab's
+     *  "Re-detect" button after the user changes files on disk outside the Manager. */
+    detectLaunchable: (
+      installDir: string
+    ) => Promise<{ launchMode: MinecraftProfile['launchMode']; jarFileName: string; scriptFileName: string } | null>
+    server: {
+      start: (profileId: string) => Promise<MinecraftServerStatus>
+      stop: (profileId: string) => Promise<MinecraftServerStatus>
+      kill: (profileId: string) => Promise<MinecraftServerStatus>
+      getStatus: (profileId: string) => Promise<MinecraftServerStatus>
+      onStatusChanged: (callback: (status: MinecraftServerStatus) => void) => () => void
+      /** Writes straight to the running process's stdin (works with or without RCON
+       *  enabled in server.properties) - never rejects, the result's `ok`/`error` says
+       *  whether it actually succeeded (e.g. the server isn't running). */
+      sendCommand: (profileId: string, command: string) => Promise<RconResult>
+    }
+    console: {
+      getBacklog: (profileId: string) => Promise<MinecraftConsoleLine[]>
+      onLine: (callback: (profileId: string, line: MinecraftConsoleLine) => void) => () => void
+    }
   }
 }

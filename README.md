@@ -1409,8 +1409,10 @@ async function findProfileIdByName(name) {
   `migrateProfilesToDiskOnce`, same one-time-flag pattern as the role migration below - so
   `config.json` reflects it after simply opening the app once, no manual edit needed).
   **ARK: Survival Evolved is now a second, real, launchable game** alongside ARK: Survival
-  Ascended (Palworld and Minecraft remain planned, listed for visibility only in Settings'
-  **Games** section but not yet creatable):
+  Ascended (Palworld remains planned, listed for visibility only in Settings' **Games**
+  section but not yet creatable; Minecraft is real too now, but as its own separate
+  top-level menu rather than a third entry in this picker - see **Minecraft support**
+  below for why):
   - The Settings tab's **Server** section has a **Game** picker; switching it clears the Map
     field (the two games' map ids don't match, e.g. `TheIsland_WP` vs `TheIsland`) and
     refetches that game's own map list.
@@ -1588,6 +1590,78 @@ async function findProfileIdByName(name) {
     profile (the desktop one now hides/rewords all of that) - inert rather than incorrect,
     since nothing reads them for it, but not hidden yet - and it has no equivalent of the
     reconcile-from-ini pickup either.
+
+- **Minecraft support (MVP)**, built as a deliberately separate system from the ARK side of
+  the app rather than a third `GameDefinition` entry - `MinecraftProfile`
+  (`shared/minecraft.ts`) is its own type, its own `electron-store` collection
+  (`minecraftProfiles`), its own IPC namespace (`ipc/minecraft.ts`, `window.api.minecraft.*`),
+  and its own top-level menu (a **Minecraft →** button in the sidebar switches the whole app
+  into it; **← ARK** switches back). ARK: Survival Evolved and ARK: Survival Ascended share
+  enough (engine lineage, launch style, RCON, log format) that unifying them into one
+  `ServerProfile` shape made sense; Minecraft shares almost none of that - no SteamCMD, no
+  fixed executable name, no `?param=` launch line, a completely different config/log format -
+  so forcing it into `ServerProfile` would have meant either polluting it with fields that
+  mean nothing for ARK, or a discriminated union touching every one of its consumers.
+  - **Import, not install-from-scratch.** The whole point of this feature (per how it was
+    scoped) is pointing the Manager at a Minecraft server folder someone already set up
+    themselves, the same way MCSS does it - not driving a fresh install. "Import existing
+    server" opens a folder picker; `isValidMinecraftInstall`/`detectMinecraftProfile`
+    (`minecraftDetect.ts`) accept it if `server.properties`, `eula.txt`, a jar, or a launch
+    script is found directly in its root (not recursively - avoids picking up an unrelated
+    jar from a `mods`/`plugins`/`libraries` folder), then build a best-effort profile that's
+    saved right away and opens straight into its Settings tab for review/correction - same
+    "detect, save, review" flow as ARK's own import, and every Settings field auto-saves on
+    change so a correction overwrites the initial guess immediately. "+ Add server" skips
+    detection entirely for a from-scratch/manual entry.
+  - **Dual launch mode - the Forge problem.** Vanilla/Fabric/Paper/Spigot are all a single
+    directly-runnable jar, so `launchMode: 'jar'` has the Manager build
+    `java -Xms.. -Xmx.. <extra JVM args> -jar <jar> <extra program args>` itself. Modern Forge
+    (1.17+) ships no such jar at all - just a generated launch script plus argfiles/a
+    `libraries/` folder - so `launchMode: 'script'` instead just executes an existing
+    `run.bat`/`run.sh`/`start.bat`/`start.sh` as-is (via `cmd.exe /d /c` on Windows, same
+    launch shape as ARK: Survival Evolved's own `.bat` launch - see `writeLaunchBatchFile` in
+    `serverProcess.ts`), letting it handle its own classpath/JVM args. This also works as a
+    general escape hatch for any other custom start script. `detectMinecraftLaunchable`
+    prefers a script over a jar when both exist, since a script's presence is the strongest
+    signal of "this needs Forge-style handling."
+  - **server.properties is read live, never duplicated.** `MinecraftProfile` deliberately does
+    not store its own copy of the server port, RCON port/password/enabled, motd, or max
+    players - `minecraftProperties.ts` reads `server.properties` fresh on every call instead
+    (a small hand-written parser, not the `ini` package - Java's flat `key=value` properties
+    format has no `[Section]` headers and treats `#`/`!` as comments, not `;`). Same "the user
+    manages this file themselves" philosophy as ARK's own `GameUserSettings.ini` handling -
+    toggling `enable-rcon` or changing `rcon.password` while the server's running takes effect
+    on the Manager's very next RCON attempt, with nothing to keep in sync.
+  - **stdin is the primary command channel, RCON is secondary.** Unlike ARK's dedicated server
+    (which doesn't read stdin at all on Windows, forcing RCON/log-file-only control),
+    Minecraft/Java server processes support piped stdio reliably - `minecraftProcess.ts` spawns
+    with `stdio: 'pipe'` and the Console tab's command box, and the graceful `stop` shutdown,
+    both write straight to the running process's stdin. This works whether or not RCON is even
+    enabled in `server.properties`. `minecraftRcon.ts`'s `sendMinecraftRconCommand` (same
+    ECONNRESET-safe `rcon-client` connection pattern as ARK's `rcon.ts`) is used only for the
+    player-list poll (`list`, parsed by `parseMinecraftPlayerList`) that feeds the Console tab
+    and Dashboard cards' CPU/RAM/player stats, when RCON happens to be enabled.
+  - **Live console, not a tailed log file.** Since stdio piping works reliably here (unlike
+    ARK), the Console tab reads the process's own piped stdout/stderr directly rather than
+    tailing `logs/latest.log` the way ARK's `ShooterGame.log` is tailed - simpler, and it also
+    means a script-launched (Forge) server's output is captured too, without needing to know
+    Forge's own log file layout. Kept as an in-memory ring buffer (500 lines) per server,
+    intentionally not written to disk (see MVP scope cuts below).
+  - **Graceful stop, not a phased save/exit handshake.** Minecraft's own `stop` command already
+    saves the world, kicks players, and exits entirely on its own, so `stopServer` just writes
+    it to stdin and waits (30s grace period, then force-kills) - there's no ARK-style
+    `SaveWorld`-confirm-then-`DoExit` handshake to phase, since there's nothing to confirm
+    separately.
+  - **Explicitly cut from this first pass** (all real, deliberate scope cuts, not oversights -
+    the infrastructure that made each of these work for ARK is straightforward to point at
+    Minecraft later): no backups, no scheduled restart, no crash-watch/zombie detection, no
+    persisted CPU/RAM/player history (only shown live while the Manager is open), no Web
+    Dashboard integration, and no re-adopting a still-running Minecraft server across a
+    Manager restart - unlike ARK, a Minecraft server started before a Manager restart shows as
+    `stopped` afterward until started again from here (it does keep running in the background,
+    same as ARK, since nothing about the Manager restarting touches it - just not tracked by
+    this window until re-started). `startOnManagerLaunch` still works exactly as it does for
+    ARK, since a fresh launch always finds nothing already running to re-adopt anyway.
 
 - **Dashboard groups: reorderable, collapse persists, minimized groups skip the aggregate views.**
   - Groups on the Dashboard can now be dragged to reorder (same `⠿` drag-handle pattern as
