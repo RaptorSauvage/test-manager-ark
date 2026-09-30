@@ -140,7 +140,8 @@ const api: Api = {
     openDataDirFolder: () => ipcRenderer.invoke(IPC.appOpenDataDirFolder),
     openServerConfigFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenConfigFolder, profileId),
     openServerSavedArksFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSavedArksFolder, profileId),
-    openServerSaveGamesFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSaveGamesFolder, profileId)
+    openServerSaveGamesFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSaveGamesFolder, profileId),
+    focusWindow: () => ipcRenderer.invoke(IPC.appFocusWindow)
   },
   mapManagement: {
     list: (profileId: string) => ipcRenderer.invoke(IPC.mapManagementList, profileId),

@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, type BrowserWindow } from 'electron'
 import { IPC } from '@shared/types'
 import { getProfile } from '../store'
 import {
@@ -15,7 +15,7 @@ function requireProfile(profileId: string) {
   return profile
 }
 
-export function registerSystemHandlers(): void {
+export function registerSystemHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(IPC.appOpenProfilesFolder, () => openProfilesFolder())
   ipcMain.handle(IPC.appOpenDataDirFolder, () => openDataDirFolder())
   ipcMain.handle(IPC.serverOpenConfigFolder, (_event, profileId: string) =>
@@ -27,4 +27,15 @@ export function registerSystemHandlers(): void {
   ipcMain.handle(IPC.serverOpenSaveGamesFolder, (_event, profileId: string) =>
     openServerSaveGamesFolder(requireProfile(profileId))
   )
+
+  // Electron/Windows sometimes fails to return OS-level keyboard focus to the renderer
+  // after a native modal closes - window.confirm()/window.alert() (a real native dialog in
+  // Electron, not an in-page one) and the file/folder pickers in dialog.ts are both real
+  // examples. When that happens, every text field afterward still looks normal (not
+  // disabled, still visually focusable) but silently stops accepting keystrokes until the
+  // window is explicitly refocused - confirmAction() (src/renderer/src/lib/confirmAction.ts)
+  // calls this right after every confirm() as a workaround.
+  ipcMain.handle(IPC.appFocusWindow, () => {
+    if (!mainWindow.isDestroyed()) mainWindow.focus()
+  })
 }

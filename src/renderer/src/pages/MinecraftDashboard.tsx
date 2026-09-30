@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { MinecraftProfile, MinecraftRunState, MinecraftServerType } from '@shared/minecraft'
 import { useMinecraftServerStatuses } from '../lib/useMinecraftServerStatuses'
 import { createDefaultMinecraftProfile } from '../lib/minecraftProfile'
+import { confirmAction } from '../lib/confirmAction'
 import type { MinecraftTabKey } from './MinecraftServerDetail'
 
 const SERVER_TYPE_LABELS: Record<MinecraftServerType, string> = {
@@ -62,7 +63,7 @@ export default function MinecraftDashboard({
   }
 
   async function handleDelete(id: string): Promise<void> {
-    if (!confirm('Delete this server profile? This does not delete any files on disk.')) return
+    if (!confirmAction('Delete this server profile? This does not delete any files on disk.')) return
     const updated = await window.api.minecraft.profiles.delete(id)
     onProfilesChange(updated)
   }
@@ -90,7 +91,7 @@ export default function MinecraftDashboard({
   }
 
   async function handleKill(profile: MinecraftProfile): Promise<void> {
-    if (!confirm(`Force-kill "${profile.name}" without a graceful save? Progress since the last autosave will be lost.`)) return
+    if (!confirmAction(`Force-kill "${profile.name}" without a graceful save? Progress since the last autosave will be lost.`)) return
     await runAction(profile, () => window.api.minecraft.server.kill(profile.id))
   }
 

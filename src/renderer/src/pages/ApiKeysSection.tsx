@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { WebDashboardApiKeySummary, WebDashboardRole } from '@shared/types'
+import { confirmAction } from '../lib/confirmAction'
 
 const ROLE_LABELS: Record<WebDashboardRole, string> = {
   globalAdmin: 'Global Admin',
@@ -64,7 +65,7 @@ export default function ApiKeysSection(): JSX.Element {
   }
 
   async function handleDelete(id: string, targetLabel: string): Promise<void> {
-    if (!confirm(`Delete API key "${targetLabel}"? Anything using it will stop working immediately.`)) return
+    if (!confirmAction(`Delete API key "${targetLabel}"? Anything using it will stop working immediately.`)) return
     setError('')
     try {
       setKeys(await window.api.webDashboardApiKeys.delete(id))

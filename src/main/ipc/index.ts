@@ -36,7 +36,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerCustomMapsHandlers()
   registerDataDirHandlers()
   registerOfficialServerStatusHandlers()
-  registerSystemHandlers()
+  registerSystemHandlers(mainWindow)
   registerAppUpdateHandlers(mainWindow.webContents)
   registerMapManagementHandlers()
   registerGroupConsoleHandlers(mainWindow.webContents)

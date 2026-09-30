@@ -6,6 +6,7 @@ import { createDefaultProfile } from '../lib/profile'
 import type { TabKey } from './ServerDetail'
 import OfficialServerStatusPanel from '../components/OfficialServerStatusPanel'
 import { GAME_ICONS } from '../lib/gameIcons'
+import { confirmAction } from '../lib/confirmAction'
 
 interface DashboardProps {
   profiles: ServerProfile[]
@@ -167,7 +168,7 @@ export default function Dashboard({
   }
 
   async function handleDelete(id: string): Promise<void> {
-    if (!confirm('Delete this server profile? This does not delete any files on disk.')) return
+    if (!confirmAction('Delete this server profile? This does not delete any files on disk.')) return
     const updated = await window.api.profiles.delete(id)
     onProfilesChange(updated)
   }
@@ -191,7 +192,7 @@ export default function Dashboard({
   }
 
   async function handleKill(profile: ServerProfile): Promise<void> {
-    if (!confirm(`Force-kill "${profile.name}" without saving? Progress since the last save will be lost.`)) return
+    if (!confirmAction(`Force-kill "${profile.name}" without saving? Progress since the last save will be lost.`)) return
     await runAction(profile, () => window.api.server.kill(profile.id))
   }
 

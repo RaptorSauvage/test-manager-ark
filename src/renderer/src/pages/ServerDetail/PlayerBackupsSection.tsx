@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { BackupEntry, PlayerBackupFolder, ServerProfile } from '@shared/types'
+import { confirmAction } from '../../lib/confirmAction'
 
 interface PlayerBackupsSectionProps {
   profile: ServerProfile
@@ -82,7 +83,7 @@ export default function PlayerBackupsSection({ profile }: PlayerBackupsSectionPr
     selectedPaths.size === 1 ? (backups.find((b) => selectedPaths.has(b.filePath)) ?? null) : null
 
   async function handleRestore(backup: BackupEntry): Promise<void> {
-    if (!confirm(`Restore ${backup.fileName}? This overwrites this player's current profile.`)) return
+    if (!confirmAction(`Restore ${backup.fileName}? This overwrites this player's current profile.`)) return
     setBusy(true)
     setError('')
     try {
@@ -98,7 +99,7 @@ export default function PlayerBackupsSection({ profile }: PlayerBackupsSectionPr
     const targets = backups.filter((b) => selectedPaths.has(b.filePath))
     if (targets.length === 0) return
     const label = targets.length === 1 ? targets[0].fileName : `${targets.length} backups`
-    if (!confirm(`Delete ${label}?`)) return
+    if (!confirmAction(`Delete ${label}?`)) return
     setError('')
     try {
       for (const backup of targets) {

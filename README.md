@@ -1375,6 +1375,28 @@ async function findProfileIdByName(name) {
 }
 ```
 
+- **Manager-wide: worked around a field that silently stops accepting keystrokes after a
+  confirm dialog, not disabled-looking, just unresponsive.** Reported as intermittent and
+  not tied to any one field - "I can type into it once, then never again, all over the
+  app." The lead: `window.confirm()` in Electron isn't an in-page dialog, it's a real native
+  OS one, and Electron/Windows sometimes fails to hand OS-level keyboard focus back to the
+  main window once it closes - the window looks completely normal afterward (nothing
+  disabled), but no text field anywhere accepts keystrokes until it's explicitly refocused
+  (e.g. alt-tabbing away and back). Every `confirm(...)` call in the app (delete/force-kill
+  prompts - Dashboard, Minecraft Dashboard, Backups, Player Backups, Map Management, access
+  tokens, API keys) now goes through a new `confirmAction()` helper
+  (`src/renderer/src/lib/confirmAction.ts`) that calls a new `system:focus-window` IPC
+  handler (`ipc/system.ts`) right after, explicitly re-focusing the main window. The
+  existing file/folder pickers (`dialog.ts`) - also real native dialogs - got the same
+  `mainWindow.focus()` call added directly on the main-process side. This is the most
+  likely cause given the symptoms (unresponsive but not disabled, happens after a
+  destructive-action prompt, affects arbitrary fields afterward rather than one specific
+  one) and the fix is safe either way (an explicit refocus is a no-op if focus was never
+  actually lost) - but it's a strong lead based on the reported symptoms, not something
+  confirmed by reproducing it directly, since this environment has no display to test
+  Electron's actual window-focus behavior in. Please confirm whether this actually resolves
+  it after updating.
+
 ## Notes / limitations
 
 - Tested with `npm run typecheck`, `npm run build`, and `npm test` in this environment,

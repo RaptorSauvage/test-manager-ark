@@ -4,6 +4,7 @@ import { getGameDefinition } from '@shared/games'
 import PlayerBackupsSection from './PlayerBackupsSection'
 import BackupLogPanel from './BackupLogPanel'
 import { useServerStatuses } from '../../lib/useServerStatuses'
+import { confirmAction } from '../../lib/confirmAction'
 
 interface BackupsTabProps {
   profile: ServerProfile
@@ -109,7 +110,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
   }
 
   async function handleRestore(backup: BackupEntry): Promise<void> {
-    if (!confirm(`Restore ${backup.fileName}? This overwrites the current save.`)) return
+    if (!confirmAction(`Restore ${backup.fileName}? This overwrites the current save.`)) return
     setBusy(true)
     setError('')
     try {
@@ -125,7 +126,7 @@ export default function BackupsTab({ profile, onProfileChange }: BackupsTabProps
     const targets = backups.filter((b) => selectedPaths.has(b.filePath))
     if (targets.length === 0) return
     const label = targets.length === 1 ? targets[0].fileName : `${targets.length} backups`
-    if (!confirm(`Delete ${label}?`)) return
+    if (!confirmAction(`Delete ${label}?`)) return
     setError('')
     try {
       for (const backup of targets) {

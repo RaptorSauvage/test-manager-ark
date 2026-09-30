@@ -480,6 +480,7 @@ export const IPC = {
 
   appOpenProfilesFolder: 'app:open-profiles-folder',
   appOpenDataDirFolder: 'app:open-data-dir-folder',
+  appFocusWindow: 'app:focus-window',
   serverOpenConfigFolder: 'server:open-config-folder',
   serverOpenSavedArksFolder: 'server:open-savedarks-folder',
   serverOpenSaveGamesFolder: 'server:open-savegames-folder',
@@ -749,6 +750,11 @@ export interface Api {
     openServerConfigFolder: (profileId: string) => Promise<void>
     openServerSavedArksFolder: (profileId: string) => Promise<void>
     openServerSaveGamesFolder: (profileId: string) => Promise<void>
+    /** Explicitly re-focuses the main window - a workaround for Electron/Windows sometimes
+     *  not returning OS-level keyboard focus to the renderer after a native modal closes
+     *  (window.confirm() is one; the file/folder pickers in dialog.ts already call this on
+     *  the main-process side directly). See confirmAction() in the renderer. */
+    focusWindow: () => Promise<void>
   }
   mapManagement: {
     list: (profileId: string) => Promise<MapFolderEntry[]>
