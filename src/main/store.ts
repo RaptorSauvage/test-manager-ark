@@ -210,14 +210,35 @@ export function getRunningPids(): Record<string, number> {
   return store.get('runningPids') ?? {}
 }
 
-export function setRunningPid(profileId: string, pid: number | null): void {
-  const pids = getRunningPids()
-  if (pid === null) {
-    delete pids[profileId]
-  } else {
-    pids[profileId] = pid
+// setRunningPid/setRunningStartedAt are best-effort persistence, purely so a running server
+// can be re-adopted after a Manager restart (see serverProcess.ts's
+// adoptPersistedProcesses) - losing that on a disk hiccup means one server doesn't
+// re-adopt cleanly next launch, a minor problem. Every real call site, though, calls one of
+// these immediately before emitStatus(), the one call that actually updates the renderer's
+// own view of a server's state - a real report on Windows showed a disk-level write failure
+// (a raw libuv "UNKNOWN: unknown error, write") throwing out of electron-store's own set()
+// here, which skipped the emitStatus() call right after it entirely, leaving a server stuck
+// showing as running in the UI long after it had actually stopped (or, symmetrically, never
+// showing as started). Wrapped here, once, rather than at every call site, so nothing that
+// calls these two functions needs to know or care that persisting this is allowed to fail.
+function setPersistedRunningState(setter: () => void): void {
+  try {
+    setter()
+  } catch (err) {
+    console.error('Failed to persist running-process bookkeeping (non-fatal):', (err as Error).message)
   }
-  store.set('runningPids', pids)
+}
+
+export function setRunningPid(profileId: string, pid: number | null): void {
+  setPersistedRunningState(() => {
+    const pids = getRunningPids()
+    if (pid === null) {
+      delete pids[profileId]
+    } else {
+      pids[profileId] = pid
+    }
+    store.set('runningPids', pids)
+  })
 }
 
 export function getRunningStartedAt(): Record<string, number> {
@@ -225,11 +246,13 @@ export function getRunningStartedAt(): Record<string, number> {
 }
 
 export function setRunningStartedAt(profileId: string, startedAt: number | null): void {
-  const startedAtByProfile = getRunningStartedAt()
-  if (startedAt === null) {
-    delete startedAtByProfile[profileId]
-  } else {
-    startedAtByProfile[profileId] = startedAt
-  }
-  store.set('runningStartedAt', startedAtByProfile)
+  setPersistedRunningState(() => {
+    const startedAtByProfile = getRunningStartedAt()
+    if (startedAt === null) {
+      delete startedAtByProfile[profileId]
+    } else {
+      startedAtByProfile[profileId] = startedAt
+    }
+    store.set('runningStartedAt', startedAtByProfile)
+  })
 }

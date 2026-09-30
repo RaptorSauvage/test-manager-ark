@@ -47,24 +47,37 @@ function parseArchiveLine(line: string): DatedLogEvent | null {
  */
 function appendEventsToArchive(profileId: string, events: DatedLogEvent[], maxBytes: number): void {
   if (events.length === 0) return
-  const archivePath = getClusterLogArchivePath(profileId)
-  fs.mkdirSync(path.dirname(archivePath), { recursive: true })
-  fs.appendFileSync(archivePath, events.map(serializeEvent).join(''))
-
-  const { size } = fs.statSync(archivePath)
-  if (size <= maxBytes) return
-
-  const buffer = Buffer.alloc(maxBytes)
-  const fd = fs.openSync(archivePath, 'r')
   try {
-    fs.readSync(fd, buffer, 0, maxBytes, size - maxBytes)
-  } finally {
-    fs.closeSync(fd)
+    const archivePath = getClusterLogArchivePath(profileId)
+    fs.mkdirSync(path.dirname(archivePath), { recursive: true })
+    fs.appendFileSync(archivePath, events.map(serializeEvent).join(''))
+
+    const { size } = fs.statSync(archivePath)
+    if (size <= maxBytes) return
+
+    const buffer = Buffer.alloc(maxBytes)
+    const fd = fs.openSync(archivePath, 'r')
+    try {
+      fs.readSync(fd, buffer, 0, maxBytes, size - maxBytes)
+    } finally {
+      fs.closeSync(fd)
+    }
+    let text = buffer.toString('utf-8')
+    const firstNewline = text.indexOf('\n')
+    if (firstNewline >= 0) text = text.slice(firstNewline + 1) // drop a truncated first JSON line
+    fs.writeFileSync(archivePath, text)
+  } catch (err) {
+    // Best-effort persistence, called from both a per-status-change notification and a
+    // continuous ~2s log-tail watch for every running profile - this is a listener on the
+    // shared serverEvents EventEmitter (see registerClusterLogArchiveWatch), and a listener
+    // that throws synchronously aborts that same emit() call for any other listener
+    // registered after it. A disk-level failure here (a full disk, a locked file, antivirus,
+    // a dropped network drive, ...) must never throw back out for that reason alone, on top
+    // of the same reasoning already applied to managerLog.ts/statsHistory.ts's own writes -
+    // this class of bug is exactly what caused a real report of Windows write errors turning
+    // into repeated unhandled exceptions and reported-failed server actions.
+    console.error(`Failed to append to the cluster log archive for ${profileId}:`, (err as Error).message)
   }
-  let text = buffer.toString('utf-8')
-  const firstNewline = text.indexOf('\n')
-  if (firstNewline >= 0) text = text.slice(firstNewline + 1) // drop a truncated first JSON line
-  fs.writeFileSync(archivePath, text)
 }
 
 /** Reads this profile's persistent archive for the Cluster Data group console's backlog -

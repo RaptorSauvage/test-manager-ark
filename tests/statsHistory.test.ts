@@ -306,4 +306,18 @@ describe('statsHistory', () => {
       { time: 2000, cpu: 20, memoryMB: 200, players: 2 }
     ])
   })
+
+  it('never throws when the disk write itself fails - a real report on Windows had this flood the console every 5s from monitor.ts', () => {
+    // recordStatSample is called from tick() without being awaited/caught by its caller - if
+    // it threw, every running stats-enabled profile would turn into an unhandled promise
+    // rejection every ~5s (see the fix's own comment in statsHistory.ts).
+    const spy = vi.spyOn(fs, 'appendFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, write'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(() => recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })).not.toThrow()
+    } finally {
+      spy.mockRestore()
+    }
+  })
 })

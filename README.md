@@ -1725,3 +1725,40 @@ async function findProfileIdByName(name) {
   test (`tests/rcon.test.ts`): a fake TCP server that accepts the connection and resets it the
   moment it receives the auth packet, confirmed to genuinely throw an uncaught `ECONNRESET`
   against the pre-fix code and pass cleanly against the fix.
+
+- **Fixed a much bigger bug in the same family: a Windows disk-write failure could break
+  actual server actions, not just spam the console.** A real report showed a raw libuv
+  "UNKNOWN: unknown error, write" (a generic Windows I/O failure - a full disk, a locked
+  file, antivirus, a dropped network drive, ...) thrown from `logManagerEvent` during a Stop,
+  and separately from `recordStatSample` inside `monitor.ts`'s `tick()` - and, worse, a server
+  stuck showing as running in the UI long after it had actually stopped, with every further
+  action against it (Kill included) failing the same way. Every one of these best-effort,
+  secondary persistence calls previously let a disk-level failure throw straight out:
+  - `logManagerEvent` (`managerLog.ts`) is called directly from `doStartServer`/
+    `doStopServer`/`doKillServer`/... - a throw there turned an action that had *already
+    succeeded* into a reported failure, since in every one of those the real work (actually
+    stopping/killing the process) runs before the logging call.
+  - `recordStatSample` (`statsHistory.ts`) runs inside `monitor.ts`'s `tick()`, called as
+    `void tick(profile)` - not awaited or caught by anything - so a throw there became an
+    unhandled promise rejection, once per running stats-enabled profile, every ~5 seconds.
+  - `appendEventsToArchive` (`clusterLogArchive.ts`) runs as a listener on the shared
+    `serverEvents` `EventEmitter` (`registerClusterLogArchiveWatch`) - and a listener that
+    throws synchronously aborts that same `emit()` call for every other listener registered
+    after it, on that exact status change, for every running profile roughly every 2 seconds.
+  - **The likely actual explanation for the stuck-as-running server**: `serverProcess.ts`'s
+    `finalizeStopped` (and `startServer`'s own success path) call `setRunningPid`/
+    `setRunningStartedAt` (`store.ts`, persisted via `electron-store`) *immediately before*
+    `emitStatus()` - the one call that actually updates the renderer's view of a server's
+    state. If either persist call threw, `emitStatus()` right after it never ran at all,
+    leaving the UI showing the previous state indefinitely even though the Manager's own
+    internal tracking (`running.delete(profileId)`, run just before) had already moved on.
+  
+  All four now catch and log to `console.error` instead of throwing - persisting a log entry,
+  a stats sample, an archived event, or the running-pid bookkeeping used only to re-adopt a
+  process after a Manager restart, is allowed to fail without taking the actual action (or
+  another module's unrelated `serverEvents` listener) down with it. Each fix has its own test
+  simulating the write failure directly (`vi.spyOn` on `fs.appendFileSync`/`writeFileSync` or,
+  for `store.ts`, `Store.prototype.set`) and asserting the surrounding call no longer throws -
+  including, for the archive listener specifically, a test proving a later-registered
+  `serverEvents` listener still fires when an earlier one's write fails, the exact class of
+  bug this was.

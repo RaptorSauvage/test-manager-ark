@@ -328,6 +328,53 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
     expect(hasClusterLogArchive(profileB.id)).toBe(false)
   })
 
+  it('never throws when the disk write itself fails - a real report on Windows had this break other serverEvents listeners', () => {
+    const profile = makeNotifyProfile()
+    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+
+    const spy = vi.spyOn(fs, 'appendFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, write'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(() =>
+        handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+      ).not.toThrow()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('a write failure here does not stop a later-registered serverEvents listener from still running', async () => {
+    // registerClusterLogArchiveWatch subscribes to the shared serverEvents EventEmitter - a
+    // listener that throws synchronously aborts that same emit() call for any listener
+    // registered after it. A real report showed exactly that class of bug elsewhere in the
+    // app (a Windows disk-write failure leaving the renderer's own status broadcast unsent),
+    // so this proves the archive listener specifically can no longer cause it.
+    const profile = makeNotifyProfile({
+      installDir: path.join(os.tmpdir(), 'notify-resilience-install-' + Math.random().toString(36).slice(2))
+    })
+    const unregister = registerClusterLogArchiveWatch((id) => (id === profile.id ? profile : undefined), 20)
+    const laterSeen: string[] = []
+    const laterListener = (status: ServerStatus): void => {
+      laterSeen.push(status.state)
+    }
+    serverEvents.on('status', laterListener)
+
+    const spy = vi.spyOn(fs, 'appendFileSync').mockImplementation(() => {
+      throw new Error('disk full')
+    })
+    try {
+      expect(() => serverEvents.emit('status', { profileId: profile.id, state: 'starting' } as ServerStatus)).not.toThrow()
+      expect(() => serverEvents.emit('status', { profileId: profile.id, state: 'running' } as ServerStatus)).not.toThrow()
+      expect(laterSeen).toEqual(['starting', 'running'])
+    } finally {
+      serverEvents.off('status', laterListener)
+      spy.mockRestore()
+      stopClusterLogArchiveWatch(profile.id)
+      unregister()
+    }
+  })
+
   it('is wired into registerClusterLogArchiveWatch, so a real start/stop cycle ends up in the archive', async () => {
     const profile = makeNotifyProfile({ installDir: path.join(os.tmpdir(), 'notify-register-install-' + Math.random().toString(36).slice(2)) })
     const unregister = registerClusterLogArchiveWatch((id) => (id === profile.id ? profile : undefined), 20)

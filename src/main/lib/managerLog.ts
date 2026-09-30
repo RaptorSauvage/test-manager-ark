@@ -46,23 +46,35 @@ export function logManagerEvent(taskId: string, taskLabel: string, message: stri
     level
   }
 
-  const logPath = getManagerLogPath()
-  fs.mkdirSync(path.dirname(logPath), { recursive: true })
-  fs.appendFileSync(logPath, JSON.stringify(entry) + '\n')
+  try {
+    const logPath = getManagerLogPath()
+    fs.mkdirSync(path.dirname(logPath), { recursive: true })
+    fs.appendFileSync(logPath, JSON.stringify(entry) + '\n')
 
-  const { size } = fs.statSync(logPath)
-  if (size > MAX_BYTES) {
-    const buffer = Buffer.alloc(MAX_BYTES)
-    const fd = fs.openSync(logPath, 'r')
-    try {
-      fs.readSync(fd, buffer, 0, MAX_BYTES, size - MAX_BYTES)
-    } finally {
-      fs.closeSync(fd)
+    const { size } = fs.statSync(logPath)
+    if (size > MAX_BYTES) {
+      const buffer = Buffer.alloc(MAX_BYTES)
+      const fd = fs.openSync(logPath, 'r')
+      try {
+        fs.readSync(fd, buffer, 0, MAX_BYTES, size - MAX_BYTES)
+      } finally {
+        fs.closeSync(fd)
+      }
+      let text = buffer.toString('utf-8')
+      const firstNewline = text.indexOf('\n')
+      if (firstNewline >= 0) text = text.slice(firstNewline + 1)
+      fs.writeFileSync(logPath, text)
     }
-    let text = buffer.toString('utf-8')
-    const firstNewline = text.indexOf('\n')
-    if (firstNewline >= 0) text = text.slice(firstNewline + 1)
-    fs.writeFileSync(logPath, text)
+  } catch (err) {
+    // Best-effort persistence - nearly every action in the app (start/stop/kill/update/
+    // backup/...) logs through here, so letting a disk-level failure (a full disk, a locked
+    // file, antivirus, a dropped network drive, ...) throw out of this function would break
+    // the actual action it's attached to, not just its own logging. A real report showed
+    // exactly that on Windows (a raw libuv "UNKNOWN: unknown error, write"): an unwritable
+    // manager.jsonl turned every single server action into a reported failure, even though
+    // the action itself (e.g. stopping the server) had already completed successfully before
+    // this ran.
+    console.error('Failed to persist a Manager Log entry:', (err as Error).message)
   }
 
   managerLogEvents.emit('log', entry)
