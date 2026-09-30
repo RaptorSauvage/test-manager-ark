@@ -78,7 +78,7 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
         </label>
         <label className="checkbox">
           <input type="checkbox" checked={chatMode} onChange={(e) => setChatMode(e.target.checked)} />
-          Chat mode (sends as /say)
+          Chat mode
         </label>
       </div>
       {state === 'running' && !consoleAvailable && (

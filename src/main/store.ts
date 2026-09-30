@@ -3,6 +3,7 @@ import Store from 'electron-store'
 import type { ServerProfile, AppSettings, WebDashboardAccessToken, WebDashboardApiKey } from '@shared/types'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { migrateProfile } from './lib/profileMigration'
+import { migrateMinecraftProfile } from './lib/minecraftProfileMigration'
 import { reorderProfiles } from './lib/reorder'
 import { stripWrappingQuotes } from './lib/pathSanitize'
 import { migrateLegacyRole } from './lib/auth'
@@ -152,7 +153,7 @@ export function deleteProfile(id: string): ServerProfile[] {
 }
 
 export function listMinecraftProfiles(): MinecraftProfile[] {
-  return store.get('minecraftProfiles') ?? []
+  return (store.get('minecraftProfiles') ?? []).map(migrateMinecraftProfile)
 }
 
 export function getMinecraftProfile(id: string): MinecraftProfile | undefined {

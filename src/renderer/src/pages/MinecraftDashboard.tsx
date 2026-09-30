@@ -141,23 +141,12 @@ export default function MinecraftDashboard({
           <span className={`badge badge-${state}`}>{state}</span>
         </div>
         <dl className="server-card-info">
-          <div>
-            <dt>Type</dt>
-            <dd>{SERVER_TYPE_LABELS[profile.serverType]}</dd>
-          </div>
-          <div>
-            <dt>Address</dt>
-            <dd>
-              <button
-                type="button"
-                className="copyable-address"
-                onClick={() => void copyAddress(profile.id, `${localIp}:${portById[profile.id] ?? '25565'}`)}
-                title="Click to copy"
-              >
-                {copiedId === profile.id ? 'Copied!' : `${localIp}:${portById[profile.id] ?? '25565'}`}
-              </button>
-            </dd>
-          </div>
+          {status?.cpu !== undefined && (
+            <div>
+              <dt>CPU</dt>
+              <dd>{status.cpu}%</dd>
+            </div>
+          )}
           {status?.players && (
             <div>
               <dt>Players</dt>
@@ -167,12 +156,10 @@ export default function MinecraftDashboard({
               </dd>
             </div>
           )}
-          {status?.cpu !== undefined && (
-            <div>
-              <dt>CPU</dt>
-              <dd>{status.cpu}%</dd>
-            </div>
-          )}
+          <div>
+            <dt>Type</dt>
+            <dd>{SERVER_TYPE_LABELS[profile.serverType]}</dd>
+          </div>
           {status?.memoryMB !== undefined && (
             <div>
               <dt>RAM</dt>
@@ -180,6 +167,17 @@ export default function MinecraftDashboard({
             </div>
           )}
         </dl>
+        <div className="server-card-address">
+          <span className="muted">Address:</span>{' '}
+          <button
+            type="button"
+            className="copyable-address"
+            onClick={() => void copyAddress(profile.id, `${localIp}:${portById[profile.id] ?? '25565'}`)}
+            title="Click to copy"
+          >
+            {copiedId === profile.id ? 'Copied!' : `${localIp}:${portById[profile.id] ?? '25565'}`}
+          </button>
+        </div>
         {status?.lastError && <p className="error-message">{status.lastError}</p>}
         {actionErrors[profile.id] && <p className="error-message">{actionErrors[profile.id]}</p>}
         <div className="server-card-actions-primary">

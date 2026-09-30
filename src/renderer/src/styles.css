@@ -1012,6 +1012,13 @@ label.checkbox {
   color: var(--muted);
 }
 
+.server-card-address {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
 .copyable-address {
   background: none;
   border: none;

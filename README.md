@@ -1787,6 +1787,30 @@ async function findProfileIdByName(name) {
     the active mode, full opacity when active, same "muted until active" language as the
     rest of the sidebar.
 
+- **Minecraft follow-up 3: fixed a real crash (blank window) on Server Management, card
+  reorder, trimmed descriptions.**
+  - **Fixed a genuine crash**, reported as the whole Manager window going completely
+    blank the instant Server Management was opened. Root cause: `serverType` and every
+    `scheduledRestart*` field were added to `MinecraftProfile` in later passes, and unlike
+    ARK's `ServerProfile` (which backfills newly-added fields on every read via
+    `migrateProfile`, called from `listProfiles()`), nothing did the equivalent for
+    Minecraft profiles - so a profile saved before those fields existed genuinely has
+    `scheduledRestartDays: undefined` at runtime, despite the stored type claiming
+    otherwise. `ScheduleDaysPicker` calls `.includes()` directly on that prop with no
+    guard, so opening the tab threw an uncaught exception during render, and with no error
+    boundary anywhere in the app, React just unmounts the entire tree - a blank window is
+    exactly what an uncaught render error looks like here. Fixed with a new
+    `migrateMinecraftProfile` (`minecraftProfileMigration.ts`), mirroring ARK's own
+    `migrateProfile` exactly, wired into `listMinecraftProfiles()` in `store.ts`.
+  - **Dashboard card: players moved next to CPU, Address moved to its own line below
+    everything.** The 2-column info grid is now CPU/Players (when running) then Type/RAM,
+    instead of Type/Address/Players/CPU/RAM all interleaved in one grid - Address sits on
+    its own full-width line underneath the grid instead.
+  - **Trimmed two descriptions down to just the parameter name/a one-line hint**: the
+    Console tab's "Chat mode" checkbox no longer has a `(sends as /say)` parenthetical next
+    to its label, and Server Settings' Online Mode hint was cut from a long paragraph
+    (cracked servers, minecraft.net downtime, ...) down to one line.
+
 - **Dashboard groups: reorderable, collapse persists, minimized groups skip the aggregate views.**
   - Groups on the Dashboard can now be dragged to reorder (same `⠿` drag-handle pattern as
     server cards), persisted manager-wide as `AppSettings.groupOrder`. A group not yet in that

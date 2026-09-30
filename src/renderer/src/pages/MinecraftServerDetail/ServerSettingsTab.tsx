@@ -100,12 +100,7 @@ const NETWORKING_BOOL_FIELDS: BoolField[] = [
   {
     key: 'online-mode',
     label: 'Online Mode',
-    hint:
-      "Checks connecting players against Minecraft's account database. Only set this to false if your server is not " +
-      'connected to the Internet. Hackers with fake accounts can connect if disabled! If minecraft.net is down or ' +
-      'inaccessible, no players will be able to connect if this is enabled. Setting this variable to off purposely is ' +
-      'called "cracking" a server, and servers that are presently with online mode off are called "cracked" servers, ' +
-      'allowing players with unlicensed copies of Minecraft to join.',
+    hint: 'Requires a valid Minecraft account to connect. Turn off only for an offline/cracked server.',
     default: true
   },
   {
