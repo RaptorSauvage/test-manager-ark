@@ -32,8 +32,15 @@ export function parseMapDefinitionsFile(content: string, fileLabel: string): Map
  *  falling back to that same list (without touching the file) if it's been edited into something invalid. */
 export function readMapDefinitionsFile(filePath: string, fileLabel: string, defaults: MapDefinition[]): MapDefinition[] {
   if (!fs.existsSync(filePath)) {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true })
-    fs.writeFileSync(filePath, JSON.stringify(defaults, null, 2), 'utf-8')
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, JSON.stringify(defaults, null, 2), 'utf-8')
+    } catch (err) {
+      // Best-effort - this function's job is to hand the caller a valid map list, not to
+      // guarantee the file got created. A disk-level failure here (see this session's other
+      // fixes for the same real report) still leaves the in-memory defaults perfectly usable.
+      console.error(`Failed to create ${fileLabel} (using the built-in defaults instead):`, (err as Error).message)
+    }
     return defaults
   }
 

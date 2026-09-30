@@ -28,6 +28,25 @@ function writeFileEnsuringDir(filePath: string, content: string): void {
   fs.writeFileSync(filePath, content, 'utf-8')
 }
 
+/** Reads a file's current content before surgically editing it, or `null` if the file exists
+ *  but a disk-level failure prevents reading it right now - deliberately distinct from "the
+ *  file doesn't exist" (empty string, a legitimate starting point). Falling back to '' on a
+ *  read failure the way an empty/missing file is handled would make the write below think
+ *  there was nothing there to begin with and overwrite the rest of the file's real content
+ *  with just the one key being upserted - a real report on Windows of exactly this class of
+ *  disk failure (elsewhere in the app) makes this a genuine, not hypothetical, risk. Callers
+ *  treat `null` as "can't safely write right now" and skip the write entirely, leaving the
+ *  file untouched. */
+function tryReadExistingContent(filePath: string): string | null {
+  if (!fs.existsSync(filePath)) return ''
+  try {
+    return fs.readFileSync(filePath, 'utf-8')
+  } catch (err) {
+    console.error(`Failed to read ${filePath} before updating it - leaving it untouched:`, (err as Error).message)
+    return null
+  }
+}
+
 function findSectionRange(lines: string[], section: string): { start: number; end: number } | null {
   const sectionLine = `[${section}]`
   const start = lines.findIndex((line) => line.trim() === sectionLine)
@@ -48,7 +67,8 @@ function findSectionRange(lines: string[], section: string): { start: number; en
  * yet.
  */
 export function upsertIniKey(filePath: string, section: string, key: string, value: string): void {
-  const content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : ''
+  const content = tryReadExistingContent(filePath)
+  if (content === null) return
   const eol = content ? detectEol(content) : '\r\n'
   const lines = content.length > 0 ? content.split(/\r\n|\n/) : []
   const keyPattern = new RegExp(`^\\s*${key}\\s*=`)
@@ -77,7 +97,8 @@ export function upsertIniKey(filePath: string, section: string, key: string, val
  * non-empty - nothing to write otherwise.
  */
 export function upsertIniRepeatedKey(filePath: string, section: string, key: string, values: string[]): void {
-  const content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : ''
+  const content = tryReadExistingContent(filePath)
+  if (content === null) return
   const eol = content ? detectEol(content) : '\r\n'
   const lines = content.length > 0 ? content.split(/\r\n|\n/) : []
   const keyPattern = new RegExp(`^\\s*${key}\\s*=`)

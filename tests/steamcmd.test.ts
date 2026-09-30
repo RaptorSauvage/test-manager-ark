@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildUpdateArgs,
   describeSteamCmdExitCode,
@@ -216,6 +216,29 @@ describe('getInstalledBuildId', () => {
         '"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"buildid"\t\t"18742069"\n}\n'
       )
       expect(getInstalledBuildId(installDir, 'ark-ascended')).toBe('18742069')
+    } finally {
+      fs.rmSync(installDir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns null instead of throwing when the disk read itself fails', () => {
+    // Polled by the Dashboard/Analytics tab to show Install-vs-Update state - a real report
+    // on Windows showed a disk-level read failure here crashing the IPC handler that asked.
+    const installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ark-buildid-test-'))
+    try {
+      fs.mkdirSync(path.join(installDir, 'steamapps'), { recursive: true })
+      fs.writeFileSync(
+        getAppManifestPath(installDir, 'ark-ascended'),
+        '"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"buildid"\t\t"18742069"\n}\n'
+      )
+      const spy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+        throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
+      })
+      try {
+        expect(getInstalledBuildId(installDir, 'ark-ascended')).toBeNull()
+      } finally {
+        spy.mockRestore()
+      }
     } finally {
       fs.rmSync(installDir, { recursive: true, force: true })
     }

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { upsertIniKey, upsertIniRepeatedKey, syncAseModsToIni, reconcileAseModsFromIni } from '../src/main/lib/gameConfigWrite'
 import type { ServerProfile } from '../shared/types'
 
@@ -123,6 +123,24 @@ describe('upsertIniKey', () => {
     upsertIniKey(filePath, 'ServerSettings', 'ActiveMods', '111')
     expect(fs.readFileSync(filePath, 'utf-8')).toContain('\r\n')
     expect(fs.readFileSync(filePath, 'utf-8')).not.toMatch(/[^\r]\n/)
+  })
+
+  it('leaves the file completely untouched instead of clobbering it when the disk read fails', () => {
+    // A real report on Windows showed disk-level failures across this app. Falling back to
+    // '' here the way a missing file is handled would make the write below think there was
+    // nothing there to begin with and overwrite the rest of the file's real content with
+    // just the one key being upserted - real data loss, not just a missed update.
+    const original = '[ServerSettings]\nMaxPlayers=70\nServerPassword=hello\n'
+    fs.writeFileSync(filePath, original, 'utf-8')
+    const spy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(() => upsertIniKey(filePath, 'ServerSettings', 'ActiveMods', '111')).not.toThrow()
+    } finally {
+      spy.mockRestore()
+    }
+    expect(fs.readFileSync(filePath, 'utf-8')).toBe(original)
   })
 })
 

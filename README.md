@@ -1794,3 +1794,31 @@ async function findProfileIdByName(name) {
   failing, a sync client like OneDrive holding files open, antivirus actively blocking I/O to
   these paths, or a dropped network drive) rather than a specific code path still left to
   harden.
+
+- **Second follow-up, and the actual resolution.** Disk space was fine (checked, plenty free
+  on every drive) and CrystalDiskInfo showed the physical drive itself (an internal NVMe,
+  ruling out the "flaky external/virtual disk" theory) as healthy - yet the exact same error
+  kept recurring, next caught crashing `'server:start'` itself: `readIniFile` (`config.ts`,
+  used by `readAdminPassword`, called from `buildLaunchArgs` on every single start) threw
+  straight out, meaning a server couldn't even be started while this was happening. Also
+  hardened the same way while already in the area, all on the same "a real report showed
+  this recurring" evidence: `getInstalledBuildId`/`checkInstallUpToDate`/`readUpdateLog`/
+  `readNewContentLog`/`clearStuckManifest` (`steamcmd.ts`, the Dashboard's Install-vs-Update
+  state and the Update Log tab), `readMapDefinitionsFile` (`jsonListFile.ts`, maps.json/
+  customMaps.json - including the write that creates the file fresh on its very first read),
+  and `upsertIniKey`/`upsertIniRepeatedKey` (`gameConfigWrite.ts`, ARK: Survival Evolved's
+  mod-save writes) - the last of which needed the same care as `readAllSamples` above, for
+  an even higher-stakes reason: falling back to `''` on a read failure the way a genuinely
+  missing file is handled would make the subsequent write think there was nothing in the
+  file to begin with, and overwrite the user's real `GameUserSettings.ini`/`Game.ini`
+  content with just the one key being upserted - actual data loss, not just a missed update.
+  It now aborts the write entirely (leaving the file untouched) when the read that's
+  supposed to feed it fails, locked in by a test that writes real content, fails the read,
+  and asserts the file is still exactly what it was before.
+
+  It turned out to be exactly the kind of thing this pattern pointed at: **a reboot of the
+  machine resolved it.** Not a disk fault, not something in the app - a stuck driver/OS-level
+  I/O state that a restart cleared. Every fix in both of these sessions stands regardless -
+  they're general resilience against a real, reproducible class of failure (a disk-level
+  read/write erroring out transiently), not specific to this one report's eventual cause, and
+  cost nothing when nothing's wrong.

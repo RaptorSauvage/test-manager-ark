@@ -61,10 +61,25 @@ export function getUpdateLogPath(profileId: string): string {
   return path.join(getDataDir(), 'logs', `steamcmd-update-${profileId}.log`)
 }
 
+/** Reads a file's text content via `onRead`, or logs and returns `fallback` on a disk-level
+ *  read failure - every caller below feeds a status display or the install/update flow,
+ *  where "can't tell right now" is a safer degrade than crashing the IPC handler that asked.
+ *  A real report on Windows showed exactly that (a raw libuv "UNKNOWN: unknown error, read")
+ *  breaking Dashboard install-state checks and update-log reads. */
+function safeReadFileSync<T>(filePath: string, fallback: T, onRead: (raw: string) => T): T {
+  try {
+    return onRead(fs.readFileSync(filePath, 'utf-8'))
+  } catch (err) {
+    console.error(`Failed to read ${filePath}:`, (err as Error).message)
+    return fallback
+  }
+}
+
 /** Returns the last update run's log for this profile, or null if it has never been updated. */
 export function readUpdateLog(profileId: string): string | null {
   const logPath = getUpdateLogPath(profileId)
-  return fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf-8') : null
+  if (!fs.existsSync(logPath)) return null
+  return safeReadFileSync(logPath, null, (raw) => raw)
 }
 
 /**
@@ -79,17 +94,28 @@ export function getSteamCmdContentLogPath(steamCmdPath: string): string {
 
 function contentLogSize(steamCmdPath: string): number {
   const logPath = getSteamCmdContentLogPath(steamCmdPath)
-  return fs.existsSync(logPath) ? fs.statSync(logPath).size : 0
+  if (!fs.existsSync(logPath)) return 0
+  try {
+    return fs.statSync(logPath).size
+  } catch (err) {
+    console.error(`Failed to stat ${logPath}:`, (err as Error).message)
+    return 0
+  }
 }
 
 /** Returns only the content_log.txt bytes written since `previousSize`, or '' if there's nothing new. */
 export function readNewContentLog(steamCmdPath: string, previousSize: number): string {
   const logPath = getSteamCmdContentLogPath(steamCmdPath)
   if (!fs.existsSync(logPath)) return ''
-  const currentSize = fs.statSync(logPath).size
-  const readStart = computeTailReadStart(previousSize, currentSize)
-  if (readStart === null) return ''
-  return fs.readFileSync(logPath).subarray(readStart).toString('utf-8')
+  try {
+    const currentSize = fs.statSync(logPath).size
+    const readStart = computeTailReadStart(previousSize, currentSize)
+    if (readStart === null) return ''
+    return fs.readFileSync(logPath).subarray(readStart).toString('utf-8')
+  } catch (err) {
+    console.error(`Failed to read ${logPath}:`, (err as Error).message)
+    return ''
+  }
 }
 
 /** Where SteamCMD tracks this app's install state within a given install directory. */
@@ -111,7 +137,7 @@ export function isManifestStuckInErrorState(manifestContent: string): boolean {
 function clearStuckManifest(installDir: string, game: GameId): void {
   const manifestPath = getAppManifestPath(installDir, game)
   if (!fs.existsSync(manifestPath)) return
-  if (isManifestStuckInErrorState(fs.readFileSync(manifestPath, 'utf-8'))) {
+  if (safeReadFileSync(manifestPath, false, isManifestStuckInErrorState)) {
     fs.rmSync(manifestPath, { force: true })
   }
 }
@@ -143,7 +169,7 @@ export function isInstallUpToDate(stateFlags: number | null): boolean {
 function checkInstallUpToDate(installDir: string, game: GameId): boolean {
   const manifestPath = getAppManifestPath(installDir, game)
   if (!fs.existsSync(manifestPath)) return false
-  return isInstallUpToDate(readManifestStateFlags(fs.readFileSync(manifestPath, 'utf-8')))
+  return safeReadFileSync(manifestPath, false, (raw) => isInstallUpToDate(readManifestStateFlags(raw)))
 }
 
 /** Reads the installed build id out of an appmanifest .acf file, or null if missing/unparseable. */
@@ -156,7 +182,7 @@ export function readManifestBuildId(manifestContent: string): string | null {
 export function getInstalledBuildId(installDir: string, game: GameId): string | null {
   const manifestPath = getAppManifestPath(installDir, game)
   if (!fs.existsSync(manifestPath)) return null
-  return readManifestBuildId(fs.readFileSync(manifestPath, 'utf-8'))
+  return safeReadFileSync(manifestPath, null, readManifestBuildId)
 }
 
 /** A stale/freshly-installed SteamCMD's very first run in a while often has to
