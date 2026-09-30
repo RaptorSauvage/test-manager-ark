@@ -9,13 +9,11 @@
  * own store collection, and its own Dashboard/menu (this file, minecraftDetect.ts,
  * minecraftProcess.ts, minecraftProperties.ts, ipc/minecraft.ts) is the smaller, safer change.
  *
- * MVP scope - deliberately cut for the first pass, all real gaps rather than oversights:
- * no backups, no scheduled restart, no crash-watch/zombie detection, no persisted CPU/RAM/
- * player history, no Web Dashboard integration, no re-adopting a still-running server across
- * a Manager restart (it'll show as stopped until started again). These all worked for ARK
- * via infrastructure that's straightforward to point at Minecraft later - this first pass is
- * about proving the core loop (import an existing server, launch it our way or via its own
- * script, see its console, stop it cleanly) end to end.
+ * MVP scope - deliberately cut for the first pass, all real gaps rather than oversights: no
+ * backups, no crash-watch/zombie detection, no persisted CPU/RAM/player history, no Web
+ * Dashboard integration. Scheduled restart and re-adopting a still-running server across a
+ * Manager restart, both originally cut too, were added in a follow-up pass - see
+ * minecraftScheduledActions.ts and minecraftProcess.ts's adoptPersistedMinecraftProcesses.
  */
 
 /** How a profile's server process actually gets launched. 'jar' - the Manager builds the
@@ -27,9 +25,17 @@
  *  other custom launch setup (a modpack's own start script, etc). */
 export type MinecraftLaunchMode = 'jar' | 'script'
 
+/** Best-effort guess at what's actually running - purely cosmetic (the Dashboard card, and
+ *  a manual override in Settings if the guess is wrong), never used to change launch
+ *  behavior. Detected from the jar/script file name (minecraftDetect.ts's
+ *  detectMinecraftServerType) since none of these ship any other cheap, reliable signal to
+ *  read instead. */
+export type MinecraftServerType = 'vanilla' | 'paper' | 'spigot' | 'fabric' | 'forge' | 'unknown'
+
 export interface MinecraftProfile {
   id: string
   name: string
+  serverType: MinecraftServerType
   /** The server's root folder - where server.properties/eula.txt/the world folder/the jar
    *  or script live. Everything server.properties already covers (port, RCON port/password/
    *  enabled, motd, max-players, ...) is deliberately NOT duplicated here - read fresh from
@@ -59,9 +65,19 @@ export interface MinecraftProfile {
   hidden: boolean
   group: string
   /** Mirrors ServerProfile.startOnManagerLaunch - starts this server automatically when the
-   *  Manager launches, unless it's already running (which, for the MVP cut above, it never
-   *  is right after a Manager restart). */
+   *  Manager launches, unless it's already running (re-adopted from a previous session -
+   *  see adoptPersistedMinecraftProcesses in minecraftProcess.ts). */
   startOnManagerLaunch: boolean
+  /** Scheduled restart - same day-of-week + time picker and cron-driven mechanism as ARK's
+   *  own ServerProfile.scheduledRestart* fields (see shared/scheduleTime.ts,
+   *  minecraftScheduledActions.ts). No update-after-shutdown option here - there's no
+   *  SteamCMD-equivalent update mechanism for Minecraft to run. */
+  scheduledRestartEnabled: boolean
+  scheduledRestartTime: string
+  scheduledRestartDays: number[]
+  /** If false, the schedule just stops the server at the scheduled time (a "scheduled
+   *  shutdown") rather than restarting it. */
+  scheduledRestartStartAfter: boolean
 }
 
 export type MinecraftRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error'
@@ -76,6 +92,12 @@ export interface MinecraftServerStatus {
   players?: string[]
   maxPlayers?: number
   lastError?: string
+  /** False for a server re-adopted from a previous Manager session (see
+   *  adoptPersistedMinecraftProcesses) - there's no live ChildProcess handle for one of
+   *  those, so the Console tab has no piped stdout to show and no stdin to send commands to
+   *  (sendCommand falls back to RCON, if enabled, instead). Always true for a server this
+   *  session actually started itself. */
+  consoleAvailable?: boolean
 }
 
 /** One line of live/backlog console output - unlike ARK's parsed/categorized LogEvent, this
@@ -88,3 +110,8 @@ export interface MinecraftConsoleLine {
   text: string
   ts: number
 }
+
+/** Flat `key=value` data read from / written to server.properties - see
+ *  minecraftProperties.ts (main process) for the actual read/write logic. Shared here since
+ *  both the Server Settings tab (renderer) and the IPC layer need the shape. */
+export type MinecraftPropertiesData = Record<string, string>

@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -10,7 +11,9 @@ import {
   getStatus,
   getConsoleBacklog,
   sendStdinCommand,
-  minecraftServerEvents
+  minecraftServerEvents,
+  adoptPersistedMinecraftProcesses,
+  isRunning
 } from '../src/main/lib/minecraftProcess'
 
 function wait(ms: number): Promise<void> {
@@ -71,6 +74,7 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
     profile = {
       id: `mc-test-${Math.random().toString(36).slice(2)}`,
       name: 'Test Minecraft Server',
+      serverType: 'vanilla',
       installDir: tmpDir,
       launchMode: 'script',
       jarFileName: '',
@@ -81,7 +85,11 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
       extraProgramArgs: '',
       hidden: false,
       group: '',
-      startOnManagerLaunch: false
+      startOnManagerLaunch: false,
+      scheduledRestartEnabled: false,
+      scheduledRestartTime: '00:00',
+      scheduledRestartDays: [],
+      scheduledRestartStartAfter: true
     }
   })
 
@@ -165,5 +173,97 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
 
     killServer(profile.id)
     await waitUntil(() => getStatus(profile.id).state === 'stopped')
+  })
+})
+
+describe('adoptPersistedMinecraftProcesses (re-attaching after a Manager restart)', () => {
+  let profile: MinecraftProfile
+  let adoptedPid: number | undefined
+
+  beforeEach(() => {
+    profile = {
+      id: `mc-adopt-test-${Math.random().toString(36).slice(2)}`,
+      name: 'Adopted Server',
+      serverType: 'vanilla',
+      installDir: os.tmpdir(),
+      launchMode: 'jar',
+      jarFileName: 'server.jar',
+      scriptFileName: '',
+      minMemoryMB: 1024,
+      maxMemoryMB: 2048,
+      extraJvmArgs: '',
+      extraProgramArgs: '',
+      hidden: false,
+      group: '',
+      startOnManagerLaunch: false,
+      scheduledRestartEnabled: false,
+      scheduledRestartTime: '00:00',
+      scheduledRestartDays: [],
+      scheduledRestartStartAfter: true
+    }
+  })
+
+  afterEach(async () => {
+    if (adoptedPid !== undefined) {
+      try {
+        process.kill(adoptedPid)
+      } catch {
+        // Already gone.
+      }
+      adoptedPid = undefined
+    }
+    if (getStatus(profile.id).state !== 'stopped') {
+      killServer(profile.id)
+      await wait(100)
+    }
+  })
+
+  it('adopts a still-alive persisted pid as running, with no live console', async () => {
+    const child = spawn('node', ['-e', 'setInterval(() => {}, 1000)'])
+    adoptedPid = child.pid!
+    await wait(100)
+
+    adoptPersistedMinecraftProcesses([profile], { [profile.id]: adoptedPid }, { [profile.id]: 12345 })
+
+    expect(isRunning(profile.id)).toBe(true)
+    const status = getStatus(profile.id)
+    expect(status.state).toBe('running')
+    expect(status.pid).toBe(adoptedPid)
+    expect(status.startedAt).toBe(12345)
+    expect(status.consoleAvailable).toBe(false)
+    expect(getConsoleBacklog(profile.id)).toEqual([])
+  })
+
+  it('does not adopt a pid that is no longer alive', () => {
+    // A pid essentially guaranteed not to correspond to a live process right now.
+    adoptPersistedMinecraftProcesses([profile], { [profile.id]: 999999 })
+    expect(isRunning(profile.id)).toBe(false)
+    expect(getStatus(profile.id).state).toBe('stopped')
+  })
+
+  it('sendStdinCommand returns false for an adopted process (no live stdin)', async () => {
+    const child = spawn('node', ['-e', 'setInterval(() => {}, 1000)'])
+    adoptedPid = child.pid!
+    await wait(100)
+
+    adoptPersistedMinecraftProcesses([profile], { [profile.id]: adoptedPid })
+    expect(sendStdinCommand(profile.id, 'say hi')).toBe(false)
+  })
+
+  it('killServer terminates an adopted process and finalizes it as stopped, with no exit event needed', async () => {
+    const child = spawn('node', ['-e', 'setInterval(() => {}, 1000)'])
+    adoptedPid = child.pid!
+    await wait(100)
+
+    adoptPersistedMinecraftProcesses([profile], { [profile.id]: adoptedPid })
+    expect(isRunning(profile.id)).toBe(true)
+
+    killServer(profile.id)
+    expect(getStatus(profile.id).state).toBe('stopped')
+    expect(isRunning(profile.id)).toBe(false)
+
+    await wait(100)
+    expect(() => process.kill(adoptedPid!, 0)).toThrow()
+    adoptedPid = undefined
   })
 })

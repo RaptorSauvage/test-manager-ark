@@ -8,7 +8,16 @@ process.env.UV_THREADPOOL_SIZE = '8'
 import { app, BrowserWindow, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
-import { listProfiles, getRunningPids, getRunningStartedAt, getSettings, getProfile, listMinecraftProfiles } from './store'
+import {
+  listProfiles,
+  getRunningPids,
+  getRunningStartedAt,
+  getSettings,
+  getProfile,
+  listMinecraftProfiles,
+  getMinecraftRunningPids,
+  getMinecraftRunningStartedAt
+} from './store'
 import { applyWebDashboardSettings } from './lib/webDashboard'
 import { applyBackupSchedule, registerBackupScheduleWatcher } from './lib/schedule'
 import { applyScheduledRestart, applyScheduledDinoWipe } from './lib/scheduledActions'
@@ -25,7 +34,9 @@ import { registerCrashWatch } from './lib/crashWatch'
 import { registerZombieDetection } from './lib/zombieDetection'
 import { registerClusterLogArchiveWatch, startClusterLogArchiveWatch } from './lib/clusterLogArchive'
 import { doStartMinecraftServer } from './lib/minecraftActions'
-import { isRunning as isMinecraftRunning } from './lib/minecraftProcess'
+import { adoptPersistedMinecraftProcesses, isRunning as isMinecraftRunning } from './lib/minecraftProcess'
+import { startMinecraftMonitoring } from './lib/minecraftMonitor'
+import { applyMinecraftScheduledRestart } from './lib/minecraftScheduledActions'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -121,10 +132,17 @@ app.whenReady().then(() => {
 
   runAutoStart(profiles, getSettings().serverAutoStartStaggerSeconds, isRunning, doStartServer)
 
-  // Minecraft has no cross-restart re-adoption yet (see shared/minecraft.ts's MVP scope
-  // note), so isMinecraftRunning is always false here - every startOnManagerLaunch profile
-  // auto-starts on every launch, which is exactly the point of the setting for this game too.
   const minecraftProfiles = listMinecraftProfiles()
+
+  // Re-attach to Minecraft servers still running from a previous session - same reasoning
+  // as ARK's own adoptPersistedProcesses above.
+  adoptPersistedMinecraftProcesses(minecraftProfiles, getMinecraftRunningPids(), getMinecraftRunningStartedAt())
+
+  for (const profile of minecraftProfiles) {
+    applyMinecraftScheduledRestart(profile)
+    if (isMinecraftRunning(profile.id)) startMinecraftMonitoring(profile)
+  }
+
   const minecraftStaggerMs = Math.max(0, getSettings().serverAutoStartStaggerSeconds) * 1000
   minecraftProfiles
     .filter((profile) => profile.startOnManagerLaunch && !isMinecraftRunning(profile.id))

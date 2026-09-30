@@ -3,7 +3,7 @@
 // of the IPC boundary drifting apart.
 
 import type { GameId } from './games'
-import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine } from './minecraft'
+import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine, MinecraftPropertiesData } from './minecraft'
 
 export interface ServerProfile {
   id: string
@@ -520,7 +520,9 @@ export const IPC = {
   minecraftServerStatusChanged: 'minecraft-server:status-changed',
   minecraftServerSendCommand: 'minecraft-server:send-command',
   minecraftConsoleBacklog: 'minecraft-console:backlog',
-  minecraftConsoleLine: 'minecraft-console:line'
+  minecraftConsoleLine: 'minecraft-console:line',
+  minecraftPropertiesGet: 'minecraft-properties:get',
+  minecraftPropertiesSave: 'minecraft-properties:save'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -801,25 +803,40 @@ export interface Api {
       importFromInstall: (installDir: string) => Promise<MinecraftProfile>
       onChanged: (callback: (profiles: MinecraftProfile[]) => void) => () => void
     }
-    /** Re-detects the launchable jar/script in installDir - used by the Settings tab's
-     *  "Re-detect" button after the user changes files on disk outside the Manager. */
-    detectLaunchable: (
-      installDir: string
-    ) => Promise<{ launchMode: MinecraftProfile['launchMode']; jarFileName: string; scriptFileName: string } | null>
+    /** Re-detects the launchable jar/script (and server type guess) in installDir - used by
+     *  the Settings tab's "Re-detect" button after the user changes files on disk outside
+     *  the Manager. */
+    detectLaunchable: (installDir: string) => Promise<{
+      launchMode: MinecraftProfile['launchMode']
+      jarFileName: string
+      scriptFileName: string
+      serverType: MinecraftProfile['serverType']
+    } | null>
     server: {
       start: (profileId: string) => Promise<MinecraftServerStatus>
       stop: (profileId: string) => Promise<MinecraftServerStatus>
       kill: (profileId: string) => Promise<MinecraftServerStatus>
       getStatus: (profileId: string) => Promise<MinecraftServerStatus>
       onStatusChanged: (callback: (status: MinecraftServerStatus) => void) => () => void
-      /** Writes straight to the running process's stdin (works with or without RCON
-       *  enabled in server.properties) - never rejects, the result's `ok`/`error` says
-       *  whether it actually succeeded (e.g. the server isn't running). */
+      /** Writes straight to the running process's stdin, falling back to RCON (if enabled)
+       *  when there's no live stdin - a server re-adopted from a previous Manager session
+       *  (see adoptPersistedMinecraftProcesses) has none. Never rejects, the result's
+       *  `ok`/`error` says whether it actually succeeded. */
       sendCommand: (profileId: string, command: string) => Promise<RconResult>
     }
     console: {
       getBacklog: (profileId: string) => Promise<MinecraftConsoleLine[]>
       onLine: (callback: (profileId: string, line: MinecraftConsoleLine) => void) => () => void
+    }
+    /** The Server Settings tab's editor for server.properties itself - separate from the
+     *  `profiles` CRUD above, since these fields live in a file MinecraftProfile
+     *  deliberately doesn't duplicate (see minecraftProperties.ts). */
+    properties: {
+      get: (profileId: string) => Promise<MinecraftPropertiesData>
+      /** Merges `updates` into server.properties (existing lines' values are replaced in
+       *  place, a key with no existing line is appended) and returns the file's full,
+       *  freshly-read contents afterward. */
+      save: (profileId: string, updates: MinecraftPropertiesData) => Promise<MinecraftPropertiesData>
     }
   }
 }

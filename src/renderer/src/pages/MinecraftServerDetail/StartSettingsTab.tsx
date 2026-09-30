@@ -1,12 +1,21 @@
 import { useState } from 'react'
-import type { MinecraftLaunchMode, MinecraftProfile } from '@shared/minecraft'
+import type { MinecraftLaunchMode, MinecraftProfile, MinecraftServerType } from '@shared/minecraft'
 
-interface SettingsTabProps {
+const SERVER_TYPE_OPTIONS: Array<{ value: MinecraftServerType; label: string }> = [
+  { value: 'vanilla', label: 'Vanilla' },
+  { value: 'paper', label: 'Paper' },
+  { value: 'spigot', label: 'Spigot' },
+  { value: 'fabric', label: 'Fabric' },
+  { value: 'forge', label: 'Forge' },
+  { value: 'unknown', label: 'Unknown' }
+]
+
+interface StartSettingsTabProps {
   profile: MinecraftProfile
   onProfileChange: (profile: MinecraftProfile) => void
 }
 
-export default function SettingsTab({ profile, onProfileChange }: SettingsTabProps): JSX.Element {
+export default function StartSettingsTab({ profile, onProfileChange }: StartSettingsTabProps): JSX.Element {
   const [form, setForm] = useState<MinecraftProfile>(profile)
   const [formError, setFormError] = useState('')
   const [redetecting, setRedetecting] = useState(false)
@@ -42,7 +51,8 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         ...form,
         launchMode: detected.launchMode,
         jarFileName: detected.jarFileName,
-        scriptFileName: detected.scriptFileName
+        scriptFileName: detected.scriptFileName,
+        serverType: detected.serverType
       }
       setForm(next)
       void persist(next)
@@ -61,6 +71,20 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           Name
           <input value={form.name} onChange={(e) => update('name', e.target.value)} />
         </label>
+        <label>
+          Server type
+          <select value={form.serverType} onChange={(e) => update('serverType', e.target.value as MinecraftServerType)}>
+            {SERVER_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="empty-state">
+          Cosmetic only (shown on the Dashboard card) - best-effort guessed from the jar/script name on import or
+          Re-detect below. Correct it here if it guessed wrong; it never affects how the server actually launches.
+        </p>
         <label>
           Install directory
           <div className="path-input-row">
@@ -159,14 +183,6 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         <label>
           Dashboard group
           <input value={form.group} onChange={(e) => update('group', e.target.value)} placeholder="(none)" />
-        </label>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={form.startOnManagerLaunch}
-            onChange={(e) => update('startOnManagerLaunch', e.target.checked)}
-          />
-          Start automatically when the Manager launches
         </label>
         <label className="checkbox">
           <input type="checkbox" checked={form.hidden} onChange={(e) => update('hidden', e.target.checked)} />

@@ -3,7 +3,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { platform } from 'node:process'
-import { detectMinecraftLaunchable, isValidMinecraftInstall, detectMinecraftProfile } from '../src/main/lib/minecraftDetect'
+import {
+  detectMinecraftLaunchable,
+  isValidMinecraftInstall,
+  detectMinecraftProfile,
+  detectMinecraftServerType
+} from '../src/main/lib/minecraftDetect'
 
 describe('minecraft install detection', () => {
   let tmpDir: string
@@ -26,7 +31,12 @@ describe('minecraft install detection', () => {
 
   it('detects a plain jar as launchMode "jar"', () => {
     fs.writeFileSync(path.join(tmpDir, 'server.jar'), '')
-    expect(detectMinecraftLaunchable(tmpDir)).toEqual({ launchMode: 'jar', jarFileName: 'server.jar', scriptFileName: '' })
+    expect(detectMinecraftLaunchable(tmpDir)).toEqual({
+      launchMode: 'jar',
+      jarFileName: 'server.jar',
+      scriptFileName: '',
+      serverType: 'vanilla'
+    })
   })
 
   it('prefers a non-installer jar when multiple jars exist', () => {
@@ -35,7 +45,8 @@ describe('minecraft install detection', () => {
     expect(detectMinecraftLaunchable(tmpDir)).toEqual({
       launchMode: 'jar',
       jarFileName: 'fabric-server-launch.jar',
-      scriptFileName: ''
+      scriptFileName: '',
+      serverType: 'fabric'
     })
   })
 
@@ -43,7 +54,12 @@ describe('minecraft install detection', () => {
     fs.writeFileSync(path.join(tmpDir, 'server.jar'), '')
     const scriptName = platform === 'win32' ? 'run.bat' : 'run.sh'
     fs.writeFileSync(path.join(tmpDir, scriptName), '')
-    expect(detectMinecraftLaunchable(tmpDir)).toEqual({ launchMode: 'script', jarFileName: '', scriptFileName: scriptName })
+    expect(detectMinecraftLaunchable(tmpDir)).toEqual({
+      launchMode: 'script',
+      jarFileName: '',
+      scriptFileName: scriptName,
+      serverType: 'forge'
+    })
   })
 
   it('does not look inside subfolders for a jar', () => {
@@ -84,5 +100,33 @@ describe('minecraft install detection', () => {
     expect(profile.launchMode).toBe('jar')
     expect(profile.jarFileName).toBe('')
     expect(profile.scriptFileName).toBe('')
+    expect(profile.serverType).toBe('unknown')
+  })
+})
+
+describe('detectMinecraftServerType', () => {
+  it('recognizes Paper/Spigot/Fabric/Forge from the jar name', () => {
+    expect(detectMinecraftServerType('jar', 'paper-1.20.1-196.jar', '')).toBe('paper')
+    expect(detectMinecraftServerType('jar', 'spigot-1.20.1.jar', '')).toBe('spigot')
+    expect(detectMinecraftServerType('jar', 'craftbukkit-1.20.1.jar', '')).toBe('spigot')
+    expect(detectMinecraftServerType('jar', 'fabric-server-launch.jar', '')).toBe('fabric')
+    expect(detectMinecraftServerType('jar', 'forge-1.20.1-universal.jar', '')).toBe('forge')
+  })
+
+  it('falls back to vanilla for a generic jar name', () => {
+    expect(detectMinecraftServerType('jar', 'server.jar', '')).toBe('vanilla')
+    expect(detectMinecraftServerType('jar', 'minecraft_server.1.20.1.jar', '')).toBe('vanilla')
+  })
+
+  it('treats an unrecognized launch script as Forge (the reason launchMode "script" exists)', () => {
+    expect(detectMinecraftServerType('script', '', 'run.bat')).toBe('forge')
+  })
+
+  it('still recognizes a non-Forge name even in script mode', () => {
+    expect(detectMinecraftServerType('script', '', 'start-fabric.sh')).toBe('fabric')
+  })
+
+  it('reports unknown when there is no name to go on at all', () => {
+    expect(detectMinecraftServerType('jar', '', '')).toBe('unknown')
   })
 })

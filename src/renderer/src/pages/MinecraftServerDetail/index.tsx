@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import type { MinecraftProfile } from '@shared/minecraft'
 import ConsoleTab from './ConsoleTab'
-import SettingsTab from './SettingsTab'
+import StartSettingsTab from './StartSettingsTab'
+import ServerSettingsTab from './ServerSettingsTab'
+import ServerManagementTab from './ServerManagementTab'
 
-export type MinecraftTabKey = 'console' | 'settings'
+export type MinecraftTabKey = 'console' | 'startSettings' | 'serverSettings' | 'management'
 
 interface MinecraftServerDetailProps {
   profile: MinecraftProfile
@@ -14,7 +16,9 @@ interface MinecraftServerDetailProps {
 
 const TABS: Array<{ key: MinecraftTabKey; label: string }> = [
   { key: 'console', label: 'Console' },
-  { key: 'settings', label: 'Settings' }
+  { key: 'startSettings', label: 'Start Settings' },
+  { key: 'serverSettings', label: 'Server Settings' },
+  { key: 'management', label: 'Server Management' }
 ]
 
 export default function MinecraftServerDetail({
@@ -40,7 +44,9 @@ export default function MinecraftServerDetail({
       </nav>
       <div className="tab-content">
         {tab === 'console' && <ConsoleTab profile={profile} />}
-        {tab === 'settings' && <SettingsTab profile={profile} onProfileChange={onProfileChange} />}
+        {tab === 'startSettings' && <StartSettingsTab profile={profile} onProfileChange={onProfileChange} />}
+        {tab === 'serverSettings' && <ServerSettingsTab profile={profile} />}
+        {tab === 'management' && <ServerManagementTab profile={profile} onProfileChange={onProfileChange} />}
       </div>
     </div>
   )

@@ -13,7 +13,7 @@ import {
   type RconResult,
   type ManagerLogEntry
 } from '@shared/types'
-import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine } from '@shared/minecraft'
+import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine, MinecraftPropertiesData } from '@shared/minecraft'
 
 const api: Api = {
   profiles: {
@@ -222,6 +222,11 @@ const api: Api = {
         ipcRenderer.on(IPC.minecraftConsoleLine, listener)
         return () => ipcRenderer.removeListener(IPC.minecraftConsoleLine, listener)
       }
+    },
+    properties: {
+      get: (profileId: string) => ipcRenderer.invoke(IPC.minecraftPropertiesGet, profileId),
+      save: (profileId: string, updates: MinecraftPropertiesData) =>
+        ipcRenderer.invoke(IPC.minecraftPropertiesSave, profileId, updates)
     }
   }
 }

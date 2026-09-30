@@ -1,8 +1,17 @@
 import { useState } from 'react'
-import type { MinecraftProfile, MinecraftRunState } from '@shared/minecraft'
+import type { MinecraftProfile, MinecraftRunState, MinecraftServerType } from '@shared/minecraft'
 import { useMinecraftServerStatuses } from '../lib/useMinecraftServerStatuses'
 import { createDefaultMinecraftProfile } from '../lib/minecraftProfile'
 import type { MinecraftTabKey } from './MinecraftServerDetail'
+
+const SERVER_TYPE_LABELS: Record<MinecraftServerType, string> = {
+  vanilla: 'Vanilla',
+  paper: 'Paper',
+  spigot: 'Spigot',
+  fabric: 'Fabric',
+  forge: 'Forge',
+  unknown: 'Unknown'
+}
 
 interface MinecraftDashboardProps {
   profiles: MinecraftProfile[]
@@ -37,7 +46,7 @@ export default function MinecraftDashboard({
       // overwrites this best-effort guess.
       const updated = await window.api.minecraft.profiles.save(detected)
       onProfilesChange(updated)
-      onOpenProfile(detected.id, 'settings')
+      onOpenProfile(detected.id, 'startSettings')
     } catch (err) {
       setImportError((err as Error).message)
     } finally {
@@ -49,7 +58,7 @@ export default function MinecraftDashboard({
     const profile = createDefaultMinecraftProfile(`Minecraft Server ${profiles.length + 1}`)
     const updated = await window.api.minecraft.profiles.save(profile)
     onProfilesChange(updated)
-    onOpenProfile(profile.id, 'settings')
+    onOpenProfile(profile.id, 'startSettings')
   }
 
   async function handleDelete(id: string): Promise<void> {
@@ -96,8 +105,8 @@ export default function MinecraftDashboard({
         </div>
         <dl className="server-card-info">
           <div>
-            <dt>Launch mode</dt>
-            <dd>{profile.launchMode === 'jar' ? profile.jarFileName || '(no jar set)' : profile.scriptFileName || '(no script set)'}</dd>
+            <dt>Type</dt>
+            <dd>{SERVER_TYPE_LABELS[profile.serverType]}</dd>
           </div>
           {status?.players && (
             <div>

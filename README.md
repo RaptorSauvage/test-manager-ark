@@ -1683,14 +1683,56 @@ async function findProfileIdByName(name) {
       script that doesn't happen to read that file.
   - **Explicitly cut from this first pass** (all real, deliberate scope cuts, not oversights -
     the infrastructure that made each of these work for ARK is straightforward to point at
-    Minecraft later): no backups, no scheduled restart, no crash-watch/zombie detection, no
-    persisted CPU/RAM/player history (only shown live while the Manager is open), no Web
-    Dashboard integration, and no re-adopting a still-running Minecraft server across a
-    Manager restart - unlike ARK, a Minecraft server started before a Manager restart shows as
-    `stopped` afterward until started again from here (it does keep running in the background,
-    same as ARK, since nothing about the Manager restarting touches it - just not tracked by
-    this window until re-started). `startOnManagerLaunch` still works exactly as it does for
-    ARK, since a fresh launch always finds nothing already running to re-adopt anyway.
+    Minecraft later): no backups, no crash-watch/zombie detection, no persisted CPU/RAM/player
+    history (only shown live while the Manager is open), no Web Dashboard integration.
+    Scheduled restart and cross-restart re-adoption, both cut here originally, were added in
+    a follow-up pass - see the next bullet.
+
+- **Minecraft follow-up: server type on the card, re-adoption across a Manager restart,
+  tab rework (Start Settings / Server Settings / Server Management).** Four asks from a real
+  report, after using the MVP above for a bit.
+  - **Server type shown on the Dashboard card**, replacing the previous jar/script file name
+    display. `detectMinecraftServerType` (`minecraftDetect.ts`) is a pure, best-effort guess
+    from the jar/script's own file name - it looks for `fabric`/`paper`/`spigot`/`bukkit`/
+    `forge` as substrings, falls back to `forge` for any other launchMode `'script'` name
+    (the actual reason that mode exists - see the MVP bullet above), and `vanilla` otherwise.
+    Purely cosmetic (`MinecraftProfile.serverType`, a new field) - never affects how the
+    server actually launches - and has a manual override dropdown in Start Settings for when
+    the guess is wrong, right next to a description saying so.
+  - **Re-adopts a still-running server across a Manager restart**, closing the MVP's own gap.
+    Same shape as ARK's `adoptPersistedProcesses`: `startServer` now also persists its pid/
+    start time (`store.ts`'s new `minecraftRunningPids`/`minecraftRunningStartedAt`, same
+    write-resilience wrapper as ARK's own), and `adoptPersistedMinecraftProcesses`
+    (`minecraftProcess.ts`, called from `main/index.ts` at boot) re-attaches to any pid still
+    alive. An adopted server has no live `ChildProcess` handle (`RunningMinecraftServer.process`
+    is now nullable) - so no piped stdout for the Console tab and no stdin to send commands
+    to. `sendStdinCommand`/`stopServer`'s graceful stop and the IPC send-command handler all
+    fall back to RCON (if enabled) for one of these; the Console tab shows a plain note
+    instead of a silently-empty feed (`MinecraftServerStatus.consoleAvailable`). Force-kill
+    and the stop-timeout fallback already went through a tracked pid rather than the child
+    handle (see the script-mode pid-tracking fix above), so they needed no further change
+    beyond `waitForExitOrKill`/`killServer` also finalizing the entry's bookkeeping manually
+    for a null `process` (a live one already does this via its own `child.on('exit')`).
+  - **Scheduled restart**, a new **Server Management** tab - `minecraftScheduledActions.ts`
+    is the restart half only of ARK's own `scheduledActions.ts` (no SteamCMD-equivalent
+    update step to schedule around, and no dino-wipe equivalent), reusing the exact same
+    day-of-week + time cron mechanism (`shared/scheduleTime.ts`'s `buildDayOfWeekCron`,
+    `node-cron`) and the renderer's existing `ScheduleDaysPicker` component unchanged. New
+    `MinecraftProfile` fields: `scheduledRestartEnabled`/`Time`/`Days`/`StartAfter` (the last
+    one, unchecked, turns it into a plain scheduled shutdown with no restart).
+    `startOnManagerLaunch` moved here too from Start Settings, matching ARK's own tab layout.
+  - **Server Settings, a new tab that edits server.properties itself** - the "Settings" tab
+    is renamed **Start Settings** (it only ever covered how the Manager launches the process:
+    jar/script, memory, ...) to make room for it. `upsertServerPropertiesKeys`
+    (`minecraftProperties.ts`) is a line-based, non-destructive write: each key's existing
+    `key=value` line has just its value replaced, a key with no existing line is appended,
+    and everything else in the file (comments, ordering, a plugin's own custom key) is left
+    untouched - never a full rewrite from parsed data, which would have silently dropped all
+    of that. The tab itself mirrors MCSS's own property editor layout (Gameplay/Appearance/
+    World/Networking/Miscellaneous sections, booleans as checkboxes) via two new IPC calls
+    (`minecraft.properties.get`/`save`, `ipc/minecraft.ts`) - Minecraft only re-reads this
+    file at its own startup, so an edit here takes effect on the server's next start, not
+    live, same as editing it by hand always did.
 
 - **Dashboard groups: reorderable, collapse persists, minimized groups skip the aggregate views.**
   - Groups on the Dashboard can now be dragged to reorder (same `⠿` drag-handle pattern as

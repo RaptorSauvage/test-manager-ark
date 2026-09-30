@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { platform } from 'node:process'
 import { randomUUID } from 'node:crypto'
-import type { MinecraftLaunchMode, MinecraftProfile } from '@shared/minecraft'
+import type { MinecraftLaunchMode, MinecraftProfile, MinecraftServerType } from '@shared/minecraft'
 
 const SCRIPT_NAME_RE = platform === 'win32' ? /^(run|start)\.bat$/i : /^(run|start)\.sh$/i
 
@@ -10,6 +10,31 @@ export interface DetectedLaunchable {
   launchMode: MinecraftLaunchMode
   jarFileName: string
   scriptFileName: string
+  serverType: MinecraftServerType
+}
+
+/**
+ * Best-effort guess at the server flavor, purely from the jar/script file name - none of
+ * these ship any other cheap, reliable marker to read instead (no manifest, no version
+ * file with a consistent name across all of them). A script launch is treated as Forge
+ * unless the name itself says otherwise: modern Forge (1.17+) is the actual reason
+ * launchMode 'script' exists at all (see shared/minecraft.ts), so it's the far more likely
+ * case than "someone's fully custom launcher happens to be named something else" - wrong
+ * either way is a one-click fix via the manual override in Settings, not a functional
+ * problem (this never affects how the server is actually launched).
+ */
+export function detectMinecraftServerType(
+  launchMode: MinecraftLaunchMode,
+  jarFileName: string,
+  scriptFileName: string
+): MinecraftServerType {
+  const name = (launchMode === 'jar' ? jarFileName : scriptFileName).toLowerCase()
+  if (name.includes('fabric')) return 'fabric'
+  if (name.includes('paper')) return 'paper'
+  if (name.includes('spigot') || name.includes('bukkit')) return 'spigot'
+  if (name.includes('forge')) return 'forge'
+  if (launchMode === 'script') return 'forge'
+  return name ? 'vanilla' : 'unknown'
 }
 
 /**
@@ -37,7 +62,14 @@ export function detectMinecraftLaunchable(installDir: string): DetectedLaunchabl
   }
 
   const script = entries.find((e) => e.isFile() && SCRIPT_NAME_RE.test(e.name))
-  if (script) return { launchMode: 'script', jarFileName: '', scriptFileName: script.name }
+  if (script) {
+    return {
+      launchMode: 'script',
+      jarFileName: '',
+      scriptFileName: script.name,
+      serverType: detectMinecraftServerType('script', '', script.name)
+    }
+  }
 
   // Prefer a jar whose name doesn't look like an installer (Forge/Fabric installers leave
   // their own jar sitting in the root right next to the one that's actually meant to be run)
@@ -45,7 +77,14 @@ export function detectMinecraftLaunchable(installDir: string): DetectedLaunchabl
   // confirm/correct in the import review step.
   const jars = entries.filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.jar'))
   const jar = jars.find((e) => !/installer/i.test(e.name)) ?? jars[0]
-  if (jar) return { launchMode: 'jar', jarFileName: jar.name, scriptFileName: '' }
+  if (jar) {
+    return {
+      launchMode: 'jar',
+      jarFileName: jar.name,
+      scriptFileName: '',
+      serverType: detectMinecraftServerType('jar', jar.name, '')
+    }
+  }
 
   return null
 }
@@ -70,6 +109,7 @@ export function detectMinecraftProfile(installDir: string): MinecraftProfile {
   return {
     id: randomUUID(),
     name: folderName,
+    serverType: launchable?.serverType ?? 'unknown',
     installDir,
     launchMode: launchable?.launchMode ?? 'jar',
     jarFileName: launchable?.jarFileName ?? '',
@@ -80,6 +120,10 @@ export function detectMinecraftProfile(installDir: string): MinecraftProfile {
     extraProgramArgs: 'nogui',
     hidden: false,
     group: '',
-    startOnManagerLaunch: false
+    startOnManagerLaunch: false,
+    scheduledRestartEnabled: false,
+    scheduledRestartTime: '00:00',
+    scheduledRestartDays: [],
+    scheduledRestartStartAfter: true
   }
 }

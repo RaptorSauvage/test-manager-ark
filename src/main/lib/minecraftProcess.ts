@@ -5,6 +5,8 @@ import { platform } from 'node:process'
 import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine } from '@shared/minecraft'
 import { findListeningPid, isPidAlive } from './serverProcess'
 import { getMinecraftServerPort, writeUserJvmArgs } from './minecraftProperties'
+import { sendMinecraftRconCommand } from './minecraftRcon'
+import { setMinecraftRunningPid, setMinecraftRunningStartedAt } from '../store'
 
 /** Minecraft's own log line once the world has finished loading and is ready for players -
  *  every vanilla/Fabric/Paper/Spigot/Forge version prints this exact wording (only the
@@ -27,7 +29,12 @@ const CONSOLE_BACKLOG_LIMIT = 500
 const STOP_GRACE_MS = 30_000
 
 interface RunningMinecraftServer {
-  process: ChildProcess
+  /** Null for a server re-adopted from a previous Manager session (see
+   *  adoptPersistedMinecraftProcesses) - we have its pid but no live handle: no stdout to
+   *  read the console from, no stdin to send commands to (sendStdinCommand/stopServer both
+   *  fall back to RCON, when enabled), and no 'exit' event to detect it stopping (which is
+   *  why waitForExitOrKill/killServer poll/finalize manually for this case instead). */
+  process: ChildProcess | null
   /** Best-known real server pid - used for CPU/RAM stats (minecraftMonitor.ts) and for
    *  force-kill. Starts out equal to `process.pid`, except right after a Windows
    *  launchMode 'script' launch (see watchForScriptPidHandoff below), where it's corrected
@@ -70,6 +77,53 @@ export function getStatus(profileId: string): MinecraftServerStatus {
 
 export function isRunning(profileId: string): boolean {
   return running.has(profileId)
+}
+
+/** Clears an entry's bookkeeping (in-memory and persisted pid) and broadcasts 'stopped' -
+ *  the one place that needs to happen from, whether triggered by the live child's own
+ *  'exit' event or (for an adopted process with no such event - see killServer/
+ *  waitForExitOrKill) a poll noticing it's gone. */
+function finalizeStopped(profileId: string): void {
+  running.delete(profileId)
+  setMinecraftRunningPid(profileId, null)
+  setMinecraftRunningStartedAt(profileId, null)
+  emitStatus({ profileId, state: 'stopped' })
+}
+
+/**
+ * Re-attaches to servers still running from a previous Manager session - the process itself
+ * survives a Manager crash/close (nothing about it is tied to the Manager's own lifetime),
+ * so without this a relaunched Manager would show every one of them as "stopped" even while
+ * still actually running, and let a second instance be started on top of it. Same shape as
+ * ARK's own adoptPersistedProcesses in serverProcess.ts. Console/stdin aren't available for
+ * an adopted entry (see RunningMinecraftServer.process's own comment) - CPU/RAM and, if RCON
+ * is enabled, player list and command sending still work.
+ */
+export function adoptPersistedMinecraftProcesses(
+  profiles: MinecraftProfile[],
+  persistedPids: Record<string, number>,
+  persistedStartedAt: Record<string, number> = {}
+): void {
+  for (const profile of profiles) {
+    const pid = persistedPids[profile.id]
+    if (pid === undefined) continue
+
+    if (isPidAlive(pid)) {
+      const status: MinecraftServerStatus = {
+        profileId: profile.id,
+        state: 'running',
+        pid,
+        consoleAvailable: false,
+        ...(persistedStartedAt[profile.id] !== undefined ? { startedAt: persistedStartedAt[profile.id] } : {})
+      }
+      running.set(profile.id, { process: null, pid, pidTracked: true, status })
+      consoleBacklogs.set(profile.id, [])
+      emitStatus(status)
+    } else {
+      setMinecraftRunningPid(profile.id, null)
+      setMinecraftRunningStartedAt(profile.id, null)
+    }
+  }
 }
 
 /** Whether `getStatus(profileId).pid` is currently trustworthy for an OS-level CPU/RAM
@@ -149,6 +203,10 @@ function watchForScriptPidHandoff(profileId: string, port: number, wrapperPid: n
         entry.pid = realPid
         entry.pidTracked = true
         entry.status = { ...entry.status, pid: realPid }
+        // So a Manager restart re-adopts the real java pid rather than cmd.exe's wrapper
+        // pid, which might not even exist any more (or worse, be reused by something
+        // unrelated) by the time adoptPersistedMinecraftProcesses runs.
+        setMinecraftRunningPid(profileId, realPid)
         emitStatus(entry.status)
         stopped = true
         clearInterval(interval)
@@ -218,9 +276,11 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
   }
 
   const startedAt = Date.now()
-  const status: MinecraftServerStatus = { profileId: profile.id, state: 'starting', pid, startedAt }
+  const status: MinecraftServerStatus = { profileId: profile.id, state: 'starting', pid, startedAt, consoleAvailable: true }
   running.set(profile.id, { process: child, pid, pidTracked: !launchedViaWindowsScriptWrapper, status })
   consoleBacklogs.set(profile.id, [])
+  setMinecraftRunningPid(profile.id, pid)
+  setMinecraftRunningStartedAt(profile.id, startedAt)
   emitStatus(status)
 
   const stopPidHandoffWatch = launchedViaWindowsScriptWrapper
@@ -243,6 +303,8 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
   child.on('exit', (code, signal) => {
     stopPidHandoffWatch()
     running.delete(profile.id)
+    setMinecraftRunningPid(profile.id, null)
+    setMinecraftRunningStartedAt(profile.id, null)
     emitStatus({
       profileId: profile.id,
       state: 'stopped',
@@ -253,6 +315,8 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
   child.on('error', (err) => {
     stopPidHandoffWatch()
     running.delete(profile.id)
+    setMinecraftRunningPid(profile.id, null)
+    setMinecraftRunningStartedAt(profile.id, null)
     emitStatus({ profileId: profile.id, state: 'error', lastError: err.message })
   })
 
@@ -263,12 +327,12 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
  *  a server command, since Minecraft/Java server processes reliably support piped stdio
  *  (unlike ARK's dedicated server on Windows, which is why ARK is RCON/log-file-only).
  *  Works whether or not RCON is enabled in server.properties. minecraftRcon.ts's
- *  sendMinecraftRconCommand is the secondary path, for player-list queries or a server this
- *  Manager didn't itself spawn (no live stdin handle in that case - not yet possible given
- *  the MVP scope cut on cross-restart re-adoption, but the fallback exists for when it is). */
+ *  sendMinecraftRconCommand is the secondary path (see ipc/minecraft.ts's send-command
+ *  handler), for player-list queries or a server re-adopted from a previous Manager session
+ *  (adoptPersistedMinecraftProcesses) - no live stdin handle exists for one of those. */
 export function sendStdinCommand(profileId: string, command: string): boolean {
   const entry = running.get(profileId)
-  if (!entry?.process.stdin?.writable) return false
+  if (!entry?.process?.stdin?.writable) return false
   try {
     entry.process.stdin.write(command.endsWith('\n') ? command : `${command}\n`)
     return true
@@ -278,33 +342,64 @@ export function sendStdinCommand(profileId: string, command: string): boolean {
   }
 }
 
-async function waitForExitOrKill(entry: RunningMinecraftServer, graceMs: number): Promise<void> {
+/** Waits for the process to exit on its own, or force-kills it after `graceMs`. Two ways of
+ *  detecting "it exited": a live child's own 'exit' event, or - for an adopted process with
+ *  no such event available (see RunningMinecraftServer.process) - polling isPidAlive. Kills
+ *  via entry.pid (the real server pid, not necessarily entry.process's own pid - see
+ *  RunningMinecraftServer.pid) rather than entry.process.kill(): after a Windows launchMode
+ *  'script' handoff, entry.process is still the cmd.exe wrapper, and killing just that
+ *  leaves the real java process it spawned running orphaned in the background. */
+async function waitForExitOrKill(entry: RunningMinecraftServer, profileId: string, graceMs: number): Promise<void> {
   const exited = await new Promise<boolean>((resolve) => {
-    const timeout = setTimeout(() => resolve(false), graceMs)
-    entry.process.once('exit', () => {
-      clearTimeout(timeout)
-      resolve(true)
-    })
+    if (entry.process) {
+      const timeout = setTimeout(() => resolve(false), graceMs)
+      entry.process.once('exit', () => {
+        clearTimeout(timeout)
+        resolve(true)
+      })
+      return
+    }
+    const start = Date.now()
+    const interval = setInterval(() => {
+      const alive = isPidAlive(entry.pid)
+      if (!alive || Date.now() - start >= graceMs) {
+        clearInterval(interval)
+        resolve(!alive)
+      }
+    }, 1000)
   })
-  // Via entry.pid (the real server pid, not necessarily entry.process's own pid - see
-  // RunningMinecraftServer.pid) rather than entry.process.kill(): after a Windows
-  // launchMode 'script' handoff, entry.process is still the cmd.exe wrapper, and killing
-  // just that leaves the real java process it spawned running orphaned in the background.
+
+  if (entry.process) {
+    if (!exited && running.has(profileId)) killByPid(entry.pid)
+    return
+  }
+  // Adopted process: no child.on('exit') handler exists to clean up its bookkeeping for us.
   if (!exited) killByPid(entry.pid)
+  finalizeStopped(profileId)
 }
 
 /** Graceful shutdown: writes "stop" to the process's own stdin, which saves the world, kicks
  *  players, and exits on its own - there's no separate save-then-exit RCON handshake to phase
- *  this into the way ARK's stopServerPhased needs. Waits up to graceMs before force-killing. */
+ *  this into the way ARK's stopServerPhased needs. Waits up to graceMs before force-killing.
+ *  An adopted process (see RunningMinecraftServer.process) has no stdin to write to - RCON's
+ *  own "stop" command is the only other graceful path available, if RCON happens to be
+ *  enabled; otherwise this falls straight through to the wait-then-force-kill below. */
 export async function stopServer(profile: MinecraftProfile, graceMs = STOP_GRACE_MS): Promise<MinecraftServerStatus> {
   const entry = running.get(profile.id)
   if (!entry) return { profileId: profile.id, state: 'stopped' }
 
   emitStatus({ ...entry.status, state: 'stopping' })
   if (!sendStdinCommand(profile.id, 'stop')) {
-    console.error(`Could not write "stop" to ${profile.name}'s stdin - falling back to waiting then force-killing.`)
+    const rconResult = await sendMinecraftRconCommand(profile.installDir, 'stop').catch(
+      (err: Error) => ({ ok: false, error: err.message }) as const
+    )
+    if (!rconResult.ok) {
+      console.error(
+        `Could not gracefully stop ${profile.name} (no stdin, and RCON's own "stop" didn't work either: ${rconResult.error}) - waiting then force-killing.`
+      )
+    }
   }
-  await waitForExitOrKill(entry, graceMs)
+  await waitForExitOrKill(entry, profile.id, graceMs)
   return getStatus(profile.id)
 }
 
@@ -316,5 +411,9 @@ export function killServer(profileId: string): MinecraftServerStatus {
   emitStatus({ ...entry.status, state: 'stopping' })
   // See waitForExitOrKill's comment - entry.pid, not entry.process, for the same reason.
   killByPid(entry.pid)
+  // A live process's own child.on('exit') handler (registered in startServer) finalizes it
+  // once the kill actually takes effect; an adopted one (entry.process === null) has no
+  // such handler, so nothing else would ever clear its bookkeeping without this.
+  if (!entry.process) finalizeStopped(profileId)
   return getStatus(profileId)
 }

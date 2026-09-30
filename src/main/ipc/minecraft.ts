@@ -11,6 +11,9 @@ import {
 import { detectMinecraftLaunchable, detectMinecraftProfile, isValidMinecraftInstall } from '../lib/minecraftDetect'
 import { getStatus, minecraftServerEvents, sendStdinCommand, getConsoleBacklog, minecraftConsoleEvents } from '../lib/minecraftProcess'
 import { doStartMinecraftServer, doStopMinecraftServer, doKillMinecraftServer } from '../lib/minecraftActions'
+import { readServerProperties, upsertServerPropertiesKeys, type PropertiesData } from '../lib/minecraftProperties'
+import { sendMinecraftRconCommand } from '../lib/minecraftRcon'
+import { applyMinecraftScheduledRestart, clearMinecraftScheduledRestart } from '../lib/minecraftScheduledActions'
 
 function requireProfile(profileId: string): MinecraftProfile {
   const profile = getMinecraftProfile(profileId)
@@ -31,9 +34,16 @@ export function registerMinecraftHandlers(webContents: WebContents): void {
 
   ipcMain.handle(IPC.minecraftProfilesList, () => listMinecraftProfiles())
 
-  ipcMain.handle(IPC.minecraftProfilesSave, (_event, profile: MinecraftProfile) => saveMinecraftProfile(profile))
+  ipcMain.handle(IPC.minecraftProfilesSave, (_event, profile: MinecraftProfile) => {
+    const profiles = saveMinecraftProfile(profile)
+    applyMinecraftScheduledRestart(profile)
+    return profiles
+  })
 
-  ipcMain.handle(IPC.minecraftProfilesDelete, (_event, id: string) => deleteMinecraftProfile(id))
+  ipcMain.handle(IPC.minecraftProfilesDelete, (_event, id: string) => {
+    clearMinecraftScheduledRestart(id)
+    return deleteMinecraftProfile(id)
+  })
 
   // Deliberately does NOT save - the caller (the Settings tab, opened right after) lets the
   // user review/correct every detected field first, same pattern as ARK's profilesImport
@@ -55,10 +65,23 @@ export function registerMinecraftHandlers(webContents: WebContents): void {
 
   ipcMain.handle(IPC.minecraftServerStatus, (_event, profileId: string) => getStatus(profileId))
 
-  ipcMain.handle(IPC.minecraftServerSendCommand, (_event, profileId: string, command: string): RconResult => {
-    const ok = sendStdinCommand(profileId, command)
-    return ok ? { ok: true } : { ok: false, error: 'Server is not running, or its console input is not available.' }
+  ipcMain.handle(IPC.minecraftServerSendCommand, async (_event, profileId: string, command: string): Promise<RconResult> => {
+    if (sendStdinCommand(profileId, command)) return { ok: true }
+    // No live stdin - a server re-adopted from a previous Manager session (see
+    // adoptPersistedMinecraftProcesses) has none. RCON is the only other channel available,
+    // and only if the server has it enabled.
+    const profile = getMinecraftProfile(profileId)
+    if (!profile) return { ok: false, error: `Unknown Minecraft profile: ${profileId}` }
+    return sendMinecraftRconCommand(profile.installDir, command)
   })
 
   ipcMain.handle(IPC.minecraftConsoleBacklog, (_event, profileId: string) => getConsoleBacklog(profileId))
+
+  ipcMain.handle(IPC.minecraftPropertiesGet, (_event, profileId: string) => readServerProperties(requireProfile(profileId).installDir))
+
+  ipcMain.handle(IPC.minecraftPropertiesSave, (_event, profileId: string, updates: PropertiesData) => {
+    const profile = requireProfile(profileId)
+    upsertServerPropertiesKeys(profile.installDir, updates)
+    return readServerProperties(profile.installDir)
+  })
 }

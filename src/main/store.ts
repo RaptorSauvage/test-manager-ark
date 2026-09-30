@@ -28,6 +28,12 @@ interface StoreSchema {
    *  a re-launched app can still compute an accurate uptime for a server it re-adopts
    *  instead of one that resets to "just started". */
   runningStartedAt: Record<string, number>
+  /** Same idea as runningPids/runningStartedAt above, for Minecraft profiles - see
+   *  minecraftProcess.ts's adoptPersistedMinecraftProcesses. Kept as its own pair of keys
+   *  (not merged into the ARK ones) since profile ids aren't namespaced by game and could
+   *  theoretically collide between an ARK profile and a Minecraft one. */
+  minecraftRunningPids: Record<string, number>
+  minecraftRunningStartedAt: Record<string, number>
   /** Web dashboard browser access tokens - only touched from the Manager's own Settings
    *  screen. */
   webDashboardAccessTokens: WebDashboardAccessToken[]
@@ -73,6 +79,8 @@ const store = new Store<StoreSchema>({
     },
     runningPids: {},
     runningStartedAt: {},
+    minecraftRunningPids: {},
+    minecraftRunningStartedAt: {},
     webDashboardAccessTokens: [],
     webDashboardApiKeys: [],
     webDashboardRolesMigrated: false,
@@ -165,6 +173,8 @@ export function saveMinecraftProfile(profile: MinecraftProfile): MinecraftProfil
 export function deleteMinecraftProfile(id: string): MinecraftProfile[] {
   const profiles = listMinecraftProfiles().filter((p) => p.id !== id)
   store.set('minecraftProfiles', profiles)
+  setMinecraftRunningPid(id, null)
+  setMinecraftRunningStartedAt(id, null)
   minecraftProfileEvents.emit('changed', profiles)
   return profiles
 }
@@ -286,5 +296,37 @@ export function setRunningStartedAt(profileId: string, startedAt: number | null)
       startedAtByProfile[profileId] = startedAt
     }
     store.set('runningStartedAt', startedAtByProfile)
+  })
+}
+
+export function getMinecraftRunningPids(): Record<string, number> {
+  return store.get('minecraftRunningPids') ?? {}
+}
+
+export function setMinecraftRunningPid(profileId: string, pid: number | null): void {
+  setPersistedRunningState(() => {
+    const pids = getMinecraftRunningPids()
+    if (pid === null) {
+      delete pids[profileId]
+    } else {
+      pids[profileId] = pid
+    }
+    store.set('minecraftRunningPids', pids)
+  })
+}
+
+export function getMinecraftRunningStartedAt(): Record<string, number> {
+  return store.get('minecraftRunningStartedAt') ?? {}
+}
+
+export function setMinecraftRunningStartedAt(profileId: string, startedAt: number | null): void {
+  setPersistedRunningState(() => {
+    const startedAtByProfile = getMinecraftRunningStartedAt()
+    if (startedAt === null) {
+      delete startedAtByProfile[profileId]
+    } else {
+      startedAtByProfile[profileId] = startedAt
+    }
+    store.set('minecraftRunningStartedAt', startedAtByProfile)
   })
 }

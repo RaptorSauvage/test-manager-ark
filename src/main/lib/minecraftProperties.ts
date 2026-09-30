@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import type { MinecraftPropertiesData } from '@shared/minecraft'
 
-export type PropertiesData = Record<string, string>
+export type PropertiesData = MinecraftPropertiesData
 
 export function getServerPropertiesPath(installDir: string): string {
   return path.join(installDir, 'server.properties')
@@ -100,5 +101,51 @@ export function writeUserJvmArgs(installDir: string, args: string[]): void {
     // Best-effort - a failed write here just means the server starts with whatever memory
     // its own script/user_jvm_args.txt already had, not a reason to block Start entirely.
     console.error(`Failed to write ${filePath} (non-fatal):`, (err as Error).message)
+  }
+}
+
+/**
+ * Applies `updates` to server.properties - the one place in this file that writes the file
+ * the user otherwise manages themselves (the Server Settings tab's properties editor).
+ * Line-based, not a full rewrite: each updated key replaces just the value on its existing
+ * `key=value` line if one exists (keeping the file's own ordering, comments, and any
+ * key this app doesn't know about - a plugin's own custom property, for instance - untouched),
+ * and only a key with no existing line at all is appended at the end. Aborts without writing
+ * anything if the read itself fails, rather than risking silently dropping every existing
+ * line the way starting from an empty file would - same data-loss-prevention reasoning as
+ * ARK's gameConfigWrite.ts.
+ */
+export function upsertServerPropertiesKeys(installDir: string, updates: PropertiesData): void {
+  const filePath = getServerPropertiesPath(installDir)
+  let lines: string[] = []
+  if (fs.existsSync(filePath)) {
+    try {
+      lines = fs.readFileSync(filePath, 'utf-8').split(/\r?\n/)
+    } catch (err) {
+      console.error(`Failed to read ${filePath} - aborting write to avoid clobbering it:`, (err as Error).message)
+      return
+    }
+  }
+
+  const remaining = new Map(Object.entries(updates))
+  const rewritten = lines.map((rawLine) => {
+    const trimmed = rawLine.trim()
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('!')) return rawLine
+    const eq = trimmed.indexOf('=')
+    if (eq === -1) return rawLine
+    const key = trimmed.slice(0, eq).trim()
+    if (!remaining.has(key)) return rawLine
+    const value = remaining.get(key)!
+    remaining.delete(key)
+    return `${key}=${value}`
+  })
+  for (const [key, value] of remaining) {
+    rewritten.push(`${key}=${value}`)
+  }
+
+  try {
+    fs.writeFileSync(filePath, rewritten.join('\n'), 'utf-8')
+  } catch (err) {
+    console.error(`Failed to write ${filePath}:`, (err as Error).message)
   }
 }

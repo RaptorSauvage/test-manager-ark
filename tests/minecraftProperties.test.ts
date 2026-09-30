@@ -7,7 +7,8 @@ import {
   getMinecraftServerPort,
   getMinecraftRconConfig,
   isEulaAccepted,
-  writeUserJvmArgs
+  writeUserJvmArgs,
+  upsertServerPropertiesKeys
 } from '../src/main/lib/minecraftProperties'
 
 describe('minecraft properties reading', () => {
@@ -95,5 +96,50 @@ describe('writeUserJvmArgs', () => {
     writeUserJvmArgs(tmpDir, ['-Xms2048M', '-Xmx8192M'])
     const content = fs.readFileSync(path.join(tmpDir, 'user_jvm_args.txt'), 'utf-8')
     expect(content).toBe('-Xms2048M\n-Xmx8192M\n')
+  })
+})
+
+describe('upsertServerPropertiesKeys', () => {
+  let tmpDir: string
+  let filePath: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-upsert-test-'))
+    filePath = path.join(tmpDir, 'server.properties')
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('creates the file when none exists yet', () => {
+    upsertServerPropertiesKeys(tmpDir, { 'server-port': '25566' })
+    expect(readServerProperties(tmpDir)).toEqual({ 'server-port': '25566' })
+  })
+
+  it('replaces an existing key in place, keeping every other line untouched', () => {
+    fs.writeFileSync(filePath, ['#Minecraft server properties', 'server-port=25565', 'motd=Hello'].join('\n'))
+    upsertServerPropertiesKeys(tmpDir, { 'server-port': '30000' })
+    const raw = fs.readFileSync(filePath, 'utf-8')
+    expect(raw).toBe(['#Minecraft server properties', 'server-port=30000', 'motd=Hello'].join('\n'))
+  })
+
+  it('appends a key that has no existing line, without disturbing the rest', () => {
+    fs.writeFileSync(filePath, ['motd=Hello'].join('\n'))
+    upsertServerPropertiesKeys(tmpDir, { 'server-port': '30000' })
+    expect(readServerProperties(tmpDir)).toEqual({ motd: 'Hello', 'server-port': '30000' })
+  })
+
+  it('preserves comments and a key this app does not know about', () => {
+    fs.writeFileSync(filePath, ['#A comment', 'some-plugin-key=custom-value', 'motd=Hello'].join('\n'))
+    upsertServerPropertiesKeys(tmpDir, { motd: 'Updated' })
+    const raw = fs.readFileSync(filePath, 'utf-8')
+    expect(raw).toBe(['#A comment', 'some-plugin-key=custom-value', 'motd=Updated'].join('\n'))
+  })
+
+  it('updates multiple keys in one call', () => {
+    fs.writeFileSync(filePath, ['server-port=25565', 'motd=Hello', 'pvp=true'].join('\n'))
+    upsertServerPropertiesKeys(tmpDir, { 'server-port': '30000', pvp: 'false' })
+    expect(readServerProperties(tmpDir)).toEqual({ 'server-port': '30000', motd: 'Hello', pvp: 'false' })
   })
 })

@@ -4,6 +4,7 @@ export function createDefaultMinecraftProfile(name: string): MinecraftProfile {
   return {
     id: crypto.randomUUID(),
     name,
+    serverType: 'unknown',
     installDir: '',
     launchMode: 'jar',
     jarFileName: '',
@@ -14,6 +15,10 @@ export function createDefaultMinecraftProfile(name: string): MinecraftProfile {
     extraProgramArgs: 'nogui',
     hidden: false,
     group: '',
-    startOnManagerLaunch: false
+    startOnManagerLaunch: false,
+    scheduledRestartEnabled: false,
+    scheduledRestartTime: '00:00',
+    scheduledRestartDays: [],
+    scheduledRestartStartAfter: true
   }
 }

@@ -17,7 +17,13 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
   const feedRef = useRef<HTMLDivElement>(null)
   const didInitialScroll = useRef(false)
   const statuses = useMinecraftServerStatuses([profile.id])
-  const state = statuses[profile.id]?.state ?? 'stopped'
+  const status = statuses[profile.id]
+  const state = status?.state ?? 'stopped'
+  // False for a server re-adopted from a previous Manager session (see
+  // adoptPersistedMinecraftProcesses) - no live stdout/stdin exists for one of those.
+  // Undefined (a fresh status object that hasn't set it either way, or 'stopped') means
+  // "not a concern right now", so this only actually restricts the UI while running.
+  const consoleAvailable = status?.consoleAvailable ?? true
 
   useEffect(() => {
     let cancelled = false
@@ -65,6 +71,12 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
           Auto-scroll
         </label>
       </div>
+      {state === 'running' && !consoleAvailable && (
+        <p className="empty-state">
+          This server was already running before the Manager (re)started, so there's no live console output to show
+          for it - commands typed below are sent over RCON instead, if it's enabled in Server Settings.
+        </p>
+      )}
       <div className="group-console-feed" ref={feedRef}>
         {lines.length === 0 && (
           <p className="empty-state">
