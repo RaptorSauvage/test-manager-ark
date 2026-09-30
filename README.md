@@ -1762,3 +1762,35 @@ async function findProfileIdByName(name) {
   including, for the archive listener specifically, a test proving a later-registered
   `serverEvents` listener still fires when an earlier one's write fails, the exact class of
   bug this was.
+
+- **Follow-up: the same class of bug existed on the read side too, and a real report showed
+  it - fixed the same way.** Once writes stopped throwing, reads started showing up in the
+  same report instead: `readAllSamples` (`statsHistory.ts`, behind the `stats-history:get`
+  IPC handler the Analytics tab/Cluster Dashboard poll every 5s), `readManagerLog`
+  (`managerLog.ts`, the Manager Log view's own read), and `readFileTail` (`logEvents.ts`,
+  shared by the desktop Console tab, the Web Dashboard's console, and the Cluster Data group
+  console) all called `fs.readFileSync`/`fs.readSync` unguarded. All three now catch and log
+  to `console.error`, returning an empty result (`[]`/`''`) instead of throwing back out.
+  `readAllSamples` needed one extra bit of care its write-side counterpart didn't: on a read
+  failure it deliberately does *not* cache the empty result the way it does for "the file
+  genuinely doesn't exist yet" - caching `[]` there would make every future read look
+  identical to "no history" forever, even once the disk recovers, and would make
+  `recordStatSample`'s own cache-append logic start accumulating into a wrongly-reset empty
+  cache in the meantime. A test locks this in: a failed read returns `[]` once, but a real
+  sample recorded before the failure is still there on the very next successful read.
+
+  **This pattern - the exact same generic Windows I/O error (`UNKNOWN`, `errno: -4094`) now
+  hitting reads *and* writes, across the Manager's own data directory, repeatedly rather than
+  as a one-off - stopped looking like something more exception-handling can fix.** The same
+  report also showed `restoreBackup` (`backup.ts`) failing with the identical error code from
+  inside a third-party zip-extraction call, writing into the *server's own* install directory
+  - a completely different location from the Manager's own data folder that every fix above
+  touches. A restore that can't write its extracted files is a genuine failure with nothing to
+  gracefully degrade to (unlike a log line or a stats sample, there's no correct "pretend it
+  worked" for a restore), so that one is already surfacing correctly as a reported error
+  rather than crashing anything - it's included here only as evidence of how broad this is.
+  Two unrelated directories on the same machine, both reads and writes, recurring rather than
+  transient: this points at something below the app entirely (the disk itself full or
+  failing, a sync client like OneDrive holding files open, antivirus actively blocking I/O to
+  these paths, or a dropped network drive) rather than a specific code path still left to
+  harden.

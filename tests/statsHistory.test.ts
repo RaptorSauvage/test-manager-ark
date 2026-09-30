@@ -320,4 +320,24 @@ describe('statsHistory', () => {
       spy.mockRestore()
     }
   })
+
+  it('returns an empty history instead of throwing when the disk read itself fails - a real report on Windows had this crash the stats-history:get IPC handler', () => {
+    recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
+    __resetStatsHistoryCacheForTests() // force the next read to actually hit disk, not the warm cache
+
+    const spy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(readStatsHistory('server-a', null, 500, 2000)).toEqual([])
+    } finally {
+      spy.mockRestore()
+    }
+
+    // The failed read must not have been cached as "no history" - now that reads work again,
+    // the real sample from before the failure is still there.
+    expect(readStatsHistory('server-a', null, 500, 2000)).toEqual([
+      { time: 1000, cpu: 10, memoryMB: 100, players: 1 }
+    ])
+  })
 })

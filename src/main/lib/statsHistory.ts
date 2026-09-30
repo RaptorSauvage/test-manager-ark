@@ -140,8 +140,23 @@ function readAllSamples(): StoredStatSample[] {
     cachedSamples = []
     return cachedSamples
   }
+  let raw: string
+  try {
+    raw = fs.readFileSync(logPath, 'utf-8')
+  } catch (err) {
+    // A disk-level read failure must not crash whatever asked for this history - a real
+    // report on Windows showed exactly this throwing out of the stats-history:get IPC
+    // handler. Deliberately NOT caching [] here (unlike the "file doesn't exist yet" branch
+    // above) - that would look identical to "no history" to every future call too,
+    // permanently hiding real history once the disk recovers, and would make
+    // recordStatSample start accumulating into a wrongly-reset empty cache in the meantime.
+    // Returning [] just this once, uncached, means the very next call (e.g. the next 5s
+    // poll) retries the read fresh instead of being stuck on a stale empty result.
+    console.error('Failed to read stats history:', (err as Error).message)
+    return []
+  }
   const samples: StoredStatSample[] = []
-  for (const line of fs.readFileSync(logPath, 'utf-8').split('\n')) {
+  for (const line of raw.split('\n')) {
     if (!line.trim()) continue
     try {
       const parsed: unknown = JSON.parse(line)

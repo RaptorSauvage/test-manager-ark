@@ -134,4 +134,16 @@ describe('managerLog', () => {
       spy.mockRestore()
     }
   })
+
+  it('returns an empty log instead of throwing when the disk read itself fails', () => {
+    logManagerEvent('task-7', 'Start — Test', 'Started')
+    const spy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(readManagerLog()).toEqual([])
+    } finally {
+      spy.mockRestore()
+    }
+  })
 })

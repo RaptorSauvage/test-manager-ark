@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from 'vitest'
+import { describe, expect, it, afterEach, vi } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -7,6 +7,7 @@ import {
   parseLogLine,
   parseLogChunk,
   readLogBacklog,
+  readFileTail,
   PLAYER_NAME_OPEN,
   PLAYER_NAME_CLOSE
 } from '../src/main/lib/logEvents'
@@ -306,5 +307,44 @@ describe('readLogBacklog', () => {
       '[2026.07.27-21.25.23:191][991]2026.07.27_21.25.23: LeRaptorSauvage [UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] joined this ARK!'
     )
     expect(readLogBacklog(testDir)).toHaveLength(1)
+  })
+
+  it('returns an empty backlog instead of throwing when the disk read itself fails', () => {
+    // readFileTail (used by readLogBacklog, and reused by clusterLogArchive.ts for its own
+    // archive file) is called from the desktop Console tab, the Web Dashboard's own console,
+    // and the Cluster Data group console - a real report on Windows showed a disk-level read
+    // failure crashing an IPC/HTTP handler that read through here.
+    fs.mkdirSync(logDir, { recursive: true })
+    fs.writeFileSync(logPath, 'some content')
+    const spy = vi.spyOn(fs, 'statSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(readLogBacklog(testDir)).toEqual([])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
+
+describe('readFileTail', () => {
+  const testDir = path.join(os.tmpdir(), `read-file-tail-test-${process.pid}`)
+  const filePath = path.join(testDir, 'some.log')
+
+  afterEach(() => {
+    fs.rmSync(testDir, { recursive: true, force: true })
+  })
+
+  it('never throws when the disk read itself fails', () => {
+    fs.mkdirSync(testDir, { recursive: true })
+    fs.writeFileSync(filePath, 'some content')
+    const spy = vi.spyOn(fs, 'openSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(readFileTail(filePath, 1000)).toBe('')
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

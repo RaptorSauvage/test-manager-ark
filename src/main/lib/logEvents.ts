@@ -178,22 +178,33 @@ const BACKLOG_MAX_LINES = 60
 export function readFileTail(filePath: string, maxBytes: number): string {
   if (!fs.existsSync(filePath)) return ''
 
-  const size = fs.statSync(filePath).size
-  const readSize = Math.min(size, maxBytes)
-  const buffer = Buffer.alloc(readSize)
-  const fd = fs.openSync(filePath, 'r')
   try {
-    fs.readSync(fd, buffer, 0, readSize, size - readSize)
-  } finally {
-    fs.closeSync(fd)
-  }
+    const size = fs.statSync(filePath).size
+    const readSize = Math.min(size, maxBytes)
+    const buffer = Buffer.alloc(readSize)
+    const fd = fs.openSync(filePath, 'r')
+    try {
+      fs.readSync(fd, buffer, 0, readSize, size - readSize)
+    } finally {
+      fs.closeSync(fd)
+    }
 
-  let text = buffer.toString('utf-8')
-  if (readSize < size) {
-    const firstNewline = text.indexOf('\n')
-    if (firstNewline >= 0) text = text.slice(firstNewline + 1)
+    let text = buffer.toString('utf-8')
+    if (readSize < size) {
+      const firstNewline = text.indexOf('\n')
+      if (firstNewline >= 0) text = text.slice(firstNewline + 1)
+    }
+    return text
+  } catch (err) {
+    // A disk-level read failure must not crash whatever asked for this backlog - the
+    // desktop Console tab, the Web Dashboard's own console, and the Cluster Data group
+    // console all read through here (readLogBacklog below, and clusterLogArchive.ts's own
+    // reuse of this for its differently-formatted archive file). Same reasoning as every
+    // other read/write call this session already made resilient to a real report of Windows
+    // disk-level failures - '' here just means "nothing to show right now", not "empty log".
+    console.error(`Failed to read from ${filePath}:`, (err as Error).message)
+    return ''
   }
-  return text
 }
 
 /**

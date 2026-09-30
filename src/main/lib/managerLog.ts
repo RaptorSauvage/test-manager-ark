@@ -83,8 +83,17 @@ export function logManagerEvent(taskId: string, taskLabel: string, message: stri
 export function readManagerLog(): ManagerLogEntry[] {
   const logPath = getManagerLogPath()
   if (!fs.existsSync(logPath)) return []
+  let raw: string
+  try {
+    raw = fs.readFileSync(logPath, 'utf-8')
+  } catch (err) {
+    // Same reasoning as logManagerEvent's own write-side fix - a disk-level read failure
+    // must not crash whatever asked for the log (the Manager Log view's own IPC read).
+    console.error('Failed to read the Manager Log:', (err as Error).message)
+    return []
+  }
   const entries: ManagerLogEntry[] = []
-  for (const line of fs.readFileSync(logPath, 'utf-8').split('\n')) {
+  for (const line of raw.split('\n')) {
     if (!line.trim()) continue
     try {
       const parsed: unknown = JSON.parse(line)
