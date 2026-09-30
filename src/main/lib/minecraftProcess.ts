@@ -3,6 +3,8 @@ import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import { platform } from 'node:process'
 import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine } from '@shared/minecraft'
+import { findListeningPid, isPidAlive } from './serverProcess'
+import { getMinecraftServerPort, writeUserJvmArgs } from './minecraftProperties'
 
 /** Minecraft's own log line once the world has finished loading and is ready for players -
  *  every vanilla/Fabric/Paper/Spigot/Forge version prints this exact wording (only the
@@ -26,6 +28,19 @@ const STOP_GRACE_MS = 30_000
 
 interface RunningMinecraftServer {
   process: ChildProcess
+  /** Best-known real server pid - used for CPU/RAM stats (minecraftMonitor.ts) and for
+   *  force-kill. Starts out equal to `process.pid`, except right after a Windows
+   *  launchMode 'script' launch (see watchForScriptPidHandoff below), where it's corrected
+   *  once the real java process is found. */
+  pid: number
+  /** False only for the brief window between a Windows launchMode 'script' launch and the
+   *  real java pid being found. During that window, `process.pid` (and therefore the
+   *  starting value of `pid` above) is cmd.exe's own wrapper pid, not the actual server -
+   *  cmd.exe spawns java as a *child* process rather than replacing itself the way a POSIX
+   *  shell's `exec` would, so reading CPU/RAM off it, or killing it, would target the wrong
+   *  process entirely (same problem, and same fix, as ARK: Survival Evolved's own .bat
+   *  launch - see serverProcess.ts's watchForBatchPidHandoff). */
+  pidTracked: boolean
   status: MinecraftServerStatus
 }
 
@@ -57,6 +72,14 @@ export function isRunning(profileId: string): boolean {
   return running.has(profileId)
 }
 
+/** Whether `getStatus(profileId).pid` is currently trustworthy for an OS-level CPU/RAM
+ *  reading - false during the brief window before watchForScriptPidHandoff finds the real
+ *  java pid for a Windows launchMode 'script' launch (see RunningMinecraftServer.pidTracked).
+ *  Unknown/not-running profiles report true (nothing to distrust). */
+export function isPidTracked(profileId: string): boolean {
+  return running.get(profileId)?.pidTracked ?? true
+}
+
 export function getConsoleBacklog(profileId: string): MinecraftConsoleLine[] {
   return consoleBacklogs.get(profileId) ?? []
 }
@@ -85,12 +108,65 @@ function makeLineSplitter(onLine: (line: string) => void): (chunk: Buffer) => vo
   }
 }
 
-function buildJavaArgs(profile: MinecraftProfile): string[] {
+/** -Xms/-Xmx plus any extra JVM flags - shared between jar mode (built straight onto the
+ *  java command line below) and script mode (written to user_jvm_args.txt instead, since
+ *  the Manager doesn't control that command line - see minecraftProperties.ts). */
+function buildJvmArgs(profile: MinecraftProfile): string[] {
   const args = [`-Xms${profile.minMemoryMB}M`, `-Xmx${profile.maxMemoryMB}M`]
   if (profile.extraJvmArgs.trim()) args.push(...profile.extraJvmArgs.trim().split(/\s+/))
+  return args
+}
+
+function buildJavaArgs(profile: MinecraftProfile): string[] {
+  const args = buildJvmArgs(profile)
   args.push('-jar', profile.jarFileName)
   if (profile.extraProgramArgs.trim()) args.push(...profile.extraProgramArgs.trim().split(/\s+/))
   return args
+}
+
+/**
+ * Polls for the real java process once a Windows launchMode 'script' server's own port
+ * starts listening, and switches this profile's tracked pid to it - same technique (and
+ * same reason) as ARK: Survival Evolved's watchForBatchPidHandoff in serverProcess.ts:
+ * `wrapperPid` is cmd.exe's own pid, not java's, so CPU/RAM stats and force-kill need to
+ * target whichever pid is actually holding the server's port instead. Stops on its own once
+ * handed off, or once the profile is no longer running under the wrapper pid it started
+ * with (findListeningPid is Windows-only, matching the only platform this is called from).
+ */
+function watchForScriptPidHandoff(profileId: string, port: number, wrapperPid: number, intervalMs = 2000): () => void {
+  let stopped = false
+  const interval = setInterval(() => {
+    if (stopped) return
+    void (async () => {
+      const entry = running.get(profileId)
+      if (!entry || entry.pid !== wrapperPid) {
+        stopped = true
+        clearInterval(interval)
+        return
+      }
+      const realPid = await findListeningPid(port)
+      if (realPid && realPid !== wrapperPid && isPidAlive(realPid)) {
+        entry.pid = realPid
+        entry.pidTracked = true
+        entry.status = { ...entry.status, pid: realPid }
+        emitStatus(entry.status)
+        stopped = true
+        clearInterval(interval)
+      }
+    })()
+  }, intervalMs)
+  return () => {
+    stopped = true
+    clearInterval(interval)
+  }
+}
+
+function killByPid(pid: number): void {
+  try {
+    process.kill(pid)
+  } catch {
+    // Already gone - nothing to do.
+  }
 }
 
 export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
@@ -99,9 +175,21 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
 
   emitStatus({ profileId: profile.id, state: 'starting', startedAt: Date.now() })
 
+  // cmd.exe spawns java as a *child* process rather than replacing itself (unlike a POSIX
+  // shell's `exec`, which the fake test server and Forge's own run.sh both use), so on
+  // Windows the pid Node hands back for a script launch is cmd.exe's own wrapper pid, not
+  // java's - watchForScriptPidHandoff below corrects it once the real process is found.
+  const launchedViaWindowsScriptWrapper = profile.launchMode === 'script' && platform === 'win32'
+
   let child: ChildProcess
   try {
     if (profile.launchMode === 'script') {
+      // Modern Forge's generated run.bat/run.sh reads this file for -Xms/-Xmx/extra JVM
+      // args - the Manager can't put them on the command line itself in script mode (it
+      // executes the script as-is), so this is what makes editing memory in Settings
+      // actually take effect for a script-launched server.
+      writeUserJvmArgs(profile.installDir, buildJvmArgs(profile))
+
       const scriptPath = path.join(profile.installDir, profile.scriptFileName)
       // Same cmd.exe /d /c launch shape as ARK: Survival Evolved's own .bat launch (see
       // serverProcess.ts's writeLaunchBatchFile) - spawning a .bat directly is unreliable on
@@ -131,9 +219,13 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
 
   const startedAt = Date.now()
   const status: MinecraftServerStatus = { profileId: profile.id, state: 'starting', pid, startedAt }
-  running.set(profile.id, { process: child, status })
+  running.set(profile.id, { process: child, pid, pidTracked: !launchedViaWindowsScriptWrapper, status })
   consoleBacklogs.set(profile.id, [])
   emitStatus(status)
+
+  const stopPidHandoffWatch = launchedViaWindowsScriptWrapper
+    ? watchForScriptPidHandoff(profile.id, getMinecraftServerPort(profile.installDir), pid)
+    : () => {}
 
   const onStdoutLine = makeLineSplitter((line) => {
     appendConsoleLine(profile.id, line)
@@ -149,6 +241,7 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
   child.stderr?.on('data', onStderrLine)
 
   child.on('exit', (code, signal) => {
+    stopPidHandoffWatch()
     running.delete(profile.id)
     emitStatus({
       profileId: profile.id,
@@ -158,6 +251,7 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
   })
 
   child.on('error', (err) => {
+    stopPidHandoffWatch()
     running.delete(profile.id)
     emitStatus({ profileId: profile.id, state: 'error', lastError: err.message })
   })
@@ -192,7 +286,11 @@ async function waitForExitOrKill(entry: RunningMinecraftServer, graceMs: number)
       resolve(true)
     })
   })
-  if (!exited) entry.process.kill()
+  // Via entry.pid (the real server pid, not necessarily entry.process's own pid - see
+  // RunningMinecraftServer.pid) rather than entry.process.kill(): after a Windows
+  // launchMode 'script' handoff, entry.process is still the cmd.exe wrapper, and killing
+  // just that leaves the real java process it spawned running orphaned in the background.
+  if (!exited) killByPid(entry.pid)
 }
 
 /** Graceful shutdown: writes "stop" to the process's own stdin, which saves the world, kicks
@@ -216,6 +314,7 @@ export function killServer(profileId: string): MinecraftServerStatus {
   const entry = running.get(profileId)
   if (!entry) return { profileId, state: 'stopped' }
   emitStatus({ ...entry.status, state: 'stopping' })
-  entry.process.kill()
+  // See waitForExitOrKill's comment - entry.pid, not entry.process, for the same reason.
+  killByPid(entry.pid)
   return getStatus(profileId)
 }

@@ -6,7 +6,8 @@ import {
   readServerProperties,
   getMinecraftServerPort,
   getMinecraftRconConfig,
-  isEulaAccepted
+  isEulaAccepted,
+  writeUserJvmArgs
 } from '../src/main/lib/minecraftProperties'
 
 describe('minecraft properties reading', () => {
@@ -69,5 +70,30 @@ describe('minecraft properties reading', () => {
   it('reports the EULA as accepted when eula=true', () => {
     fs.writeFileSync(path.join(tmpDir, 'eula.txt'), '#comment\neula=true\n')
     expect(isEulaAccepted(tmpDir)).toBe(true)
+  })
+})
+
+describe('writeUserJvmArgs', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-jvmargs-test-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('writes one argument per line', () => {
+    writeUserJvmArgs(tmpDir, ['-Xms1024M', '-Xmx4096M'])
+    const content = fs.readFileSync(path.join(tmpDir, 'user_jvm_args.txt'), 'utf-8')
+    expect(content).toBe('-Xms1024M\n-Xmx4096M\n')
+  })
+
+  it('overwrites whatever was there before (e.g. from a previous start with different memory)', () => {
+    writeUserJvmArgs(tmpDir, ['-Xms1024M', '-Xmx4096M'])
+    writeUserJvmArgs(tmpDir, ['-Xms2048M', '-Xmx8192M'])
+    const content = fs.readFileSync(path.join(tmpDir, 'user_jvm_args.txt'), 'utf-8')
+    expect(content).toBe('-Xms2048M\n-Xmx8192M\n')
   })
 })

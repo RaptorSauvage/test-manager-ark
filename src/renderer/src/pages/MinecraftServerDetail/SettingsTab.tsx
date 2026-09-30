@@ -121,7 +121,6 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
               type="number"
               value={form.minMemoryMB}
               onChange={(e) => update('minMemoryMB', Number(e.target.value))}
-              disabled={form.launchMode === 'script'}
             />
           </label>
           <label>
@@ -130,23 +129,20 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
               type="number"
               value={form.maxMemoryMB}
               onChange={(e) => update('maxMemoryMB', Number(e.target.value))}
-              disabled={form.launchMode === 'script'}
             />
           </label>
         </div>
         {form.launchMode === 'script' && (
           <p className="empty-state">
-            Memory is controlled by the script itself in launch mode &quot;script&quot; - these fields are ignored.
+            In launch mode &quot;script&quot;, memory and extra JVM arguments are written to
+            <code>user_jvm_args.txt</code> in the install directory before every start - the file modern Forge&apos;s
+            own generated script already reads for this. If your script is an older Forge version or a fully custom
+            one that doesn&apos;t read that file, these fields won&apos;t have any effect.
           </p>
         )}
         <label>
           Extra JVM arguments
-          <input
-            value={form.extraJvmArgs}
-            onChange={(e) => update('extraJvmArgs', e.target.value)}
-            placeholder="-XX:+UseG1GC"
-            disabled={form.launchMode === 'script'}
-          />
+          <input value={form.extraJvmArgs} onChange={(e) => update('extraJvmArgs', e.target.value)} placeholder="-XX:+UseG1GC" />
         </label>
         <label>
           Extra program arguments

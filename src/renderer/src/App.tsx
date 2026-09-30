@@ -15,6 +15,22 @@ import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftSe
 type MainPage = 'dashboard' | 'clusterData' | 'managerLog'
 type GameMode = 'ark' | 'minecraft'
 
+/** The ARK/Minecraft switch - its own small group at the top of the sidebar, visually
+ *  separate (a divider below it) from whatever page nav follows, since it toggles the
+ *  entire app's mode rather than navigating within it. */
+function GameSwitch({ mode, onChange }: { mode: GameMode; onChange: (mode: GameMode) => void }): JSX.Element {
+  return (
+    <div className="app-sidebar-game-switch">
+      <button type="button" className={mode === 'ark' ? 'active' : ''} onClick={() => onChange('ark')}>
+        ARK
+      </button>
+      <button type="button" className={mode === 'minecraft' ? 'active' : ''} onClick={() => onChange('minecraft')}>
+        MC
+      </button>
+    </div>
+  )
+}
+
 export default function App(): JSX.Element {
   const [gameMode, setGameMode] = useState<GameMode>('ark')
 
@@ -129,9 +145,7 @@ export default function App(): JSX.Element {
     return (
       <div className="app-shell">
         <nav className="app-sidebar">
-          <button type="button" className="active" onClick={() => setGameMode('ark')}>
-            &larr; ARK
-          </button>
+          <GameSwitch mode={gameMode} onChange={setGameMode} />
         </nav>
         <div className="app-content">
           <MinecraftDashboard
@@ -188,6 +202,7 @@ export default function App(): JSX.Element {
   return (
     <div className="app-shell">
       <nav className="app-sidebar">
+        <GameSwitch mode={gameMode} onChange={setGameMode} />
         <button
           type="button"
           className={mainPage === 'dashboard' ? 'active' : ''}
@@ -208,9 +223,6 @@ export default function App(): JSX.Element {
           onClick={() => setMainPage('managerLog')}
         >
           Log
-        </button>
-        <button type="button" onClick={() => setGameMode('minecraft')}>
-          Minecraft &rarr;
         </button>
       </nav>
       <div className="app-content">

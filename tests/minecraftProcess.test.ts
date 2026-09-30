@@ -109,6 +109,19 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
     await stopServer(profile)
   })
 
+  it('writes user_jvm_args.txt (Forge\'s own JVM-args mechanism) before a script-mode launch', async () => {
+    profile.minMemoryMB = 1536
+    profile.maxMemoryMB = 6144
+    profile.extraJvmArgs = '-XX:+UseG1GC'
+    startServer(profile)
+    await waitUntil(() => getStatus(profile.id).state === 'running')
+
+    const content = fs.readFileSync(path.join(tmpDir, 'user_jvm_args.txt'), 'utf-8')
+    expect(content).toBe('-Xms1536M\n-Xmx6144M\n-XX:+UseG1GC\n')
+
+    await stopServer(profile)
+  })
+
   it('does not return a second entry when starting an already-running profile', async () => {
     const first = startServer(profile)
     const second = startServer(profile)

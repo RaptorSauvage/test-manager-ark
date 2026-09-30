@@ -79,3 +79,26 @@ export function isEulaAccepted(installDir: string): boolean {
     return false
   }
 }
+
+/**
+ * Writes user_jvm_args.txt - unlike everything else in this file, a Manager-owned file
+ * rather than one the user manages themselves, since it's how a launchMode 'script' server
+ * gets its memory/JVM args at all. When the Manager can't build the java command line itself
+ * (launchMode 'script' runs an existing run.bat/run.sh as-is - see shared/minecraft.ts),
+ * modern Forge's own generated script already reads this exact file (a Java "argfile": one
+ * argument per line, `#`-prefixed lines are comments) for -Xms/-Xmx and anything else - so
+ * writing the profile's current values here before every start is what makes editing memory
+ * in Settings actually take effect for a script-launched server. Overwritten wholesale on
+ * every start; a script from an older Forge version (or a fully custom one) that doesn't
+ * happen to read this file simply ignores it, harmlessly.
+ */
+export function writeUserJvmArgs(installDir: string, args: string[]): void {
+  const filePath = path.join(installDir, 'user_jvm_args.txt')
+  try {
+    fs.writeFileSync(filePath, args.map((arg) => `${arg}\n`).join(''), 'utf-8')
+  } catch (err) {
+    // Best-effort - a failed write here just means the server starts with whatever memory
+    // its own script/user_jvm_args.txt already had, not a reason to block Start entirely.
+    console.error(`Failed to write ${filePath} (non-fatal):`, (err as Error).message)
+  }
+}

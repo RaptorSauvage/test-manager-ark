@@ -1595,8 +1595,10 @@ async function findProfileIdByName(name) {
   the app rather than a third `GameDefinition` entry - `MinecraftProfile`
   (`shared/minecraft.ts`) is its own type, its own `electron-store` collection
   (`minecraftProfiles`), its own IPC namespace (`ipc/minecraft.ts`, `window.api.minecraft.*`),
-  and its own top-level menu (a **Minecraft →** button in the sidebar switches the whole app
-  into it; **← ARK** switches back). ARK: Survival Evolved and ARK: Survival Ascended share
+  and its own top-level menu - an **ARK / MC** switch group at the top of the sidebar,
+  separated from the Dashboard/Cluster Dashboard/Log page nav below it by a divider (it
+  toggles the whole app's mode, not a page within one - see `GameSwitch` in `App.tsx`).
+  ARK: Survival Evolved and ARK: Survival Ascended share
   enough (engine lineage, launch style, RCON, log format) that unifying them into one
   `ServerProfile` shape made sense; Minecraft shares almost none of that - no SteamCMD, no
   fixed executable name, no `?param=` launch line, a completely different config/log format -
@@ -1652,6 +1654,33 @@ async function findProfileIdByName(name) {
     it to stdin and waits (30s grace period, then force-kills) - there's no ARK-style
     `SaveWorld`-confirm-then-`DoExit` handshake to phase, since there's nothing to confirm
     separately.
+  - **Script-mode pid tracking, and memory actually taking effect in script mode** (both
+    fixed after a real report: CPU/RAM shown not matching the actual server, and memory
+    fields not being editable at all).
+    - On Windows, `launchMode: 'script'` spawns via `cmd.exe /d /c <script>`, and cmd.exe
+      spawns java as a *child* process rather than replacing itself the way a POSIX shell's
+      `exec` would - so the pid Node hands back is cmd.exe's own wrapper pid, not java's.
+      Reading CPU/RAM off that pid showed cmd.exe's own near-zero usage instead of the real
+      server's - exactly the mismatch reported. Fixed with the same technique (and same
+      root cause) as ARK: Survival Evolved's own `.bat` launch:
+      `watchForScriptPidHandoff` in `minecraftProcess.ts` polls (via the already-existing
+      `findListeningPid` from `serverProcess.ts`) for whichever pid is actually holding the
+      server's own port (`getMinecraftServerPort`) once it starts listening, and switches
+      tracking to it. Until that handoff completes, CPU/RAM are left blank rather than
+      shown wrong (`isPidTracked` gates `minecraftMonitor.ts`'s stats read); force-kill and
+      the stop-timeout fallback now also target this tracked pid rather than the wrapper, so
+      killing a script-launched server actually kills java instead of orphaning it running
+      in the background.
+    - The Settings tab used to disable the memory/extra-JVM-args fields entirely whenever
+      `launchMode` was `'script'`, reasoning "the script already encodes its own memory
+      args" - true for a fully custom script, but wrong for the common case: modern Forge's
+      own generated `run.bat`/`run.sh` reads a `user_jvm_args.txt` argfile for exactly
+      `-Xms`/`-Xmx`/extra JVM args (the official mechanism, not a workaround). The fields
+      are no longer disabled; `startServer` now calls `writeUserJvmArgs`
+      (`minecraftProperties.ts`) to (over)write that file with the profile's current values
+      before every script-mode start, so editing memory in Settings takes effect on Forge's
+      own generated script. Harmless no-op for an older Forge version or a fully custom
+      script that doesn't happen to read that file.
   - **Explicitly cut from this first pass** (all real, deliberate scope cuts, not oversights -
     the infrastructure that made each of these work for ARK is straightforward to point at
     Minecraft later): no backups, no scheduled restart, no crash-watch/zombie detection, no

@@ -41,12 +41,17 @@ export interface MinecraftProfile {
   jarFileName: string
   /** File name (not a full path), relative to installDir. Used when launchMode is 'script'. */
   scriptFileName: string
-  /** -Xms in MB. Only meaningful for launchMode 'jar' - a script already encodes its own
-   *  memory args, so the Manager never adds these on top of it. */
+  /** -Xms in MB. Applies to both launch modes: in 'jar' mode, built straight onto the java
+   *  command line; in 'script' mode, written to user_jvm_args.txt before every start (the
+   *  argfile modern Forge's own generated run.bat/run.sh already reads for this - see
+   *  minecraftProperties.ts's writeUserJvmArgs) rather than dropped, since the Manager has
+   *  no other way to influence a script it executes as-is. Has no effect on an older Forge
+   *  version or a fully custom script that doesn't happen to read that file. */
   minMemoryMB: number
   /** -Xmx in MB. */
   maxMemoryMB: number
-  /** Extra JVM flags, inserted before -jar. Free text, split on whitespace. Jar mode only. */
+  /** Extra JVM flags, inserted before -jar in 'jar' mode, or into user_jvm_args.txt in
+   *  'script' mode (see minMemoryMB above - same caveat). Free text, split on whitespace. */
   extraJvmArgs: string
   /** Program args appended after the jar/script (e.g. "nogui"). Free text, split on
    *  whitespace. Applies to both launch modes - a script can take its own flags too. */
