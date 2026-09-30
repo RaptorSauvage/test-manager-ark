@@ -20,6 +20,7 @@ import { registerGroupConsoleHandlers } from './groupConsole'
 import { registerManagerLogHandlers } from './managerLog'
 import { registerStatsHistoryHandlers } from './statsHistory'
 import { registerMinecraftHandlers } from './minecraft'
+import { registerMinecraftBackupHandlers } from './minecraftBackup'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers(mainWindow.webContents)
@@ -43,4 +44,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerManagerLogHandlers(mainWindow.webContents)
   registerStatsHistoryHandlers()
   registerMinecraftHandlers(mainWindow.webContents)
+  registerMinecraftBackupHandlers(mainWindow.webContents)
 }

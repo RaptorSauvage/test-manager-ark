@@ -7,6 +7,7 @@ import { findListeningPid, isPidAlive } from './serverProcess'
 import { getMinecraftServerPort, writeUserJvmArgs } from './minecraftProperties'
 import { sendMinecraftRconCommand } from './minecraftRcon'
 import { setMinecraftRunningPid, setMinecraftRunningStartedAt } from '../store'
+import { appendConsoleLineToArchive, readMinecraftConsoleArchive } from './minecraftConsoleArchive'
 
 /** Minecraft's own log line once the world has finished loading and is ready for players -
  *  every vanilla/Fabric/Paper/Spigot/Forge version prints this exact wording (only the
@@ -15,10 +16,9 @@ import { setMinecraftRunningPid, setMinecraftRunningStartedAt } from '../store'
  *  'jar' and 'script' alike. */
 const READY_MARKER = /Done \([\d.]+s\)! For help, type "help"/
 
-/** Caps the in-memory console backlog per running server - purely a live/reconnect buffer
- *  (see shared/minecraft.ts's MVP scope note: no disk-backed backlog across Manager
- *  restarts yet), so this only needs to comfortably cover "opened the Console tab a while
- *  after start", not a whole session's output. */
+/** How many of the most recent archived lines getConsoleBacklog actually returns to the
+ *  renderer - the archive file itself (minecraftConsoleArchive.ts) holds far more than this,
+ *  but the Console tab only needs enough to fill the screen on open, not the whole archive. */
 const CONSOLE_BACKLOG_LIMIT = 500
 
 /** How long stopServer waits for the process to exit on its own (after writing "stop" to
@@ -52,13 +52,6 @@ interface RunningMinecraftServer {
 }
 
 const running = new Map<string, RunningMinecraftServer>()
-
-/** Kept separate from `running` (rather than as one of its fields) so the console backlog
- *  survives the process exiting - `running`'s entry is deleted the moment the child exits
- *  (see child.on('exit') below), but a server's last output right after it stopped (e.g.
- *  confirming a clean "stop") is exactly when someone's most likely to check the Console tab.
- *  Reset only at the start of a new session (startServer), not on stop/exit. */
-const consoleBacklogs = new Map<string, MinecraftConsoleLine[]>()
 
 export const minecraftServerEvents = new EventEmitter()
 export const minecraftConsoleEvents = new EventEmitter()
@@ -117,7 +110,6 @@ export function adoptPersistedMinecraftProcesses(
         ...(persistedStartedAt[profile.id] !== undefined ? { startedAt: persistedStartedAt[profile.id] } : {})
       }
       running.set(profile.id, { process: null, pid, pidTracked: true, status })
-      consoleBacklogs.set(profile.id, [])
       emitStatus(status)
     } else {
       setMinecraftRunningPid(profile.id, null)
@@ -134,16 +126,16 @@ export function isPidTracked(profileId: string): boolean {
   return running.get(profileId)?.pidTracked ?? true
 }
 
+/** Reads the tail of the on-disk archive (minecraftConsoleArchive.ts) rather than an
+ *  in-memory buffer - survives both a Manager restart and the Minecraft server's own
+ *  restarts, since nothing clears the archive file on a fresh start (see startServer below). */
 export function getConsoleBacklog(profileId: string): MinecraftConsoleLine[] {
-  return consoleBacklogs.get(profileId) ?? []
+  return readMinecraftConsoleArchive(profileId).slice(-CONSOLE_BACKLOG_LIMIT)
 }
 
 function appendConsoleLine(profileId: string, text: string): void {
   const line: MinecraftConsoleLine = { text, ts: Date.now() }
-  const backlog = consoleBacklogs.get(profileId) ?? []
-  backlog.push(line)
-  if (backlog.length > CONSOLE_BACKLOG_LIMIT) backlog.shift()
-  consoleBacklogs.set(profileId, backlog)
+  appendConsoleLineToArchive(profileId, line)
   minecraftConsoleEvents.emit('line', profileId, line)
 }
 
@@ -278,7 +270,6 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
   const startedAt = Date.now()
   const status: MinecraftServerStatus = { profileId: profile.id, state: 'starting', pid, startedAt, consoleAvailable: true }
   running.set(profile.id, { process: child, pid, pidTracked: !launchedViaWindowsScriptWrapper, status })
-  consoleBacklogs.set(profile.id, [])
   setMinecraftRunningPid(profile.id, pid)
   setMinecraftRunningStartedAt(profile.id, startedAt)
   emitStatus(status)

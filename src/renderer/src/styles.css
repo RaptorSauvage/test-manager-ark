@@ -661,6 +661,24 @@ label.checkbox {
   word-break: break-word;
 }
 
+.mc-console-line--error,
+.mc-console-line--stopping {
+  color: var(--danger);
+}
+
+.mc-console-line--warn,
+.mc-console-line--leave {
+  color: var(--warn);
+}
+
+.mc-console-line--ready {
+  color: var(--ok);
+}
+
+.mc-console-line--join {
+  color: var(--cyan);
+}
+
 .log-event {
   padding: 3px 0;
   line-height: 1.4;
@@ -1012,11 +1030,8 @@ label.checkbox {
   color: var(--muted);
 }
 
-.server-card-address {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.85rem;
+.server-card-info-address {
+  grid-column: 1 / -1;
 }
 
 .copyable-address {

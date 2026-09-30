@@ -523,7 +523,17 @@ export const IPC = {
   minecraftConsoleBacklog: 'minecraft-console:backlog',
   minecraftConsoleLine: 'minecraft-console:line',
   minecraftPropertiesGet: 'minecraft-properties:get',
-  minecraftPropertiesSave: 'minecraft-properties:save'
+  minecraftPropertiesSave: 'minecraft-properties:save',
+
+  minecraftBackupCreate: 'minecraft-backup:create',
+  minecraftBackupList: 'minecraft-backup:list',
+  minecraftBackupRestore: 'minecraft-backup:restore',
+  minecraftBackupDelete: 'minecraft-backup:delete',
+  minecraftBackupOpenFolder: 'minecraft-backup:open-folder',
+  minecraftBackupCreated: 'minecraft-backup:created',
+  minecraftBackupScheduleStatus: 'minecraft-backup:schedule-status',
+  minecraftBackupLogGet: 'minecraft-backup:log-get',
+  minecraftBackupLogChanged: 'minecraft-backup:log-changed'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -843,6 +853,19 @@ export interface Api {
        *  place, a key with no existing line is appended) and returns the file's full,
        *  freshly-read contents afterward. */
       save: (profileId: string, updates: MinecraftPropertiesData) => Promise<MinecraftPropertiesData>
+    }
+    /** World backups - same shape as the top-level `backup` API, but zips the world's
+     *  dimension folders (see minecraftBackup.ts's worldDirs) instead of ARK's SavedArks. */
+    backup: {
+      create: (profileId: string) => Promise<BackupEntry>
+      list: (profileId: string) => Promise<BackupEntry[]>
+      delete: (filePath: string) => Promise<void>
+      restore: (profileId: string, filePath: string) => Promise<void>
+      openFolder: (profileId: string) => Promise<void>
+      onCreated: (callback: (profileId: string) => void) => () => void
+      getScheduleStatus: (profileId: string) => Promise<BackupScheduleStatus>
+      getLog: (profileId: string) => Promise<BackupLogEntry[]>
+      onLogChanged: (callback: (profileId: string, entry: BackupLogEntry) => void) => () => void
     }
   }
 }

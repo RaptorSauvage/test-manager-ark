@@ -78,6 +78,14 @@ export interface MinecraftProfile {
   /** If false, the schedule just stops the server at the scheduled time (a "scheduled
    *  shutdown") rather than restarting it. */
   scheduledRestartStartAfter: boolean
+  /** Directory world backups are written to - same "one folder per profile, anything in it
+   *  is fair game" model as ServerProfile.backupDir. */
+  backupDir: string
+  /** How many backups to keep per profile before pruning the oldest. */
+  maxBackups: number
+  /** Optional cron expression for automatic backups, e.g. every 6 hours. */
+  backupSchedule?: string
+  backupScheduleEnabled: boolean
 }
 
 export type MinecraftRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error'

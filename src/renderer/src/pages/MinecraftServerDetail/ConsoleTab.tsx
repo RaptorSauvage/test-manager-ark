@@ -6,6 +6,21 @@ interface ConsoleTabProps {
   profile: MinecraftProfile
 }
 
+/** Best-effort color classification for a raw console line, purely cosmetic - matches
+ *  Minecraft's own log level (`[Server thread/ERROR]`/`WARN`) where present, plus a few
+ *  wording-based special cases (the ready marker, join/leave, a graceful shutdown starting)
+ *  that are worth calling out even though they log at INFO level. Checked in priority order
+ *  since a stopping server's own log lines are still INFO. */
+function classifyConsoleLine(text: string): string {
+  if (/stopping (the )?server/i.test(text)) return 'stopping'
+  if (/Done \([\d.]+s\)! For help/.test(text)) return 'ready'
+  if (/\/ERROR]/.test(text)) return 'error'
+  if (/\/WARN]/.test(text)) return 'warn'
+  if (/\bjoined the game\b/i.test(text)) return 'join'
+  if (/\b(left the game|lost connection|disconnected)\b/i.test(text)) return 'leave'
+  return ''
+}
+
 /** Live console - unlike ARK's Group Console (a tailed, parsed log file), this reads
  *  straight from the process's own piped stdout (see minecraftProcess.ts), so lines show up
  *  close to verbatim and a command typed here is written straight to its stdin. */
@@ -93,11 +108,14 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
             {state === 'stopped' ? 'No console output yet - start the server to see it.' : 'No console output yet.'}
           </p>
         )}
-        {lines.map((line, i) => (
-          <div key={`${line.ts}-${i}`} className="mc-console-line">
-            {line.text}
-          </div>
-        ))}
+        {lines.map((line, i) => {
+          const cls = classifyConsoleLine(line.text)
+          return (
+            <div key={`${line.ts}-${i}`} className={cls ? `mc-console-line mc-console-line--${cls}` : 'mc-console-line'}>
+              {line.text}
+            </div>
+          )
+        })}
       </div>
       {sendError && <p className="error-message">{sendError}</p>}
       <form className="group-console-rcon" onSubmit={(e) => void handleSend(e)}>

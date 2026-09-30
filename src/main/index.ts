@@ -37,6 +37,7 @@ import { doStartMinecraftServer } from './lib/minecraftActions'
 import { adoptPersistedMinecraftProcesses, isRunning as isMinecraftRunning } from './lib/minecraftProcess'
 import { startMinecraftMonitoring } from './lib/minecraftMonitor'
 import { applyMinecraftScheduledRestart } from './lib/minecraftScheduledActions'
+import { applyMinecraftBackupSchedule, registerMinecraftBackupScheduleWatcher } from './lib/minecraftBackupSchedule'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -95,6 +96,7 @@ app.whenReady().then(() => {
   registerServerVersionWatcher()
   registerIniLockWatcher()
   registerBackupScheduleWatcher()
+  registerMinecraftBackupScheduleWatcher()
   registerCrashWatch(doStartServer)
   registerZombieDetection(doKillServer, doStartServer)
   registerClusterLogArchiveWatch(getProfile)
@@ -140,6 +142,7 @@ app.whenReady().then(() => {
 
   for (const profile of minecraftProfiles) {
     applyMinecraftScheduledRestart(profile)
+    applyMinecraftBackupSchedule(profile)
     if (isMinecraftRunning(profile.id)) startMinecraftMonitoring(profile)
   }
 

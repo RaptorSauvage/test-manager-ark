@@ -1,9 +1,24 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { MinecraftProfile } from '@shared/minecraft'
+
+// minecraftConsoleArchive.ts's file paths live under getDataDir(), which normally goes
+// through Electron's app.getPath() - unavailable in this Node test environment. Point it at
+// a real temp dir instead, same pattern as clusterLogArchive.test.ts.
+const { mockDataDir } = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require('node:fs')
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const os = require('node:os')
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require('node:path')
+  return { mockDataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'minecraft-process-datadir-')) }
+})
+vi.mock('../src/main/lib/dataDir', () => ({ getDataDir: () => mockDataDir }))
+
 import {
   startServer,
   stopServer,
@@ -89,7 +104,10 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
       scheduledRestartEnabled: false,
       scheduledRestartTime: '00:00',
       scheduledRestartDays: [],
-      scheduledRestartStartAfter: true
+      scheduledRestartStartAfter: true,
+      backupDir: '',
+      maxBackups: 10,
+      backupScheduleEnabled: false
     }
   })
 
@@ -199,7 +217,10 @@ describe('adoptPersistedMinecraftProcesses (re-attaching after a Manager restart
       scheduledRestartEnabled: false,
       scheduledRestartTime: '00:00',
       scheduledRestartDays: [],
-      scheduledRestartStartAfter: true
+      scheduledRestartStartAfter: true,
+      backupDir: '',
+      maxBackups: 10,
+      backupScheduleEnabled: false
     }
   })
 

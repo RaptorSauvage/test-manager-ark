@@ -2044,3 +2044,47 @@ async function findProfileIdByName(name) {
   they're general resilience against a real, reproducible class of failure (a disk-level
   read/write erroring out transiently), not specific to this one report's eventual cause, and
   cost nothing when nothing's wrong.
+
+- **Minecraft follow-up 4: dashboard card polish, a Backup tab, a persistent+colorized console.**
+  - **Card header gets the MC icon** (`assets/games/minecraft.png`, already bundled for the
+    sidebar switch) next to the server name, same placement as ARK's own `server-card-game-icon`.
+    **Address moved back inside the dark info panel** as its own full-width row (`.server-card-info-address`,
+    `grid-column: 1 / -1`) alongside CPU/Players/Type/RAM instead of sitting in a separate div
+    below it, and **Players is now always shown** (a `-` placeholder when the status doesn't
+    have a player list yet) instead of being hidden entirely until the first status tick with
+    a non-empty list.
+  - **New Backup tab**, modeled on ARK's own Backups tab but backing up the *world* instead of
+    a map's SavedArks folder: two new `MinecraftProfile` fields (`backupDir`, `maxBackups`,
+    plus `backupSchedule`/`backupScheduleEnabled` for the same optional cron-driven automatic
+    backups ARK has - all four backfilled in `migrateMinecraftProfile` for any profile saved
+    before this pass). `minecraftBackup.ts`'s `worldDirs()` reads `level-name` from
+    server.properties (defaulting to `world`, same as the vanilla server itself) and backs up
+    whichever of `<level-name>`/`<level-name>_nether`/`<level-name>_the_end` actually exist -
+    every server type (vanilla/Paper/Spigot/Forge/Fabric) uses this same per-dimension folder
+    convention. While the server's running, `createMinecraftBackup` sends `save-off` then
+    `save-all flush` (stdin first, RCON fallback - `sendSaveCommand`) and waits a short settle
+    before zipping, then re-enables autosave with `save-on` - best-effort rather than
+    cancel-on-failure like ARK's own SaveGame/RCON gate, since Minecraft's autosave already
+    runs on its own every few minutes regardless, so the worst case here is a backup that's a
+    few seconds staler than requested. `minecraftBackupSchedule.ts` mirrors ARK's own
+    `schedule.ts` self-arming-setTimeout mechanism (armed only while the server is running,
+    re-armed on every status transition into 'running'). New IPC namespace
+    (`window.api.minecraft.backup.*`, `ipc/minecraftBackup.ts`) and renderer tab
+    (`MinecraftServerDetail/BackupsTab.tsx` + `BackupLogPanel.tsx`), placed before Server
+    Management in the tab list.
+  - **The console backlog now survives a Manager restart** (and the Minecraft server's own
+    restarts too) instead of resetting to empty every time - previously an in-memory ring
+    buffer (`consoleBacklogs` Map in `minecraftProcess.ts`) that was explicitly cleared on
+    every `startServer()` call and lost outright on a Manager restart. Replaced with
+    `minecraftConsoleArchive.ts`, a JSON-Lines file per profile under `getDataDir()` with the
+    same size-capped rolling-window trim as ARK's own `clusterLogArchive.ts` (bounded
+    read+rewrite only on the rare append that actually crosses the cap, not on every line).
+    `startServer()` no longer clears anything on a fresh start, so the archive spans multiple
+    server sessions, not just the Manager's own uptime.
+  - **Console lines are now color-coded**, matching the screenshots that drove this request:
+    a small `classifyConsoleLine` helper in `ConsoleTab.tsx` checks (in priority order, since
+    several of these are still logged at plain INFO level) a graceful shutdown starting
+    ("Stopping the server") and `/ERROR]`/`/WARN]` for red/red/orange, the "Done (...)! For
+    help" ready line for green, "joined the game" for cyan, and "left the game"/"lost
+    connection"/"disconnected" for orange - everything else stays the default color. Purely
+    cosmetic CSS classes (`.mc-console-line--*`), no change to what's actually stored/sent.

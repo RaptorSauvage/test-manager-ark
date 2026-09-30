@@ -228,6 +228,26 @@ const api: Api = {
       get: (profileId: string) => ipcRenderer.invoke(IPC.minecraftPropertiesGet, profileId),
       save: (profileId: string, updates: MinecraftPropertiesData) =>
         ipcRenderer.invoke(IPC.minecraftPropertiesSave, profileId, updates)
+    },
+    backup: {
+      create: (profileId: string) => ipcRenderer.invoke(IPC.minecraftBackupCreate, profileId),
+      list: (profileId: string) => ipcRenderer.invoke(IPC.minecraftBackupList, profileId),
+      delete: (filePath: string) => ipcRenderer.invoke(IPC.minecraftBackupDelete, filePath),
+      restore: (profileId: string, filePath: string) => ipcRenderer.invoke(IPC.minecraftBackupRestore, profileId, filePath),
+      openFolder: (profileId: string) => ipcRenderer.invoke(IPC.minecraftBackupOpenFolder, profileId),
+      onCreated: (callback: (profileId: string) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, profileId: string): void => callback(profileId)
+        ipcRenderer.on(IPC.minecraftBackupCreated, listener)
+        return () => ipcRenderer.removeListener(IPC.minecraftBackupCreated, listener)
+      },
+      getScheduleStatus: (profileId: string) => ipcRenderer.invoke(IPC.minecraftBackupScheduleStatus, profileId),
+      getLog: (profileId: string) => ipcRenderer.invoke(IPC.minecraftBackupLogGet, profileId),
+      onLogChanged: (callback: (profileId: string, entry: BackupLogEntry) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, profileId: string, entry: BackupLogEntry): void =>
+          callback(profileId, entry)
+        ipcRenderer.on(IPC.minecraftBackupLogChanged, listener)
+        return () => ipcRenderer.removeListener(IPC.minecraftBackupLogChanged, listener)
+      }
     }
   }
 }

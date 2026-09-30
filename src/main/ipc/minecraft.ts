@@ -14,6 +14,7 @@ import { doStartMinecraftServer, doStopMinecraftServer, doKillMinecraftServer } 
 import { readServerProperties, upsertServerPropertiesKeys, type PropertiesData } from '../lib/minecraftProperties'
 import { sendMinecraftRconCommand } from '../lib/minecraftRcon'
 import { applyMinecraftScheduledRestart, clearMinecraftScheduledRestart } from '../lib/minecraftScheduledActions'
+import { applyMinecraftBackupSchedule, clearMinecraftBackupSchedule } from '../lib/minecraftBackupSchedule'
 
 function requireProfile(profileId: string): MinecraftProfile {
   const profile = getMinecraftProfile(profileId)
@@ -37,11 +38,13 @@ export function registerMinecraftHandlers(webContents: WebContents): void {
   ipcMain.handle(IPC.minecraftProfilesSave, (_event, profile: MinecraftProfile) => {
     const profiles = saveMinecraftProfile(profile)
     applyMinecraftScheduledRestart(profile)
+    applyMinecraftBackupSchedule(profile)
     return profiles
   })
 
   ipcMain.handle(IPC.minecraftProfilesDelete, (_event, id: string) => {
     clearMinecraftScheduledRestart(id)
+    clearMinecraftBackupSchedule(id)
     return deleteMinecraftProfile(id)
   })
 

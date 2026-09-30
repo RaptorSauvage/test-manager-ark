@@ -4,6 +4,7 @@ import { useMinecraftServerStatuses } from '../lib/useMinecraftServerStatuses'
 import { createDefaultMinecraftProfile } from '../lib/minecraftProfile'
 import { confirmAction } from '../lib/confirmAction'
 import type { MinecraftTabKey } from './MinecraftServerDetail'
+import minecraftIcon from '../assets/games/minecraft.png'
 
 const SERVER_TYPE_LABELS: Record<MinecraftServerType, string> = {
   vanilla: 'Vanilla',
@@ -137,6 +138,7 @@ export default function MinecraftDashboard({
     return (
       <div className="server-card" key={profile.id}>
         <div className="server-card-header">
+          <img src={minecraftIcon} alt="" title="Minecraft" className="server-card-game-icon" />
           <h2>{profile.name}</h2>
           <span className={`badge badge-${state}`}>{state}</span>
         </div>
@@ -147,15 +149,14 @@ export default function MinecraftDashboard({
               <dd>{status.cpu}%</dd>
             </div>
           )}
-          {status?.players && (
-            <div>
-              <dt>Players</dt>
-              <dd>
-                {status.players.length}
-                {status.maxPlayers !== undefined ? `/${status.maxPlayers}` : ''}
-              </dd>
-            </div>
-          )}
+          <div>
+            <dt>Players</dt>
+            <dd>
+              {status?.players
+                ? `${status.players.length}${status.maxPlayers !== undefined ? `/${status.maxPlayers}` : ''}`
+                : '-'}
+            </dd>
+          </div>
           <div>
             <dt>Type</dt>
             <dd>{SERVER_TYPE_LABELS[profile.serverType]}</dd>
@@ -166,18 +167,20 @@ export default function MinecraftDashboard({
               <dd>{status.memoryMB} MB</dd>
             </div>
           )}
+          <div className="server-card-info-address">
+            <dt>Address</dt>
+            <dd>
+              <button
+                type="button"
+                className="copyable-address"
+                onClick={() => void copyAddress(profile.id, `${localIp}:${portById[profile.id] ?? '25565'}`)}
+                title="Click to copy"
+              >
+                {copiedId === profile.id ? 'Copied!' : `${localIp}:${portById[profile.id] ?? '25565'}`}
+              </button>
+            </dd>
+          </div>
         </dl>
-        <div className="server-card-address">
-          <span className="muted">Address:</span>{' '}
-          <button
-            type="button"
-            className="copyable-address"
-            onClick={() => void copyAddress(profile.id, `${localIp}:${portById[profile.id] ?? '25565'}`)}
-            title="Click to copy"
-          >
-            {copiedId === profile.id ? 'Copied!' : `${localIp}:${portById[profile.id] ?? '25565'}`}
-          </button>
-        </div>
         {status?.lastError && <p className="error-message">{status.lastError}</p>}
         {actionErrors[profile.id] && <p className="error-message">{actionErrors[profile.id]}</p>}
         <div className="server-card-actions-primary">

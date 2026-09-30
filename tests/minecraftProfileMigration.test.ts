@@ -30,6 +30,9 @@ describe('migrateMinecraftProfile', () => {
     expect(migrated.scheduledRestartTime).toBe('00:00')
     expect(migrated.scheduledRestartDays).toEqual([])
     expect(migrated.scheduledRestartStartAfter).toBe(true)
+    expect(migrated.backupDir).toBe('')
+    expect(migrated.maxBackups).toBe(10)
+    expect(migrated.backupScheduleEnabled).toBe(false)
     // Untouched fields survive as-is.
     expect(migrated.name).toBe('Old Server')
     expect(migrated.jarFileName).toBe('server.jar')
@@ -54,7 +57,10 @@ describe('migrateMinecraftProfile', () => {
       scheduledRestartEnabled: true,
       scheduledRestartTime: '04:00',
       scheduledRestartDays: [1, 3, 5],
-      scheduledRestartStartAfter: false
+      scheduledRestartStartAfter: false,
+      backupDir: '/srv/mc/backups',
+      maxBackups: 5,
+      backupScheduleEnabled: true
     }
 
     expect(migrateMinecraftProfile(current)).toEqual(current)

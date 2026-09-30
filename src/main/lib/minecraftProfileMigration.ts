@@ -17,6 +17,9 @@ export function migrateMinecraftProfile(profile: MinecraftProfile): MinecraftPro
     scheduledRestartEnabled: profile.scheduledRestartEnabled ?? false,
     scheduledRestartTime: profile.scheduledRestartTime ?? '00:00',
     scheduledRestartDays: profile.scheduledRestartDays ?? [],
-    scheduledRestartStartAfter: profile.scheduledRestartStartAfter ?? true
+    scheduledRestartStartAfter: profile.scheduledRestartStartAfter ?? true,
+    backupDir: profile.backupDir ?? '',
+    maxBackups: profile.maxBackups ?? 10,
+    backupScheduleEnabled: profile.backupScheduleEnabled ?? false
   }
 }

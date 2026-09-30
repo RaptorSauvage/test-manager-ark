@@ -124,6 +124,9 @@ export function detectMinecraftProfile(installDir: string): MinecraftProfile {
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',
     scheduledRestartDays: [],
-    scheduledRestartStartAfter: true
+    scheduledRestartStartAfter: true,
+    backupDir: '',
+    maxBackups: 10,
+    backupScheduleEnabled: false
   }
 }
