@@ -149,6 +149,12 @@ export default function MinecraftDashboard({
               <dd>{status.cpu}%</dd>
             </div>
           )}
+          {status?.memoryMB !== undefined && (
+            <div>
+              <dt>RAM</dt>
+              <dd>{status.memoryMB} MB</dd>
+            </div>
+          )}
           <div>
             <dt>Players</dt>
             <dd>
@@ -161,12 +167,6 @@ export default function MinecraftDashboard({
             <dt>Type</dt>
             <dd>{SERVER_TYPE_LABELS[profile.serverType]}</dd>
           </div>
-          {status?.memoryMB !== undefined && (
-            <div>
-              <dt>RAM</dt>
-              <dd>{status.memoryMB} MB</dd>
-            </div>
-          )}
           <div className="server-card-info-address">
             <dt>Address</dt>
             <dd>
