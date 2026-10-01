@@ -2088,3 +2088,22 @@ async function findProfileIdByName(name) {
     help" ready line for green, "joined the game" for cyan, and "left the game"/"lost
     connection"/"disconnected" for orange - everything else stays the default color. Purely
     cosmetic CSS classes (`.mc-console-line--*`), no change to what's actually stored/sent.
+
+- **Minecraft follow-up 5: card info order, bulk Server Controls, Global Performance, console
+  controls repositioned.**
+  - **Dashboard card's info panel reordered** to CPU/RAM then Players/Type, with Address still
+    its own full-width row underneath - just a JSX reorder (`MinecraftDashboard.tsx`), the grid
+    itself is unchanged.
+  - **New "Server Controls" bulk-action section** above the server grid, mirroring ARK's own
+    (`Dashboard.tsx`) but with only Start All/Restart All/Stop All - no Update All or
+    Stop+Update+Restart All, since Minecraft has no SteamCMD-equivalent update step. There's no
+    single-profile restart IPC for Minecraft the way ARK has `window.api.server.restart`, so
+    Restart All is a plain stop-then-start per running profile, the same sequencing
+    `minecraftScheduledActions.ts`'s own scheduled restart already uses.
+  - **New "Global Performance" sidebar block**, same `official-status-panel`/
+    `group-console-cluster-stats` markup and aggregation (servers running/total, total
+    players, total CPU%, total RAM) as ARK's Dashboard, computed across every visible
+    Minecraft profile's live status.
+  - **Console tab's Chat mode/Auto-scroll checkboxes moved below the feed, right-aligned**
+    (new `.mc-console-controls` modifier on the existing `.group-console-filters` row) instead
+    of sitting above it - matches the user's own screenshot of the desired layout.

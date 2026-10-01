@@ -439,6 +439,10 @@ label.checkbox {
   color: var(--text);
 }
 
+.mc-console-controls {
+  justify-content: flex-end;
+}
+
 .group-console-rcon {
   display: flex;
   gap: 8px;

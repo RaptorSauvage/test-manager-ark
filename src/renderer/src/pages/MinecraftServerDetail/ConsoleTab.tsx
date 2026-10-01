@@ -86,16 +86,6 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
 
   return (
     <div className="console-tab">
-      <div className="group-console-filters">
-        <label className="checkbox">
-          <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
-          Auto-scroll
-        </label>
-        <label className="checkbox">
-          <input type="checkbox" checked={chatMode} onChange={(e) => setChatMode(e.target.checked)} />
-          Chat mode
-        </label>
-      </div>
       {state === 'running' && !consoleAvailable && (
         <p className="empty-state">
           This server was already running before the Manager (re)started, so there's no live console output to show
@@ -116,6 +106,16 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
             </div>
           )
         })}
+      </div>
+      <div className="group-console-filters mc-console-controls">
+        <label className="checkbox">
+          <input type="checkbox" checked={chatMode} onChange={(e) => setChatMode(e.target.checked)} />
+          Chat mode
+        </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
+          Auto-scroll
+        </label>
       </div>
       {sendError && <p className="error-message">{sendError}</p>}
       <form className="group-console-rcon" onSubmit={(e) => void handleSend(e)}>

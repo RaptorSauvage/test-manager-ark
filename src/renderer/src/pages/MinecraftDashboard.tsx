@@ -35,6 +35,7 @@ export default function MinecraftDashboard({
   const [portById, setPortById] = useState<Record<string, string>>({})
   const [localIp, setLocalIp] = useState('localhost')
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   useEffect(() => {
     void window.api.webDashboard.getLocalIps().then((ips) => {
@@ -132,6 +133,44 @@ export default function MinecraftDashboard({
     await runAction(profile, () => window.api.minecraft.server.kill(profile.id))
   }
 
+  async function runBulk(action: () => Promise<void>): Promise<void> {
+    setBulkBusy(true)
+    try {
+      await action()
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  function stateOf(profile: MinecraftProfile): MinecraftRunState {
+    return statuses[profile.id]?.state ?? 'stopped'
+  }
+
+  async function startAll(): Promise<void> {
+    const targets = visibleProfiles.filter((p) => stateOf(p) === 'stopped')
+    await Promise.all(targets.map((p) => runAction(p, () => window.api.minecraft.server.start(p.id))))
+  }
+
+  // No single restart IPC exists for Minecraft (unlike ARK's window.api.server.restart) -
+  // stop then start, same sequencing minecraftScheduledActions.ts's own
+  // runMinecraftScheduledRestart already uses for a single profile.
+  async function restartAll(): Promise<void> {
+    const targets = visibleProfiles.filter((p) => stateOf(p) === 'running')
+    await Promise.all(
+      targets.map((p) =>
+        runAction(p, async () => {
+          await window.api.minecraft.server.stop(p.id)
+          await window.api.minecraft.server.start(p.id)
+        })
+      )
+    )
+  }
+
+  async function stopAll(): Promise<void> {
+    const targets = visibleProfiles.filter((p) => stateOf(p) === 'running')
+    await Promise.all(targets.map((p) => runAction(p, () => window.api.minecraft.server.stop(p.id))))
+  }
+
   function renderCard(profile: MinecraftProfile): JSX.Element {
     const status = statuses[profile.id]
     const state: MinecraftRunState = status?.state ?? 'stopped'
@@ -215,6 +254,11 @@ export default function MinecraftDashboard({
     )
   }
 
+  const runningCount = visibleProfiles.filter((p) => statuses[p.id]?.state === 'running').length
+  const totalPlayers = visibleProfiles.reduce((sum, p) => sum + (statuses[p.id]?.players?.length ?? 0), 0)
+  const totalCpu = visibleProfiles.reduce((sum, p) => sum + (statuses[p.id]?.cpu ?? 0), 0)
+  const totalMemoryMB = visibleProfiles.reduce((sum, p) => sum + (statuses[p.id]?.memoryMB ?? 0), 0)
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
@@ -231,6 +275,23 @@ export default function MinecraftDashboard({
 
       <div className="dashboard-body">
         <div className="dashboard-content">
+          {visibleProfiles.length > 0 && (
+            <section className="server-controls">
+              <h3>Server Controls</h3>
+              <div className="server-controls-actions">
+                <button className="btn-start-all" disabled={bulkBusy} onClick={() => void runBulk(startAll)}>
+                  Start All
+                </button>
+                <button className="btn-restart-all" disabled={bulkBusy} onClick={() => void runBulk(restartAll)}>
+                  Restart All
+                </button>
+                <button className="btn-stop-all" disabled={bulkBusy} onClick={() => void runBulk(stopAll)}>
+                  Stop All
+                </button>
+              </div>
+            </section>
+          )}
+
           {profiles.length === 0 && (
             <p className="empty-state">
               No Minecraft servers yet. Click &quot;Import existing server&quot; to point at a folder that already has
@@ -253,6 +314,34 @@ export default function MinecraftDashboard({
             </details>
           )}
         </div>
+
+        <aside className="dashboard-sidebar">
+          <section className="official-status-panel">
+            <div className="official-status-header">
+              <h3>Global Performance</h3>
+            </div>
+            <dl className="group-console-cluster-stats">
+              <div>
+                <dt>Servers running</dt>
+                <dd>
+                  {runningCount} <span className="muted">({visibleProfiles.length} total)</span>
+                </dd>
+              </div>
+              <div>
+                <dt>Players</dt>
+                <dd>{totalPlayers}</dd>
+              </div>
+              <div>
+                <dt>CPU</dt>
+                <dd>{totalCpu.toFixed(1)}%</dd>
+              </div>
+              <div>
+                <dt>RAM</dt>
+                <dd>{totalMemoryMB} MB</dd>
+              </div>
+            </dl>
+          </section>
+        </aside>
       </div>
     </div>
   )
