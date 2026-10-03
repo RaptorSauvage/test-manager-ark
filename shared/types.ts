@@ -214,9 +214,17 @@ export interface AppSettings {
    *  for exposing it outside the LAN. When false (default), it behaves exactly as before:
    *  no auth, plain HTTP. */
   webDashboardAuthEnabled: boolean
-  /** Delay, in seconds, between two servers auto-starting at Manager launch (see
-   *  ServerProfile.startOnManagerLaunch). Only affects profiles that opt in - the first one
-   *  starts immediately, each subsequent one waits this long after the previous one. */
+  /** Minimum delay, in seconds, between any two ARK servers actually spawning their OS
+   *  process - enforced globally by serverProcess.ts's own spawn queue (reserveSpawnSlot),
+   *  not just for ServerProfile.startOnManagerLaunch's own staggering (which still paces
+   *  its own calls on top of this). Covers every path that can start several servers close
+   *  together: Manager-launch auto-start, a manual Start/Restart click, the Dashboard's bulk
+   *  Start All/Restart All, a scheduled restart, and a crash-watch/zombie-detection
+   *  auto-restart. ARK's own world-loading is heavy enough (often single-threaded) that
+   *  several spawning in the same instant can starve each other out badly enough that some
+   *  never finish loading at all - a real report showed restarting several servers manually
+   *  resulting in only 1-2 of them actually coming back up. The first spawn in a batch is
+   *  never delayed; only one requested while another is still within this window is. */
   serverAutoStartStaggerSeconds: number
   /** When true (default), a server's GameUserSettings.ini/Game.ini are set read-only while
    *  it's running (see src/main/lib/iniLock.ts) - a deterrent against editing a running

@@ -122,7 +122,9 @@ export function watchLogFileForMarker(
 }
 
 interface RunningServer {
-  /** Null for a server adopted from a previous app run - we have its pid but no live handle. */
+  /** Null for a server adopted from a previous app run - we have its pid but no live handle.
+   *  Also null (with `pid` a 0 placeholder) while queued for a staggered spawn - see
+   *  `cancelQueuedSpawn` below. */
   process: ChildProcess | null
   pid: number
   status: ServerStatus
@@ -130,9 +132,50 @@ interface RunningServer {
    *  itself is still up (see handleUnexpectedExit) - `pid` is stale past that point, so
    *  monitor.ts falls back to an RCON-only liveness/player-list check instead of pidusage. */
   pidTracked: boolean
+  /** Set only while this entry is queued for a staggered spawn (see reserveSpawnSlot) and
+   *  hasn't actually spawned an OS process yet - cancels the pending setTimeout so a Stop/
+   *  Kill requested during that window stops it outright instead of racing the queued spawn.
+   *  Cleared (entry replaced) the moment the real process actually spawns. */
+  cancelQueuedSpawn?: () => void
 }
 
 const running = new Map<string, RunningServer>()
+
+/**
+ * Global (not per-profile) spawn queue - ensures the actual OS-level process spawn for any
+ * two ARK servers is at least `serverAutoStartStaggerSeconds` apart, regardless of what
+ * triggered them: a manual Start/Restart click, the Dashboard's bulk Start All/Restart All,
+ * a scheduled restart, or a crash-watch/zombie-detection auto-restart. ARK's own world-
+ * loading is heavy enough (much of it single-threaded) that several spawning in the same
+ * instant can starve each other out badly enough that some never actually finish loading - a
+ * real report showed restarting several servers manually resulting in only 1-2 of them
+ * actually coming back up. Reuses the same setting already used to stagger "start on Manager
+ * launch" (autoStart.ts) rather than a second one, since it's the same underlying concern -
+ * autoStart.ts's own staggering keeps working unchanged on top of this; the two don't double
+ * up in practice since autoStart's own pacing already satisfies this queue's requirement by
+ * the time each of its calls actually reaches startServer.
+ */
+let nextSpawnSlotAt = 0
+
+/** `now` is passed in (rather than this function calling Date.now() itself) so it shares the
+ *  exact same timestamp the caller already captured as the request's own `startedAt` - two
+ *  separate Date.now() calls can land a millisecond apart, which was enough to make a fresh
+ *  (unstaggered) call see `slot > now` and wait a stray ~1ms it should never have needed to,
+ *  taking the queued-spawn code path instead of spawning immediately. */
+function reserveSpawnSlot(now: number): number {
+  const staggerMs = Math.max(0, getSettings().serverAutoStartStaggerSeconds) * 1000
+  const slot = Math.max(now, nextSpawnSlotAt)
+  nextSpawnSlotAt = slot + staggerMs
+  return slot
+}
+
+/** Resets the spawn queue's internal clock - exported only for tests, so one test's queued
+ *  stagger delay can't leak into the next test in the same file (module state otherwise
+ *  persists across `it()` blocks within a file). Mirrors statsHistory.ts's own
+ *  `__resetStatsHistoryCacheForTests`. */
+export function __resetServerSpawnQueueForTests(): void {
+  nextSpawnSlotAt = 0
+}
 
 export const serverEvents = new EventEmitter()
 
@@ -575,10 +618,40 @@ export function startServer(profile: ServerProfile): ServerStatus {
     return running.get(profile.id)!.status
   }
 
+  const startedAt = Date.now()
+  const waitMs = Math.max(0, reserveSpawnSlot(startedAt) - startedAt)
+
+  if (waitMs <= 0) {
+    emitStatus({ profileId: profile.id, state: 'starting', startedAt })
+    return doSpawn(profile, startedAt)
+  }
+
+  // Staggered: reserve this profile's slot in `running` right away, with a placeholder pid,
+  // so a Stop/Kill requested during the wait can cancel it outright (see
+  // stopServerPhased/killServer's own cancelQueuedSpawn check) instead of racing the queued
+  // spawn, and so getStatus() reports 'starting' consistently during the wait rather than
+  // falling back to 'stopped' just because nothing's in `running` yet.
+  const queuedStatus: ServerStatus = { profileId: profile.id, state: 'starting', startedAt }
+  const timer = setTimeout(() => doSpawn(profile, startedAt), waitMs)
+  running.set(profile.id, {
+    process: null,
+    pid: 0,
+    status: queuedStatus,
+    pidTracked: true,
+    cancelQueuedSpawn: () => clearTimeout(timer)
+  })
+  emitStatus(queuedStatus)
+  return queuedStatus
+}
+
+/** The actual OS-level spawn - called either immediately from startServer (its reserved
+ *  slot was already free) or from the setTimeout above once a staggered slot arrives.
+ *  `startedAt` is always when the start was originally requested, not when this function
+ *  itself runs, so a staggered server's displayed uptime reflects "asked to start at", not
+ *  "the queue let it through at". */
+function doSpawn(profile: ServerProfile, startedAt: number): ServerStatus {
   const exe = getExecutablePath(profile)
   const args = buildLaunchArgs(profile)
-
-  emitStatus({ profileId: profile.id, state: 'starting', startedAt: Date.now() })
 
   // ARK: Survival Evolved goes through a .bat/cmd.exe, like every established ARK: Survival
   // Evolved server manager does - see writeLaunchBatchFile. ARK: Survival Ascended keeps the
@@ -627,6 +700,7 @@ export function startServer(profile: ServerProfile): ServerStatus {
     }
     child.unref()
   } catch (err) {
+    running.delete(profile.id) // clears a queued placeholder entry too, if this came from one
     const failed: ServerStatus = { profileId: profile.id, state: 'error', lastError: (err as Error).message }
     emitStatus(failed)
     return failed
@@ -634,6 +708,7 @@ export function startServer(profile: ServerProfile): ServerStatus {
 
   const pid = child.pid
   if (!pid) {
+    running.delete(profile.id)
     const failed: ServerStatus = { profileId: profile.id, state: 'error', lastError: 'Process started without a pid.' }
     emitStatus(failed)
     return failed
@@ -642,7 +717,6 @@ export function startServer(profile: ServerProfile): ServerStatus {
   // Still "starting" here - the OS process exists, but ARK itself hasn't
   // finished loading the world yet. We only flip to "running" once we see
   // the startup-complete marker (or the fallback timeout below fires).
-  const startedAt = Date.now()
   const status: ServerStatus = {
     profileId: profile.id,
     state: 'starting',
@@ -749,6 +823,20 @@ export interface StopPhases {
  * unreachable or the save fails, there is no safe orderly path, so we skip straight to
  * the grace-period/kill fallback instead of exiting (or waiting) on an unconfirmed save.
  */
+/** If `entry` is still waiting out its staggered spawn slot (see startServer's queuing path),
+ *  cancels the pending spawn outright and finalizes it as stopped - there's no process to
+ *  gracefully save/exit yet, so Stop and Kill both collapse to the same thing for this case.
+ *  Returns the stopped status if it handled it this way, or null if `entry` is a real,
+ *  already-spawned process that the caller should handle normally. */
+function cancelIfQueuedSpawn(entry: RunningServer, profileId: string): ServerStatus | null {
+  if (!entry.cancelQueuedSpawn) return null
+  entry.cancelQueuedSpawn()
+  running.delete(profileId)
+  const stopped: ServerStatus = { profileId, state: 'stopped' }
+  emitStatus(stopped)
+  return stopped
+}
+
 export function stopServerPhased(
   profile: ServerProfile,
   graceMs = 15000,
@@ -761,6 +849,11 @@ export function stopServerPhased(
       saved: Promise.resolve(false),
       finished: Promise.resolve({ profileId: profile.id, state: 'stopped' })
     }
+  }
+
+  const queuedStop = cancelIfQueuedSpawn(entry, profile.id)
+  if (queuedStop) {
+    return { saved: Promise.resolve(false), finished: Promise.resolve(queuedStop) }
   }
 
   emitStatus({ ...entry.status, state: transientState })
@@ -810,6 +903,9 @@ export async function restartServer(profile: ServerProfile, saveSettleMs = SAVE_
 export function killServer(profileId: string): ServerStatus {
   const entry = running.get(profileId)
   if (!entry) return { profileId, state: 'stopped' }
+
+  const queuedStop = cancelIfQueuedSpawn(entry, profileId)
+  if (queuedStop) return queuedStop
 
   emitStatus({ ...entry.status, state: 'stopping' })
 

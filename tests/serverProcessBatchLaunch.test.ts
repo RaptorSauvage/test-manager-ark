@@ -27,7 +27,7 @@ vi.mock('../src/main/lib/managerLog', () => ({
   newTaskId: vi.fn((prefix: string) => `${prefix}-test`)
 }))
 
-import { startServer, isPidTracked, getStatus } from '../src/main/lib/serverProcess'
+import { startServer, isPidTracked, getStatus, __resetServerSpawnQueueForTests } from '../src/main/lib/serverProcess'
 import { logManagerEvent as mockLogManagerEvent } from '../src/main/lib/managerLog'
 
 function mockNetstatOutput(stdout: string): void {
@@ -95,6 +95,7 @@ beforeEach(() => {
   mockExec.mockReset()
   vi.mocked(mockLogManagerEvent).mockClear()
   vi.useFakeTimers()
+  __resetServerSpawnQueueForTests()
 })
 
 afterEach(() => {

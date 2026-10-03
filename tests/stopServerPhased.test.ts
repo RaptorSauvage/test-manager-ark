@@ -23,7 +23,7 @@ const { getFakeChild, setFakeChild } = vi.hoisted(() => {
 vi.mock('../src/main/lib/rcon', () => ({ sendRconCommand: vi.fn(async () => ({ ok: true, response: 'World Saved' })) }))
 vi.mock('node:child_process', () => ({ spawn: vi.fn(() => getFakeChild()), exec: vi.fn() }))
 
-import { startServer, stopServerPhased } from '../src/main/lib/serverProcess'
+import { startServer, stopServerPhased, __resetServerSpawnQueueForTests } from '../src/main/lib/serverProcess'
 import { sendRconCommand as mockSendRconCommand } from '../src/main/lib/rcon'
 
 function makeProfile(id: string): ServerProfile {
@@ -82,6 +82,7 @@ describe('stopServerPhased', () => {
   beforeEach(() => {
     setFakeChild(new FakeChildProcess())
     vi.mocked(mockSendRconCommand).mockReset().mockResolvedValue({ ok: true, response: 'World Saved' })
+    __resetServerSpawnQueueForTests()
   })
 
   it('waits saveSettleMs after a confirmed SaveWorld before sending DoExit', async () => {

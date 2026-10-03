@@ -186,7 +186,7 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                     Start Manager when you log into Windows
                   </label>
                   <label>
-                    Delay between auto-started servers (seconds)
+                    Minimum delay between servers starting (seconds)
                     <input
                       type="number"
                       min={0}
@@ -195,8 +195,12 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                     />
                   </label>
                   <p className="empty-state">
-                    Wait between each profile with &quot;Start this server when the Manager starts&quot; enabled
-                    (Server Management tab), so monitoring is ready before each one starts.
+                    Applies to every ARK server start, not just &quot;Start this server when the Manager starts&quot;
+                    (Server Management tab) - manual Start/Restart, the Dashboard&apos;s bulk Start All/Restart All,
+                    a scheduled restart, or an auto-restart all wait their turn too if another server started less
+                    than this long ago. Several ARK servers loading their map at the exact same time can starve
+                    each other out badly enough that some never finish starting at all - this keeps that from
+                    happening without you needing to space out your own clicks.
                   </p>
                   <label className="checkbox">
                     <input

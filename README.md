@@ -2107,3 +2107,43 @@ async function findProfileIdByName(name) {
   - **Console tab's Chat mode/Auto-scroll checkboxes moved below the feed, right-aligned**
     (new `.mc-console-controls` modifier on the existing `.group-console-filters` row) instead
     of sitting above it - matches the user's own screenshot of the desired layout.
+  - **Removed the Console tab's re-adopted-session description paragraph** ("This server was
+    already running before the Manager (re)started...") - same ongoing trend of trimming
+    explanatory text the user doesn't want cluttering the UI.
+
+- **Fixed: restarting several ARK servers close together left only 1-2 of them actually
+  coming back up.** A real report: manually restarting multiple servers resulted in most of
+  them just never starting, with no error shown. Investigated and ruled out: port conflicts
+  between profiles (confirmed unique), a shared/global RCON connection (each call opens its
+  own `Rcon` instance), and a RAM ceiling (the reporting machine had 128GB). The remaining,
+  consistent explanation: ARK's own world-loading is heavy enough - much of it
+  single-threaded - that several servers spawning in the same instant can starve each other
+  out for CPU badly enough that some never finish loading at all.
+  - **`serverProcess.ts`'s `startServer` now goes through a global (not per-profile) spawn
+    queue** (`reserveSpawnSlot`/`nextSpawnSlotAt`) that enforces at least
+    `AppSettings.serverAutoStartStaggerSeconds` between any two ARK servers' actual OS-level
+    process spawn - covering every path that can start several close together: a manual
+    Start/Restart click, the Dashboard's bulk Start All/Restart All, a scheduled restart, and
+    a crash-watch/zombie-detection auto-restart - not just `startOnManagerLaunch` (which
+    already staggered itself via `autoStart.ts`, and keeps doing so unchanged; the two don't
+    double up in practice since autoStart's own pacing already satisfies this queue by the
+    time each of its calls reaches `startServer`). The first start in a batch is never
+    delayed - only one requested while another is still within the stagger window waits.
+  - A still-queued (not yet actually spawned) start is tracked in the same `running` map as a
+    live one, with a new `cancelQueuedSpawn` escape hatch - so a Stop/Kill requested during
+    the wait cancels it outright instead of racing the queued spawn and starting it anyway
+    right after being told to stop. `getStatus()` reports `starting` consistently through the
+    wait too, instead of `stopped` just because nothing had spawned yet.
+  - Reused the existing `serverAutoStartStaggerSeconds` setting (renamed in the Settings UI to
+    "Minimum delay between servers starting") rather than adding a second one, since it's the
+    same underlying concern - Minecraft is unaffected (its own, separate `minecraftProcess.ts`
+    was never part of this).
+  - New `tests/serverSpawnStagger.test.ts` covers the queue directly: a lone start is never
+    delayed, a second one requested immediately after waits out the full stagger, a third
+    stacks behind the second (not the first), a well-spaced start incurs no wait, and
+    stopping/killing a still-queued start cancels it without ever spawning. Also patched 5
+    existing test files (`serverProcessBatchLaunch`, `startServerSpawnOptions`,
+    `stopServerPhased`, `findListeningPid`, `unexpectedExit`) to reset the new queue's module
+    state between tests - its 10s default stagger would otherwise leak from one `it()` into
+    the next real-timer test in the same file and silently defer a spawn they expected
+    synchronously.

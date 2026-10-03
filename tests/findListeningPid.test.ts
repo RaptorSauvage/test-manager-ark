@@ -39,7 +39,8 @@ import {
   getStatus,
   emitStatus,
   findListeningPid,
-  handleUnexpectedExit
+  handleUnexpectedExit,
+  __resetServerSpawnQueueForTests
 } from '../src/main/lib/serverProcess'
 import { sendRconCommand as mockSendRconCommand } from '../src/main/lib/rcon'
 
@@ -112,6 +113,7 @@ beforeEach(() => {
   setFakeChild(new FakeChildProcess())
   mockExec.mockReset()
   vi.mocked(mockSendRconCommand).mockReset()
+  __resetServerSpawnQueueForTests()
 })
 
 describe('findListeningPid', () => {

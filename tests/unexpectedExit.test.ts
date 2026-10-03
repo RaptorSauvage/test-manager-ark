@@ -36,7 +36,8 @@ import {
   getStatus,
   emitStatus,
   confirmAliveViaRcon,
-  handleUnexpectedExit
+  handleUnexpectedExit,
+  __resetServerSpawnQueueForTests
 } from '../src/main/lib/serverProcess'
 import { sendRconCommand as mockSendRconCommand } from '../src/main/lib/rcon'
 
@@ -95,6 +96,7 @@ function makeProfile(id: string): ServerProfile {
 beforeEach(() => {
   setFakeChild(new FakeChildProcess())
   vi.mocked(mockSendRconCommand).mockReset()
+  __resetServerSpawnQueueForTests()
 })
 
 describe('isPidTracked', () => {

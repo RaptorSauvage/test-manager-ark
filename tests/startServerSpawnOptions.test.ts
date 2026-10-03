@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import { platform } from 'node:process'
@@ -13,7 +13,11 @@ class FakeChildProcess extends EventEmitter {
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn(() => new FakeChildProcess()) }))
 vi.mock('node:child_process', () => ({ spawn: spawnMock, exec: vi.fn() }))
 
-import { startServer, getExecutablePath } from '../src/main/lib/serverProcess'
+import { startServer, getExecutablePath, __resetServerSpawnQueueForTests } from '../src/main/lib/serverProcess'
+
+beforeEach(() => {
+  __resetServerSpawnQueueForTests()
+})
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
   return {
