@@ -2250,3 +2250,12 @@ async function findProfileIdByName(name) {
     successfully; gives up and throws after exhausting retries) and
     `tests/minecraftModScan.test.ts` (batches the project lookup into one deduplicated call for
     several matched mods).
+
+- **Fix: no visible way to get to the one thing blocking "Browse Modrinth" (install search).**
+  A user reported "I don't see a way to add mods" - turned out their server's Minecraft version
+  just wasn't set yet, so the Mods tab correctly showed the explanatory message
+  ("Set this server's Minecraft version in Start Settings...") but gave no way to act on it
+  without manually switching tabs and finding the right field. Added a "Go to Start Settings"
+  button under that message (and under the similar "Set Server type to..." message), which jumps
+  straight to the Start Settings tab - `MinecraftServerDetail/index.tsx` now passes
+  `onGoToStartSettings` down to `ModsTab` instead of just rendering it blind.

@@ -50,7 +50,9 @@ export default function MinecraftServerDetail({
         {tab === 'console' && <ConsoleTab profile={profile} />}
         {tab === 'startSettings' && <StartSettingsTab profile={profile} onProfileChange={onProfileChange} />}
         {tab === 'serverSettings' && <ServerSettingsTab profile={profile} />}
-        {tab === 'mods' && <ModsTab profile={profile} onProfileChange={onProfileChange} />}
+        {tab === 'mods' && (
+          <ModsTab profile={profile} onProfileChange={onProfileChange} onGoToStartSettings={() => setTab('startSettings')} />
+        )}
         {tab === 'backup' && <BackupsTab profile={profile} onProfileChange={onProfileChange} />}
         {tab === 'management' && <ServerManagementTab profile={profile} onProfileChange={onProfileChange} />}
       </div>

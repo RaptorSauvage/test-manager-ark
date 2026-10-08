@@ -7,6 +7,7 @@ import { confirmAction } from '../../lib/confirmAction'
 interface ModsTabProps {
   profile: MinecraftProfile
   onProfileChange: (profile: MinecraftProfile) => void
+  onGoToStartSettings: () => void
 }
 
 /** Turns an install/update result into one readable line - dependencies pulled in, optional
@@ -35,7 +36,7 @@ function describeInstallResult(result: MinecraftModInstallResult): string {
   return parts.join(' - ')
 }
 
-export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX.Element {
+export default function ModsTab({ profile, onProfileChange, onGoToStartSettings }: ModsTabProps): JSX.Element {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<MinecraftModSearchResult[]>([])
   const [searching, setSearching] = useState(false)
@@ -184,6 +185,11 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
             ? "Vanilla servers don't support mods or plugins."
             : 'Set Server type to Forge/Fabric/Paper/Spigot in Start Settings to use this tab.'}
         </p>
+        {profile.serverType !== 'vanilla' && (
+          <button type="button" onClick={onGoToStartSettings}>
+            Go to Start Settings
+          </button>
+        )}
       </div>
     )
   }
@@ -250,6 +256,9 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
             Set this server&apos;s Minecraft version in Start Settings to search for and install mods/plugins. Mods
             already in the mods/plugins folder can still be recognized below without it.
           </p>
+          <button type="button" onClick={onGoToStartSettings}>
+            Go to Start Settings
+          </button>
         </section>
       )}
 
