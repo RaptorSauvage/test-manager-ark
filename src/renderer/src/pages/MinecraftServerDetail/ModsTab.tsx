@@ -238,7 +238,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
           </form>
           {error && <p className="error-message">{error}</p>}
           {lastNote && <p className="empty-state">{lastNote}</p>}
-          <table className="mc-mods-table">
+          <table className="mc-mods-table mc-mods-table--browse">
             <thead>
               <tr>
                 <th className="mc-mods-col-name">Name</th>

@@ -1900,17 +1900,27 @@ label.checkbox {
   color: #fff;
 }
 
-/* max-width keeps this from stretching edge-to-edge on a wide window - the Name column is the
-   only one without an explicit width (see mc-mods-col-narrow below), so on an unconstrained
-   100%-wide table it absorbed every pixel of leftover space, leaving a visually huge empty gap
-   inside the Name cell before Source/Version/Status/the action buttons - a 357-mod screenshot
-   on an ultrawide window showed the data columns pushed almost entirely off to the right.
-   Capping the table's own width (not the whole section, which stays full-width) bounds how
-   much "leftover space" there is to begin with. */
+/* No `width: 100%` here, deliberately - that was the actual remaining bug. Forcing the table
+   to fill its full (even capped) container width meant every column still had to collectively
+   stretch to reach that width, and since Name was the only column without a tight content-hugging
+   rule, it absorbed essentially all of that forced extra space - most mod names are short, so
+   that left a big visible gap between the name and the Source column on every row. Leaving
+   `width` at its default (`auto`) lets the table shrink-to-fit the sum of its columns' actual
+   content widths instead - max-width only caps it for the rare case content alone would make it
+   wider than reasonable. */
 .mc-mods-table {
-  width: 100%;
   max-width: 1040px;
   border-collapse: collapse;
+}
+
+/* The Browse Modrinth/CurseForge results table is the one exception that does want
+   `width: 100%` - its Description column is prose that should wrap within the available
+   width, not render as one unbroken line at its natural max-content width the way shrink-to-
+   fit sizing would leave it. Two columns (Name, Description) share leftover space there
+   instead of just the one, so it doesn't reproduce the Installed table's all-of-it-goes-to-
+   Name bug above. */
+.mc-mods-table--browse {
+  width: 100%;
 }
 
 .mc-mods-table th,
@@ -1921,11 +1931,12 @@ label.checkbox {
   font-size: 0.85rem;
 }
 
-/* An explicit hint for the Name column too (the one column still left to auto-size) - without
-   it, Name still ends up disproportionately wide relative to Source/Version/Status within even
-   the capped table width above, since it's still the only "flexible" column. */
+/* Keeps a long mod title on one line (so it doesn't wrap mid-word against the icon) without
+   forcing any particular width - same "hug the content, don't reserve a fixed share" reasoning
+   as mc-mods-col-narrow below, just without the width: 1% (Name is the widest-content column by
+   far, so letting the table's own shrink-to-fit sizing above handle it is enough). */
 .mc-mods-col-name {
-  width: 38%;
+  white-space: nowrap;
 }
 
 .mc-mod-name-cell {

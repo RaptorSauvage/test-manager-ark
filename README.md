@@ -2409,3 +2409,18 @@ async function findProfileIdByName(name) {
   reasonable size), and a new `.mc-mods-col-name` (`width: 38%`) on the Name header in both
   tables gives the browser an explicit hint instead of leaving it to soak up 100% of whatever's
   left.
+
+- **Follow-up fix: still a visible gap between Name and Source after the above, confirmed from
+  another screenshot.** `.mc-mods-table` still had `width: 100%`, so even capped at 1040px the
+  table was *forced* to reach that width regardless of whether its content needed it - most mod
+  names are short, so `.mc-mods-col-name`'s 38% share was still mostly empty space most rows
+  didn't need. Removed `width: 100%` entirely (keeping only `max-width: 1040px` as a safety
+  cap) so the table defaults to shrinking-to-fit the sum of its columns' actual content widths
+  instead of being stretched to a fixed width no matter what - `.mc-mods-col-name` is now just
+  `white-space: nowrap` (hug the longest name actually present, same "don't reserve a fixed
+  share" reasoning as the narrow columns) rather than a fixed 38%. The Browse Modrinth/
+  CurseForge results table is the one exception that still wants `width: 100%` - its
+  Description column is prose that should wrap within the available width rather than render
+  as one unbroken max-content-width line - so it gets a new `.mc-mods-table--browse` modifier
+  class restoring that, while the Installed table (no Description column, nothing that
+  benefits from stretching) stays shrink-to-fit.
