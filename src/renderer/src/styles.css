@@ -1900,6 +1900,32 @@ label.checkbox {
   color: #fff;
 }
 
+.mc-mods-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.mc-mods-table th,
+.mc-mods-table td {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.mc-mod-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mc-mod-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
 .backups-select-col {
   width: 1%;
   white-space: nowrap;

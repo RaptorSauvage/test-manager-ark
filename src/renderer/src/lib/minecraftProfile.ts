@@ -6,6 +6,7 @@ export function createDefaultMinecraftProfile(name: string): MinecraftProfile {
     name,
     serverType: 'unknown',
     installDir: '',
+    minecraftVersion: '',
     launchMode: 'jar',
     jarFileName: '',
     scriptFileName: '',
@@ -22,6 +23,7 @@ export function createDefaultMinecraftProfile(name: string): MinecraftProfile {
     scheduledRestartStartAfter: true,
     backupDir: '',
     maxBackups: 10,
-    backupScheduleEnabled: false
+    backupScheduleEnabled: false,
+    installedMods: []
   }
 }

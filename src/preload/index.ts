@@ -248,6 +248,15 @@ const api: Api = {
         ipcRenderer.on(IPC.minecraftBackupLogChanged, listener)
         return () => ipcRenderer.removeListener(IPC.minecraftBackupLogChanged, listener)
       }
+    },
+    mods: {
+      search: (profileId: string, query: string) => ipcRenderer.invoke(IPC.minecraftModsSearch, profileId, query),
+      install: (profileId: string, projectId: string) => ipcRenderer.invoke(IPC.minecraftModsInstall, profileId, projectId),
+      remove: (profileId: string, projectId: string) => ipcRenderer.invoke(IPC.minecraftModsRemove, profileId, projectId),
+      setEnabled: (profileId: string, projectId: string, enabled: boolean) =>
+        ipcRenderer.invoke(IPC.minecraftModsSetEnabled, profileId, projectId, enabled),
+      checkUpdates: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsCheckUpdates, profileId),
+      update: (profileId: string, projectId: string) => ipcRenderer.invoke(IPC.minecraftModsUpdate, profileId, projectId)
     }
   }
 }

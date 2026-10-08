@@ -1,0 +1,166 @@
+import type { MinecraftServerType } from '@shared/minecraft'
+
+/**
+ * Thin wrapper around Modrinth's public v2 REST API (https://docs.modrinth.com) - no API key
+ * required, unlike CurseForge (a planned follow-up, not implemented yet - see
+ * shared/minecraftMods.ts). Deliberately returns Modrinth's own raw shapes (snake_case field
+ * names and all) rather than normalizing here - minecraftMods.ts is the one place that
+ * converts into this app's own MinecraftModSearchResult/InstalledMinecraftMod shapes, so a
+ * second source (CurseForge) only means adding its own client module plus a branch there,
+ * never touching this file.
+ */
+
+const API_BASE = 'https://api.modrinth.com/v2'
+
+/** Modrinth asks API consumers to identify themselves via User-Agent - see
+ *  https://docs.modrinth.com/api/ (rate-limiting/etiquette section). */
+const USER_AGENT = 'RaptorSauvage/test-manager-ark (Bober Server Manager; github.com/RaptorSauvage/test-manager-ark)'
+
+export interface ModrinthSearchHit {
+  project_id: string
+  slug: string
+  title: string
+  description: string
+  icon_url: string | null
+  downloads: number
+  client_side: string
+  server_side: string
+}
+
+interface ModrinthSearchResponse {
+  hits: ModrinthSearchHit[]
+  offset: number
+  limit: number
+  total_hits: number
+}
+
+export interface ModrinthVersionFile {
+  hashes: Record<string, string>
+  url: string
+  filename: string
+  primary: boolean
+  size: number
+}
+
+export type ModrinthDependencyType = 'required' | 'optional' | 'incompatible' | 'embedded'
+
+export interface ModrinthDependency {
+  version_id: string | null
+  project_id: string | null
+  file_name: string | null
+  dependency_type: ModrinthDependencyType
+}
+
+export interface ModrinthVersion {
+  id: string
+  project_id: string
+  version_number: string
+  game_versions: string[]
+  loaders: string[]
+  version_type: 'release' | 'beta' | 'alpha'
+  date_published: string
+  files: ModrinthVersionFile[]
+  dependencies: ModrinthDependency[]
+}
+
+export interface ModrinthProject {
+  id: string
+  slug: string
+  title: string
+  description: string
+  icon_url: string | null
+  client_side: string
+  server_side: string
+}
+
+/**
+ * Maps a Minecraft server type to the Modrinth "category" facet value(s) that identify a
+ * mod/plugin's loader - the v2 API lumps loaders into the same `categories` facet type as
+ * everything else (confirmed against Modrinth's own search result model, which extends
+ * `categories` with `loaders` for v2 responses). Paper and Spigot share one facet group since
+ * Paper plugins are themselves Spigot/Bukkit-API-compatible and most plugin authors tag for
+ * all three interchangeably - splitting them would just hide results that do work.
+ *
+ * Vanilla and unknown have no mod/plugin ecosystem at all - callers should never reach this
+ * for those (minecraftMods.ts guards it before ever calling into this client), but an empty
+ * array here means "no loader facet" rather than silently matching everything.
+ */
+export function loaderCategoriesFor(serverType: MinecraftServerType): string[] {
+  switch (serverType) {
+    case 'fabric':
+      return ['fabric']
+    case 'forge':
+      return ['forge']
+    case 'paper':
+    case 'spigot':
+      return ['paper', 'spigot', 'bukkit']
+    default:
+      return []
+  }
+}
+
+/**
+ * Builds the `facets` search param - a JSON array of arrays, where entries within one inner
+ * array are OR'd together and the outer arrays are AND'd (confirmed against Modrinth's own
+ * facet-parsing code: outer = AND, inner = OR). `project_type:mod` covers plugins/datapacks
+ * too under v2's flattened model (there's no separate v2 project type for them - distinguish
+ * by loader category instead, same reasoning as loaderCategoriesFor above).
+ *
+ * The `server_side` facet is the one piece of filtering the user explicitly asked for:
+ * excludes anything that does nothing on a dedicated server (a pure client-side content/UI
+ * mod reports `server_side: "unsupported"`) - kept in the search query itself rather than
+ * filtered after the fact, so pagination/limit counts stay meaningful.
+ */
+export function buildModrinthFacets(serverType: MinecraftServerType, minecraftVersion: string): string {
+  const facets: string[][] = [['project_type:mod'], ['server_side:required', 'server_side:optional']]
+  const loaderCategories = loaderCategoriesFor(serverType)
+  if (loaderCategories.length > 0) facets.push(loaderCategories.map((c) => `categories:${c}`))
+  if (minecraftVersion.trim()) facets.push([`versions:${minecraftVersion.trim()}`])
+  return JSON.stringify(facets)
+}
+
+async function modrinthFetch<T>(path: string, searchParams: Record<string, string>): Promise<T> {
+  const url = new URL(`${API_BASE}${path}`)
+  for (const [key, value] of Object.entries(searchParams)) url.searchParams.set(key, value)
+  const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT } })
+  if (!response.ok) {
+    throw new Error(`Modrinth request failed (HTTP ${response.status}): ${path}`)
+  }
+  return (await response.json()) as T
+}
+
+export async function searchModrinthProjects(
+  query: string,
+  serverType: MinecraftServerType,
+  minecraftVersion: string,
+  limit = 20
+): Promise<ModrinthSearchHit[]> {
+  const response = await modrinthFetch<ModrinthSearchResponse>('/search', {
+    query,
+    facets: buildModrinthFacets(serverType, minecraftVersion),
+    limit: String(limit)
+  })
+  return response.hits
+}
+
+/** Compatible versions for one project, newest first (Modrinth's own default ordering) -
+ *  `[0]` is "the latest compatible version" wherever this app needs just that. */
+export async function getModrinthProjectVersions(
+  projectId: string,
+  serverType: MinecraftServerType,
+  minecraftVersion: string
+): Promise<ModrinthVersion[]> {
+  const params: Record<string, string> = {}
+  const loaderCategories = loaderCategoriesFor(serverType)
+  if (loaderCategories.length > 0) params.loaders = JSON.stringify(loaderCategories)
+  if (minecraftVersion.trim()) params.game_versions = JSON.stringify([minecraftVersion.trim()])
+  return modrinthFetch<ModrinthVersion[]>(`/project/${encodeURIComponent(projectId)}/version`, params)
+}
+
+export async function getModrinthVersion(versionId: string): Promise<ModrinthVersion> {
+  return modrinthFetch<ModrinthVersion>(`/version/${encodeURIComponent(versionId)}`, {})
+}
+
+export async function getModrinthProject(projectId: string): Promise<ModrinthProject> {
+  return modrinthFetch<ModrinthProject>(`/project/${encodeURIComponent(projectId)}`, {})
+}

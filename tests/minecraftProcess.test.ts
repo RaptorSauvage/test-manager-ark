@@ -91,6 +91,7 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
       name: 'Test Minecraft Server',
       serverType: 'vanilla',
       installDir: tmpDir,
+      minecraftVersion: '',
       launchMode: 'script',
       jarFileName: '',
       scriptFileName: 'run.sh',
@@ -107,7 +108,8 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
       scheduledRestartStartAfter: true,
       backupDir: '',
       maxBackups: 10,
-      backupScheduleEnabled: false
+      backupScheduleEnabled: false,
+      installedMods: []
     }
   })
 
@@ -204,6 +206,7 @@ describe('adoptPersistedMinecraftProcesses (re-attaching after a Manager restart
       name: 'Adopted Server',
       serverType: 'vanilla',
       installDir: os.tmpdir(),
+      minecraftVersion: '',
       launchMode: 'jar',
       jarFileName: 'server.jar',
       scriptFileName: '',
@@ -220,7 +223,8 @@ describe('adoptPersistedMinecraftProcesses (re-attaching after a Manager restart
       scheduledRestartStartAfter: true,
       backupDir: '',
       maxBackups: 10,
-      backupScheduleEnabled: false
+      backupScheduleEnabled: false,
+      installedMods: []
     }
   })
 

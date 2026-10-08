@@ -2157,3 +2157,55 @@ async function findProfileIdByName(name) {
   sharing ARK's `groupOrder`/`collapsedGroups`, since an ARK group and a Minecraft group
   happening to share a name shouldn't share display order or collapse state. No new CSS -
   `.server-group`/`.drag-handle`/`.hidden-servers` were already generic, not ARK-specific.
+
+- **Minecraft mod/plugin browsing and installation, v1 (Modrinth only) - new Mods tab.**
+  CurseForge is a deliberate follow-up, not implemented here: it needs its own API key
+  (register as a developer at console.curseforge.com) and its own client module, while
+  Modrinth's v2 API needs no key at all. Everything below is organized so adding CurseForge
+  later means a second client module plus a branch in `minecraftMods.ts`, not touching
+  `shared/minecraftMods.ts`'s already source-agnostic shapes.
+  - **New `MinecraftProfile.minecraftVersion` field** (Start Settings) - a real, previously
+    entirely missing prerequisite: nothing else in this app tracks a server's actual Minecraft
+    game version, but Modrinth needs it to filter compatible mod/plugin versions. Free text
+    (e.g. "1.20.1"), no auto-detection in this pass; the Mods tab shows a clear empty-state
+    message asking for it instead of guessing wrong.
+  - **`src/main/lib/modrinthClient.ts`**, a thin wrapper around Modrinth's public v2 REST API
+    (confirmed directly against Modrinth's own open-source backend models, not just third-party
+    docs, since the v2/v3 split made some of the publicly written docs ambiguous). Loader to
+    Modrinth "category" facet mapping: Fabric/Forge get their own single category; Paper and
+    Spigot share one OR-ed group (`paper`/`spigot`/`bukkit`) since plugins are broadly
+    cross-compatible across those three and splitting them would just hide results that work
+    fine. Vanilla/unknown get no loader facet at all (and never reach this client - the Mods
+    tab and `minecraftMods.ts` both gate on `supportsMinecraftMods` first).
+  - **Excludes client-only content, as requested** - `server_side:unsupported` is filtered out
+    directly in the search facets (`server_side: required` or `optional` only), not as a
+    post-filter, so a mod that does nothing on a dedicated server never shows up as installable
+    in the first place.
+  - **Dependency resolution, a real first pass, not just planned** -
+    `resolveModInstallPlan` in `minecraftMods.ts` walks a version's own `dependencies` and
+    recursively resolves every `required` one to an installable version (by exact `version_id`
+    when pinned, otherwise the latest compatible version of that `project_id`), skipping
+    anything already installed or already queued in the same run (dedup, with a depth cap as a
+    cycle safety net - confirmed against a diamond-dependency graph and a direct A-depends-on-B-
+    depends-on-A cycle in tests). `embedded` dependencies are skipped outright (already bundled
+    in the parent jar); `optional` ones are never auto-installed, just surfaced in the result so
+    the Mods tab can tell the user what they could add by hand; `incompatible` ones are only
+    reported when the conflicting project is already installed - a warning, not a block.
+  - **Install/remove/enable-disable**: downloads the version's primary file (`fetch` +
+    `arrayBuffer` + `writeFileSync`, same pattern as `steamcmdInstaller.ts`'s own download),
+    verified against Modrinth's own published sha512/sha1 hash before being kept - a corrupted
+    download is discarded rather than left as a jar the server might fail to load. Writes to
+    `mods/` (Forge/Fabric) or `plugins/` (Paper/Spigot) under the server's install directory.
+    Disabling renames the file to add a `.disabled` suffix rather than deleting it (every
+    loader only loads `.jar` files from that folder), so re-enabling needs no re-download, and
+    updating an already-disabled mod preserves that - it doesn't silently come back enabled.
+  - **`profile.installedMods` is the source of truth** for what this app manages, same
+    philosophy as ARK's own mods list - a jar dropped into the folder by hand, outside the
+    Manager, simply isn't tracked (a known v1 limitation, not a bug).
+  - **No version picker in this pass** - Install/Update always resolve to the latest
+    compatible version, the same simplification ARK's own mod system already makes (an id,
+    no picker there either). A real gap to revisit, not an oversight.
+  - New `tests/modrinthClient.test.ts` (facet-building), `tests/minecraftModInstallPlan.test.ts`
+    (the dependency-walk algorithm itself, including the diamond-graph and cycle cases, with no
+    network/fs touched at all), and `tests/minecraftMods.test.ts` (install/remove/enable-disable/
+    update-check against a real temp directory, with Modrinth's own HTTP calls mocked).

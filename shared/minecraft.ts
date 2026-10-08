@@ -1,3 +1,5 @@
+import type { InstalledMinecraftMod } from './minecraftMods'
+
 /**
  * Minecraft support - deliberately kept as its own, mostly-separate model from ServerProfile
  * rather than folded into it. ARK: Survival Evolved and ARK: Survival Ascended share enough
@@ -42,6 +44,12 @@ export interface MinecraftProfile {
    *  the file itself (see minecraftProperties.ts), the same "the user manages this file
    *  themselves" philosophy already used for ARK's GameUserSettings.ini. */
   installDir: string
+  /** The server's actual Minecraft game version, e.g. "1.20.1" - free text, set by the user
+   *  (Start Settings tab), since none of the detection this app already does (jar/script file
+   *  name) reliably reveals it. Needed to filter compatible mod/plugin versions when browsing
+   *  Modrinth/CurseForge (minecraftMods.ts) - an empty value just means "unknown", and the
+   *  Mods tab asks for it before letting the user search. */
+  minecraftVersion: string
   launchMode: MinecraftLaunchMode
   /** File name (not a full path), relative to installDir. Used when launchMode is 'jar'. */
   jarFileName: string
@@ -86,6 +94,10 @@ export interface MinecraftProfile {
   /** Optional cron expression for automatic backups, e.g. every 6 hours. */
   backupSchedule?: string
   backupScheduleEnabled: boolean
+  /** Mods/plugins this Manager has installed for this server (see minecraftMods.ts/
+   *  shared/minecraftMods.ts) - empty for vanilla, or for any server the Mods tab hasn't
+   *  been used on yet. */
+  installedMods: InstalledMinecraftMod[]
 }
 
 export type MinecraftRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error'

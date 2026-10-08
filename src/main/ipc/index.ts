@@ -21,6 +21,7 @@ import { registerManagerLogHandlers } from './managerLog'
 import { registerStatsHistoryHandlers } from './statsHistory'
 import { registerMinecraftHandlers } from './minecraft'
 import { registerMinecraftBackupHandlers } from './minecraftBackup'
+import { registerMinecraftModsHandlers } from './minecraftMods'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers(mainWindow.webContents)
@@ -45,4 +46,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerStatsHistoryHandlers()
   registerMinecraftHandlers(mainWindow.webContents)
   registerMinecraftBackupHandlers(mainWindow.webContents)
+  registerMinecraftModsHandlers()
 }

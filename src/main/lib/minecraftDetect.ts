@@ -111,6 +111,7 @@ export function detectMinecraftProfile(installDir: string): MinecraftProfile {
     name: folderName,
     serverType: launchable?.serverType ?? 'unknown',
     installDir,
+    minecraftVersion: '',
     launchMode: launchable?.launchMode ?? 'jar',
     jarFileName: launchable?.jarFileName ?? '',
     scriptFileName: launchable?.scriptFileName ?? '',
@@ -127,6 +128,7 @@ export function detectMinecraftProfile(installDir: string): MinecraftProfile {
     scheduledRestartStartAfter: true,
     backupDir: '',
     maxBackups: 10,
-    backupScheduleEnabled: false
+    backupScheduleEnabled: false,
+    installedMods: []
   }
 }

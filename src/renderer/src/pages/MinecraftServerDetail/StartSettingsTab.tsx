@@ -86,6 +86,14 @@ export default function StartSettingsTab({ profile, onProfileChange }: StartSett
           Re-detect below. Correct it here if it guessed wrong; it never affects how the server actually launches.
         </p>
         <label>
+          Minecraft version
+          <input value={form.minecraftVersion} onChange={(e) => update('minecraftVersion', e.target.value)} placeholder="1.20.1" />
+        </label>
+        <p className="empty-state">
+          Not detected automatically - set it to whatever version this server actually runs. Required by the Mods
+          tab to find compatible mods/plugins; otherwise unused.
+        </p>
+        <label>
           Install directory
           <div className="path-input-row">
             <input

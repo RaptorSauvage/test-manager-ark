@@ -20,6 +20,8 @@ export function migrateMinecraftProfile(profile: MinecraftProfile): MinecraftPro
     scheduledRestartStartAfter: profile.scheduledRestartStartAfter ?? true,
     backupDir: profile.backupDir ?? '',
     maxBackups: profile.maxBackups ?? 10,
-    backupScheduleEnabled: profile.backupScheduleEnabled ?? false
+    backupScheduleEnabled: profile.backupScheduleEnabled ?? false,
+    minecraftVersion: profile.minecraftVersion ?? '',
+    installedMods: profile.installedMods ?? []
   }
 }

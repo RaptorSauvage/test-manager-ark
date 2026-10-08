@@ -4,6 +4,7 @@
 
 import type { GameId } from './games'
 import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine, MinecraftPropertiesData } from './minecraft'
+import type { MinecraftModSearchResult, MinecraftModInstallResult, MinecraftModUpdateCheckResult } from './minecraftMods'
 
 export interface ServerProfile {
   id: string
@@ -549,7 +550,14 @@ export const IPC = {
   minecraftBackupCreated: 'minecraft-backup:created',
   minecraftBackupScheduleStatus: 'minecraft-backup:schedule-status',
   minecraftBackupLogGet: 'minecraft-backup:log-get',
-  minecraftBackupLogChanged: 'minecraft-backup:log-changed'
+  minecraftBackupLogChanged: 'minecraft-backup:log-changed',
+
+  minecraftModsSearch: 'minecraft-mods:search',
+  minecraftModsInstall: 'minecraft-mods:install',
+  minecraftModsRemove: 'minecraft-mods:remove',
+  minecraftModsSetEnabled: 'minecraft-mods:set-enabled',
+  minecraftModsCheckUpdates: 'minecraft-mods:check-updates',
+  minecraftModsUpdate: 'minecraft-mods:update'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -882,6 +890,24 @@ export interface Api {
       getScheduleStatus: (profileId: string) => Promise<BackupScheduleStatus>
       getLog: (profileId: string) => Promise<BackupLogEntry[]>
       onLogChanged: (callback: (profileId: string, entry: BackupLogEntry) => void) => () => void
+    }
+    /** Mod/plugin browsing and installation (Modrinth today, CurseForge planned - see
+     *  shared/minecraftMods.ts). `profile.installedMods` is the source of truth for what's
+     *  installed; every call here returns the updated profile so the caller can just pass it
+     *  to onProfileChange instead of re-fetching the whole profile list. */
+    mods: {
+      search: (profileId: string, query: string) => Promise<MinecraftModSearchResult[]>
+      install: (
+        profileId: string,
+        projectId: string
+      ) => Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }>
+      remove: (profileId: string, projectId: string) => Promise<MinecraftProfile>
+      setEnabled: (profileId: string, projectId: string, enabled: boolean) => Promise<MinecraftProfile>
+      checkUpdates: (profileId: string) => Promise<MinecraftModUpdateCheckResult[]>
+      update: (
+        profileId: string,
+        projectId: string
+      ) => Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }>
     }
   }
 }

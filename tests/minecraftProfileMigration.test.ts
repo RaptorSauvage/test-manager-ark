@@ -33,6 +33,8 @@ describe('migrateMinecraftProfile', () => {
     expect(migrated.backupDir).toBe('')
     expect(migrated.maxBackups).toBe(10)
     expect(migrated.backupScheduleEnabled).toBe(false)
+    expect(migrated.minecraftVersion).toBe('')
+    expect(migrated.installedMods).toEqual([])
     // Untouched fields survive as-is.
     expect(migrated.name).toBe('Old Server')
     expect(migrated.jarFileName).toBe('server.jar')
@@ -60,7 +62,9 @@ describe('migrateMinecraftProfile', () => {
       scheduledRestartStartAfter: false,
       backupDir: '/srv/mc/backups',
       maxBackups: 5,
-      backupScheduleEnabled: true
+      backupScheduleEnabled: true,
+      minecraftVersion: '1.20.1',
+      installedMods: []
     }
 
     expect(migrateMinecraftProfile(current)).toEqual(current)
