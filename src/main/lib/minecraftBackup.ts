@@ -210,3 +210,13 @@ export async function openMinecraftBackupFolder(profile: MinecraftProfile): Prom
   const error = await shell.openPath(profile.backupDir)
   if (error) throw new Error(error)
 }
+
+/** Opens the server's own install directory (where the jar/script, world, mods/plugins, and
+ *  server.properties all live) in the OS file explorer. */
+export async function openMinecraftServerRootFolder(profile: MinecraftProfile): Promise<void> {
+  if (!profile.installDir.trim() || !fs.existsSync(profile.installDir)) {
+    throw new Error('Set a valid install directory in Start Settings first.')
+  }
+  const error = await shell.openPath(profile.installDir)
+  if (error) throw new Error(error)
+}

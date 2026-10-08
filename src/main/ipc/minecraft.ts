@@ -15,6 +15,7 @@ import { readServerProperties, upsertServerPropertiesKeys, type PropertiesData }
 import { sendMinecraftRconCommand } from '../lib/minecraftRcon'
 import { applyMinecraftScheduledRestart, clearMinecraftScheduledRestart } from '../lib/minecraftScheduledActions'
 import { applyMinecraftBackupSchedule, clearMinecraftBackupSchedule } from '../lib/minecraftBackupSchedule'
+import { openMinecraftServerRootFolder } from '../lib/minecraftBackup'
 
 function requireProfile(profileId: string): MinecraftProfile {
   const profile = getMinecraftProfile(profileId)
@@ -59,6 +60,8 @@ export function registerMinecraftHandlers(webContents: WebContents): void {
   })
 
   ipcMain.handle(IPC.minecraftDetectLaunchable, (_event, installDir: string) => detectMinecraftLaunchable(installDir))
+
+  ipcMain.handle(IPC.minecraftOpenServerFolder, (_event, profileId: string) => openMinecraftServerRootFolder(requireProfile(profileId)))
 
   ipcMain.handle(IPC.minecraftServerStart, (_event, profileId: string) => doStartMinecraftServer(requireProfile(profileId)))
 

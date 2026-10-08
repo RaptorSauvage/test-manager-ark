@@ -307,4 +307,39 @@ describe('minecraftMods', () => {
     const [status] = await checkMinecraftModUpdates(profile)
     expect(status.updateAvailable).toBe(false)
   })
+
+  it('checkMinecraftModUpdates skips source: "unknown" entries - no real Modrinth project id to check', async () => {
+    const known = {
+      source: 'modrinth' as const,
+      projectId: 'project-root',
+      slug: 'root-mod',
+      title: 'Root Mod',
+      versionId: 'version-root',
+      versionNumber: '1.0.0',
+      fileName: 'root.jar',
+      enabled: true,
+      installedAs: 'user' as const,
+      installedAt: Date.now()
+    }
+    const unknown = {
+      source: 'unknown' as const,
+      projectId: 'local:mystery.jar',
+      slug: 'mystery',
+      title: 'mystery',
+      versionId: '',
+      versionNumber: '',
+      fileName: 'mystery.jar',
+      enabled: true,
+      installedAs: 'user' as const,
+      installedAt: Date.now()
+    }
+    const profile = makeProfile({ installedMods: [known, unknown] }, tmpDir)
+    mockGetModrinthProjectVersions.mockResolvedValue([makeVersion()])
+
+    const results = await checkMinecraftModUpdates(profile)
+
+    expect(results).toHaveLength(1)
+    expect(results[0].projectId).toBe('project-root')
+    expect(mockGetModrinthProjectVersions).toHaveBeenCalledTimes(1)
+  })
 })

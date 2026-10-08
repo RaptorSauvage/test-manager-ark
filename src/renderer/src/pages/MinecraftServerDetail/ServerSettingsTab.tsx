@@ -162,6 +162,15 @@ export default function ServerSettingsTab({ profile }: ServerSettingsTabProps): 
   const [form, setForm] = useState<MinecraftPropertiesData | null>(null)
   const [error, setError] = useState('')
 
+  async function handleOpenServerFolder(): Promise<void> {
+    setError('')
+    try {
+      await window.api.minecraft.openServerFolder(profile.id)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     setForm(null)
@@ -247,6 +256,12 @@ export default function ServerSettingsTab({ profile }: ServerSettingsTabProps): 
         You are editing the server.properties file. Minecraft only re-reads it at startup - a change made here takes
         effect the next time this server starts, not live.
       </p>
+      <div className="form-actions">
+        <button type="button" onClick={() => void handleOpenServerFolder()}>
+          Open server folder
+        </button>
+      </div>
+      {error && <p className="error-message">{error}</p>}
 
       <section className="cluster-section">
         <h3>Gameplay</h3>

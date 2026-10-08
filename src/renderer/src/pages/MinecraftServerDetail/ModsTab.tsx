@@ -67,24 +67,25 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
   /** Recognizes mods/plugins already sitting in the mods/plugins folder that weren't
    *  installed through this tab - dropped in by hand, or installed before this feature
    *  existed. Run automatically whenever the tab opens for a profile, plus an explicit
-   *  "Rescan folder" button for after the user adds files while the tab is already open. */
+   *  "Rescan folder" button for after the user adds files while the tab is already open.
+   *  Every untracked file ends up in profile.installedMods either way - a hash match gets
+   *  full Modrinth info (source: 'modrinth'), anything else is still added so it's visible
+   *  and manageable, just as source: 'unknown' (see the Status column below). */
   async function handleScan(): Promise<void> {
     setScanning(true)
     try {
       const { profile: updated, result } = await window.api.minecraft.mods.scan(profile.id)
       if (result.adopted.length > 0) onProfileChange(updated)
-      if (result.adopted.length > 0 || result.unidentifiedCount > 0) {
+      if (result.adopted.length > 0) {
+        const identified = result.adopted.filter((m) => m.source === 'modrinth')
+        const unidentified = result.adopted.filter((m) => m.source === 'unknown')
         const parts: string[] = []
-        if (result.adopted.length > 0) {
-          parts.push(
-            `Recognized ${result.adopted.length} already-installed mod${result.adopted.length === 1 ? '' : 's'}: ${result.adopted
-              .map((m) => m.title)
-              .join(', ')}`
-          )
+        if (identified.length > 0) {
+          parts.push(`Recognized ${identified.length} already-installed mod${identified.length === 1 ? '' : 's'}: ${identified.map((m) => m.title).join(', ')}`)
         }
-        if (result.unidentifiedCount > 0) {
+        if (unidentified.length > 0) {
           parts.push(
-            `${result.unidentifiedCount} file${result.unidentifiedCount === 1 ? '' : 's'} in the folder could not be identified (not on Modrinth, or CurseForge-sourced)`
+            `${unidentified.length} file${unidentified.length === 1 ? '' : 's'} in the folder could not be identified (not on Modrinth, or CurseForge-sourced) - added below as "Unidentified", still manageable`
           )
         }
         setScanNote(parts.join(' - '))
@@ -95,6 +96,15 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
       // Best-effort - a failed scan shouldn't block the rest of the tab.
     } finally {
       setScanning(false)
+    }
+  }
+
+  async function handleOpenModsFolder(): Promise<void> {
+    setError('')
+    try {
+      await window.api.minecraft.mods.openFolder(profile.id)
+    } catch (err) {
+      setError((err as Error).message)
     }
   }
 
@@ -217,20 +227,29 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
               <tr>
                 <th>Name</th>
                 <th>Description</th>
-                <th>Downloads</th>
-                <th></th>
+                <th className="mc-mods-col-narrow">Downloads</th>
+                <th className="mc-mods-col-narrow"></th>
               </tr>
             </thead>
             <tbody>
               {results.map((r) => (
                 <tr key={r.projectId}>
                   <td className="mc-mod-name-cell">
-                    {r.iconUrl && <img src={r.iconUrl} alt="" className="mc-mod-icon" />}
+                    {r.iconUrl && (
+                      <img
+                        src={r.iconUrl}
+                        alt=""
+                        className="mc-mod-icon"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'
+                        }}
+                      />
+                    )}
                     {r.title}
                   </td>
                   <td>{r.description}</td>
-                  <td>{r.downloads.toLocaleString()}</td>
-                  <td>
+                  <td className="mc-mods-col-narrow">{r.downloads.toLocaleString()}</td>
+                  <td className="mc-mods-col-narrow">
                     <button
                       type="button"
                       disabled={r.installed || busyId === r.projectId}
@@ -271,30 +290,55 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
           <button type="button" onClick={() => void refreshUpdates()} disabled={checkingUpdates || !hasVersion}>
             {checkingUpdates ? 'Checking...' : 'Check for updates'}
           </button>
+          <button type="button" onClick={() => void handleOpenModsFolder()}>
+            Open mods folder
+          </button>
         </div>
         {scanNote && <p className="empty-state">{scanNote}</p>}
         <table className="mc-mods-table">
           <thead>
             <tr>
               <th>Name</th>
-              <th>Version</th>
-              <th>Status</th>
-              <th></th>
+              <th className="mc-mods-col-narrow">Version</th>
+              <th className="mc-mods-col-narrow">Status</th>
+              <th className="mc-mods-col-narrow"></th>
             </tr>
           </thead>
           <tbody>
             {profile.installedMods.map((m) => {
               const update = updates[m.projectId]
+              const unidentified = m.source === 'unknown'
               return (
                 <tr key={m.projectId}>
                   <td className="mc-mod-name-cell">
-                    {m.iconUrl && <img src={m.iconUrl} alt="" className="mc-mod-icon" />}
+                    {m.iconUrl && (
+                      <img
+                        src={m.iconUrl}
+                        alt=""
+                        className="mc-mod-icon"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'
+                        }}
+                      />
+                    )}
                     {m.title}
                     {m.installedAs === 'dependency' && <span className="muted"> (dependency)</span>}
                   </td>
-                  <td>{m.versionNumber}</td>
-                  <td>{!m.enabled ? 'Disabled' : update?.updateAvailable ? 'Update available' : 'Up to date'}</td>
-                  <td className="backup-management-actions">
+                  <td className="mc-mods-col-narrow">{m.versionNumber || '—'}</td>
+                  <td className="mc-mods-col-narrow">
+                    {unidentified ? (
+                      <span className="muted" title="Not found on Modrinth (CurseForge-sourced, hand-built, or hash didn't match) - enable/disable/remove still work.">
+                        Unidentified
+                      </span>
+                    ) : !m.enabled ? (
+                      'Disabled'
+                    ) : update?.updateAvailable ? (
+                      'Update available'
+                    ) : (
+                      'Up to date'
+                    )}
+                  </td>
+                  <td className="mc-mods-col-narrow backup-management-actions">
                     {update?.updateAvailable && (
                       <button type="button" disabled={busyId === m.projectId} onClick={() => void handleUpdate(m.projectId)}>
                         {busyId === m.projectId ? 'Updating...' : 'Update'}

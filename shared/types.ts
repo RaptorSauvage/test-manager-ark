@@ -536,6 +536,7 @@ export const IPC = {
   minecraftProfilesImport: 'minecraft-profiles:import',
   minecraftProfilesChanged: 'minecraft-profiles:changed',
   minecraftDetectLaunchable: 'minecraft:detect-launchable',
+  minecraftOpenServerFolder: 'minecraft:open-server-folder',
   minecraftServerStart: 'minecraft-server:start',
   minecraftServerStop: 'minecraft-server:stop',
   minecraftServerKill: 'minecraft-server:kill',
@@ -563,7 +564,8 @@ export const IPC = {
   minecraftModsSetEnabled: 'minecraft-mods:set-enabled',
   minecraftModsCheckUpdates: 'minecraft-mods:check-updates',
   minecraftModsUpdate: 'minecraft-mods:update',
-  minecraftModsScan: 'minecraft-mods:scan'
+  minecraftModsScan: 'minecraft-mods:scan',
+  minecraftModsOpenFolder: 'minecraft-mods:open-folder'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -858,6 +860,9 @@ export interface Api {
       scriptFileName: string
       serverType: MinecraftProfile['serverType']
     } | null>
+    /** Opens the server's own install directory (jar/script, world, mods/plugins,
+     *  server.properties) in the OS file explorer. */
+    openServerFolder: (profileId: string) => Promise<void>
     server: {
       start: (profileId: string) => Promise<MinecraftServerStatus>
       stop: (profileId: string) => Promise<MinecraftServerStatus>
@@ -917,6 +922,9 @@ export interface Api {
       /** Recognizes mods/plugins already sitting in the folder that weren't installed
        *  through this tab - see minecraftMods.ts's scanForInstalledMods. */
       scan: (profileId: string) => Promise<{ profile: MinecraftProfile; result: MinecraftModScanResult }>
+      /** Opens the mods/plugins folder (mods/ or plugins/, depending on server type) in the
+       *  OS file explorer. */
+      openFolder: (profileId: string) => Promise<void>
     }
   }
 }

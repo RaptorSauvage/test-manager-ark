@@ -2259,3 +2259,42 @@ async function findProfileIdByName(name) {
   button under that message (and under the similar "Set Server type to..." message), which jumps
   straight to the Start Settings tab - `MinecraftServerDetail/index.tsx` now passes
   `onGoToStartSettings` down to `ModsTab` instead of just rendering it blind.
+
+- **Four more fixes/additions after a live screenshot (256 installed mods) surfaced them:**
+  - **Mod icons weren't loading (broken-image placeholders everywhere).** The renderer's CSP
+    (`src/renderer/index.html`) was `default-src 'self'` with no `img-src` at all, which blocks
+    `<img>` loads too - Modrinth's icon CDN (`cdn.modrinth.com`) was silently refused by the
+    browser, not by anything in this app's own code. Added
+    `img-src 'self' data: https://cdn.modrinth.com`. Also added an `onError` handler on both mod
+    icon `<img>` tags so a URL that fails to load (dead link, network hiccup) just hides itself
+    instead of showing a broken-image icon regardless.
+  - **Mods the scan can't identify now still show up in the table, instead of only being
+    counted.** `MinecraftModSource` gained a third value, `'unknown'` - not a future source like
+    CurseForge, but what `scanForInstalledMods` now assigns to an untracked file whose hash
+    doesn't match anything Modrinth knows about. It's still added to `profile.installedMods`
+    (synthetic `projectId: "local:<fileName>"`, title falls back to the file name, empty
+    version fields), so it still shows up, and because remove/enable-disable already worked
+    generically off `projectId`/`fileName`, those just work for it too with no special-casing.
+    The Status column shows "Unidentified" (muted, with a tooltip explaining why) instead of
+    "Up to date". `checkMinecraftModUpdates` skips `source: 'unknown'` entries (no real Modrinth
+    id to check) rather than firing a doomed `/project/local:x.jar/version` request for each
+    one. `MinecraftModScanResult.unidentifiedCount` is gone - the same information now comes
+    from filtering `adopted` by `source`.
+  - **Display bug: Version/Status/Actions columns were stretched out with a dead gap before the
+    buttons.** The `mc-mods-table`s had no explicit column widths, so the browser's auto table
+    layout gave the empty-header actions column (and the short Version/Status columns) far more
+    room than their content needed, pushing the Enable/Disable/Remove buttons away from the row
+    they belonged to. New `.mc-mods-col-narrow` class (`width: 1%; white-space: nowrap`) on
+    those columns makes them hug their content, so Name/Description (the one column that should
+    be wide) absorbs the leftover space instead.
+  - **"Open mods folder" / "Open server folder" buttons** - jumping to `mods/`/`plugins/` (or
+    the server's install directory) used to mean finding the path by hand. New
+    `openMinecraftModsFolder` (`minecraftMods.ts`, creates the folder first if it doesn't exist
+    yet) and `openMinecraftServerRootFolder` (`minecraftBackup.ts`, next to the existing
+    `openMinecraftBackupFolder`) both just wrap `shell.openPath`, same pattern as every other
+    "open folder" button in this app. Buttons added to the Mods tab's Installed section and the
+    top of Server Settings, respectively.
+  - New tests: `tests/minecraftModScan.test.ts` (unidentified files adopted as `source:
+    'unknown'`, mixed identified/unidentified scan, `openMinecraftModsFolder`),
+    `tests/minecraftMods.test.ts` (`checkMinecraftModUpdates` skips `'unknown'` entries), and
+    new `tests/minecraftServerFolder.test.ts` (`openMinecraftServerRootFolder`).

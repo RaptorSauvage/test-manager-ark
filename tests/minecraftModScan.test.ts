@@ -7,6 +7,9 @@ import type { MinecraftProfile } from '../shared/minecraft'
 import type { InstalledMinecraftMod } from '../shared/minecraftMods'
 import type { ModrinthVersion } from '../src/main/lib/modrinthClient'
 
+const mockOpenPath = vi.fn(async () => '')
+vi.mock('electron', () => ({ shell: { openPath: (p: string) => mockOpenPath(p) } }))
+
 const mockSaveMinecraftProfile = vi.fn((profile: MinecraftProfile) => [profile])
 vi.mock('../src/main/store', () => ({
   saveMinecraftProfile: (profile: MinecraftProfile) => mockSaveMinecraftProfile(profile)
@@ -28,7 +31,7 @@ vi.mock('../src/main/lib/modrinthClient', async () => {
   }
 })
 
-import { scanForInstalledMods, modTargetDir } from '../src/main/lib/minecraftMods'
+import { scanForInstalledMods, openMinecraftModsFolder, modTargetDir } from '../src/main/lib/minecraftMods'
 
 function makeProfile(overrides: Partial<MinecraftProfile> = {}, installDir: string): MinecraftProfile {
   return {
@@ -87,6 +90,7 @@ describe('scanForInstalledMods', () => {
     mockGetModrinthVersionsFromHashes.mockReset()
     mockGetModrinthProjects.mockReset()
     mockGetModrinthProjects.mockResolvedValue([])
+    mockOpenPath.mockClear()
   })
 
   afterEach(() => {
@@ -99,7 +103,7 @@ describe('scanForInstalledMods', () => {
 
     const { result } = await scanForInstalledMods(profile)
 
-    expect(result).toEqual({ adopted: [], unidentifiedCount: 0 })
+    expect(result).toEqual({ adopted: [] })
     expect(mockGetModrinthVersionsFromHashes).not.toHaveBeenCalled()
     expect(mockSaveMinecraftProfile).not.toHaveBeenCalled()
   })
@@ -162,7 +166,6 @@ describe('scanForInstalledMods', () => {
       installedAs: 'user',
       versionId: 'version-root'
     })
-    expect(result.unidentifiedCount).toBe(0)
     expect(updated.installedMods).toHaveLength(1)
     expect(mockSaveMinecraftProfile).toHaveBeenCalledTimes(1)
     expect(mockGetModrinthVersionsFromHashes).toHaveBeenCalledWith([hash], 'sha1')
@@ -210,11 +213,11 @@ describe('scanForInstalledMods', () => {
 
     const { result } = await scanForInstalledMods(profile)
 
-    expect(result).toEqual({ adopted: [], unidentifiedCount: 0 })
+    expect(result).toEqual({ adopted: [] })
     expect(mockGetModrinthVersionsFromHashes).not.toHaveBeenCalled()
   })
 
-  it('reports unidentified files without adopting them, and leaves the profile untouched', async () => {
+  it('adopts an unidentified file as source: "unknown" instead of leaving it untracked', async () => {
     const profile = makeProfile({}, tmpDir)
     fs.mkdirSync(modTargetDir(profile), { recursive: true })
     fs.writeFileSync(path.join(modTargetDir(profile), 'mystery.jar'), 'unknown content')
@@ -222,10 +225,39 @@ describe('scanForInstalledMods', () => {
 
     const { profile: updated, result } = await scanForInstalledMods(profile)
 
-    expect(result.adopted).toHaveLength(0)
-    expect(result.unidentifiedCount).toBe(1)
-    expect(updated.installedMods).toHaveLength(0)
-    expect(mockSaveMinecraftProfile).not.toHaveBeenCalled()
+    expect(result.adopted).toHaveLength(1)
+    expect(result.adopted[0]).toMatchObject({
+      source: 'unknown',
+      projectId: 'local:mystery.jar',
+      title: 'mystery',
+      fileName: 'mystery.jar',
+      enabled: true,
+      versionId: '',
+      versionNumber: ''
+    })
+    expect(updated.installedMods).toHaveLength(1)
+    expect(mockSaveMinecraftProfile).toHaveBeenCalledTimes(1)
+  })
+
+  it('mixes identified and unidentified files in the same scan, each tagged correctly', async () => {
+    const profile = makeProfile({}, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'root.jar'), 'root content')
+    fs.writeFileSync(path.join(modTargetDir(profile), 'mystery.jar'), 'unknown content')
+    const hash = sha1('root content')
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({
+      [hash]: makeVersion({ id: 'version-root', project_id: 'project-root' })
+    })
+    mockGetModrinthProjects.mockResolvedValue([
+      { id: 'project-root', slug: 'root-mod', title: 'Root Mod', description: '', icon_url: null, client_side: 'optional', server_side: 'required' }
+    ])
+
+    const { result } = await scanForInstalledMods(profile)
+
+    expect(result.adopted).toHaveLength(2)
+    const byFileName = Object.fromEntries(result.adopted.map((m) => [m.fileName, m]))
+    expect(byFileName['root.jar']).toMatchObject({ source: 'modrinth', title: 'Root Mod' })
+    expect(byFileName['mystery.jar']).toMatchObject({ source: 'unknown', title: 'mystery' })
   })
 
   it('respects the .disabled suffix - a disabled file is adopted with enabled: false', async () => {
@@ -250,5 +282,35 @@ describe('scanForInstalledMods', () => {
 
     expect(result.adopted).toHaveLength(1)
     expect(result.adopted[0]).toMatchObject({ fileName: 'root.jar', enabled: false })
+  })
+})
+
+describe('openMinecraftModsFolder', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-mods-openfolder-test-'))
+    mockOpenPath.mockClear()
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('creates the mods/plugins folder if missing, then opens it', async () => {
+    const profile = makeProfile({}, tmpDir)
+    const targetDir = modTargetDir(profile)
+    expect(fs.existsSync(targetDir)).toBe(false)
+
+    await openMinecraftModsFolder(profile)
+
+    expect(fs.existsSync(targetDir)).toBe(true)
+    expect(mockOpenPath).toHaveBeenCalledWith(targetDir)
+  })
+
+  it('rejects for a server type with no mod/plugin ecosystem', async () => {
+    const profile = makeProfile({ serverType: 'vanilla' }, tmpDir)
+    await expect(openMinecraftModsFolder(profile)).rejects.toThrow(/mod\/plugin ecosystem/)
+    expect(mockOpenPath).not.toHaveBeenCalled()
   })
 })

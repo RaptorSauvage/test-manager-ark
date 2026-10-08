@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { shell } from 'electron'
 import type { MinecraftProfile, MinecraftServerType } from '@shared/minecraft'
 import { supportsMinecraftMods } from '@shared/minecraftMods'
 import type {
@@ -343,17 +344,21 @@ export function setMinecraftModEnabled(profile: MinecraftProfile, projectId: str
 
 export async function checkMinecraftModUpdates(profile: MinecraftProfile): Promise<MinecraftModUpdateCheckResult[]> {
   requireModsSupported(profile)
+  // 'unknown' entries (unidentified by scanForInstalledMods) have no real Modrinth project id
+  // to check - skip them rather than firing a doomed-to-404 request for each one.
   return Promise.all(
-    profile.installedMods.map(async (mod): Promise<MinecraftModUpdateCheckResult> => {
-      const versions = await getModrinthProjectVersions(mod.projectId, profile.serverType, profile.minecraftVersion)
-      const latest = versions[0]
-      return {
-        projectId: mod.projectId,
-        updateAvailable: latest !== undefined && latest.id !== mod.versionId,
-        latestVersionId: latest?.id,
-        latestVersionNumber: latest?.version_number
-      }
-    })
+    profile.installedMods
+      .filter((mod) => mod.source === 'modrinth')
+      .map(async (mod): Promise<MinecraftModUpdateCheckResult> => {
+        const versions = await getModrinthProjectVersions(mod.projectId, profile.serverType, profile.minecraftVersion)
+        const latest = versions[0]
+        return {
+          projectId: mod.projectId,
+          updateAvailable: latest !== undefined && latest.id !== mod.versionId,
+          latestVersionId: latest?.id,
+          latestVersionNumber: latest?.version_number
+        }
+      })
   )
 }
 
@@ -390,14 +395,29 @@ function listUntrackedModFiles(targetDir: string, trackedFileNames: ReadonlySet<
     .filter((file) => !trackedFileNames.has(file.fileName))
 }
 
+/** Synthetic projectId for an unidentified file - stable and unique per file name (nothing
+ *  else in this app's own id space starts with "local:", and a real Modrinth project id never
+ *  would either), so the same generic by-projectId remove/enable/disable logic used for
+ *  Modrinth-sourced entries works for these too without a special case. */
+function localModId(fileName: string): string {
+  return `local:${fileName}`
+}
+
+/** Strips the trailing ".jar" for display - "worldedit-7.3.0.jar" reads better as
+ *  "worldedit-7.3.0" when there's no real Modrinth title to show instead. */
+function titleFromFileName(fileName: string): string {
+  return fileName.replace(/\.jar$/i, '')
+}
+
 /**
  * Recognizes mods/plugins already sitting in the folder that this app didn't itself install -
  * dropped in by hand, or installed before this feature existed. Identifies each untracked
  * `.jar`/`.jar.disabled` file by its sha1 hash (the same mechanism Modrinth's own official app
- * uses), in one batched lookup rather than one request per file. A file whose hash doesn't
- * match anything Modrinth knows about (CurseForge-sourced, hand-built, or just not on
- * Modrinth) is left alone - `unidentifiedCount` says how many, so the caller can tell the user
- * rather than silently doing nothing for them.
+ * uses), in one batched lookup rather than one request per file. Every untracked file gets
+ * added to installedMods either way: a hash match becomes a full source: 'modrinth' entry, and
+ * anything that doesn't match anything Modrinth knows about (CurseForge-sourced, hand-built, or
+ * just not on Modrinth) still becomes a source: 'unknown' entry - still visible and manageable
+ * in the Mods tab, just without Modrinth's own metadata attached.
  */
 export async function scanForInstalledMods(
   profile: MinecraftProfile
@@ -408,7 +428,7 @@ export async function scanForInstalledMods(
   const untracked = listUntrackedModFiles(targetDir, trackedFileNames)
 
   if (untracked.length === 0) {
-    return { profile, result: { adopted: [], unidentifiedCount: 0 } }
+    return { profile, result: { adopted: [] } }
   }
 
   const fileByHash = new Map<string, UntrackedModFile>()
@@ -451,6 +471,23 @@ export async function scanForInstalledMods(
     })
   }
 
+  const matchedFileNames = new Set(adopted.map((m) => m.fileName))
+  for (const file of untracked) {
+    if (matchedFileNames.has(file.fileName)) continue
+    adopted.push({
+      source: 'unknown',
+      projectId: localModId(file.fileName),
+      slug: titleFromFileName(file.fileName),
+      title: titleFromFileName(file.fileName),
+      versionId: '',
+      versionNumber: '',
+      fileName: file.fileName,
+      enabled: file.enabled,
+      installedAs: 'user',
+      installedAt: Date.now()
+    })
+  }
+
   const updatedProfile: MinecraftProfile =
     adopted.length === 0 ? profile : { ...profile, installedMods: [...profile.installedMods, ...adopted] }
   if (adopted.length > 0) {
@@ -464,6 +501,16 @@ export async function scanForInstalledMods(
 
   return {
     profile: updatedProfile,
-    result: { adopted, unidentifiedCount: untracked.length - adopted.length }
+    result: { adopted }
   }
+}
+
+/** Opens the mods/plugins folder in the OS file explorer - created first if it doesn't exist
+ *  yet (a fresh install that's never had a mod/plugin dropped in). */
+export async function openMinecraftModsFolder(profile: MinecraftProfile): Promise<void> {
+  requireLoaderSupportsMods(profile)
+  const targetDir = modTargetDir(profile)
+  fs.mkdirSync(targetDir, { recursive: true })
+  const error = await shell.openPath(targetDir)
+  if (error) throw new Error(error)
 }

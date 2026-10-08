@@ -1919,6 +1919,15 @@ label.checkbox {
   gap: 8px;
 }
 
+/* Keeps Version/Status/Downloads/Actions hugging their content instead of each getting an
+   equal (and much too wide) share of the table's auto layout - without this, a table with a
+   short Name/Status but an empty-header Actions column stretches those columns out and leaves
+   a wide dead gap before the actual buttons (see mc-mods-table's columns). */
+.mc-mods-col-narrow {
+  width: 1%;
+  white-space: nowrap;
+}
+
 .mc-mod-icon {
   width: 24px;
   height: 24px;

@@ -202,6 +202,7 @@ const api: Api = {
       }
     },
     detectLaunchable: (installDir: string) => ipcRenderer.invoke(IPC.minecraftDetectLaunchable, installDir),
+    openServerFolder: (profileId: string) => ipcRenderer.invoke(IPC.minecraftOpenServerFolder, profileId),
     server: {
       start: (profileId: string) => ipcRenderer.invoke(IPC.minecraftServerStart, profileId),
       stop: (profileId: string) => ipcRenderer.invoke(IPC.minecraftServerStop, profileId),
@@ -257,7 +258,8 @@ const api: Api = {
         ipcRenderer.invoke(IPC.minecraftModsSetEnabled, profileId, projectId, enabled),
       checkUpdates: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsCheckUpdates, profileId),
       update: (profileId: string, projectId: string) => ipcRenderer.invoke(IPC.minecraftModsUpdate, profileId, projectId),
-      scan: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsScan, profileId)
+      scan: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsScan, profileId),
+      openFolder: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsOpenFolder, profileId)
     }
   }
 }
