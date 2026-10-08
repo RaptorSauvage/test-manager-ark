@@ -256,7 +256,8 @@ const api: Api = {
       setEnabled: (profileId: string, projectId: string, enabled: boolean) =>
         ipcRenderer.invoke(IPC.minecraftModsSetEnabled, profileId, projectId, enabled),
       checkUpdates: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsCheckUpdates, profileId),
-      update: (profileId: string, projectId: string) => ipcRenderer.invoke(IPC.minecraftModsUpdate, profileId, projectId)
+      update: (profileId: string, projectId: string) => ipcRenderer.invoke(IPC.minecraftModsUpdate, profileId, projectId),
+      scan: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsScan, profileId)
     }
   }
 }

@@ -2199,9 +2199,6 @@ async function findProfileIdByName(name) {
     Disabling renames the file to add a `.disabled` suffix rather than deleting it (every
     loader only loads `.jar` files from that folder), so re-enabling needs no re-download, and
     updating an already-disabled mod preserves that - it doesn't silently come back enabled.
-  - **`profile.installedMods` is the source of truth** for what this app manages, same
-    philosophy as ARK's own mods list - a jar dropped into the folder by hand, outside the
-    Manager, simply isn't tracked (a known v1 limitation, not a bug).
   - **No version picker in this pass** - Install/Update always resolve to the latest
     compatible version, the same simplification ARK's own mod system already makes (an id,
     no picker there either). A real gap to revisit, not an oversight.
@@ -2209,3 +2206,27 @@ async function findProfileIdByName(name) {
     (the dependency-walk algorithm itself, including the diamond-graph and cycle cases, with no
     network/fs touched at all), and `tests/minecraftMods.test.ts` (install/remove/enable-disable/
     update-check against a real temp directory, with Modrinth's own HTTP calls mocked).
+
+- **Recognizes mods/plugins already sitting in the folder, not just ones installed through the
+  Mods tab.** `profile.installedMods` used to be the only source of truth, which meant a jar
+  dropped in by hand - or installed before this feature existed - simply wasn't tracked. Fixed
+  by hashing every untracked `.jar`/`.jar.disabled` file in the mods/plugins folder (sha1) and
+  batch-looking the hashes up against Modrinth's `/version_files` endpoint - the same
+  identification mechanism Modrinth's own official launcher uses. Matches are adopted straight
+  into `profile.installedMods`; anything that doesn't match (CurseForge-sourced, hand-built, or
+  genuinely not on Modrinth) is left alone and reported as an `unidentifiedCount` instead of
+  silently doing nothing.
+  - `getModrinthVersionsFromHashes` in `modrinthClient.ts` wraps the batched `POST
+    /v2/version_files` call (`{algorithm, hashes}` -> `Record<hash, Version>`).
+    `scanForInstalledMods` in `minecraftMods.ts` does the scanning/hashing/adopting; a new
+    `requireLoaderSupportsMods` guard replaces the stricter `requireModsSupported` for this one
+    operation specifically, since identifying a file by hash doesn't need
+    `profile.minecraftVersion` the way picking a *compatible* version for search/install does -
+    so scanning now works even before that field is filled in.
+  - Runs automatically whenever the Mods tab opens for a profile, plus an explicit "Rescan
+    folder" button for files added while the tab is already open. The Browse Modrinth section
+    still asks for a Minecraft version (search needs it to filter compatible versions), but the
+    Installed section and its Rescan button no longer wait on it.
+  - New `tests/minecraftModScan.test.ts`: hash-match adoption, skip-already-tracked,
+    unidentified-count reporting (profile left untouched), `.disabled`-suffix enabled-state
+    handling, no API call when nothing is untracked, and works with no `minecraftVersion` set.

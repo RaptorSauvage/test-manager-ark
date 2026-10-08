@@ -8,13 +8,15 @@ import type {
   MinecraftModInstallResult,
   MinecraftModDependency,
   InstalledMinecraftMod,
-  MinecraftModUpdateCheckResult
+  MinecraftModUpdateCheckResult,
+  MinecraftModScanResult
 } from '@shared/minecraftMods'
 import {
   searchModrinthProjects,
   getModrinthProjectVersions,
   getModrinthVersion,
   getModrinthProject,
+  getModrinthVersionsFromHashes,
   type ModrinthVersion,
   type ModrinthVersionFile
 } from './modrinthClient'
@@ -27,10 +29,20 @@ export function modTargetDir(profile: MinecraftProfile): string {
   return path.join(profile.installDir, sub)
 }
 
-function requireModsSupported(profile: MinecraftProfile): void {
+/** Checked by every operation, including scanning - a hash-based lookup doesn't actually
+ *  need the loader, but a profile with no mod/plugin ecosystem at all has no mods/plugins
+ *  folder worth scanning either. */
+function requireLoaderSupportsMods(profile: MinecraftProfile): void {
   if (!supportsMinecraftMods(profile.serverType)) {
     throw new Error('This server type has no mod/plugin ecosystem - set Server type in Start Settings first.')
   }
+}
+
+/** Checked by search/install/update/checkUpdates - unlike scanning (hash identification
+ *  alone), picking a *compatible* version genuinely needs to know the server's Minecraft
+ *  version. */
+function requireModsSupported(profile: MinecraftProfile): void {
+  requireLoaderSupportsMods(profile)
   if (!profile.minecraftVersion.trim()) {
     throw new Error("Set this server's Minecraft version in Start Settings first.")
   }
@@ -151,8 +163,10 @@ export async function resolveModInstallPlan(
   return { toInstall, optionalSkipped, incompatible }
 }
 
+const DISABLED_SUFFIX = '.disabled'
+
 function diskFileName(fileName: string, enabled: boolean): string {
-  return enabled ? fileName : `${fileName}.disabled`
+  return enabled ? fileName : `${fileName}${DISABLED_SUFFIX}`
 }
 
 /** Downloads one version's primary file straight to disk, verifying it against whichever
@@ -351,4 +365,97 @@ export async function updateMinecraftMod(
   projectId: string
 ): Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }> {
   return installMinecraftMod(profile, projectId)
+}
+
+/** A file sitting in the mods/plugins folder that isn't in profile.installedMods yet - the
+ *  on-disk name split back into its real file name and whether it's currently enabled, same
+ *  convention as diskFileName/InstalledMinecraftMod.enabled. */
+interface UntrackedModFile {
+  diskName: string
+  fileName: string
+  enabled: boolean
+}
+
+function listUntrackedModFiles(targetDir: string, trackedFileNames: ReadonlySet<string>): UntrackedModFile[] {
+  if (!fs.existsSync(targetDir)) return []
+  return fs
+    .readdirSync(targetDir)
+    .filter((name) => name.endsWith('.jar') || name.endsWith(`.jar${DISABLED_SUFFIX}`))
+    .map((diskName) => {
+      const enabled = !diskName.endsWith(DISABLED_SUFFIX)
+      const fileName = enabled ? diskName : diskName.slice(0, -DISABLED_SUFFIX.length)
+      return { diskName, fileName, enabled }
+    })
+    .filter((file) => !trackedFileNames.has(file.fileName))
+}
+
+/**
+ * Recognizes mods/plugins already sitting in the folder that this app didn't itself install -
+ * dropped in by hand, or installed before this feature existed. Identifies each untracked
+ * `.jar`/`.jar.disabled` file by its sha1 hash (the same mechanism Modrinth's own official app
+ * uses), in one batched lookup rather than one request per file. A file whose hash doesn't
+ * match anything Modrinth knows about (CurseForge-sourced, hand-built, or just not on
+ * Modrinth) is left alone - `unidentifiedCount` says how many, so the caller can tell the user
+ * rather than silently doing nothing for them.
+ */
+export async function scanForInstalledMods(
+  profile: MinecraftProfile
+): Promise<{ profile: MinecraftProfile; result: MinecraftModScanResult }> {
+  requireLoaderSupportsMods(profile)
+  const targetDir = modTargetDir(profile)
+  const trackedFileNames = new Set(profile.installedMods.map((m) => m.fileName))
+  const untracked = listUntrackedModFiles(targetDir, trackedFileNames)
+
+  if (untracked.length === 0) {
+    return { profile, result: { adopted: [], unidentifiedCount: 0 } }
+  }
+
+  const fileByHash = new Map<string, UntrackedModFile>()
+  for (const file of untracked) {
+    const buffer = fs.readFileSync(path.join(targetDir, file.diskName))
+    const hash = crypto.createHash('sha1').update(buffer).digest('hex')
+    // A hash collision between two different untracked files is astronomically unlikely and
+    // not worth guarding - at worst one of them is skipped this scan and picked up (still
+    // correctly) on the next one, once the other has already been adopted and is no longer
+    // "untracked".
+    fileByHash.set(hash, file)
+  }
+
+  const versionsByHash = await getModrinthVersionsFromHashes([...fileByHash.keys()], 'sha1')
+
+  const adopted: InstalledMinecraftMod[] = []
+  for (const [hash, version] of Object.entries(versionsByHash)) {
+    const file = fileByHash.get(hash)
+    if (!file) continue
+    const project = await getModrinthProject(version.project_id)
+    adopted.push({
+      source: 'modrinth',
+      projectId: version.project_id,
+      slug: project.slug,
+      title: project.title,
+      iconUrl: project.icon_url ?? undefined,
+      versionId: version.id,
+      versionNumber: version.version_number,
+      fileName: file.fileName,
+      enabled: file.enabled,
+      installedAs: 'user',
+      installedAt: Date.now()
+    })
+  }
+
+  const updatedProfile: MinecraftProfile =
+    adopted.length === 0 ? profile : { ...profile, installedMods: [...profile.installedMods, ...adopted] }
+  if (adopted.length > 0) {
+    saveMinecraftProfile(updatedProfile)
+    logManagerEvent(
+      newTaskId('mc-mod-scan'),
+      `Scan mods/plugins folder — ${profile.name}`,
+      `Recognized ${adopted.map((m) => m.title).join(', ')}`
+    )
+  }
+
+  return {
+    profile: updatedProfile,
+    result: { adopted, unidentifiedCount: untracked.length - adopted.length }
+  }
 }

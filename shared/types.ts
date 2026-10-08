@@ -4,7 +4,12 @@
 
 import type { GameId } from './games'
 import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine, MinecraftPropertiesData } from './minecraft'
-import type { MinecraftModSearchResult, MinecraftModInstallResult, MinecraftModUpdateCheckResult } from './minecraftMods'
+import type {
+  MinecraftModSearchResult,
+  MinecraftModInstallResult,
+  MinecraftModUpdateCheckResult,
+  MinecraftModScanResult
+} from './minecraftMods'
 
 export interface ServerProfile {
   id: string
@@ -557,7 +562,8 @@ export const IPC = {
   minecraftModsRemove: 'minecraft-mods:remove',
   minecraftModsSetEnabled: 'minecraft-mods:set-enabled',
   minecraftModsCheckUpdates: 'minecraft-mods:check-updates',
-  minecraftModsUpdate: 'minecraft-mods:update'
+  minecraftModsUpdate: 'minecraft-mods:update',
+  minecraftModsScan: 'minecraft-mods:scan'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -908,6 +914,9 @@ export interface Api {
         profileId: string,
         projectId: string
       ) => Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }>
+      /** Recognizes mods/plugins already sitting in the folder that weren't installed
+       *  through this tab - see minecraftMods.ts's scanForInstalledMods. */
+      scan: (profileId: string) => Promise<{ profile: MinecraftProfile; result: MinecraftModScanResult }>
     }
   }
 }

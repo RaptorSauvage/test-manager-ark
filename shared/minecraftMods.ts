@@ -49,10 +49,12 @@ export interface MinecraftModSearchResult {
   installed: boolean
 }
 
-/** A mod/plugin this Manager has actually installed for a profile - the source of truth for
- *  what's managed here, same "the app only knows what it put there itself" philosophy as
- *  ARK's own mods list. A jar dropped into the mods/plugins folder by hand, outside the
- *  Manager, simply isn't tracked (a known v1 limitation, not a bug). */
+/** A mod/plugin this Manager tracks for a profile - either installed through the Mods tab
+ *  itself, or recognized afterward by scanning the mods/plugins folder (scanForInstalledMods)
+ *  and matching an untracked file's hash against Modrinth's own records, the same mechanism
+ *  Modrinth's own official app uses to recognize an existing install. A file that doesn't
+ *  match anything Modrinth knows about (CurseForge-sourced, or not on Modrinth at all) still
+ *  isn't tracked - scanForInstalledMods reports how many it couldn't identify. */
 export interface InstalledMinecraftMod {
   source: MinecraftModSource
   projectId: string
@@ -94,4 +96,16 @@ export interface MinecraftModUpdateCheckResult {
   updateAvailable: boolean
   latestVersionId?: string
   latestVersionNumber?: string
+}
+
+/** Result of scanForInstalledMods - what it found sitting in the mods/plugins folder that
+ *  wasn't already tracked. */
+export interface MinecraftModScanResult {
+  /** Newly recognized and added to installedMods - already reflected in the profile this
+   *  call also returns. */
+  adopted: InstalledMinecraftMod[]
+  /** Untracked files found that couldn't be matched to a known Modrinth version by hash -
+   *  still sitting in the folder, just not something this app can manage yet (CurseForge-
+   *  sourced, hand-built, or simply not on Modrinth). */
+  unidentifiedCount: number
 }

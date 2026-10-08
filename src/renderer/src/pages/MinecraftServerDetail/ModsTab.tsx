@@ -45,6 +45,8 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   const [lastNote, setLastNote] = useState('')
   const [updates, setUpdates] = useState<Record<string, MinecraftModUpdateCheckResult>>({})
   const [checkingUpdates, setCheckingUpdates] = useState(false)
+  const [scanning, setScanning] = useState(false)
+  const [scanNote, setScanNote] = useState('')
 
   const supported = supportsMinecraftMods(profile.serverType)
   const hasVersion = profile.minecraftVersion.trim().length > 0
@@ -61,9 +63,47 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
     }
   }
 
+  /** Recognizes mods/plugins already sitting in the mods/plugins folder that weren't
+   *  installed through this tab - dropped in by hand, or installed before this feature
+   *  existed. Run automatically whenever the tab opens for a profile, plus an explicit
+   *  "Rescan folder" button for after the user adds files while the tab is already open. */
+  async function handleScan(): Promise<void> {
+    setScanning(true)
+    try {
+      const { profile: updated, result } = await window.api.minecraft.mods.scan(profile.id)
+      if (result.adopted.length > 0) onProfileChange(updated)
+      if (result.adopted.length > 0 || result.unidentifiedCount > 0) {
+        const parts: string[] = []
+        if (result.adopted.length > 0) {
+          parts.push(
+            `Recognized ${result.adopted.length} already-installed mod${result.adopted.length === 1 ? '' : 's'}: ${result.adopted
+              .map((m) => m.title)
+              .join(', ')}`
+          )
+        }
+        if (result.unidentifiedCount > 0) {
+          parts.push(
+            `${result.unidentifiedCount} file${result.unidentifiedCount === 1 ? '' : 's'} in the folder could not be identified (not on Modrinth, or CurseForge-sourced)`
+          )
+        }
+        setScanNote(parts.join(' - '))
+      } else {
+        setScanNote('')
+      }
+    } catch {
+      // Best-effort - a failed scan shouldn't block the rest of the tab.
+    } finally {
+      setScanning(false)
+    }
+  }
+
   useEffect(() => {
-    if (!supported || !hasVersion) return
-    void refreshUpdates()
+    if (!supported) return
+    if (hasVersion) {
+      void handleScan().then(() => refreshUpdates())
+    } else {
+      void handleScan()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.id])
 
@@ -148,79 +188,82 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
     )
   }
 
-  if (!hasVersion) {
-    return (
-      <div className="mods-tab">
-        <p className="empty-state">
-          Set this server&apos;s Minecraft version in Start Settings first - it&apos;s needed to find compatible
-          mods/plugins.
-        </p>
-      </div>
-    )
-  }
-
   return (
     <div className="mods-tab">
-      <section className="cluster-section">
-        <h3>Browse Modrinth</h3>
-        <p className="empty-state">
-          Searching for {profile.serverType} mods/plugins compatible with Minecraft {profile.minecraftVersion}.
-          Client-only content (nothing to do with a server) is already excluded. CurseForge is a planned follow-up,
-          not available yet.
-        </p>
-        <form className="path-input-row" onSubmit={(e) => void handleSearch(e)}>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search mods/plugins..." />
-          <button type="submit" disabled={searching || !query.trim()}>
-            {searching ? 'Searching...' : 'Search'}
-          </button>
-        </form>
-        {error && <p className="error-message">{error}</p>}
-        {lastNote && <p className="empty-state">{lastNote}</p>}
-        <table className="mc-mods-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Description</th>
-              <th>Downloads</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((r) => (
-              <tr key={r.projectId}>
-                <td className="mc-mod-name-cell">
-                  {r.iconUrl && <img src={r.iconUrl} alt="" className="mc-mod-icon" />}
-                  {r.title}
-                </td>
-                <td>{r.description}</td>
-                <td>{r.downloads.toLocaleString()}</td>
-                <td>
-                  <button
-                    type="button"
-                    disabled={r.installed || busyId === r.projectId}
-                    onClick={() => void handleInstall(r.projectId)}
-                  >
-                    {r.installed ? 'Installed' : busyId === r.projectId ? 'Installing...' : 'Install'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {results.length === 0 && (
+      {hasVersion ? (
+        <section className="cluster-section">
+          <h3>Browse Modrinth</h3>
+          <p className="empty-state">
+            Searching for {profile.serverType} mods/plugins compatible with Minecraft {profile.minecraftVersion}.
+            Client-only content (nothing to do with a server) is already excluded. CurseForge is a planned follow-up,
+            not available yet.
+          </p>
+          <form className="path-input-row" onSubmit={(e) => void handleSearch(e)}>
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search mods/plugins..." />
+            <button type="submit" disabled={searching || !query.trim()}>
+              {searching ? 'Searching...' : 'Search'}
+            </button>
+          </form>
+          {error && <p className="error-message">{error}</p>}
+          {lastNote && <p className="empty-state">{lastNote}</p>}
+          <table className="mc-mods-table">
+            <thead>
               <tr>
-                <td colSpan={4}>{searched ? 'No results.' : 'Search above to find mods/plugins for this server.'}</td>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Downloads</th>
+                <th></th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </section>
+            </thead>
+            <tbody>
+              {results.map((r) => (
+                <tr key={r.projectId}>
+                  <td className="mc-mod-name-cell">
+                    {r.iconUrl && <img src={r.iconUrl} alt="" className="mc-mod-icon" />}
+                    {r.title}
+                  </td>
+                  <td>{r.description}</td>
+                  <td>{r.downloads.toLocaleString()}</td>
+                  <td>
+                    <button
+                      type="button"
+                      disabled={r.installed || busyId === r.projectId}
+                      onClick={() => void handleInstall(r.projectId)}
+                    >
+                      {r.installed ? 'Installed' : busyId === r.projectId ? 'Installing...' : 'Install'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {results.length === 0 && (
+                <tr>
+                  <td colSpan={4}>{searched ? 'No results.' : 'Search above to find mods/plugins for this server.'}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+      ) : (
+        <section className="cluster-section">
+          <h3>Browse Modrinth</h3>
+          <p className="empty-state">
+            Set this server&apos;s Minecraft version in Start Settings to search for and install mods/plugins. Mods
+            already in the mods/plugins folder can still be recognized below without it.
+          </p>
+        </section>
+      )}
 
       <section className="cluster-section">
         <h3>Installed ({profile.installedMods.length})</h3>
         <div className="form-actions">
-          <button type="button" onClick={() => void refreshUpdates()} disabled={checkingUpdates}>
+          <button type="button" onClick={() => void handleScan()} disabled={scanning}>
+            {scanning ? 'Scanning...' : 'Rescan folder'}
+          </button>
+          <button type="button" onClick={() => void refreshUpdates()} disabled={checkingUpdates || !hasVersion}>
             {checkingUpdates ? 'Checking...' : 'Check for updates'}
           </button>
         </div>
+        {scanNote && <p className="empty-state">{scanNote}</p>}
         <table className="mc-mods-table">
           <thead>
             <tr>

@@ -164,3 +164,29 @@ export async function getModrinthVersion(versionId: string): Promise<ModrinthVer
 export async function getModrinthProject(projectId: string): Promise<ModrinthProject> {
   return modrinthFetch<ModrinthProject>(`/project/${encodeURIComponent(projectId)}`, {})
 }
+
+/**
+ * Identifies files already sitting in a server's mods/plugins folder (installed by hand,
+ * outside this app, or before this feature existed) by file hash - the same mechanism
+ * Modrinth's own official app/launchers use to recognize an existing install. Confirmed
+ * against Modrinth's backend source directly (`POST /v2/version_files`, body
+ * `{ algorithm, hashes }`, response keyed by the hash each caller supplied) rather than just
+ * third-party docs. Returns an empty object up front for an empty `hashes` list - the real
+ * endpoint would just 200 with `{}` too, but this skips the round trip entirely for the
+ * common case of nothing new to identify.
+ */
+export async function getModrinthVersionsFromHashes(
+  hashes: string[],
+  algorithm: 'sha1' | 'sha512' = 'sha1'
+): Promise<Record<string, ModrinthVersion>> {
+  if (hashes.length === 0) return {}
+  const response = await fetch(`${API_BASE}/version_files`, {
+    method: 'POST',
+    headers: { 'User-Agent': USER_AGENT, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ algorithm, hashes })
+  })
+  if (!response.ok) {
+    throw new Error(`Modrinth request failed (HTTP ${response.status}): /version_files`)
+  }
+  return (await response.json()) as Record<string, ModrinthVersion>
+}

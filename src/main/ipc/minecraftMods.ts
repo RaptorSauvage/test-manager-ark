@@ -7,7 +7,8 @@ import {
   removeMinecraftMod,
   setMinecraftModEnabled,
   checkMinecraftModUpdates,
-  updateMinecraftMod
+  updateMinecraftMod,
+  scanForInstalledMods
 } from '../lib/minecraftMods'
 import type { MinecraftProfile } from '@shared/minecraft'
 
@@ -41,4 +42,6 @@ export function registerMinecraftModsHandlers(): void {
   ipcMain.handle(IPC.minecraftModsUpdate, (_event, profileId: string, projectId: string) =>
     updateMinecraftMod(requireProfile(profileId), projectId)
   )
+
+  ipcMain.handle(IPC.minecraftModsScan, (_event, profileId: string) => scanForInstalledMods(requireProfile(profileId)))
 }
