@@ -18,13 +18,13 @@ vi.mock('../src/main/lib/managerLog', () => ({
 }))
 
 const mockGetModrinthVersionsFromHashes = vi.fn()
-const mockGetModrinthProject = vi.fn()
+const mockGetModrinthProjects = vi.fn()
 vi.mock('../src/main/lib/modrinthClient', async () => {
   const actual = await vi.importActual<typeof import('../src/main/lib/modrinthClient')>('../src/main/lib/modrinthClient')
   return {
     ...actual,
     getModrinthVersionsFromHashes: (...args: unknown[]) => mockGetModrinthVersionsFromHashes(...args),
-    getModrinthProject: (id: string) => mockGetModrinthProject(id)
+    getModrinthProjects: (ids: string[]) => mockGetModrinthProjects(ids)
   }
 })
 
@@ -85,7 +85,8 @@ describe('scanForInstalledMods', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-mods-scan-test-'))
     mockSaveMinecraftProfile.mockClear()
     mockGetModrinthVersionsFromHashes.mockReset()
-    mockGetModrinthProject.mockReset()
+    mockGetModrinthProjects.mockReset()
+    mockGetModrinthProjects.mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -109,15 +110,17 @@ describe('scanForInstalledMods', () => {
     fs.writeFileSync(path.join(modTargetDir(profile), 'found.jar'), 'content')
     const hash = sha1('content')
     mockGetModrinthVersionsFromHashes.mockResolvedValue({ [hash]: makeVersion() })
-    mockGetModrinthProject.mockResolvedValue({
-      id: 'project-root',
-      slug: 'root-mod',
-      title: 'Root Mod',
-      description: '',
-      icon_url: null,
-      client_side: 'optional',
-      server_side: 'required'
-    })
+    mockGetModrinthProjects.mockResolvedValue([
+      {
+        id: 'project-root',
+        slug: 'root-mod',
+        title: 'Root Mod',
+        description: '',
+        icon_url: null,
+        client_side: 'optional',
+        server_side: 'required'
+      }
+    ])
 
     const { result } = await scanForInstalledMods(profile)
 
@@ -137,15 +140,17 @@ describe('scanForInstalledMods', () => {
     mockGetModrinthVersionsFromHashes.mockResolvedValue({
       [hash]: makeVersion({ id: 'version-root', project_id: 'project-root', version_number: '1.0.0' })
     })
-    mockGetModrinthProject.mockResolvedValue({
-      id: 'project-root',
-      slug: 'root-mod',
-      title: 'Root Mod',
-      description: '',
-      icon_url: 'https://example.test/icon.png',
-      client_side: 'optional',
-      server_side: 'required'
-    })
+    mockGetModrinthProjects.mockResolvedValue([
+      {
+        id: 'project-root',
+        slug: 'root-mod',
+        title: 'Root Mod',
+        description: '',
+        icon_url: 'https://example.test/icon.png',
+        client_side: 'optional',
+        server_side: 'required'
+      }
+    ])
 
     const { profile: updated, result } = await scanForInstalledMods(profile)
 
@@ -161,6 +166,29 @@ describe('scanForInstalledMods', () => {
     expect(updated.installedMods).toHaveLength(1)
     expect(mockSaveMinecraftProfile).toHaveBeenCalledTimes(1)
     expect(mockGetModrinthVersionsFromHashes).toHaveBeenCalledWith([hash], 'sha1')
+    expect(mockGetModrinthProjects).toHaveBeenCalledWith(['project-root'])
+  })
+
+  it('batches the project lookup into one call, deduplicated, even for several matched mods', async () => {
+    const profile = makeProfile({}, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'a.jar'), 'content a')
+    fs.writeFileSync(path.join(modTargetDir(profile), 'b.jar'), 'content b')
+    const hashA = sha1('content a')
+    const hashB = sha1('content b')
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({
+      [hashA]: makeVersion({ id: 'version-a', project_id: 'project-a' }),
+      [hashB]: makeVersion({ id: 'version-b', project_id: 'project-a' })
+    })
+    mockGetModrinthProjects.mockResolvedValue([
+      { id: 'project-a', slug: 'mod-a', title: 'Mod A', description: '', icon_url: null, client_side: 'optional', server_side: 'required' }
+    ])
+
+    const { result } = await scanForInstalledMods(profile)
+
+    expect(result.adopted).toHaveLength(2)
+    expect(mockGetModrinthProjects).toHaveBeenCalledTimes(1)
+    expect(mockGetModrinthProjects).toHaveBeenCalledWith(['project-a'])
   })
 
   it('skips files already tracked in profile.installedMods', async () => {
@@ -206,15 +234,17 @@ describe('scanForInstalledMods', () => {
     fs.writeFileSync(path.join(modTargetDir(profile), 'root.jar.disabled'), 'root content')
     const hash = sha1('root content')
     mockGetModrinthVersionsFromHashes.mockResolvedValue({ [hash]: makeVersion() })
-    mockGetModrinthProject.mockResolvedValue({
-      id: 'project-root',
-      slug: 'root-mod',
-      title: 'Root Mod',
-      description: '',
-      icon_url: null,
-      client_side: 'optional',
-      server_side: 'required'
-    })
+    mockGetModrinthProjects.mockResolvedValue([
+      {
+        id: 'project-root',
+        slug: 'root-mod',
+        title: 'Root Mod',
+        description: '',
+        icon_url: null,
+        client_side: 'optional',
+        server_side: 'required'
+      }
+    ])
 
     const { result } = await scanForInstalledMods(profile)
 

@@ -119,10 +119,37 @@ export function buildModrinthFacets(serverType: MinecraftServerType, minecraftVe
   return JSON.stringify(facets)
 }
 
+const MAX_RATE_LIMIT_RETRIES = 3
+
+/** Modrinth's rate limit (300 req/min per IP) is easy to hit when scanning several servers'
+ *  mods/plugins folders back to back - each used to cost its own per-project request too (see
+ *  getModrinthProjects below). Rather than hard-failing on a transient 429, wait out the
+ *  `Retry-After` the server asks for (falling back to a short exponential backoff if it didn't
+ *  send one) and try again a few times before giving up for real. */
+async function wait(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function retryDelayMs(response: Response, attempt: number): number {
+  const retryAfter = Number(response.headers.get('Retry-After'))
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter * 1000
+  return 1000 * 2 ** attempt
+}
+
+async function fetchWithRateLimitRetry(url: string | URL, init: RequestInit, label: string): Promise<Response> {
+  for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt++) {
+    const response = await fetch(url, init)
+    if (response.status !== 429 || attempt === MAX_RATE_LIMIT_RETRIES) return response
+    await wait(retryDelayMs(response, attempt))
+  }
+  // Unreachable - the loop above always returns by its last iteration.
+  throw new Error(`Modrinth request failed: ${label}`)
+}
+
 async function modrinthFetch<T>(path: string, searchParams: Record<string, string>): Promise<T> {
   const url = new URL(`${API_BASE}${path}`)
   for (const [key, value] of Object.entries(searchParams)) url.searchParams.set(key, value)
-  const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT } })
+  const response = await fetchWithRateLimitRetry(url, { headers: { 'User-Agent': USER_AGENT } }, path)
   if (!response.ok) {
     throw new Error(`Modrinth request failed (HTTP ${response.status}): ${path}`)
   }
@@ -165,6 +192,15 @@ export async function getModrinthProject(projectId: string): Promise<ModrinthPro
   return modrinthFetch<ModrinthProject>(`/project/${encodeURIComponent(projectId)}`, {})
 }
 
+/** Same data as getModrinthProject, but for many projects in one request - the batch
+ *  counterpart that keeps scanForInstalledMods from costing one `/project/{id}` call per
+ *  adopted mod (easy to hit Modrinth's rate limit with a folder full of them). Returns `[]`
+ *  up front for an empty list, same reasoning as getModrinthVersionsFromHashes below. */
+export async function getModrinthProjects(projectIds: string[]): Promise<ModrinthProject[]> {
+  if (projectIds.length === 0) return []
+  return modrinthFetch<ModrinthProject[]>('/projects', { ids: JSON.stringify(projectIds) })
+}
+
 /**
  * Identifies files already sitting in a server's mods/plugins folder (installed by hand,
  * outside this app, or before this feature existed) by file hash - the same mechanism
@@ -180,11 +216,15 @@ export async function getModrinthVersionsFromHashes(
   algorithm: 'sha1' | 'sha512' = 'sha1'
 ): Promise<Record<string, ModrinthVersion>> {
   if (hashes.length === 0) return {}
-  const response = await fetch(`${API_BASE}/version_files`, {
-    method: 'POST',
-    headers: { 'User-Agent': USER_AGENT, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ algorithm, hashes })
-  })
+  const response = await fetchWithRateLimitRetry(
+    `${API_BASE}/version_files`,
+    {
+      method: 'POST',
+      headers: { 'User-Agent': USER_AGENT, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ algorithm, hashes })
+    },
+    '/version_files'
+  )
   if (!response.ok) {
     throw new Error(`Modrinth request failed (HTTP ${response.status}): /version_files`)
   }

@@ -16,6 +16,7 @@ import {
   getModrinthProjectVersions,
   getModrinthVersion,
   getModrinthProject,
+  getModrinthProjects,
   getModrinthVersionsFromHashes,
   type ModrinthVersion,
   type ModrinthVersionFile
@@ -423,11 +424,18 @@ export async function scanForInstalledMods(
 
   const versionsByHash = await getModrinthVersionsFromHashes([...fileByHash.keys()], 'sha1')
 
+  // One batched /projects request for every matched project, instead of one /project/{id}
+  // request per adopted mod - a folder full of untracked mods used to cost one request each,
+  // which was enough on its own to trip Modrinth's rate limit.
+  const projectIds = [...new Set(Object.values(versionsByHash).map((v) => v.project_id))]
+  const projects = await getModrinthProjects(projectIds)
+  const projectById = new Map(projects.map((p) => [p.id, p]))
+
   const adopted: InstalledMinecraftMod[] = []
   for (const [hash, version] of Object.entries(versionsByHash)) {
     const file = fileByHash.get(hash)
-    if (!file) continue
-    const project = await getModrinthProject(version.project_id)
+    const project = projectById.get(version.project_id)
+    if (!file || !project) continue
     adopted.push({
       source: 'modrinth',
       projectId: version.project_id,

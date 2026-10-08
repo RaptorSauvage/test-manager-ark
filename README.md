@@ -2230,3 +2230,23 @@ async function findProfileIdByName(name) {
   - New `tests/minecraftModScan.test.ts`: hash-match adoption, skip-already-tracked,
     unidentified-count reporting (profile left untouched), `.disabled`-suffix enabled-state
     handling, no API call when nothing is untracked, and works with no `minecraftVersion` set.
+
+- **Fix: scanning a folder with several untracked mods could trip Modrinth's rate limit
+  (HTTP 429), reported live by a user with a sizeable mods folder.** Two causes, both fixed:
+  - Scanning used to fetch each adopted mod's project info one request at a time
+    (`getModrinthProject` in a loop) - a folder with a dozen unrecognized mods meant a dozen
+    sequential requests on top of the batched hash lookup. Replaced with a new
+    `getModrinthProjects(ids)` in `modrinthClient.ts` (`GET /v2/projects?ids=[...]`, Modrinth's
+    own batch counterpart to `/project/{id}`), so `scanForInstalledMods` now costs exactly two
+    Modrinth requests total regardless of how many mods it finds: one for the hashes, one for
+    every matched project's info (deduplicated, since several versions can belong to the same
+    project).
+  - There was no recovery from a 429 at all - any transient rate-limit hit failed the whole
+    scan outright. `modrinthFetch` (and the raw `/version_files` POST) now retry on 429, waiting
+    out the response's `Retry-After` header when present or an exponential backoff otherwise, up
+    to 3 retries before actually giving up - self-heals from Modrinth's normal per-minute
+    throttling instead of surfacing it as an error.
+  - New tests in `tests/modrinthClient.test.ts` (waits out `Retry-After` and retries
+    successfully; gives up and throws after exhausting retries) and
+    `tests/minecraftModScan.test.ts` (batches the project lookup into one deduplicated call for
+    several matched mods).

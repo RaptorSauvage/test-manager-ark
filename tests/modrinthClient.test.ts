@@ -1,5 +1,16 @@
-import { describe, expect, it } from 'vitest'
-import { loaderCategoriesFor, buildModrinthFacets } from '../src/main/lib/modrinthClient'
+import { describe, expect, it, vi, afterEach } from 'vitest'
+import { loaderCategoriesFor, buildModrinthFacets, getModrinthProject } from '../src/main/lib/modrinthClient'
+
+function fakeResponse(init: { ok: boolean; status: number; retryAfter?: string; body?: unknown }): Response {
+  const headers = new Headers()
+  if (init.retryAfter) headers.set('Retry-After', init.retryAfter)
+  return {
+    ok: init.ok,
+    status: init.status,
+    headers,
+    json: async () => init.body
+  } as unknown as Response
+}
 
 describe('loaderCategoriesFor', () => {
   it('maps fabric/forge to their own single category', () => {
@@ -48,5 +59,49 @@ describe('buildModrinthFacets', () => {
   it('trims whitespace from the game version before using it', () => {
     const facets = JSON.parse(buildModrinthFacets('fabric', '  1.20.1  '))
     expect(facets).toContainEqual(['versions:1.20.1'])
+  })
+})
+
+describe('modrinthFetch rate-limit retry', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('waits out a 429\'s Retry-After header, then retries and returns the successful response', async () => {
+    const project = {
+      id: 'project-root',
+      slug: 'root-mod',
+      title: 'Root Mod',
+      description: '',
+      icon_url: null,
+      client_side: 'optional',
+      server_side: 'required'
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(fakeResponse({ ok: false, status: 429, retryAfter: '1' }))
+      .mockResolvedValueOnce(fakeResponse({ ok: true, status: 200, body: project }))
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const promise = getModrinthProject('project-root')
+    await vi.advanceTimersByTimeAsync(1000)
+    const result = await promise
+
+    expect(result).toEqual(project)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('gives up after exhausting retries and throws, instead of retrying forever', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(fakeResponse({ ok: false, status: 429 }))
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const expectation = expect(getModrinthProject('project-root')).rejects.toThrow(/HTTP 429/)
+    await vi.advanceTimersByTimeAsync(20000)
+    await expectation
+
+    expect(fetchMock).toHaveBeenCalledTimes(4)
   })
 })
