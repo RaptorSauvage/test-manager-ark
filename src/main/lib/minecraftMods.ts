@@ -32,6 +32,7 @@ import {
 } from './curseforgeClient'
 import { saveMinecraftProfile, getSettings } from '../store'
 import { logManagerEvent, newTaskId } from './managerLog'
+import { delay } from './delay'
 
 /** Forge/Fabric read mods from `mods/`; Paper/Spigot read plugins from `plugins/`. */
 export function modTargetDir(profile: MinecraftProfile): string {
@@ -600,18 +601,37 @@ export function setMinecraftModEnabled(profile: MinecraftProfile, projectId: str
   return updatedProfile
 }
 
+/** Spreads out *dispatching* each item's async operation so the combined request rate stays
+ *  well under a typical API's per-minute budget, even for a profile with hundreds of
+ *  installed mods - firing every request in the very same tick (a plain `Promise.all(items.
+ *  map(...))`) reliably tripped Modrinth's 300/req-per-minute limit for most of a large mods
+ *  folder's worth of update checks at once. `perSecond` paces dispatch only (each call still
+ *  runs concurrently once started - this isn't a concurrency cap), so overall throughput stays
+ *  close to that rate without needlessly serializing anything. */
+async function mapWithRateLimit<T, R>(items: T[], perSecond: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const intervalMs = 1000 / perSecond
+  const results: R[] = new Array(items.length)
+  await Promise.all(
+    items.map(async (item, index) => {
+      await delay(index * intervalMs)
+      results[index] = await fn(item)
+    })
+  )
+  return results
+}
+
 export async function checkMinecraftModUpdates(profile: MinecraftProfile): Promise<MinecraftModUpdateCheckResult[]> {
   requireModsSupported(profile)
   const apiKey = getSettings().curseforgeApiKey.trim()
-  const results = await Promise.all(
-    profile.installedMods.map(async (mod): Promise<MinecraftModUpdateCheckResult | null> => {
-      // 'unknown' entries (unidentified by scanForInstalledMods) have no real project id to
-      // check against either source - skip rather than firing a doomed request for each one.
-      if (mod.source === 'unknown') return null
-      // A CurseForge entry with no API key configured (anymore) can't be checked either -
-      // skip it the same way, rather than failing every other mod's check along with it.
-      if (mod.source === 'curseforge' && !apiKey) return null
+  const results = await mapWithRateLimit(profile.installedMods, 4, async (mod): Promise<MinecraftModUpdateCheckResult | null> => {
+    // 'unknown' entries (unidentified by scanForInstalledMods) have no real project id to
+    // check against either source - skip rather than firing a doomed request for each one.
+    if (mod.source === 'unknown') return null
+    // A CurseForge entry with no API key configured (anymore) can't be checked either -
+    // skip it the same way, rather than failing every other mod's check along with it.
+    if (mod.source === 'curseforge' && !apiKey) return null
 
+    try {
       if (mod.source === 'curseforge') {
         const files = await getCurseForgeModFiles(apiKey, Number(mod.projectId), profile.serverType, profile.minecraftVersion)
         const latest = files[0]
@@ -631,8 +651,13 @@ export async function checkMinecraftModUpdates(profile: MinecraftProfile): Promi
         latestVersionId: latest?.id,
         latestVersionNumber: latest?.version_number
       }
-    })
-  )
+    } catch {
+      // A single mod's check failing (rate limit exhausted its own retries, a transient
+      // network error, ...) shouldn't take the whole update check down with it the way a bare
+      // Promise.all would - just skip it; the next "Check for updates" click retries it.
+      return null
+    }
+  })
   return results.filter((r): r is MinecraftModUpdateCheckResult => r !== null)
 }
 

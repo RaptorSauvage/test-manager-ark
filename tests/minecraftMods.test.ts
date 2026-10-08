@@ -344,4 +344,43 @@ describe('minecraftMods', () => {
     expect(results[0].projectId).toBe('project-root')
     expect(mockGetModrinthProjectVersions).toHaveBeenCalledTimes(1)
   })
+
+  it('checkMinecraftModUpdates skips a mod whose request fails, instead of failing the whole check', async () => {
+    const good = {
+      source: 'modrinth' as const,
+      projectId: 'project-good',
+      slug: 'good-mod',
+      title: 'Good Mod',
+      versionId: 'version-old',
+      versionNumber: '0.9.0',
+      fileName: 'good.jar',
+      enabled: true,
+      installedAs: 'user' as const,
+      installedAt: Date.now()
+    }
+    const rateLimited = {
+      source: 'modrinth' as const,
+      projectId: 'project-rate-limited',
+      slug: 'rate-limited-mod',
+      title: 'Rate Limited Mod',
+      versionId: 'version-old',
+      versionNumber: '0.9.0',
+      fileName: 'rate-limited.jar',
+      enabled: true,
+      installedAs: 'user' as const,
+      installedAt: Date.now()
+    }
+    const profile = makeProfile({ installedMods: [good, rateLimited] }, tmpDir)
+    mockGetModrinthProjectVersions.mockImplementation(async (projectId: string) => {
+      if (projectId === 'project-rate-limited') {
+        throw new Error('Modrinth request failed (HTTP 429): /project/project-rate-limited/version')
+      }
+      return [makeVersion({ id: 'version-new', project_id: projectId, version_number: '1.0.0' })]
+    })
+
+    const results = await checkMinecraftModUpdates(profile)
+
+    expect(results).toHaveLength(1)
+    expect(results[0].projectId).toBe('project-good')
+  })
 })

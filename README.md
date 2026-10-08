@@ -2371,3 +2371,26 @@ async function findProfileIdByName(name) {
     `tests/minecraftModsCurseForge.test.ts` (search merging/sorting/filtering/fallback, install
     with and without a required dependency, rejecting a no-distribution file, update-check
     flagging and API-key-cleared skip).
+
+- **Fix: "Check for updates" could crash outright with HTTP 429s for a profile with a large
+  mods folder (one real report had 256 Modrinth-sourced mods), and the scan/batch-project fix
+  from the previous round didn't cover this path at all - it only fixed scanning.**
+  `checkMinecraftModUpdates` fired one request per installed mod via a bare
+  `Promise.all(installedMods.map(...))` - every request in the very same tick, with no pacing
+  and no per-item isolation. Two separate problems, both fixed:
+  - **No pacing at all** - hundreds of simultaneous requests blew straight through Modrinth's
+    300/minute budget on the very first tick, so most of them hit 429 immediately (the
+    retry-with-backoff added previously only helps a request that's occasionally rate-limited,
+    not literally all of them bursting at once - its 3-retry budget doesn't scale to that much
+    contention). New `mapWithRateLimit` paces *dispatching* each mod's check (default 4/second,
+    safely under budget) while still letting each one run concurrently once started - a check
+    over 256 mods now takes about a minute instead of failing outright, but it actually
+    finishes.
+  - **One mod's failure killed every other mod's result** - `Promise.all` rejects on the first
+    rejection, so even with pacing, a single mod that still ends up rate-limited (or hits any
+    other transient error) would throw away the results already computed for every other mod in
+    the batch. Each mod's check is now wrapped in its own try/catch inside the mapper - a
+    failure just means that one mod is skipped this round (no update badge until the next
+    "Check for updates" click), not that the whole feature errors out.
+  - New tests in `tests/minecraftMods.test.ts` (one mod's request failing doesn't take out the
+    other mod's result).
