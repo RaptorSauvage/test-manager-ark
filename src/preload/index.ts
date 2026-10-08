@@ -14,6 +14,7 @@ import {
   type ManagerLogEntry
 } from '@shared/types'
 import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine, MinecraftPropertiesData } from '@shared/minecraft'
+import type { MinecraftModSource } from '@shared/minecraftMods'
 
 const api: Api = {
   profiles: {
@@ -252,12 +253,14 @@ const api: Api = {
     },
     mods: {
       search: (profileId: string, query: string) => ipcRenderer.invoke(IPC.minecraftModsSearch, profileId, query),
-      install: (profileId: string, projectId: string) => ipcRenderer.invoke(IPC.minecraftModsInstall, profileId, projectId),
+      install: (profileId: string, source: MinecraftModSource, projectId: string) =>
+        ipcRenderer.invoke(IPC.minecraftModsInstall, profileId, source, projectId),
       remove: (profileId: string, projectId: string) => ipcRenderer.invoke(IPC.minecraftModsRemove, profileId, projectId),
       setEnabled: (profileId: string, projectId: string, enabled: boolean) =>
         ipcRenderer.invoke(IPC.minecraftModsSetEnabled, profileId, projectId, enabled),
       checkUpdates: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsCheckUpdates, profileId),
-      update: (profileId: string, projectId: string) => ipcRenderer.invoke(IPC.minecraftModsUpdate, profileId, projectId),
+      update: (profileId: string, source: MinecraftModSource, projectId: string) =>
+        ipcRenderer.invoke(IPC.minecraftModsUpdate, profileId, source, projectId),
       scan: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsScan, profileId),
       openFolder: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsOpenFolder, profileId)
     }

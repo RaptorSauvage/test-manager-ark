@@ -7,8 +7,10 @@ import type { MinecraftProfile } from '../shared/minecraft'
 import type { ModrinthVersion } from '../src/main/lib/modrinthClient'
 
 const mockSaveMinecraftProfile = vi.fn((profile: MinecraftProfile) => [profile])
+const mockGetSettings = vi.fn(() => ({ curseforgeApiKey: '' }))
 vi.mock('../src/main/store', () => ({
-  saveMinecraftProfile: (profile: MinecraftProfile) => mockSaveMinecraftProfile(profile)
+  saveMinecraftProfile: (profile: MinecraftProfile) => mockSaveMinecraftProfile(profile),
+  getSettings: () => mockGetSettings()
 }))
 
 vi.mock('../src/main/lib/managerLog', () => ({
@@ -135,7 +137,7 @@ describe('minecraftMods', () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeFetchResponse(fileContent)))
 
     const profile = makeProfile({}, tmpDir)
-    const { profile: updated, result } = await installMinecraftMod(profile, 'project-root')
+    const { profile: updated, result } = await installMinecraftMod(profile, 'modrinth', 'project-root')
 
     expect(fs.readFileSync(path.join(modTargetDir(profile), 'root.jar'))).toEqual(fileContent)
     expect(updated.installedMods).toHaveLength(1)
@@ -153,18 +155,18 @@ describe('minecraftMods', () => {
   it('rejects when no version is compatible with this server', async () => {
     mockGetModrinthProjectVersions.mockResolvedValue([])
     const profile = makeProfile({}, tmpDir)
-    await expect(installMinecraftMod(profile, 'project-root')).rejects.toThrow(/compatible/)
+    await expect(installMinecraftMod(profile, 'modrinth', 'project-root')).rejects.toThrow(/compatible/)
     expect(mockSaveMinecraftProfile).not.toHaveBeenCalled()
   })
 
   it('rejects for a server type with no mod ecosystem', async () => {
     const profile = makeProfile({ serverType: 'vanilla' }, tmpDir)
-    await expect(installMinecraftMod(profile, 'project-root')).rejects.toThrow(/mod\/plugin ecosystem/)
+    await expect(installMinecraftMod(profile, 'modrinth', 'project-root')).rejects.toThrow(/mod\/plugin ecosystem/)
   })
 
   it('rejects when the Minecraft version is not set', async () => {
     const profile = makeProfile({ minecraftVersion: '' }, tmpDir)
-    await expect(installMinecraftMod(profile, 'project-root')).rejects.toThrow(/Minecraft version/)
+    await expect(installMinecraftMod(profile, 'modrinth', 'project-root')).rejects.toThrow(/Minecraft version/)
   })
 
   it('installs a required dependency alongside the requested mod', async () => {
@@ -177,7 +179,7 @@ describe('minecraftMods', () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeFetchResponse(Buffer.from('x'))))
 
     const profile = makeProfile({}, tmpDir)
-    const { profile: updated, result } = await installMinecraftMod(profile, 'project-root')
+    const { profile: updated, result } = await installMinecraftMod(profile, 'modrinth', 'project-root')
 
     expect(updated.installedMods.map((m) => m.projectId).sort()).toEqual(['project-dep', 'project-root'])
     expect(result.dependenciesInstalled).toHaveLength(1)
@@ -201,7 +203,7 @@ describe('minecraftMods', () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeFetchResponse(badContent)))
 
     const profile = makeProfile({}, tmpDir)
-    await expect(installMinecraftMod(profile, 'project-root')).rejects.toThrow(/checksum/)
+    await expect(installMinecraftMod(profile, 'modrinth', 'project-root')).rejects.toThrow(/checksum/)
     expect(fs.existsSync(path.join(modTargetDir(profile), 'root.jar'))).toBe(false)
   })
 

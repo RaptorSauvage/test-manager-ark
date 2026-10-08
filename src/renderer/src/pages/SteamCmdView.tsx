@@ -23,7 +23,8 @@ export default function SteamCmdView({ onBack }: SteamCmdViewProps): JSX.Element
     groupOrder: [],
     collapsedGroups: [],
     minecraftGroupOrder: [],
-    minecraftCollapsedGroups: []
+    minecraftCollapsedGroups: [],
+    curseforgeApiKey: ''
   })
   const [status, setStatus] = useState('')
   const [managedPath, setManagedPath] = useState<string | null>(null)

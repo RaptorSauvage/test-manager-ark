@@ -1,20 +1,22 @@
 /**
  * Mod/plugin browsing and installation - kept in its own file rather than growing
- * minecraft.ts further, and deliberately modeled source-agnostic (`source: 'modrinth'`
- * today) even though only Modrinth is implemented so far. CurseForge requires its own API
- * key (obtained by registering as a developer at console.curseforge.com - see the README)
- * and is a planned follow-up, not yet implemented; a second source should only mean adding
- * another case to the `source` union and its own client module, not touching these shapes.
+ * minecraft.ts further. Source-agnostic by design (`source` is a union, not a hardcoded
+ * string) - Modrinth and CurseForge are each their own client module (modrinthClient.ts,
+ * curseforgeClient.ts) feeding these same shapes, so neither source's own API shapes leak
+ * past minecraftMods.ts.
  */
 
 import type { MinecraftServerType } from './minecraft'
 
-/** 'unknown' isn't a future source to implement (unlike a later 'curseforge') - it's what
+/** 'modrinth' and 'curseforge' are real sources a mod/plugin was found through - CurseForge
+ *  needs its own API key (AppSettings.curseforgeApiKey; get one free at
+ *  console.curseforge.com - see the README) and is skipped entirely, not an error, when
+ *  that's empty. 'unknown' isn't a source to search/install from at all - it's what
  *  scanForInstalledMods assigns to a file it found in the mods/plugins folder but couldn't
- *  identify (hash doesn't match anything Modrinth knows about). Tracked anyway, with no
- *  metadata beyond its file name, so it still shows up and can be managed (enable/disable/
- *  remove) instead of silently sitting invisible in the folder. */
-export type MinecraftModSource = 'modrinth' | 'unknown'
+ *  identify by hash/fingerprint against either source. Tracked anyway, with no metadata
+ *  beyond its file name, so it still shows up and can be managed (enable/disable/remove)
+ *  instead of silently sitting invisible in the folder. */
+export type MinecraftModSource = 'modrinth' | 'curseforge' | 'unknown'
 
 /** Only these server types have a mod/plugin ecosystem at all - vanilla ships nothing
  *  installable and 'unknown' means the Manager couldn't even guess, so there's nothing safe
@@ -55,16 +57,18 @@ export interface MinecraftModSearchResult {
 }
 
 /** A mod/plugin this Manager tracks for a profile - either installed through the Mods tab
- *  itself, or recognized afterward by scanning the mods/plugins folder (scanForInstalledMods).
- *  A scanned file whose hash matches a known Modrinth version gets the full metadata below
- *  (source: 'modrinth'); one that doesn't match anything Modrinth knows about (CurseForge-
- *  sourced, hand-built, or just not on Modrinth) is still tracked, as source: 'unknown' - its
- *  `versionId`/`versionNumber` are empty strings and `title`/`slug` fall back to the file name,
- *  but it still shows up and can be enabled/disabled/removed like any other entry. */
+ *  itself, or recognized afterward by scanning the mods/plugins folder (scanForInstalledMods,
+ *  Modrinth-only for now - see its own doc comment). A scanned file whose hash matches a known
+ *  Modrinth version gets the full metadata below (source: 'modrinth'); one that doesn't match
+ *  anything (CurseForge-sourced, hand-built, or just not on Modrinth) is still tracked, as
+ *  source: 'unknown' - its `versionId`/`versionNumber` are empty strings and `title`/`slug`
+ *  fall back to the file name, but it still shows up and can be enabled/disabled/removed like
+ *  any other entry. */
 export interface InstalledMinecraftMod {
   source: MinecraftModSource
-  /** A real Modrinth project id for source: 'modrinth'; a synthetic `local:<fileName>` id for
-   *  source: 'unknown' (stable and unique per file, just not a real Modrinth identifier). */
+  /** A real Modrinth project id for source: 'modrinth'; a real (numeric, stringified)
+   *  CurseForge mod id for source: 'curseforge'; a synthetic `local:<fileName>` id for
+   *  source: 'unknown' (stable and unique per file, just not a real id from either source). */
   projectId: string
   slug: string
   title: string
@@ -107,7 +111,10 @@ export interface MinecraftModUpdateCheckResult {
 }
 
 /** Result of scanForInstalledMods - what it found sitting in the mods/plugins folder that
- *  wasn't already tracked. */
+ *  wasn't already tracked. Modrinth-only for now: CurseForge's own file-identification
+ *  endpoint (murmur2 fingerprints, not a simple file hash) is a real follow-up, not
+ *  implemented yet - an existing CurseForge-sourced file still gets picked up here, just as
+ *  source: 'unknown' like anything else scanning can't place. */
 export interface MinecraftModScanResult {
   /** Every untracked file found this scan, now added to installedMods (already reflected in
    *  the profile this call also returns) - identified files have source: 'modrinth' with full

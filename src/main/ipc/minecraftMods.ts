@@ -12,6 +12,7 @@ import {
   openMinecraftModsFolder
 } from '../lib/minecraftMods'
 import type { MinecraftProfile } from '@shared/minecraft'
+import type { MinecraftModSource } from '@shared/minecraftMods'
 
 function requireProfile(profileId: string): MinecraftProfile {
   const profile = getMinecraftProfile(profileId)
@@ -24,8 +25,8 @@ export function registerMinecraftModsHandlers(): void {
     searchMinecraftMods(requireProfile(profileId), query)
   )
 
-  ipcMain.handle(IPC.minecraftModsInstall, (_event, profileId: string, projectId: string) =>
-    installMinecraftMod(requireProfile(profileId), projectId)
+  ipcMain.handle(IPC.minecraftModsInstall, (_event, profileId: string, source: MinecraftModSource, projectId: string) =>
+    installMinecraftMod(requireProfile(profileId), source, projectId)
   )
 
   ipcMain.handle(IPC.minecraftModsRemove, (_event, profileId: string, projectId: string) =>
@@ -40,8 +41,8 @@ export function registerMinecraftModsHandlers(): void {
     checkMinecraftModUpdates(requireProfile(profileId))
   )
 
-  ipcMain.handle(IPC.minecraftModsUpdate, (_event, profileId: string, projectId: string) =>
-    updateMinecraftMod(requireProfile(profileId), projectId)
+  ipcMain.handle(IPC.minecraftModsUpdate, (_event, profileId: string, source: MinecraftModSource, projectId: string) =>
+    updateMinecraftMod(requireProfile(profileId), source, projectId)
   )
 
   ipcMain.handle(IPC.minecraftModsScan, (_event, profileId: string) => scanForInstalledMods(requireProfile(profileId)))

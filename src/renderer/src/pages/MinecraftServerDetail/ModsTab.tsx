@@ -1,8 +1,17 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { supportsMinecraftMods } from '@shared/minecraftMods'
-import type { MinecraftModInstallResult, MinecraftModSearchResult, MinecraftModUpdateCheckResult } from '@shared/minecraftMods'
+import type {
+  MinecraftModInstallResult,
+  MinecraftModSearchResult,
+  MinecraftModSource,
+  MinecraftModUpdateCheckResult
+} from '@shared/minecraftMods'
 import { confirmAction } from '../../lib/confirmAction'
+
+function sourceLabel(source: MinecraftModSource): string {
+  return source === 'curseforge' ? 'CurseForge' : 'Modrinth'
+}
 
 interface ModsTabProps {
   profile: MinecraftProfile
@@ -48,9 +57,14 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
   const [checkingUpdates, setCheckingUpdates] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scanNote, setScanNote] = useState('')
+  const [hasCurseForgeKey, setHasCurseForgeKey] = useState(false)
 
   const supported = supportsMinecraftMods(profile.serverType)
   const hasVersion = profile.minecraftVersion.trim().length > 0
+
+  useEffect(() => {
+    window.api.settings.get().then((settings) => setHasCurseForgeKey(settings.curseforgeApiKey.trim().length > 0))
+  }, [])
 
   async function refreshUpdates(): Promise<void> {
     setCheckingUpdates(true)
@@ -133,12 +147,12 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
     }
   }
 
-  async function handleInstall(projectId: string): Promise<void> {
+  async function handleInstall(source: MinecraftModSource, projectId: string): Promise<void> {
     setBusyId(projectId)
     setError('')
     setLastNote('')
     try {
-      const { profile: updated, result } = await window.api.minecraft.mods.install(profile.id, projectId)
+      const { profile: updated, result } = await window.api.minecraft.mods.install(profile.id, source, projectId)
       onProfileChange(updated)
       setResults((prev) => prev.map((r) => (r.projectId === projectId ? { ...r, installed: true } : r)))
       setLastNote(describeInstallResult(result))
@@ -150,12 +164,12 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
     }
   }
 
-  async function handleUpdate(projectId: string): Promise<void> {
+  async function handleUpdate(source: MinecraftModSource, projectId: string): Promise<void> {
     setBusyId(projectId)
     setError('')
     setLastNote('')
     try {
-      const { profile: updated, result } = await window.api.minecraft.mods.update(profile.id, projectId)
+      const { profile: updated, result } = await window.api.minecraft.mods.update(profile.id, source, projectId)
       onProfileChange(updated)
       setLastNote(describeInstallResult(result))
       void refreshUpdates()
@@ -208,11 +222,13 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
     <div className="mods-tab">
       {hasVersion ? (
         <section className="cluster-section">
-          <h3>Browse Modrinth</h3>
+          <h3>Browse Modrinth{hasCurseForgeKey ? ' & CurseForge' : ''}</h3>
           <p className="empty-state">
             Searching for {profile.serverType} mods/plugins compatible with Minecraft {profile.minecraftVersion}.
-            Client-only content (nothing to do with a server) is already excluded. CurseForge is a planned follow-up,
-            not available yet.
+            Client-only content (nothing to do with a server) is already excluded.
+            {hasCurseForgeKey
+              ? ' Results below are merged from both Modrinth and CurseForge, each labeled with its source.'
+              : ' Set a CurseForge API key in Settings (General) to also search CurseForge - see the README for where to get one.'}
           </p>
           <form className="path-input-row" onSubmit={(e) => void handleSearch(e)}>
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search mods/plugins..." />
@@ -227,13 +243,14 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
               <tr>
                 <th>Name</th>
                 <th>Description</th>
+                <th className="mc-mods-col-narrow">Source</th>
                 <th className="mc-mods-col-narrow">Downloads</th>
                 <th className="mc-mods-col-narrow"></th>
               </tr>
             </thead>
             <tbody>
               {results.map((r) => (
-                <tr key={r.projectId}>
+                <tr key={`${r.source}:${r.projectId}`}>
                   <td className="mc-mod-name-cell">
                     {r.iconUrl && (
                       <img
@@ -248,12 +265,13 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
                     {r.title}
                   </td>
                   <td>{r.description}</td>
+                  <td className="mc-mods-col-narrow muted">{sourceLabel(r.source)}</td>
                   <td className="mc-mods-col-narrow">{r.downloads.toLocaleString()}</td>
                   <td className="mc-mods-col-narrow">
                     <button
                       type="button"
                       disabled={r.installed || busyId === r.projectId}
-                      onClick={() => void handleInstall(r.projectId)}
+                      onClick={() => void handleInstall(r.source, r.projectId)}
                     >
                       {r.installed ? 'Installed' : busyId === r.projectId ? 'Installing...' : 'Install'}
                     </button>
@@ -262,7 +280,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
               ))}
               {results.length === 0 && (
                 <tr>
-                  <td colSpan={4}>{searched ? 'No results.' : 'Search above to find mods/plugins for this server.'}</td>
+                  <td colSpan={5}>{searched ? 'No results.' : 'Search above to find mods/plugins for this server.'}</td>
                 </tr>
               )}
             </tbody>
@@ -270,7 +288,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
         </section>
       ) : (
         <section className="cluster-section">
-          <h3>Browse Modrinth</h3>
+          <h3>Browse Modrinth &amp; CurseForge</h3>
           <p className="empty-state">
             Set this server&apos;s Minecraft version in Start Settings to search for and install mods/plugins. Mods
             already in the mods/plugins folder can still be recognized below without it.
@@ -299,6 +317,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
           <thead>
             <tr>
               <th>Name</th>
+              <th className="mc-mods-col-narrow">Source</th>
               <th className="mc-mods-col-narrow">Version</th>
               <th className="mc-mods-col-narrow">Status</th>
               <th className="mc-mods-col-narrow"></th>
@@ -324,6 +343,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
                     {m.title}
                     {m.installedAs === 'dependency' && <span className="muted"> (dependency)</span>}
                   </td>
+                  <td className="mc-mods-col-narrow muted">{unidentified ? '—' : sourceLabel(m.source)}</td>
                   <td className="mc-mods-col-narrow">{m.versionNumber || '—'}</td>
                   <td className="mc-mods-col-narrow">
                     {unidentified ? (
@@ -340,7 +360,11 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
                   </td>
                   <td className="mc-mods-col-narrow backup-management-actions">
                     {update?.updateAvailable && (
-                      <button type="button" disabled={busyId === m.projectId} onClick={() => void handleUpdate(m.projectId)}>
+                      <button
+                        type="button"
+                        disabled={busyId === m.projectId}
+                        onClick={() => void handleUpdate(m.source, m.projectId)}
+                      >
                         {busyId === m.projectId ? 'Updating...' : 'Update'}
                       </button>
                     )}
@@ -356,7 +380,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
             })}
             {profile.installedMods.length === 0 && (
               <tr>
-                <td colSpan={4}>No mods/plugins installed yet.</td>
+                <td colSpan={5}>No mods/plugins installed yet.</td>
               </tr>
             )}
           </tbody>

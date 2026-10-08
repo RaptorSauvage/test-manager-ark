@@ -78,7 +78,8 @@ const store = new Store<StoreSchema>({
       groupOrder: [],
       collapsedGroups: [],
       minecraftGroupOrder: [],
-      minecraftCollapsedGroups: []
+      minecraftCollapsedGroups: [],
+      curseforgeApiKey: ''
     },
     runningPids: {},
     runningStartedAt: {},
@@ -204,6 +205,7 @@ export function getSettings(): AppSettings {
     collapsedGroups: [],
     minecraftGroupOrder: [],
     minecraftCollapsedGroups: [],
+    curseforgeApiKey: '',
     ...settings
   }
 }

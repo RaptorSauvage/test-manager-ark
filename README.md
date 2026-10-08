@@ -2298,3 +2298,76 @@ async function findProfileIdByName(name) {
     'unknown'`, mixed identified/unidentified scan, `openMinecraftModsFolder`),
     `tests/minecraftMods.test.ts` (`checkMinecraftModUpdates` skips `'unknown'` entries), and
     new `tests/minecraftServerFolder.test.ts` (`openMinecraftServerRootFolder`).
+
+- **Fix (follow-up): the column-width fix above wasn't enough on its own - Disable/Remove
+  (and Update, when present) were still stacking vertically instead of sitting side by side,
+  inflating every row's height.** `mc-mods-col-narrow`'s `width: 1%` only works if the column's
+  *content* can report an honest minimum width - but the actions cell's `.backup-management-
+  actions` has `flex-wrap: wrap`, and a wrapping flex container's min-content width is just its
+  single largest item, not the combined width of everything in it (wrapping means it's always
+  "allowed" to fall back to one item per line). So the column collapsed to fit one button, and
+  the rest wrapped onto their own lines underneath. Added `.mc-mods-table .backup-management-
+  actions { flex-wrap: nowrap }` to force one line - three short buttons always fit, and that
+  was the whole point of giving the column minimal width in the first place.
+
+- **CurseForge integration, v1 (search, install, update) - the planned follow-up from the
+  original Modrinth-only Mods tab is now real.** Gated behind a user-provided API key
+  (`AppSettings.curseforgeApiKey`) since CurseForge's Core API requires one, unlike Modrinth's.
+  **Get a free key at `console.curseforge.com`**: sign in with a CurseForge/Overwolf account,
+  open **API Keys** in the left sidebar, click **Generate new API key**, give it any name, and
+  agree to the non-commercial terms - the key shown there goes straight into Settings → General
+  → Integrations. Leaving it empty skips CurseForge entirely (not an error) - Modrinth search
+  keeps working exactly as before.
+  - **`src/main/lib/curseforgeClient.ts`**, a thin wrapper around the CurseForge Core API
+    (`api.curseforge.com/v1`), mirroring modrinthClient.ts's own shape (raw CurseForge shapes
+    in, this app's own normalized shapes out - handled in minecraftMods.ts, not here). Minecraft
+    is game id `432`; Forge/Fabric content is CurseForge "class" `6` (Mods), Paper/Spigot
+    content is class `4471` (Bukkit Plugins) - there's no single "mod" class the way Modrinth's
+    v2 API flattens it. `modLoaderType` (1 Forge, 4 Fabric) filters search/files for those two;
+    Paper/Spigot plugins aren't loader-filtered on CurseForge at all, so it's omitted for them.
+    `getCurseForgeModFiles` sorts by `fileDate` itself (CurseForge doesn't guarantee an order)
+    so `[0]` is reliably "the latest compatible file" - same "no version picker" simplification
+    used everywhere else in this app's mod system.
+  - **Search merges both sources** - `searchMinecraftMods` always searches Modrinth, and also
+    CurseForge once a key is set, combining and sorting the results by downloads (each tagged
+    with its own `source` so the UI can label it). A CurseForge mod with
+    `allowModDistribution: false` (the author opted out of third-party downloads) is filtered
+    out of results entirely - this app has no file to offer for it anyway. A CurseForge search
+    failure (bad key, network hiccup) is logged and dropped rather than failing the whole
+    search - Modrinth's own results still come back.
+  - **Install/update dependency resolution, same shape as Modrinth's, adapted to CurseForge's
+    own model** - `resolveCurseForgeInstallPlan` (mirrors `resolveModInstallPlan`) walks a
+    file's `dependencies` (`{modId, relationType}` pairs, not Modrinth's richer
+    `{project_id, version_id, dependency_type}`): relationType `3` (RequiredDependency) is
+    walked and installed (always the dependency's own latest compatible file - there's no
+    per-version pin like Modrinth's `version_id`), `2` (Optional) is surfaced not installed,
+    `5` (Incompatible) is a warning only if already installed, and `1`/`4`/`6` (EmbeddedLibrary/
+    Tool/Include) are skipped outright. Same depth cap, same dedup-by-already-queued-or-
+    installed reasoning, confirmed against the same diamond-graph and cycle test cases as the
+    Modrinth version.
+  - **`installMinecraftMod`/`updateMinecraftMod` now take a `source` parameter** (IPC/preload/
+    `ModsTab.tsx` all updated to pass it through - a search result or an installed entry always
+    has its own `source` handy, so this never needs guessing). The original Modrinth install
+    function was renamed to `installModrinthMod` (no longer exported) and `installMinecraftMod`
+    is now a small dispatcher by source; `'unknown'` throws (there's nothing to install from an
+    entry with no real backing id).
+  - **Downloads verified against CurseForge's own sha1 hash when published**, same discard-on-
+    mismatch behavior as Modrinth's own download path. A file with no `downloadUrl` at all
+    (author disabled distribution) fails with a clear message pointing at downloading it from
+    CurseForge directly and using Rescan folder instead - not silently skipped.
+  - **`checkMinecraftModUpdates` branches per installed entry's `source`** - Modrinth entries
+    check Modrinth, CurseForge entries check CurseForge (and are skipped, not failed, if the API
+    key was cleared since they were installed), `'unknown'` entries are skipped as before.
+  - **Not in this pass**: recognizing already-installed CurseForge mods during a folder scan.
+    CurseForge's own file-identification endpoint (`/fingerprints`, confirmed and wired up as
+    `getCurseForgeFingerprintMatches`) needs a murmur2 hash of the file with whitespace bytes
+    stripped, not a simple file hash - computing one isn't implemented yet, so a CurseForge-
+    sourced file sitting in the folder still gets adopted as `source: 'unknown'` by
+    `scanForInstalledMods`, same as before this pass. A real, clearly-scoped follow-up.
+  - New `tests/curseforgeClient.test.ts` (class/loader-type selection, API key header, 401/403
+    error message, file sorting, empty-fingerprint-list shortcut),
+    `tests/curseforgeInstallPlan.test.ts` (the dependency-walk algorithm - all the same cases as
+    Modrinth's own test file, including the diamond graph and cycle), and
+    `tests/minecraftModsCurseForge.test.ts` (search merging/sorting/filtering/fallback, install
+    with and without a required dependency, rejecting a no-distribution file, update-check
+    flagging and API-key-cleared skip).

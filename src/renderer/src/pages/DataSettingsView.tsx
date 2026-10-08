@@ -56,7 +56,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     groupOrder: [],
     collapsedGroups: [],
     minecraftGroupOrder: [],
-    minecraftCollapsedGroups: []
+    minecraftCollapsedGroups: [],
+    curseforgeApiKey: ''
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
   const [status, setStatus] = useState('')
@@ -246,6 +247,27 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                     ))}
                   </div>
                   <p className="empty-state">Multi-game support is in progress.</p>
+                </section>
+
+                <section className="cluster-section">
+                  <h3>Integrations</h3>
+                  <label>
+                    CurseForge API key
+                    <input
+                      type="password"
+                      value={settings.curseforgeApiKey}
+                      onChange={(e) => setSettings({ ...settings, curseforgeApiKey: e.target.value })}
+                      placeholder="Paste your CurseForge API key here"
+                    />
+                  </label>
+                  <p className="empty-state">
+                    Lets the Minecraft Mods tab also search/install from CurseForge, alongside Modrinth (which needs
+                    no key at all). Get a free one at{' '}
+                    <strong>console.curseforge.com</strong> - sign in with a CurseForge/Overwolf account, open{' '}
+                    <strong>API Keys</strong> in the left sidebar, click <strong>Generate new API key</strong>, give
+                    it any name, and agree to the non-commercial terms. The key shown there is what goes here. Leave
+                    empty to skip CurseForge entirely - Modrinth search still works either way.
+                  </p>
                 </section>
               </>
             )}

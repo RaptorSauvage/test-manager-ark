@@ -1928,6 +1928,18 @@ label.checkbox {
   white-space: nowrap;
 }
 
+/* .backup-management-actions wraps its buttons by default (fine for the Backups tab, which
+   only ever has a couple). Combined with mc-mods-col-narrow's width: 1% here, that wrap
+   collapses the whole actions column down to its single widest button's width (a wrapping
+   flex container's min-content is just its largest item, not the sum of all of them) and
+   stacks Disable/Remove/Update on top of each other instead of side by side, inflating every
+   row's height. Force one line instead - three short buttons always fit a reasonably wide
+   window, and letting the column size to their combined width is exactly the point of
+   mc-mods-col-narrow in the first place. */
+.mc-mods-table .backup-management-actions {
+  flex-wrap: nowrap;
+}
+
 .mc-mod-icon {
   width: 24px;
   height: 24px;

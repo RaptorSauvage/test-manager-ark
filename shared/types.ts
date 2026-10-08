@@ -5,6 +5,7 @@
 import type { GameId } from './games'
 import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine, MinecraftPropertiesData } from './minecraft'
 import type {
+  MinecraftModSource,
   MinecraftModSearchResult,
   MinecraftModInstallResult,
   MinecraftModUpdateCheckResult,
@@ -269,6 +270,13 @@ export interface AppSettings {
    *  Web Dashboard aggregate view for Minecraft yet, so this only affects the Minecraft
    *  Dashboard's own display. */
   minecraftCollapsedGroups: string[]
+  /** CurseForge Core API key, needed for the Mods tab to also search/install from CurseForge
+   *  (Modrinth needs no key at all). Get one free at https://console.curseforge.com/ - sign in
+   *  with a CurseForge/Overwolf account, "API Keys" in the left sidebar, "Generate new API
+   *  key", give it any name, agree to the terms (for non-commercial use), and the key shown
+   *  there is a plain API key - paste it here. Empty means CurseForge search is skipped
+   *  entirely (Modrinth results alone), not an error. */
+  curseforgeApiKey: string
 }
 
 /** Four tiers, highest to lowest: `globalAdmin` (everything, every server, regardless of any
@@ -902,14 +910,18 @@ export interface Api {
       getLog: (profileId: string) => Promise<BackupLogEntry[]>
       onLogChanged: (callback: (profileId: string, entry: BackupLogEntry) => void) => () => void
     }
-    /** Mod/plugin browsing and installation (Modrinth today, CurseForge planned - see
-     *  shared/minecraftMods.ts). `profile.installedMods` is the source of truth for what's
-     *  installed; every call here returns the updated profile so the caller can just pass it
-     *  to onProfileChange instead of re-fetching the whole profile list. */
+    /** Mod/plugin browsing and installation (Modrinth and CurseForge - see
+     *  shared/minecraftMods.ts; CurseForge results/installs only happen once
+     *  AppSettings.curseforgeApiKey is set). `profile.installedMods` is the source of truth
+     *  for what's installed; every call here returns the updated profile so the caller can
+     *  just pass it to onProfileChange instead of re-fetching the whole profile list. */
     mods: {
+      /** Searches Modrinth, plus CurseForge too if an API key is configured - results from
+       *  both are merged and sorted by downloads, each tagged with its own `source`. */
       search: (profileId: string, query: string) => Promise<MinecraftModSearchResult[]>
       install: (
         profileId: string,
+        source: MinecraftModSource,
         projectId: string
       ) => Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }>
       remove: (profileId: string, projectId: string) => Promise<MinecraftProfile>
@@ -917,6 +929,7 @@ export interface Api {
       checkUpdates: (profileId: string) => Promise<MinecraftModUpdateCheckResult[]>
       update: (
         profileId: string,
+        source: MinecraftModSource,
         projectId: string
       ) => Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }>
       /** Recognizes mods/plugins already sitting in the folder that weren't installed
