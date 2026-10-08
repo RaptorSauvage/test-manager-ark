@@ -262,7 +262,9 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
                         }}
                       />
                     )}
-                    {r.title}
+                    <span className="mc-mod-title" title={r.title}>
+                      {r.title}
+                    </span>
                   </td>
                   <td>{r.description}</td>
                   <td className="mc-mods-col-narrow muted">{sourceLabel(r.source)}</td>
@@ -340,8 +342,10 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
                         }}
                       />
                     )}
-                    {m.title}
-                    {m.installedAs === 'dependency' && <span className="muted"> (dependency)</span>}
+                    <span className="mc-mod-title" title={m.title}>
+                      {m.title}
+                    </span>
+                    {m.installedAs === 'dependency' && <span className="muted">(dependency)</span>}
                   </td>
                   <td className="mc-mods-col-narrow muted">{unidentified ? '—' : sourceLabel(m.source)}</td>
                   <td className="mc-mods-col-narrow">{m.versionNumber || '—'}</td>

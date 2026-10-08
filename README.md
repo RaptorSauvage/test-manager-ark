@@ -2424,3 +2424,19 @@ async function findProfileIdByName(name) {
   as one unbroken max-content-width line - so it gets a new `.mc-mods-table--browse` modifier
   class restoring that, while the Installed table (no Description column, nothing that
   benefits from stretching) stays shrink-to-fit.
+
+- **Follow-up fix #2: still a gap after the above too, confirmed from a third screenshot - and
+  this one's actually just inherent to how tables work, not a bug to "fix" the same way.**
+  `white-space: nowrap` on the Name column meant it still sized itself to whichever single mod
+  had the longest name across the *entire* 357-mod list ("Beautiful Enchanted Books [MOD
+  EDITION]", in that screenshot) - a table column's width is shared by every row, so every
+  other, normally-short-named row necessarily had a big dead gap before Source started no
+  matter what. The only real fix is to stop letting one outlier dictate the column's width at
+  all: `.mc-mods-col-name` now has `max-width: 260px`, and an overflowing name truncates with
+  an ellipsis (new `.mc-mod-title` span wrapping the title text, `overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap`, plus `min-width: 0` on both the span and
+  `.mc-mod-name-cell` - a flex item's default min-width is its content's natural width, which
+  silently defeats `text-overflow: ellipsis` by letting the cell grow past the column's
+  max-width instead of actually truncating). The full name is still available as a native
+  `title` attribute tooltip on hover. Same treatment in both tables (Browse results and
+  Installed).

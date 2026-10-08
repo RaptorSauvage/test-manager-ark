@@ -1931,18 +1931,32 @@ label.checkbox {
   font-size: 0.85rem;
 }
 
-/* Keeps a long mod title on one line (so it doesn't wrap mid-word against the icon) without
-   forcing any particular width - same "hug the content, don't reserve a fixed share" reasoning
-   as mc-mods-col-narrow below, just without the width: 1% (Name is the widest-content column by
-   far, so letting the table's own shrink-to-fit sizing above handle it is enough). */
+/* Caps how wide the Name column can get - without this, the column still sizes itself to
+   whichever single mod has the longest name across the *entire* list (nowrap means that one
+   row's content can't shrink), so every other, normally-named row ends up with a big dead gap
+   before Source starts - exactly what a 357-mod screenshot kept showing even after the table
+   itself stopped being force-stretched. A long name now truncates with an ellipsis instead
+   (mc-mod-title below) - the full name is still available as a native title-attribute tooltip
+   on hover. */
 .mc-mods-col-name {
-  white-space: nowrap;
+  max-width: 260px;
 }
 
 .mc-mod-name-cell {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* A flex item's default min-width is auto (= its content's natural width), which defeats
+     text-overflow: ellipsis below by letting this cell grow past the column's max-width
+     instead of actually truncating. 0 lets it shrink down to that cap. */
+  min-width: 0;
+}
+
+.mc-mod-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* Keeps Version/Status/Downloads/Actions hugging their content instead of each getting an
