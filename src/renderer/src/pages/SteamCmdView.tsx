@@ -21,7 +21,9 @@ export default function SteamCmdView({ onBack }: SteamCmdViewProps): JSX.Element
     statsHistoryMaxAgeHours: 24,
     showServerConsoleWindow: true,
     groupOrder: [],
-    collapsedGroups: []
+    collapsedGroups: [],
+    minecraftGroupOrder: [],
+    minecraftCollapsedGroups: []
   })
   const [status, setStatus] = useState('')
   const [managedPath, setManagedPath] = useState<string | null>(null)

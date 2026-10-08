@@ -255,6 +255,14 @@ export interface AppSettings {
    *  left out of the Cluster Dashboard and the Web Dashboard's own Dashboard tab, not just
    *  visually minimized on the Manager's own Dashboard. */
   collapsedGroups: string[]
+  /** Same as groupOrder, but for the Minecraft Dashboard's own groups (MinecraftProfile.group
+   *  values) - kept separate rather than sharing groupOrder, since an ARK group and a
+   *  Minecraft group happening to share a name shouldn't share a display order. */
+  minecraftGroupOrder: string[]
+  /** Same as collapsedGroups, but for the Minecraft Dashboard - there's no Cluster Dashboard/
+   *  Web Dashboard aggregate view for Minecraft yet, so this only affects the Minecraft
+   *  Dashboard's own display. */
+  minecraftCollapsedGroups: string[]
 }
 
 /** Four tiers, highest to lowest: `globalAdmin` (everything, every server, regardless of any

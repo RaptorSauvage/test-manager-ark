@@ -76,7 +76,9 @@ const store = new Store<StoreSchema>({
       statsHistoryMaxAgeHours: 24,
       showServerConsoleWindow: true,
       groupOrder: [],
-      collapsedGroups: []
+      collapsedGroups: [],
+      minecraftGroupOrder: [],
+      minecraftCollapsedGroups: []
     },
     runningPids: {},
     runningStartedAt: {},
@@ -200,6 +202,8 @@ export function getSettings(): AppSettings {
     showServerConsoleWindow: true,
     groupOrder: [],
     collapsedGroups: [],
+    minecraftGroupOrder: [],
+    minecraftCollapsedGroups: [],
     ...settings
   }
 }

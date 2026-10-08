@@ -54,7 +54,9 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     statsHistoryMaxAgeHours: 24,
     showServerConsoleWindow: true,
     groupOrder: [],
-    collapsedGroups: []
+    collapsedGroups: [],
+    minecraftGroupOrder: [],
+    minecraftCollapsedGroups: []
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
   const [status, setStatus] = useState('')

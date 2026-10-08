@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { AppSettings } from '@shared/types'
 import type { MinecraftProfile, MinecraftRunState, MinecraftServerType } from '@shared/minecraft'
 import { useMinecraftServerStatuses } from '../lib/useMinecraftServerStatuses'
 import { createDefaultMinecraftProfile } from '../lib/minecraftProfile'
@@ -29,6 +30,7 @@ export default function MinecraftDashboard({
   const statuses = useMinecraftServerStatuses(profiles.map((p) => p.id))
   const visibleProfiles = profiles.filter((p) => !p.hidden)
   const hiddenProfiles = profiles.filter((p) => p.hidden)
+  const ungroupedProfiles = visibleProfiles.filter((p) => !p.group.trim())
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
@@ -36,12 +38,56 @@ export default function MinecraftDashboard({
   const [localIp, setLocalIp] = useState('localhost')
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [dragGroupName, setDragGroupName] = useState<string | null>(null)
 
   useEffect(() => {
     void window.api.webDashboard.getLocalIps().then((ips) => {
       if (ips[0]) setLocalIp(ips[0])
     })
   }, [])
+
+  useEffect(() => {
+    window.api.settings.get().then(setSettings)
+  }, [])
+
+  async function persistSettings(next: AppSettings): Promise<void> {
+    setSettings(next)
+    await window.api.settings.save(next)
+  }
+
+  // Same "explicitly-ordered names first, then any new one alphabetically" pattern as ARK's
+  // own Dashboard.tsx - a brand new group just appears without needing to be added to the
+  // order first. Kept in its own minecraftGroupOrder/minecraftCollapsedGroups settings
+  // rather than sharing ARK's groupOrder/collapsedGroups, since a name collision between an
+  // ARK group and a Minecraft group shouldn't share display order/collapse state.
+  const groupNamesRaw = Array.from(new Set(visibleProfiles.filter((p) => p.group.trim()).map((p) => p.group.trim())))
+  const groupOrder = settings?.minecraftGroupOrder ?? []
+  const groupNames = [
+    ...groupOrder.filter((name) => groupNamesRaw.includes(name)),
+    ...groupNamesRaw.filter((name) => !groupOrder.includes(name)).sort((a, b) => a.localeCompare(b))
+  ]
+  const collapsedGroups = settings?.minecraftCollapsedGroups ?? []
+
+  function setGroupCollapsed(name: string, collapsed: boolean): void {
+    if (!settings) return
+    const next = new Set(settings.minecraftCollapsedGroups)
+    if (collapsed) next.add(name)
+    else next.delete(name)
+    void persistSettings({ ...settings, minecraftCollapsedGroups: Array.from(next) })
+  }
+
+  async function handleGroupDrop(targetName: string): Promise<void> {
+    const sourceName = dragGroupName
+    setDragGroupName(null)
+    if (!settings || !sourceName || sourceName === targetName) return
+    const reordered = groupNames.slice()
+    const fromIndex = reordered.indexOf(sourceName)
+    const toIndex = reordered.indexOf(targetName)
+    if (fromIndex === -1 || toIndex === -1) return
+    reordered.splice(toIndex, 0, reordered.splice(fromIndex, 1)[0])
+    await persistSettings({ ...settings, minecraftGroupOrder: reordered })
+  }
 
   // One read of server.properties per profile, for the server-port shown on its card - not
   // wired up to live-refresh on every change, since the port practically never changes while
@@ -305,7 +351,35 @@ export default function MinecraftDashboard({
             </p>
           )}
 
-          <div className="server-grid">{visibleProfiles.map(renderCard)}</div>
+          <div className="server-grid">{ungroupedProfiles.map(renderCard)}</div>
+
+          {groupNames.map((groupName) => (
+            <details
+              className={`server-group${dragGroupName === groupName ? ' dragging' : ''}`}
+              key={groupName}
+              open={!collapsedGroups.includes(groupName)}
+              onToggle={(e) => setGroupCollapsed(groupName, !(e.currentTarget as HTMLDetailsElement).open)}
+            >
+              <summary onDragOver={(e) => e.preventDefault()} onDrop={() => void handleGroupDrop(groupName)}>
+                <span
+                  className="drag-handle"
+                  draggable
+                  onDragStart={(e) => {
+                    e.stopPropagation()
+                    setDragGroupName(groupName)
+                  }}
+                  onDragEnd={() => setDragGroupName(null)}
+                  title="Drag to reorder groups"
+                >
+                  ⠿
+                </span>
+                {groupName}
+              </summary>
+              <div className="server-grid">
+                {visibleProfiles.filter((p) => p.group.trim() === groupName).map(renderCard)}
+              </div>
+            </details>
+          ))}
 
           {hiddenProfiles.length > 0 && (
             <details className="hidden-servers">

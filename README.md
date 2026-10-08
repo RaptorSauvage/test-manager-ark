@@ -2147,3 +2147,13 @@ async function findProfileIdByName(name) {
     state between tests - its 10s default stagger would otherwise leak from one `it()` into
     the next real-timer test in the same file and silently defer a spawn they expected
     synchronously.
+
+- **Minecraft Dashboard groups**, matching ARK's own Dashboard group system - `MinecraftProfile.group`
+  (set via the Start Settings tab's "Dashboard group" field) already existed but the Minecraft
+  Dashboard never actually grouped anything by it. Same markup/behavior as ARK: collapsible
+  `<details className="server-group">` sections, a drag handle on each group's summary to
+  reorder groups, and collapse state that persists across restarts. Kept in two new,
+  Minecraft-only settings (`minecraftGroupOrder`/`minecraftCollapsedGroups`) rather than
+  sharing ARK's `groupOrder`/`collapsedGroups`, since an ARK group and a Minecraft group
+  happening to share a name shouldn't share display order or collapse state. No new CSS -
+  `.server-group`/`.drag-handle`/`.hidden-servers` were already generic, not ARK-specific.
