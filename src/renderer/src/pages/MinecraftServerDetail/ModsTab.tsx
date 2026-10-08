@@ -241,7 +241,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
           <table className="mc-mods-table">
             <thead>
               <tr>
-                <th>Name</th>
+                <th className="mc-mods-col-name">Name</th>
                 <th>Description</th>
                 <th className="mc-mods-col-narrow">Source</th>
                 <th className="mc-mods-col-narrow">Downloads</th>
@@ -316,7 +316,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
         <table className="mc-mods-table">
           <thead>
             <tr>
-              <th>Name</th>
+              <th className="mc-mods-col-name">Name</th>
               <th className="mc-mods-col-narrow">Source</th>
               <th className="mc-mods-col-narrow">Version</th>
               <th className="mc-mods-col-narrow">Status</th>

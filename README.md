@@ -2394,3 +2394,18 @@ async function findProfileIdByName(name) {
     "Check for updates" click), not that the whole feature errors out.
   - New tests in `tests/minecraftMods.test.ts` (one mod's request failing doesn't take out the
     other mod's result).
+
+- **Fix (the real cause this time, confirmed from a live screenshot of 357 installed mods):
+  the Installed table's Name column had no width constraint at all, so on a wide window it
+  absorbed every pixel of leftover space - Source/Version/Status/the action buttons ended up
+  pushed almost entirely off to the right, with a huge empty gap inside the Name column before
+  them.** The previous two rounds (narrow-column widths, then flex-wrap: nowrap) were each
+  real bugs and genuinely needed fixing, but neither was *this* - the data was always correctly
+  aligned under its own headers, the headers themselves just ended up bunched together far to
+  the right because Name, the one column with no explicit width, grew to fill 100% of whatever
+  space the other (intentionally narrow) columns didn't need. Fixed with two changes in
+  `styles.css`: `.mc-mods-table` now has `max-width: 1040px` (the section around it stays
+  full-width, matching the rest of this app - just the table itself stops growing past a
+  reasonable size), and a new `.mc-mods-col-name` (`width: 38%`) on the Name header in both
+  tables gives the browser an explicit hint instead of leaving it to soak up 100% of whatever's
+  left.

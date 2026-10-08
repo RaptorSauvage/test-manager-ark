@@ -1900,8 +1900,16 @@ label.checkbox {
   color: #fff;
 }
 
+/* max-width keeps this from stretching edge-to-edge on a wide window - the Name column is the
+   only one without an explicit width (see mc-mods-col-narrow below), so on an unconstrained
+   100%-wide table it absorbed every pixel of leftover space, leaving a visually huge empty gap
+   inside the Name cell before Source/Version/Status/the action buttons - a 357-mod screenshot
+   on an ultrawide window showed the data columns pushed almost entirely off to the right.
+   Capping the table's own width (not the whole section, which stays full-width) bounds how
+   much "leftover space" there is to begin with. */
 .mc-mods-table {
   width: 100%;
+  max-width: 1040px;
   border-collapse: collapse;
 }
 
@@ -1911,6 +1919,13 @@ label.checkbox {
   padding: 8px;
   border-bottom: 1px solid var(--border);
   font-size: 0.85rem;
+}
+
+/* An explicit hint for the Name column too (the one column still left to auto-size) - without
+   it, Name still ends up disproportionately wide relative to Source/Version/Status within even
+   the capped table width above, since it's still the only "flexible" column. */
+.mc-mods-col-name {
+  width: 38%;
 }
 
 .mc-mod-name-cell {
