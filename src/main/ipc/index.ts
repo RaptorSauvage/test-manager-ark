@@ -5,6 +5,7 @@ import { registerModsHandlers } from './mods'
 import { registerBackupHandlers } from './backup'
 import { registerPlayerBackupHandlers } from './playerBackup'
 import { registerDialogHandlers } from './dialog'
+import { registerArkModsHandlers } from './arkMods'
 import { registerSettingsHandlers } from './settings'
 import { registerWebDashboardAccessTokensHandlers } from './webDashboardAccessTokens'
 import { registerWebDashboardApiKeysHandlers } from './webDashboardApiKeys'
@@ -27,6 +28,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers(mainWindow.webContents)
   registerServerProcessHandlers(mainWindow.webContents)
   registerModsHandlers()
+  registerArkModsHandlers()
   registerBackupHandlers(mainWindow.webContents)
   registerPlayerBackupHandlers()
   registerDialogHandlers(mainWindow)

@@ -15,6 +15,18 @@ const API_BASE = 'https://api.curseforge.com/v1'
  *  request. */
 const MINECRAFT_GAME_ID = 432
 
+/** CurseForge's own numeric id for ARK: Survival Ascended - unlike MINECRAFT_GAME_ID above,
+ *  there's no official CurseForge doc page listing this (their public docs only ever show
+ *  Minecraft's 432 as a worked example), so this is community-sourced: corroborated by two
+ *  independent reports of a running ARK:SA server's own mod tooling using "gameId": 83374, and
+ *  by player reports that CurseForge-downloaded ARK:SA mods land in a folder literally named
+ *  83374 inside the game's own Mods directory (CurseForge's own convention is <gameId>/<modId>
+ *  on disk). No classId is passed for ARK:SA searches below - unlike Minecraft (which spans
+ *  several CurseForge "classes": Mods, Bukkit Plugins, ...), ARK:SA's own CurseForge listing
+ *  has exactly one content type ("Mods"), so there's nothing to disambiguate and guessing a
+ *  wrong numeric classId risked silently returning zero results instead of everything. */
+const ARK_ASCENDED_GAME_ID = 83374
+
 /** CurseForge's own numeric "class" ids for the two kinds of thing this app installs - there's
  *  no single "mod" type covering both the way Modrinth's v2 API flattens it; Forge/Fabric
  *  content is class 6 ("Mods"), Paper/Spigot content is class 4471 ("Bukkit Plugins"). */
@@ -146,6 +158,22 @@ export async function searchCurseForgeMods(
   if (minecraftVersion.trim()) params.gameVersion = minecraftVersion.trim()
   const loaderType = modLoaderTypeFor(serverType)
   if (loaderType !== undefined) params.modLoaderType = String(loaderType)
+  const response = await curseforgeFetch<CurseForgeSearchResponse>(apiKey, '/mods/search', params)
+  return response.data
+}
+
+/** ARK: Survival Ascended counterpart to searchCurseForgeMods - no server type/loader or game
+ *  version to filter by (ARK:SA's own mods aren't published per-Minecraft-loader or pinned to
+ *  a specific game version the way Minecraft mods are), so this is just gameId + a search
+ *  term. See ARK_ASCENDED_GAME_ID's own doc comment for where that id comes from. */
+export async function searchCurseForgeArkMods(apiKey: string, query: string, limit = 20): Promise<CurseForgeMod[]> {
+  const params: Record<string, string> = {
+    gameId: String(ARK_ASCENDED_GAME_ID),
+    searchFilter: query,
+    pageSize: String(limit),
+    sortField: '2', // Popularity
+    sortOrder: 'desc'
+  }
   const response = await curseforgeFetch<CurseForgeSearchResponse>(apiKey, '/mods/search', params)
   return response.data
 }

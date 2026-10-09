@@ -2709,3 +2709,51 @@ async function findProfileIdByName(name) {
     never checked) still works the same way to avoid re-querying every scan.
   - Updated `tests/minecraftModScan.test.ts`/`tests/minecraftModsCurseForge.test.ts` for the new
     CurseForge-primary expectations in all three spots.
+
+- **Addition: ARK: Survival Ascended's own Mods tab is now "visual" too (user request, now that
+  the CurseForge integration built for the Minecraft tab is confirmed working) - a real icon/
+  name resolved from CurseForge next to a mod id, and a "Search CurseForge" section to find and
+  add a mod by name instead of hunting for a bare numeric id on CurseForge's website yourself.**
+  ARK: Survival Evolved is deliberately untouched - its own mod ids are Steam Workshop ids, a
+  completely different namespace CurseForge knows nothing about; every addition below is gated
+  on `!isEvolved`.
+  - New `src/main/lib/arkMods.ts`: `searchArkMods(query)` (new `searchCurseForgeArkMods` in
+    `curseforgeClient.ts`, ARK:SA's own CurseForge counterpart to `searchCurseForgeMods`) and
+    `getArkModsInfo(modIds)` (batched, via the already game-agnostic `getCurseForgeMods` - no
+    new client code needed for this half) for enriching every mod id already in a profile's
+    list, not just ones added via search. Both return empty (not an error) with no CurseForge
+    key configured; `getArkModsInfo` also silently drops any non-numeric id (e.g. an
+    Evolved-style Steam Workshop id, or just garbage) before ever calling CurseForge with it.
+  - **ARK: Survival Ascended's own CurseForge game id (83374) isn't in CurseForge's official
+    docs** (their public docs only show Minecraft's 432 as a worked example) - this is
+    community-sourced, corroborated by two independent reports of a running ARK:SA server's own
+    mod tooling using `"gameId": 83374`, and by player reports that CurseForge-downloaded ARK:SA
+    mods land in a folder literally named `83374` inside the game's own Mods directory
+    (CurseForge's own on-disk convention is `<gameId>/<modId>`). No `classId` is sent for ARK:SA
+    searches - unlike Minecraft (several CurseForge "classes": Mods, Bukkit Plugins, ...),
+    ARK:SA's own CurseForge listing has exactly one content type ("Mods"), so there was nothing
+    to disambiguate and guessing a wrong numeric classId risked silently returning zero results
+    instead of everything.
+  - New IPC: `ark-mods:search`/`ark-mods:info` (`src/main/ipc/arkMods.ts`,
+    `window.api.arkMods.search`/`.info`), new shared types `ArkModSearchResult`/
+    `ArkModInfo`/`ArkModInfoMap` in `shared/types.ts` - deliberately a much thinner shape than
+    `MinecraftModSearchResult`: nothing here picks a version/loader-compatible file, since ARK
+    mods aren't actually downloaded/installed through this app at all (the server fetches its
+    own mods by id at startup) - it's purely "what is this id called and what does it look
+    like," enough to prefill `ServerMod.id`/`.name` from a real search hit.
+  - `ServerDetail/ModsTab.tsx`: a new "Search CurseForge" section (hidden entirely for ARK:SE,
+    and showing a "set a key in Settings" hint instead of results when no key is configured)
+    lists hits with icon/name/summary/downloads and an Add button (disabled, labeled "Added",
+    once that id is already in the list) - Add prefills both id and name, unlike the existing
+    manual "Mod ID" input which only ever took a bare id. The existing mod table's own Mod ID
+    column now also shows a resolved icon/name next to every row it can identify (looked up for
+    every id already in the list, keyed on a sorted/joined id string so toggling Enabled/
+    Passive/Dev, renaming, or reordering doesn't re-trigger a lookup for a set of ids that
+    hasn't actually changed) - this doesn't touch the existing free-text Mod Name field at all,
+    it's a separate, purely informational hint.
+  - New `tests/arkMods.test.ts` and new tests in `tests/curseforgeClient.test.ts` for the new
+    search/info functions (mapping, empty-list/no-request behavior with no API key, non-numeric
+    id filtering, dedup). No renderer component test suite exists in this project to extend for
+    the `ModsTab.tsx` changes themselves (same as every other UI-only change here) - `npm run
+    typecheck`/`build` both pass, but this wasn't visually verified running the actual app (no
+    display in this environment to drive Electron's UI with).

@@ -1784,6 +1784,76 @@ label.checkbox {
   gap: 4px;
 }
 
+/* ARK: Survival Ascended's own CurseForge enrichment (ModsTab.tsx's arkInfo) - a real icon/
+   name resolved from CurseForge next to a mod id, same role as the Minecraft Mods tab's own
+   mc-mod-icon/mc-mod-title but named separately since ARK mods aren't downloaded/installed
+   through this app the way Minecraft ones are (see arkMods.ts), just referenced by id. */
+.ark-mod-id-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ark-mod-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.ark-mod-resolved-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.ark-mods-search {
+  margin-bottom: 20px;
+}
+
+.ark-mod-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.ark-mod-search-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.ark-mod-search-result-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.ark-mod-search-result-name {
+  font-weight: 600;
+}
+
+.ark-mod-search-result-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.ark-mod-search-result-downloads {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
 .backup-settings-row {
   display: flex;
   gap: 16px;

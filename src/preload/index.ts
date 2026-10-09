@@ -63,6 +63,10 @@ const api: Api = {
     parseText: (text: string) => ipcRenderer.invoke(IPC.modsParseText, text),
     reconcileFromIni: (profileId: string) => ipcRenderer.invoke(IPC.modsReconcileFromIni, profileId)
   },
+  arkMods: {
+    search: (query: string) => ipcRenderer.invoke(IPC.arkModsSearch, query),
+    info: (modIds: string[]) => ipcRenderer.invoke(IPC.arkModsInfo, modIds)
+  },
   backup: {
     create: (profileId: string) => ipcRenderer.invoke(IPC.backupCreate, profileId),
     list: (profileId: string) => ipcRenderer.invoke(IPC.backupList, profileId),

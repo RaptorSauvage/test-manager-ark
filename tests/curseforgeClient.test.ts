@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
   searchCurseForgeMods,
+  searchCurseForgeArkMods,
   getCurseForgeModFiles,
   getCurseForgeFingerprintMatches,
   type CurseForgeFile
@@ -68,6 +69,30 @@ describe('searchCurseForgeMods', () => {
   it('throws a clear message on a 401/403 (bad key)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeResponse({}, false, 401)))
     await expect(searchCurseForgeMods('bad-key', 'jei', 'forge', '1.20.1')).rejects.toThrow(/API key/)
+  })
+})
+
+describe('searchCurseForgeArkMods', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('uses ARK: Survival Ascended\'s own game id, with no classId or modLoaderType', async () => {
+    const fetchMock = vi.fn(async () => fakeResponse({ data: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await searchCurseForgeArkMods('key', 'structures plus')
+
+    const url = fetchMock.mock.calls[0][0] as URL
+    expect(url.searchParams.get('gameId')).toBe('83374')
+    expect(url.searchParams.has('classId')).toBe(false)
+    expect(url.searchParams.has('modLoaderType')).toBe(false)
+    expect(url.searchParams.get('searchFilter')).toBe('structures plus')
+  })
+
+  it('throws a clear message on a 401/403 (bad key)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => fakeResponse({}, false, 401)))
+    await expect(searchCurseForgeArkMods('bad-key', 's+')).rejects.toThrow(/API key/)
   })
 })
 

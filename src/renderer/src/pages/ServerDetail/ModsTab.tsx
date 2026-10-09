@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import type { ServerProfile, ServerMod } from '@shared/types'
+import { useEffect, useState, type FormEvent } from 'react'
+import type { ServerProfile, ServerMod, ArkModInfoMap, ArkModSearchResult } from '@shared/types'
 
 interface ModsTabProps {
   profile: ServerProfile
@@ -12,9 +12,19 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   const [newModId, setNewModId] = useState('')
   const [error, setError] = useState('')
   const [pasteText, setPasteText] = useState('')
+  const [hasCurseForgeKey, setHasCurseForgeKey] = useState(false)
+  const [arkInfo, setArkInfo] = useState<ArkModInfoMap>({})
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<ArkModSearchResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searched, setSearched] = useState(false)
+  const [searchError, setSearchError] = useState('')
   // ARK: Survival Evolved has neither passive mods nor a -dev suffix - its mods are instead
   // written straight to GameUserSettings.ini/Game.ini (see gameConfigWrite.ts), where every
-  // enabled mod counts the same way, full stop.
+  // enabled mod counts the same way, full stop. Its own mod ids are Steam Workshop ids too - a
+  // completely different namespace from CurseForge's, so the "visual" additions below (search,
+  // icon/name enrichment) only make sense for ARK: Survival Ascended and are gated on
+  // !isEvolved throughout.
   const isEvolved = profile.game === 'ark-evolved'
 
   // Picks up any mod already sitting in GameUserSettings.ini's ActiveMods= that the Manager
@@ -45,6 +55,36 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.id, isEvolved])
 
+  useEffect(() => {
+    window.api.settings.get().then((settings) => setHasCurseForgeKey(settings.curseforgeApiKey.trim().length > 0))
+  }, [])
+
+  // Looks up a real name/icon for every mod id already in the list (typed by hand, or added
+  // before this feature existed), not just ones added via the search below - keyed on a
+  // sorted/joined id string rather than `mods` itself, so toggling enabled/passive/dev,
+  // renaming, or reordering doesn't re-trigger a lookup for a set of ids that hasn't actually
+  // changed.
+  const modIdsKey = [...mods.map((m) => m.id)].sort().join(',')
+  useEffect(() => {
+    if (isEvolved || !hasCurseForgeKey || mods.length === 0) {
+      setArkInfo({})
+      return
+    }
+    let cancelled = false
+    window.api.arkMods
+      .info(mods.map((m) => m.id))
+      .then((info) => {
+        if (!cancelled) setArkInfo(info)
+      })
+      .catch(() => {
+        // Best-effort - a failed background enrichment lookup shouldn't block the rest of the tab.
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modIdsKey, isEvolved, hasCurseForgeKey])
+
   async function persist(next: ServerMod[]): Promise<void> {
     setError('')
     try {
@@ -65,6 +105,29 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
     if (!id || mods.some((m) => m.id === id)) return
     applyMods([...mods, { id, enabled: true, passive: false, dev: false }])
     setNewModId('')
+  }
+
+  async function handleArkSearch(e: FormEvent): Promise<void> {
+    e.preventDefault()
+    setSearching(true)
+    setSearched(true)
+    setSearchError('')
+    try {
+      const hits = await window.api.arkMods.search(searchQuery)
+      setSearchResults(hits)
+    } catch (err) {
+      setSearchError((err as Error).message)
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  // Prefills the real CurseForge name as this new entry's label - unlike addMod's manual path,
+  // search already knows it, so there's no reason to make the user retype it. Doesn't touch an
+  // already-present mod's own name (addMod/renameMod never did either).
+  function addModFromSearch(result: ArkModSearchResult): void {
+    if (mods.some((m) => m.id === result.id)) return
+    applyMods([...mods, { id: result.id, name: result.name, enabled: true, passive: false, dev: false }])
   }
 
   function removeMod(id: string): void {
@@ -144,11 +207,75 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
             <code>-mods=</code> launch flag at the next start, unless <strong>Passive</strong> is checked, in
             which case they go via <code>-passivemods=</code> instead. Check <strong>Dev</strong> to load a
             mod&apos;s in-development build (appends <code>-dev</code> to its ID). Mod Name is just your own
-            label, typed in by hand - not looked up automatically. Changes save immediately - restart the server
-            to actually apply them.
+            label, typed in by hand - not looked up automatically, though with a CurseForge API key configured
+            each row also shows the mod&apos;s real icon/name resolved from CurseForge alongside it. Changes save
+            immediately - restart the server to actually apply them.
           </>
         )}
       </p>
+
+      {!isEvolved && (
+        <section className="cluster-section ark-mods-search">
+          <h3>Search CurseForge</h3>
+          {hasCurseForgeKey ? (
+            <>
+              <p className="empty-state">
+                Find a mod by name and add it below - its id and name are filled in for you, instead of hunting
+                for a numeric id on CurseForge yourself.
+              </p>
+              <form className="path-input-row" onSubmit={(e) => void handleArkSearch(e)}>
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search ARK: Survival Ascended mods..."
+                />
+                <button type="submit" disabled={searching || !searchQuery.trim()}>
+                  {searching ? 'Searching...' : 'Search'}
+                </button>
+              </form>
+              {searchError && <p className="error-message">{searchError}</p>}
+              <div className="ark-mod-search-results">
+                {searchResults.map((r) => {
+                  const added = mods.some((m) => m.id === r.id)
+                  return (
+                    <div key={r.id} className="ark-mod-search-result">
+                      {r.iconUrl && (
+                        <img
+                          src={r.iconUrl}
+                          alt=""
+                          className="ark-mod-icon"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none'
+                          }}
+                        />
+                      )}
+                      <div className="ark-mod-search-result-info">
+                        <span className="ark-mod-search-result-name">{r.name}</span>
+                        <span className="muted ark-mod-search-result-summary" title={r.summary}>
+                          {r.summary}
+                        </span>
+                      </div>
+                      <span className="muted ark-mod-search-result-downloads">{r.downloads.toLocaleString()} downloads</span>
+                      <button type="button" disabled={added} onClick={() => addModFromSearch(r)}>
+                        {added ? 'Added' : 'Add'}
+                      </button>
+                    </div>
+                  )
+                })}
+                {searchResults.length === 0 && (
+                  <p className="empty-state">{searched ? 'No results.' : 'Search above to find mods to add.'}</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="empty-state">
+              Set a CurseForge API key in Settings (General) to search for mods by name here instead of typing a
+              numeric id by hand - see the README for where to get one.
+            </p>
+          )}
+        </section>
+      )}
+
       <div className="mods-add">
         <input
           value={newModId}
@@ -236,8 +363,27 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
                 />
               </td>
               <td className="mod-id">
-                {mod.id}
-                {mod.dev ? '-dev' : ''}
+                <div className="ark-mod-id-cell">
+                  {arkInfo[mod.id]?.iconUrl && (
+                    <img
+                      src={arkInfo[mod.id].iconUrl}
+                      alt=""
+                      className="ark-mod-icon"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  )}
+                  <span>
+                    {mod.id}
+                    {mod.dev ? '-dev' : ''}
+                  </span>
+                  {arkInfo[mod.id]?.name && (
+                    <span className="muted ark-mod-resolved-name" title="Resolved from CurseForge">
+                      {arkInfo[mod.id].name}
+                    </span>
+                  )}
+                </div>
               </td>
               <td className="mods-list-actions">
                 <button onClick={() => moveToTop(i)} disabled={i === 0} title="Move to top of list">

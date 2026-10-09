@@ -191,6 +191,36 @@ export interface ServerMod {
   dev: boolean
 }
 
+/** One CurseForge search hit for ARK: Survival Ascended's own Mods tab - Ascended's mods are
+ *  CurseForge project ids referenced directly (no file download through this app the way
+ *  Minecraft mods get, see arkMods.ts's own doc comment), so this is deliberately a much
+ *  thinner shape than MinecraftModSearchResult: nothing here is used to pick a version/loader-
+ *  compatible file, it's purely "what is this id called and what does it look like" so Add can
+ *  prefill ServerMod.id/name from a real search hit instead of the user typing a bare numeric
+ *  id in by hand. ARK: Survival Evolved isn't covered at all - its own mod ids are Steam
+ *  Workshop ids, a completely different namespace CurseForge knows nothing about. */
+export interface ArkModSearchResult {
+  id: string
+  name: string
+  summary: string
+  iconUrl?: string
+  downloads: number
+}
+
+/** Just enough to show next to a mod id already in the table - looked up by id for every
+ *  ServerMod in an ARK: Survival Ascended profile's list, same "enrich what's already there"
+ *  idea as ArkModSearchResult but for ids that didn't come from a search (typed by hand, or
+ *  added before this feature existed). Keyed by ServerMod.id in ArkModInfoMap below. */
+export interface ArkModInfo {
+  name: string
+  iconUrl?: string
+}
+
+/** CurseForge mod ids this app doesn't recognize (not every id is necessarily a real,
+ *  still-published CurseForge project) are simply absent from the map - callers fall back to
+ *  the bare id, same as before this feature existed. */
+export type ArkModInfoMap = Record<string, ArkModInfo>
+
 export type ServerRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'restarting' | 'updating' | 'error'
 
 export interface AppSettings {
@@ -464,6 +494,8 @@ export const IPC = {
   modsSave: 'mods:save',
   modsParseText: 'mods:parse-text',
   modsReconcileFromIni: 'mods:reconcile-from-ini',
+  arkModsSearch: 'ark-mods:search',
+  arkModsInfo: 'ark-mods:info',
 
   backupCreate: 'backup:create',
   backupList: 'backup:list',
@@ -723,6 +755,17 @@ export interface Api {
      *  absent from ActiveMods=, is never touched). A no-op, returning the profile unchanged,
      *  for ARK: Survival Ascended or when there's nothing new to add. */
     reconcileFromIni: (profileId: string) => Promise<ServerProfile>
+  }
+  arkMods: {
+    /** Searches CurseForge for ARK: Survival Ascended mods by name - empty results (not an
+     *  error) when no CurseForge API key is configured, same "best effort" shape as the
+     *  Minecraft Mods tab's own search. ARK: Survival Evolved isn't supported - don't call
+     *  this for an Evolved profile. */
+    search: (query: string) => Promise<ArkModSearchResult[]>
+    /** Batch look-up, keyed by id, for every id actually present on CurseForge - used to show
+     *  a real name/icon next to mod ids already in a profile's list (typed by hand, or added
+     *  before this feature existed), not just ones added via search above. */
+    info: (modIds: string[]) => Promise<ArkModInfoMap>
   }
   backup: {
     create: (profileId: string) => Promise<BackupEntry>
