@@ -2687,3 +2687,25 @@ async function findProfileIdByName(name) {
     than `getStatus()` afterward, since the running-process bookkeeping (and the `lastError` it
     carried) is already cleared by the time a caller could poll for it - same for every other
     exit path, not something this fix changed.
+
+- **Change: CurseForge is now preferred over Modrinth whenever a mod is found on both and a
+  CurseForge API key is configured** (explicit user request - previously Modrinth was always
+  kept as the "primary" source when the two overlapped, reasoning that it needs no API key;
+  that default no longer applies once the user has actually set one up). Three places this
+  shows up, all gated on a key being configured (nothing changes with no key set, same as
+  before):
+  - `mergeDuplicateSearchResults` (Browse search results): the merged row now keeps the
+    CurseForge hit as primary/installable, with Modrinth attached via `alsoAvailableOn` instead
+    of the other way around.
+  - `scanForInstalledMods`'s own fingerprint-matching loop: a file matched by both sources
+    during a scan is now adopted as `source: 'curseforge'` with `alsoOn: ['modrinth']`, not the
+    reverse.
+  - The retroactive backfill (previously `crossCheckSettledModrinthModsAgainstCurseForge`, now
+    `preferCurseForgeForSettledModrinthMods`) no longer just tags `alsoOn` on an already-settled
+    Modrinth entry - it fully promotes it to `source: 'curseforge'` (fetching the real CurseForge
+    metadata via `getCurseForgeMods`, same as a fresh scan would) so a mod installed via Modrinth
+    before a CurseForge key existed gets the same treatment on its next Rescan as a brand new
+    match would. The "already checked, no match" `alsoOn: []` sentinel (vs. `undefined` meaning
+    never checked) still works the same way to avoid re-querying every scan.
+  - Updated `tests/minecraftModScan.test.ts`/`tests/minecraftModsCurseForge.test.ts` for the new
+    CurseForge-primary expectations in all three spots.

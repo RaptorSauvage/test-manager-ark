@@ -369,7 +369,7 @@ describe('scanForInstalledMods', () => {
     expect(sentFingerprints.sort()).toEqual([rootFingerprint, cfFingerprint].sort())
   })
 
-  it('marks a file matched by both sources as cross-listed (alsoOn), keeping Modrinth as the primary source', async () => {
+  it('marks a file matched by both sources as cross-listed (alsoOn), preferring CurseForge as the primary source since a key is configured', async () => {
     const profile = makeProfile({}, tmpDir)
     fs.mkdirSync(modTargetDir(profile), { recursive: true })
     fs.writeFileSync(path.join(modTargetDir(profile), 'dual.jar'), 'dual content')
@@ -395,7 +395,7 @@ describe('scanForInstalledMods', () => {
     const { result } = await scanForInstalledMods(profile)
 
     expect(result.adopted).toHaveLength(1)
-    expect(result.adopted[0]).toMatchObject({ source: 'modrinth', title: 'Root Mod', alsoOn: ['curseforge'] })
+    expect(result.adopted[0]).toMatchObject({ source: 'curseforge', title: 'CF Mod', alsoOn: ['modrinth'] })
   })
 
   it('falls back to "unknown" when CurseForge finds no fingerprint match either', async () => {
@@ -479,11 +479,12 @@ describe('scanForInstalledMods', () => {
     expect(updated.installedMods[0].source).toBe('curseforge')
   })
 
-  it('retroactively cross-checks an already-settled Modrinth entry against CurseForge, backfilling alsoOn', async () => {
-    // Regression test: a mod matched by Modrinth back before the cross-listing feature existed
-    // (or before a CurseForge key was configured) is "settled" and excluded from `untracked` -
-    // only crossCheckSettledModrinthModsAgainstCurseForge's separate pass can ever give it
-    // `alsoOn`, since it's never examined as part of the main untracked-files loop again.
+  it('retroactively promotes an already-settled Modrinth entry to CurseForge when it matches, since a key is configured', async () => {
+    // Regression test: a mod matched by Modrinth back before CurseForge priority/the cross-
+    // listing feature existed (or before a CurseForge key was configured) is "settled" and
+    // excluded from `untracked` - only preferCurseForgeForSettledModrinthMods's separate pass
+    // can ever promote it, since it's never examined as part of the main untracked-files loop
+    // again.
     const existingModrinth: InstalledMinecraftMod = {
       source: 'modrinth',
       projectId: 'project-root',
@@ -507,12 +508,21 @@ describe('scanForInstalledMods', () => {
         file: { id: 55, modId: 200, fileName: 'root.jar', displayName: '2.0.0', fileFingerprint: fingerprint }
       }
     ])
+    mockGetCurseForgeMods.mockResolvedValue([
+      { id: 200, slug: 'cf-mod', name: 'CF Mod', summary: '', downloadCount: 10, logo: null, allowModDistribution: true }
+    ])
 
     const { profile: updated, result } = await scanForInstalledMods(profile)
 
     expect(result.adopted).toHaveLength(0)
     expect(updated.installedMods).toHaveLength(1)
-    expect(updated.installedMods[0]).toMatchObject({ source: 'modrinth', fileName: 'root.jar', alsoOn: ['curseforge'] })
+    expect(updated.installedMods[0]).toMatchObject({
+      source: 'curseforge',
+      projectId: '200',
+      title: 'CF Mod',
+      fileName: 'root.jar',
+      alsoOn: ['modrinth']
+    })
     expect(mockSaveMinecraftProfile).toHaveBeenCalledTimes(1)
   })
 

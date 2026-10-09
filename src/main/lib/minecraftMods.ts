@@ -116,9 +116,11 @@ export async function searchMinecraftMods(profile: MinecraftProfile, query: stri
  * hash/fingerprint available at search time to confirm two hits are really the same mod, so
  * this trades a small false-positive risk (a coincidentally same-titled but actually different
  * mod from each source) for not showing an obvious true-positive duplicate twice - see
- * MinecraftModSearchResult.alsoAvailableOn's own doc comment. Modrinth is kept as the primary/
- * kept row when both are present (same "no API key needed" preference used everywhere else in
- * this app that picks between the two sources), with the other source(s) attached informationally.
+ * MinecraftModSearchResult.alsoAvailableOn's own doc comment. CurseForge is kept as the
+ * primary/kept row when both are present - a group only ever contains a curseforge hit at all
+ * when a CurseForge API key is configured (searchMinecraftMods skips the CurseForge search
+ * entirely otherwise), and once that key exists CurseForge is the user's explicitly preferred
+ * source over Modrinth - with the other source(s) attached informationally.
  */
 function mergeDuplicateSearchResults(results: MinecraftModSearchResult[]): MinecraftModSearchResult[] {
   const groups = new Map<string, MinecraftModSearchResult[]>()
@@ -131,7 +133,7 @@ function mergeDuplicateSearchResults(results: MinecraftModSearchResult[]): Minec
 
   return [...groups.values()].map((group) => {
     if (group.length === 1) return group[0]
-    const primary = group.find((r) => r.source === 'modrinth') ?? group[0]
+    const primary = group.find((r) => r.source === 'curseforge') ?? group[0]
     const others = group.filter((r) => r !== primary)
     return {
       ...primary,
@@ -745,19 +747,22 @@ function titleFromFileName(fileName: string): string {
   return fileName.replace(/\.jar$/i, '')
 }
 
-/** Catches up installedMods entries that were already settled as source: 'modrinth' before the
- *  cross-listing feature existed, or before a CurseForge key was ever configured - without this,
- *  only a file freshly adopted *during* a scan (i.e. still in `untracked`) ever gets checked
- *  against CurseForge for cross-listing (see scanForInstalledMods' own `alsoOn` handling below),
- *  so an old entry could never show "Modrinth, CurseForge" no matter how many times Rescan
+/** Catches up installedMods entries that were already settled as source: 'modrinth' before
+ *  CurseForge priority/the cross-listing feature existed, or before a CurseForge key was ever
+ *  configured - without this, only a file freshly adopted *during* a scan (i.e. still in
+ *  `untracked`) ever gets checked against CurseForge (see scanForInstalledMods' own handling
+ *  below), so an old entry would stay Modrinth-primary forever no matter how many times Rescan
  *  folder is clicked - it's permanently excluded from `untracked` by `settledFileNames` the
- *  moment it's first matched. `alsoOn: []` (as opposed to leaving it `undefined`) marks an entry
- *  as "already checked, no cross-listing found" so it isn't re-queried on every single future
- *  scan forever - only entries that have truly never been checked (`alsoOn === undefined`) are
- *  considered here. Deliberately one-directional (Modrinth-primary entries checked against
- *  CurseForge, not the reverse) since that's the concrete case reported; a CurseForge-primary
- *  entry missing its Modrinth cross-listing can be added the same way later if it comes up. */
-async function crossCheckSettledModrinthModsAgainstCurseForge(
+ *  moment it's first matched. A match here promotes the entry to source: 'curseforge' (with
+ *  `alsoOn: ['modrinth']`), same as a fresh scan would do for the same file - a CurseForge key
+ *  being configured at all means CurseForge is the user's explicitly preferred source. No match
+ *  sets `alsoOn: []` (as opposed to leaving it `undefined`) to mark the entry as "already
+ *  checked" so it isn't re-queried on every single future scan forever - only entries that have
+ *  truly never been checked (`alsoOn === undefined`) are considered here. Deliberately one-
+ *  directional (Modrinth-primary entries checked against CurseForge, not the reverse) since
+ *  CurseForge is always the preferred source once a key exists - there's no equivalent
+ *  "promote away from CurseForge" case to handle. */
+async function preferCurseForgeForSettledModrinthMods(
   profile: MinecraftProfile,
   targetDir: string,
   apiKey: string
@@ -774,12 +779,33 @@ async function crossCheckSettledModrinthModsAgainstCurseForge(
   }
   if (fileByFingerprint.size === 0) return profile
 
-  const matchedProjectIds = new Set<string>()
+  const promotedByProjectId = new Map<string, InstalledMinecraftMod>()
   try {
     const matches = await getCurseForgeFingerprintMatches(apiKey, [...fileByFingerprint.keys()])
-    for (const match of matches) {
-      const mod = fileByFingerprint.get(match.file.fileFingerprint)
-      if (mod) matchedProjectIds.add(mod.projectId)
+    if (matches.length > 0) {
+      const modIds = [...new Set(matches.map((match) => match.file.modId))]
+      const mods = await getCurseForgeMods(apiKey, modIds)
+      const modById = new Map(mods.map((mod) => [mod.id, mod]))
+
+      for (const match of matches) {
+        const existing = fileByFingerprint.get(match.file.fileFingerprint)
+        const mod = modById.get(match.file.modId)
+        if (!existing || !mod) continue
+        promotedByProjectId.set(existing.projectId, {
+          source: 'curseforge',
+          projectId: String(match.file.modId),
+          slug: mod.slug,
+          title: mod.name,
+          iconUrl: mod.logo?.thumbnailUrl ?? undefined,
+          versionId: String(match.file.id),
+          versionNumber: match.file.displayName,
+          fileName: existing.fileName,
+          enabled: existing.enabled,
+          installedAs: existing.installedAs,
+          installedAt: existing.installedAt,
+          alsoOn: ['modrinth']
+        })
+      }
     }
   } catch (err) {
     // Best-effort, same reasoning as the scan's own fingerprint check below - leave alsoOn
@@ -798,7 +824,7 @@ async function crossCheckSettledModrinthModsAgainstCurseForge(
     ...profile,
     installedMods: profile.installedMods.map((m) => {
       if (m.source !== 'modrinth' || m.alsoOn !== undefined) return m
-      return matchedProjectIds.has(m.projectId) ? { ...m, alsoOn: ['curseforge'] } : { ...m, alsoOn: [] }
+      return promotedByProjectId.get(m.projectId) ?? { ...m, alsoOn: [] }
     })
   }
 }
@@ -811,19 +837,22 @@ async function crossCheckSettledModrinthModsAgainstCurseForge(
  * "fingerprint" (murmur2 of the whitespace-stripped bytes - see curseforgeFingerprint.ts) -
  * both batched, one request per source regardless of how many files are untracked. Checked
  * against *every* untracked file's fingerprint, not just the ones Modrinth missed: some mod
- * authors upload an identical build to both sites, and a file matched by both ends up with
- * `alsoOn: ['curseforge']` on its (still Modrinth-sourced) entry rather than silently only
- * reporting one source. Every untracked file ends up in installedMods either way: a match from
- * either source becomes a full source: 'modrinth'/'curseforge' entry, and anything neither
- * source recognizes (hand-built, or genuinely not published to either) still becomes a source:
+ * authors upload an identical build to both sites, and a file matched by both ends up as a
+ * CurseForge-sourced entry with `alsoOn: ['modrinth']` rather than silently only reporting one
+ * source - CurseForge is preferred as the primary source over Modrinth whenever a key is
+ * configured at all (it wouldn't have been checked otherwise), per the user's explicit
+ * preference. Every untracked file ends up in installedMods either way: a match from either
+ * source becomes a full source: 'modrinth'/'curseforge' entry, and anything neither source
+ * recognizes (hand-built, or genuinely not published to either) still becomes a source:
  * 'unknown' entry - still visible and manageable in the Mods tab, just without either source's
  * own metadata attached.
  *
- * Also runs crossCheckSettledModrinthModsAgainstCurseForge first (when a key is configured),
- * which backfills `alsoOn` on already-settled source: 'modrinth' entries from before the
- * cross-listing feature existed - otherwise only a file freshly seen as `untracked` this round
- * could ever gain that info, and an old entry would never show "Modrinth, CurseForge" no matter
- * how many times this is rerun.
+ * Also runs preferCurseForgeForSettledModrinthMods first (when a key is configured), which
+ * promotes already-settled source: 'modrinth' entries from before CurseForge priority/the
+ * cross-listing feature existed up to source: 'curseforge' too, when CurseForge turns out to
+ * have the exact same file - otherwise only a file freshly seen as `untracked` this round could
+ * ever be affected, and an old entry would stay Modrinth-primary forever no matter how many
+ * times this is rerun.
  */
 export async function scanForInstalledMods(
   profile: MinecraftProfile
@@ -850,7 +879,7 @@ export async function scanForInstalledMods(
   const apiKey = getSettings().curseforgeApiKey.trim()
   let workingProfile = profile
   if (apiKey) {
-    workingProfile = await crossCheckSettledModrinthModsAgainstCurseForge(profile, targetDir, apiKey)
+    workingProfile = await preferCurseForgeForSettledModrinthMods(profile, targetDir, apiKey)
     if (workingProfile !== profile) {
       saveMinecraftProfile(workingProfile)
     }
@@ -910,7 +939,8 @@ export async function scanForInstalledMods(
   // configured - not just the ones Modrinth missed. Some mod authors upload an identical build
   // to both Modrinth and CurseForge, and a file already matched by Modrinth is still worth
   // checking so that case shows as "Modrinth, CurseForge" in the Mods tab (via `alsoOn` below)
-  // instead of silently implying it's Modrinth-only.
+  // instead of silently implying it's Modrinth-only - and since a key being configured at all
+  // means CurseForge is preferred, it becomes the primary entry for that file, not Modrinth.
   const matchedFileNames = new Set(adopted.map((m) => m.fileName))
   if (apiKey) {
     const allFingerprints = [...fileByFingerprint.keys()]
@@ -927,17 +957,8 @@ export async function scanForInstalledMods(
           const mod = modById.get(match.file.modId)
           if (!file || !mod) continue
 
-          const alreadyAdopted = adopted.find((m) => m.fileName === file.fileName)
-          if (alreadyAdopted) {
-            // Already matched by Modrinth this round - note the cross-listing rather than
-            // adding a second, competing entry for the same file.
-            if (!alreadyAdopted.alsoOn?.includes('curseforge')) {
-              alreadyAdopted.alsoOn = [...(alreadyAdopted.alsoOn ?? []), 'curseforge']
-            }
-            continue
-          }
-
-          adopted.push({
+          const alreadyAdoptedIndex = adopted.findIndex((m) => m.fileName === file.fileName)
+          const curseforgeEntry: InstalledMinecraftMod = {
             source: 'curseforge',
             projectId: String(match.file.modId),
             slug: mod.slug,
@@ -949,7 +970,18 @@ export async function scanForInstalledMods(
             enabled: file.enabled,
             installedAs: 'user',
             installedAt: Date.now()
-          })
+          }
+
+          if (alreadyAdoptedIndex !== -1) {
+            // Already matched by Modrinth this round - a CurseForge API key being configured
+            // at all means CurseForge is the user's explicitly preferred source over Modrinth,
+            // so this replaces the Modrinth entry already pushed above as the primary one,
+            // rather than merely noting the cross-listing on it.
+            curseforgeEntry.alsoOn = ['modrinth']
+            adopted[alreadyAdoptedIndex] = curseforgeEntry
+          } else {
+            adopted.push(curseforgeEntry)
+          }
           matchedFileNames.add(file.fileName)
         }
       } catch (err) {

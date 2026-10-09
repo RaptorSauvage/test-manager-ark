@@ -142,7 +142,7 @@ describe('minecraftMods - CurseForge', () => {
     expect(results[1].title).toBe('Low Downloads')
   })
 
-  it('searchMinecraftMods merges a mod found on both sources (same title) into one row, keeping Modrinth as primary', async () => {
+  it('searchMinecraftMods merges a mod found on both sources (same title) into one row, preferring CurseForge as primary since a key is configured', async () => {
     mockSearchModrinthProjects.mockResolvedValue([
       { project_id: 'p1', slug: 'jei', title: 'Just Enough Items', description: 'Modrinth desc', icon_url: null, downloads: 500, client_side: 'optional', server_side: 'required' }
     ])
@@ -153,10 +153,10 @@ describe('minecraftMods - CurseForge', () => {
 
     expect(results).toHaveLength(1)
     expect(results[0]).toMatchObject({
-      source: 'modrinth',
-      projectId: 'p1',
+      source: 'curseforge',
+      projectId: '200',
       title: 'Just Enough Items',
-      alsoAvailableOn: [{ source: 'curseforge', projectId: '200' }]
+      alsoAvailableOn: [{ source: 'modrinth', projectId: 'p1' }]
     })
   })
 
