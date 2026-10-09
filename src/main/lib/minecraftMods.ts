@@ -105,7 +105,40 @@ export async function searchMinecraftMods(profile: MinecraftProfile, query: stri
     logManagerEvent(newTaskId('mc-mod-search'), `Search mods/plugins — ${profile.name}`, `CurseForge search failed: ${(err as Error).message}`, 'error')
   }
 
-  return [...modrinthResults, ...curseforgeResults].sort((a, b) => b.downloads - a.downloads)
+  return mergeDuplicateSearchResults([...modrinthResults, ...curseforgeResults]).sort((a, b) => b.downloads - a.downloads)
+}
+
+/**
+ * Merges search hits that are heuristically the same mod, found via more than one source,
+ * into a single row - without this, a mod published on both Modrinth and CurseForge showed up
+ * as two separate, identically-named rows in the Browse results. Matched by exact (case-
+ * insensitive) title: unlike scanForInstalledMods, there's no shared cross-platform id or file
+ * hash/fingerprint available at search time to confirm two hits are really the same mod, so
+ * this trades a small false-positive risk (a coincidentally same-titled but actually different
+ * mod from each source) for not showing an obvious true-positive duplicate twice - see
+ * MinecraftModSearchResult.alsoAvailableOn's own doc comment. Modrinth is kept as the primary/
+ * kept row when both are present (same "no API key needed" preference used everywhere else in
+ * this app that picks between the two sources), with the other source(s) attached informationally.
+ */
+function mergeDuplicateSearchResults(results: MinecraftModSearchResult[]): MinecraftModSearchResult[] {
+  const groups = new Map<string, MinecraftModSearchResult[]>()
+  for (const result of results) {
+    const key = result.title.trim().toLowerCase()
+    const group = groups.get(key)
+    if (group) group.push(result)
+    else groups.set(key, [result])
+  }
+
+  return [...groups.values()].map((group) => {
+    if (group.length === 1) return group[0]
+    const primary = group.find((r) => r.source === 'modrinth') ?? group[0]
+    const others = group.filter((r) => r !== primary)
+    return {
+      ...primary,
+      installed: group.some((r) => r.installed),
+      alsoAvailableOn: others.map((r) => ({ source: r.source, projectId: r.projectId }))
+    }
+  })
 }
 
 /** Picks the file to actually download from a version - the one marked `primary`, or the

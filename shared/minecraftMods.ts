@@ -54,6 +54,13 @@ export interface MinecraftModSearchResult {
   downloads: number
   /** True if this project id is already in the profile's installedMods. */
   installed: boolean
+  /** Other sources this same mod was also found on, when a search returned what's
+   *  heuristically the same mod from more than one source (matched by exact, case-insensitive
+   *  title - see searchMinecraftMods) merged into this one row instead of listing it twice.
+   *  Informational only, same role as InstalledMinecraftMod's own `alsoOn`: Install always
+   *  uses `source`/`projectId` above, this isn't a separate picker. Absent when the mod was
+   *  only found on one source. */
+  alsoAvailableOn?: { source: MinecraftModSource; projectId: string }[]
 }
 
 /** A mod/plugin this Manager tracks for a profile - either installed through the Mods tab

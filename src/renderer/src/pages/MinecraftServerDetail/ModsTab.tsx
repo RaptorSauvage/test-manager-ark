@@ -2,7 +2,6 @@ import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { supportsMinecraftMods } from '@shared/minecraftMods'
 import type {
-  InstalledMinecraftMod,
   MinecraftModInstallResult,
   MinecraftModSearchResult,
   MinecraftModSource,
@@ -27,12 +26,14 @@ function SourceIcon({ source }: { source: MinecraftModSource }): JSX.Element {
   return <img src={sourceLogo(source)} alt={sourceLabel(source)} title={sourceLabel(source)} className="mc-mod-source-icon" />
 }
 
-/** An installed mod's Source column content - both logos (not just the primary one's) when a
- *  scan found the exact same file published on more than one source
- *  (InstalledMinecraftMod.alsoOn), so the column doesn't silently imply it's only available
- *  from the one source actually used for install/update. */
-function InstalledSourceIcons({ mod }: { mod: InstalledMinecraftMod }): JSX.Element {
-  const sources = mod.alsoOn && mod.alsoOn.length > 0 ? [mod.source, ...mod.alsoOn] : [mod.source]
+/** Every logo that applies to one row (not just the primary source's) - used by both grids'
+ *  Source column whenever a mod is known to be on more than one source: the Installed grid's
+ *  InstalledMinecraftMod.alsoOn (a scan found the exact same file on more than one source) and
+ *  the Browse grid's MinecraftModSearchResult.alsoAvailableOn (a search heuristically merged
+ *  what looks like the same mod from more than one source into one row) - see each field's own
+ *  doc comment. Keeps the column from silently implying a mod is only available from whichever
+ *  one source happens to be `source` on this row. */
+function SourceIcons({ sources }: { sources: MinecraftModSource[] }): JSX.Element {
   return (
     <>
       {sources.map((source) => (
@@ -294,7 +295,9 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
                   {r.description}
                 </div>
                 <div className="mc-mods-grid-cell mc-mod-source-cell">
-                  <SourceIcon source={r.source} />
+                  <SourceIcons
+                    sources={r.alsoAvailableOn ? [r.source, ...r.alsoAvailableOn.map((a) => a.source)] : [r.source]}
+                  />
                 </div>
                 <div className="mc-mods-grid-cell">{r.downloads.toLocaleString()}</div>
                 <div className="mc-mods-grid-cell mc-mods-grid-actions">
@@ -370,7 +373,11 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
                   {m.installedAs === 'dependency' && <span className="muted">(dependency)</span>}
                 </div>
                 <div className="mc-mods-grid-cell mc-mod-source-cell">
-                  {unidentified ? <span className="muted">—</span> : <InstalledSourceIcons mod={m} />}
+                  {unidentified ? (
+                    <span className="muted">—</span>
+                  ) : (
+                    <SourceIcons sources={m.alsoOn && m.alsoOn.length > 0 ? [m.source, ...m.alsoOn] : [m.source]} />
+                  )}
                 </div>
                 <div className="mc-mods-grid-cell mc-mod-title" title={m.versionNumber}>
                   {m.versionNumber || '—'}

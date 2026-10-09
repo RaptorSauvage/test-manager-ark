@@ -293,13 +293,25 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
 
   child.on('exit', (code, signal) => {
     stopPidHandoffWatch()
+    // A deliberate stop/kill already flips the status to 'stopping' before it ever touches the
+    // process (see stopServer/killServer) - so a non-zero/non-null exit code seen from that
+    // state is expected, not a surprise worth flagging in red on the server card. This matters
+    // in particular since waitForExitOrKill/killServer now force-kill a hung Windows script-
+    // mode wrapper (cmd.exe) directly once the real server pid is confirmed gone - and a
+    // forcibly-terminated process's own exit code is whatever the OS reports for that (e.g.
+    // code 1 on Windows), not 0, even though the stop itself completed exactly as asked.
+    // Anything else (still 'starting' or 'running') is an exit nobody asked for, same
+    // distinction ARK's own serverProcess.ts makes for its equivalent handler.
+    const wasExpectedStop = running.get(profile.id)?.status.state === 'stopping'
     running.delete(profile.id)
     setMinecraftRunningPid(profile.id, null)
     setMinecraftRunningStartedAt(profile.id, null)
     emitStatus({
       profileId: profile.id,
       state: 'stopped',
-      ...(code !== 0 && code !== null ? { lastError: `Process exited with code ${code}${signal ? ` (signal ${signal})` : ''}` } : {})
+      ...(!wasExpectedStop && code !== 0 && code !== null
+        ? { lastError: `Process exited with code ${code}${signal ? ` (signal ${signal})` : ''}` }
+        : {})
     })
   })
 

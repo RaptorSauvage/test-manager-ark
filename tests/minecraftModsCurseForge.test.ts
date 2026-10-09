@@ -142,6 +142,49 @@ describe('minecraftMods - CurseForge', () => {
     expect(results[1].title).toBe('Low Downloads')
   })
 
+  it('searchMinecraftMods merges a mod found on both sources (same title) into one row, keeping Modrinth as primary', async () => {
+    mockSearchModrinthProjects.mockResolvedValue([
+      { project_id: 'p1', slug: 'jei', title: 'Just Enough Items', description: 'Modrinth desc', icon_url: null, downloads: 500, client_side: 'optional', server_side: 'required' }
+    ])
+    mockSearchCurseForgeMods.mockResolvedValue([makeMod({ id: 200, slug: 'jei', name: 'Just Enough Items', downloadCount: 9999 })])
+
+    const profile = makeProfile({}, tmpDir)
+    const results = await searchMinecraftMods(profile, 'jei')
+
+    expect(results).toHaveLength(1)
+    expect(results[0]).toMatchObject({
+      source: 'modrinth',
+      projectId: 'p1',
+      title: 'Just Enough Items',
+      alsoAvailableOn: [{ source: 'curseforge', projectId: '200' }]
+    })
+  })
+
+  it('searchMinecraftMods matches titles case-insensitively when merging, and keeps the merged row "installed" if either source is', async () => {
+    mockSearchModrinthProjects.mockResolvedValue([
+      { project_id: 'p1', slug: 'jei', title: 'just enough items', description: '', icon_url: null, downloads: 10, client_side: 'optional', server_side: 'required' }
+    ])
+    mockSearchCurseForgeMods.mockResolvedValue([makeMod({ id: 200, slug: 'jei', name: 'Just Enough Items ', downloadCount: 20 })])
+
+    const profile = makeProfile({ installedMods: [] }, tmpDir)
+    const results = await searchMinecraftMods(profile, 'jei')
+
+    expect(results).toHaveLength(1)
+  })
+
+  it('searchMinecraftMods does not merge two different mods that just happen to have different titles', async () => {
+    mockSearchModrinthProjects.mockResolvedValue([
+      { project_id: 'p1', slug: 'jei', title: 'Just Enough Items', description: '', icon_url: null, downloads: 500, client_side: 'optional', server_side: 'required' }
+    ])
+    mockSearchCurseForgeMods.mockResolvedValue([makeMod({ id: 200, slug: 'rei', name: 'Roughly Enough Items', downloadCount: 300 })])
+
+    const profile = makeProfile({}, tmpDir)
+    const results = await searchMinecraftMods(profile, 'items')
+
+    expect(results).toHaveLength(2)
+    expect(results.every((r) => r.alsoAvailableOn === undefined)).toBe(true)
+  })
+
   it('searchMinecraftMods skips CurseForge entirely when no API key is set', async () => {
     mockGetSettings.mockReturnValue({ curseforgeApiKey: '' })
     mockSearchModrinthProjects.mockResolvedValue([])

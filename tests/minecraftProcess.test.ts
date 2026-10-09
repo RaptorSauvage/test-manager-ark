@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { MinecraftProfile } from '@shared/minecraft'
+import type { MinecraftProfile, MinecraftServerStatus } from '@shared/minecraft'
 
 // minecraftConsoleArchive.ts's file paths live under getDataDir(), which normally goes
 // through Electron's app.getPath() - unavailable in this Node test environment. Point it at
@@ -49,9 +49,16 @@ async function waitUntil(check: () => boolean, timeoutMs = 5000, stepMs = 20): P
 
 /** A tiny stand-in for a real Minecraft server process: prints Minecraft's own "ready" log
  *  line after a short delay, echoes every stdin line it receives (prefixed) so a sent command
- *  is observable in the console backlog, and exits cleanly on "stop". Runs under plain `node`,
+ *  is observable in the console backlog, and exits on "stop"/"crash". Runs under plain `node`,
  *  invoked via a shell wrapper script so this also exercises minecraftProcess.ts's
- *  launchMode: 'script' path exactly the way a real installed server would be launched. */
+ *  launchMode: 'script' path exactly the way a real installed server would be launched.
+ *  "stop" deliberately exits with a *non-zero* code (1), not 0 - same as a real server can
+ *  genuinely do on an otherwise perfectly normal shutdown (and exactly what a forcibly-killed
+ *  Windows script-mode wrapper's own exit code looks like, even after a clean stop - see
+ *  minecraftProcess.ts's own child.on('exit') comment) - so stopServer's own tests below can
+ *  tell a deliberate stop's exit code apart from a genuine crash's. "crash" exits non-zero too,
+ *  but without ever going through stopServer/killServer first (status stays 'running'), to
+ *  prove the fix doesn't just unconditionally swallow every non-zero exit code. */
 const FAKE_SERVER_JS = `
 process.stdout.write('Starting minecraft server version 1.20.1\\n')
 setTimeout(() => {
@@ -67,7 +74,9 @@ process.stdin.on('data', (chunk) => {
     if (!line) continue
     if (line === 'stop') {
       process.stdout.write('Stopping the server\\n')
-      setTimeout(() => process.exit(0), 20)
+      setTimeout(() => process.exit(1), 20)
+    } else if (line === 'crash') {
+      process.exit(1)
     } else {
       process.stdout.write('echo:' + line + '\\n')
     }
@@ -180,6 +189,47 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
     const status = await stopServer(profile)
     expect(status.state).toBe('stopped')
     expect(getConsoleBacklog(profile.id).some((l) => l.text === 'Stopping the server')).toBe(true)
+  })
+
+  it('stopServer does not report a lastError even though the process itself exits with a non-zero code', async () => {
+    // Regression test: a deliberate stop/kill already flipped the status to 'stopping' before
+    // the process ever exits, so a non-zero exit code seen from that state is expected, not a
+    // crash worth flagging in red on the server card - see the fake server's own stop handler
+    // comment above for why its exit code is 1, not 0. Listens to the 'status' event directly
+    // rather than getStatus() afterward - the 'stopped' bookkeeping (including its own
+    // lastError, if any) is cleared from the running map by the time stopServer returns, same
+    // as every other exit path here, so getStatus() post-hoc would always read back the bare
+    // fallback regardless of what was actually broadcast.
+    startServer(profile)
+    await waitUntil(() => getStatus(profile.id).state === 'running')
+
+    const statuses: MinecraftServerStatus[] = []
+    minecraftServerEvents.on('status', (s: MinecraftServerStatus) => {
+      if (s.profileId === profile.id) statuses.push(s)
+    })
+
+    const status = await stopServer(profile)
+    expect(status.state).toBe('stopped')
+    const stoppedEvent = statuses.find((s) => s.state === 'stopped')
+    expect(stoppedEvent?.lastError).toBeUndefined()
+  })
+
+  it('an unexpected exit while still "running" (not through stopServer/killServer) still surfaces a lastError', async () => {
+    // Proves the fix above doesn't just unconditionally swallow every non-zero exit code -
+    // only one seen from a deliberate 'stopping' state is suppressed.
+    startServer(profile)
+    await waitUntil(() => getStatus(profile.id).state === 'running')
+
+    const statuses: MinecraftServerStatus[] = []
+    minecraftServerEvents.on('status', (s: MinecraftServerStatus) => {
+      if (s.profileId === profile.id) statuses.push(s)
+    })
+
+    sendStdinCommand(profile.id, 'crash')
+    await waitUntil(() => statuses.some((s) => s.state === 'stopped'))
+
+    const stoppedEvent = statuses.find((s) => s.state === 'stopped')
+    expect(stoppedEvent?.lastError).toMatch(/code 1/)
   })
 
   it('stopServer on an already-stopped profile is a no-op that reports stopped', async () => {

@@ -2648,3 +2648,42 @@ async function findProfileIdByName(name) {
     icon, with `flex-wrap: wrap` on the cell itself for the Installed grid's multi-logo case.
   - Scoped to the Source column cells only, per explicit confirmation - the "Browse Modrinth
     [& CurseForge]" section headings/paragraphs above the grid stay as plain text.
+
+- **Fix: a mod available on both Modrinth and CurseForge showed up as two separate, identically-
+  named rows in the Mods tab's Browse search results.** Unlike `scanForInstalledMods` (which has
+  an actual file to hash/fingerprint and so can *confirm* two hits are the same mod),
+  `searchMinecraftMods` only has each source's own search metadata to go on - there's no shared
+  cross-platform id to match on at search time. New `mergeDuplicateSearchResults` in
+  `minecraftMods.ts` merges hits that share an exact, case-insensitive title into a single row -
+  Modrinth kept as the primary/installable one when both are present (same "no API key needed"
+  preference used everywhere else that picks between the two sources), with the other source(s)
+  attached as a new, purely informational `MinecraftModSearchResult.alsoAvailableOn` field (same
+  role as `InstalledMinecraftMod`'s own `alsoOn`) - Install still always uses the primary row's
+  own source/projectId, this isn't a source picker. Traded off deliberately: a coincidentally
+  same-titled but actually different mod from each source would get merged too, in exchange for
+  not showing an obvious true-positive duplicate twice.
+  - `ModsTab.tsx`'s old single-source `SourceIcon` usage in the Browse grid is now the same
+    `SourceIcons` (plural) component already used for the Installed grid's `alsoOn` case, so a
+    merged row shows every applicable logo side by side there too.
+  - New tests in `tests/minecraftModsCurseForge.test.ts`: a same-titled hit from both sources
+    merges into one row with `alsoAvailableOn` set (case-insensitive); two hits with genuinely
+    different titles are left as two separate rows.
+
+- **Fix: stopping a server correctly (the Forge "stuck on Stopping" fix above) now showed
+  "Process exited with code 1" in red on the server card, even though the stop completed
+  exactly as asked.** `child.on('exit')` unconditionally treated any non-zero/non-null exit code
+  as an error worth surfacing - that used to be a safe assumption, but `waitForExitOrKill`/
+  `killServer` now force-kill a hung Windows script-mode wrapper (cmd.exe) directly once the
+  real server pid is confirmed gone (see the fix above), and a forcibly-terminated process's own
+  exit code is whatever the OS reports for that (code 1 on Windows), not 0 - even on a
+  completely clean, deliberate stop. The handler now checks whether the status was already
+  `'stopping'` (set by `stopServer`/`killServer` before they ever touch the process) before
+  attaching a `lastError` - the same "expected vs. a surprise" distinction ARK's own
+  `serverProcess.ts` already makes for its equivalent handler. An exit seen from `'starting'`/
+  `'running'` (nobody asked for it) still surfaces the error as before.
+  - New tests in `tests/minecraftProcess.test.ts`: a deliberate `stopServer()` reports no
+    `lastError` even when the underlying process's own exit code is non-zero; an unexpected
+    exit while still `'running'` still does. Listens to the `'status'` event directly rather
+    than `getStatus()` afterward, since the running-process bookkeeping (and the `lastError` it
+    carried) is already cleared by the time a caller could poll for it - same for every other
+    exit path, not something this fix changed.
