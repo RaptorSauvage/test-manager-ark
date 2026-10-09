@@ -2833,3 +2833,17 @@ async function findProfileIdByName(name) {
   narrow on a wide enough window, a percentage scales with however wide the window actually is
   instead of requiring yet another pixel number to guess at, while still leaving a modest,
   proportional margin on both sides rather than stretching flush to the tab's own edges.
+
+- **Fix: even the percentage cap above still came back as "hasn't moved" on a confirmed-
+  maximized 2K monitor with a confirmed-current build.** Three different `.ark-mods-list` width
+  values in a row (1100px, 1200px, 95%) all reportedly rendered identically, which stopped being
+  explainable by the cap value itself and started pointing at centering a capped width not
+  taking effect correctly in this specific layout (`.ark-mods-list` is a flex item of
+  `.mods-tab`'s column flex layout - an arrangement not otherwise used elsewhere in this app).
+  Rather than keep guessing at why without being able to inspect the live DOM, `.ark-mods-list`
+  now just matches the Minecraft Mods tab's own grid exactly: no cap, `width: 100%`, Name a real
+  `minmax(0, 1fr)` track - the one arrangement already proven to behave correctly on this exact
+  CSS Grid architecture (confirmed working there across this whole session). If filling the
+  available width turns out to need centered margins again once that's confirmed actually
+  working, that's a much smaller, easier follow-up than continuing to guess at cap values that
+  may not even have been the real constraint.

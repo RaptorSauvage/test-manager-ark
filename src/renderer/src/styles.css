@@ -1733,18 +1733,22 @@ label.checkbox {
 }
 
 /* Wraps the "Add mod ID" row and the grid together so they share one left/right edge and move
-   together - centering max-width/margin lives here, not on the grid or .mods-add individually,
-   specifically because centering them *separately* (each with its own narrower max-width) left
-   them centered on the same point but starting at different left edges, which read as broken/
+   together - without this, centering them *separately* (each with its own narrower max-width)
+   centered them on the same point but left their *left edges* different, which read as broken/
    misaligned (a real report: the Add row stayed pinned to the page's own left edge while the
-   grid centered itself below it). max-width is a percentage, not a fixed px value, after two
-   rounds of a fixed cap (1100px, then 1200px) each getting reported as "still too shrunk" on a
-   wide enough monitor - a percentage scales with however wide the window actually is instead of
-   requiring another guess at a pixel number, while still leaving a modest, proportional margin
-   on both sides rather than stretching flush to the tab's own edges. */
+   grid centered itself below it).
+   No width cap here any more - three rounds of a centered max-width (1100px, 1200px, then a
+   95% percentage) each still got reported back as "hasn't moved"/"too shrunk" even on a
+   maximized 2K monitor, which stopped being explainable by the actual cap value and started
+   pointing at something about centering a capped width in this specific layout not taking
+   effect the way plain width:100% does elsewhere. Matching the Minecraft Mods tab's own grid
+   exactly (no cap, width: 100%, Name as a real 1fr track below) is the one arrangement already
+   proven to behave correctly on this exact CSS Grid architecture - if "fill the available
+   width" turns out to still be too wide/need margins again once it's confirmed working, that's
+   a much smaller, easier follow-up than continuing to guess at cap values that may not even be
+   the actual constraint in play. */
 .ark-mods-list {
-  max-width: 95%;
-  margin: 0 auto;
+  width: 100%;
 }
 
 .mods-add {
