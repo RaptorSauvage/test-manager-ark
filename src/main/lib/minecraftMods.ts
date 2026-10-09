@@ -712,6 +712,64 @@ function titleFromFileName(fileName: string): string {
   return fileName.replace(/\.jar$/i, '')
 }
 
+/** Catches up installedMods entries that were already settled as source: 'modrinth' before the
+ *  cross-listing feature existed, or before a CurseForge key was ever configured - without this,
+ *  only a file freshly adopted *during* a scan (i.e. still in `untracked`) ever gets checked
+ *  against CurseForge for cross-listing (see scanForInstalledMods' own `alsoOn` handling below),
+ *  so an old entry could never show "Modrinth, CurseForge" no matter how many times Rescan
+ *  folder is clicked - it's permanently excluded from `untracked` by `settledFileNames` the
+ *  moment it's first matched. `alsoOn: []` (as opposed to leaving it `undefined`) marks an entry
+ *  as "already checked, no cross-listing found" so it isn't re-queried on every single future
+ *  scan forever - only entries that have truly never been checked (`alsoOn === undefined`) are
+ *  considered here. Deliberately one-directional (Modrinth-primary entries checked against
+ *  CurseForge, not the reverse) since that's the concrete case reported; a CurseForge-primary
+ *  entry missing its Modrinth cross-listing can be added the same way later if it comes up. */
+async function crossCheckSettledModrinthModsAgainstCurseForge(
+  profile: MinecraftProfile,
+  targetDir: string,
+  apiKey: string
+): Promise<MinecraftProfile> {
+  const toCheck = profile.installedMods.filter((m) => m.source === 'modrinth' && m.alsoOn === undefined)
+  if (toCheck.length === 0) return profile
+
+  const fileByFingerprint = new Map<number, InstalledMinecraftMod>()
+  for (const mod of toCheck) {
+    const filePath = path.join(targetDir, diskFileName(mod.fileName, mod.enabled))
+    if (!fs.existsSync(filePath)) continue
+    const buffer = fs.readFileSync(filePath)
+    fileByFingerprint.set(computeCurseForgeFingerprint(buffer), mod)
+  }
+  if (fileByFingerprint.size === 0) return profile
+
+  const matchedProjectIds = new Set<string>()
+  try {
+    const matches = await getCurseForgeFingerprintMatches(apiKey, [...fileByFingerprint.keys()])
+    for (const match of matches) {
+      const mod = fileByFingerprint.get(match.file.fileFingerprint)
+      if (mod) matchedProjectIds.add(mod.projectId)
+    }
+  } catch (err) {
+    // Best-effort, same reasoning as the scan's own fingerprint check below - leave alsoOn
+    // untouched entirely (not even set to []) so a transient failure here gets retried on the
+    // next scan instead of being mistaken for "checked, nothing found".
+    logManagerEvent(
+      newTaskId('mc-mod-scan'),
+      `Scan mods/plugins folder — ${profile.name}`,
+      `CurseForge cross-listing check failed: ${(err as Error).message}`,
+      'error'
+    )
+    return profile
+  }
+
+  return {
+    ...profile,
+    installedMods: profile.installedMods.map((m) => {
+      if (m.source !== 'modrinth' || m.alsoOn !== undefined) return m
+      return matchedProjectIds.has(m.projectId) ? { ...m, alsoOn: ['curseforge'] } : { ...m, alsoOn: [] }
+    })
+  }
+}
+
 /**
  * Recognizes mods/plugins already sitting in the folder that this app didn't itself install -
  * dropped in by hand, or installed before this feature existed. Identifies each untracked
@@ -727,6 +785,12 @@ function titleFromFileName(fileName: string): string {
  * source recognizes (hand-built, or genuinely not published to either) still becomes a source:
  * 'unknown' entry - still visible and manageable in the Mods tab, just without either source's
  * own metadata attached.
+ *
+ * Also runs crossCheckSettledModrinthModsAgainstCurseForge first (when a key is configured),
+ * which backfills `alsoOn` on already-settled source: 'modrinth' entries from before the
+ * cross-listing feature existed - otherwise only a file freshly seen as `untracked` this round
+ * could ever gain that info, and an old entry would never show "Modrinth, CurseForge" no matter
+ * how many times this is rerun.
  */
 export async function scanForInstalledMods(
   profile: MinecraftProfile
@@ -750,8 +814,17 @@ export async function scanForInstalledMods(
   )
   const untracked = listUntrackedModFiles(targetDir, settledFileNames)
 
+  const apiKey = getSettings().curseforgeApiKey.trim()
+  let workingProfile = profile
+  if (apiKey) {
+    workingProfile = await crossCheckSettledModrinthModsAgainstCurseForge(profile, targetDir, apiKey)
+    if (workingProfile !== profile) {
+      saveMinecraftProfile(workingProfile)
+    }
+  }
+
   if (untracked.length === 0) {
-    return { profile, result: { adopted: [] } }
+    return { profile: workingProfile, result: { adopted: [] } }
   }
 
   // Read every untracked file's bytes exactly once, computing both the sha1 (for Modrinth's
@@ -806,7 +879,6 @@ export async function scanForInstalledMods(
   // checking so that case shows as "Modrinth, CurseForge" in the Mods tab (via `alsoOn` below)
   // instead of silently implying it's Modrinth-only.
   const matchedFileNames = new Set(adopted.map((m) => m.fileName))
-  const apiKey = getSettings().curseforgeApiKey.trim()
   if (apiKey) {
     const allFingerprints = [...fileByFingerprint.keys()]
 
@@ -882,10 +954,10 @@ export async function scanForInstalledMods(
   const newlyIdentifiedFileNames = new Set(adopted.filter((m) => m.source !== 'unknown').map((m) => m.fileName))
   const updatedProfile: MinecraftProfile =
     adopted.length === 0
-      ? profile
+      ? workingProfile
       : {
-          ...profile,
-          installedMods: [...profile.installedMods.filter((m) => !newlyIdentifiedFileNames.has(m.fileName)), ...adopted]
+          ...workingProfile,
+          installedMods: [...workingProfile.installedMods.filter((m) => !newlyIdentifiedFileNames.has(m.fileName)), ...adopted]
         }
   if (adopted.length > 0) {
     saveMinecraftProfile(updatedProfile)

@@ -2565,3 +2565,31 @@ async function findProfileIdByName(name) {
   - New tests in `tests/minecraftModScan.test.ts`: CurseForge fingerprints are now sent for
     every untracked file including Modrinth-matched ones; a dual match sets `alsoOn` on the
     Modrinth-sourced entry rather than creating a second, competing entry for the same file.
+
+- **Fix: the Mods grid still didn't fill the window's width on a 2K monitor, and a mod already
+  on both Modrinth and CurseForge still didn't show "Modrinth, CurseForge" for an older,
+  already-settled entry.**
+  - **Grid width**: `.mc-mods-grid` had carried over a `max-width: 1600px` sanity cap from the
+    original `<table>`-era CSS. Grid's `fr`-based columns are safe to stretch arbitrarily wide
+    (see the comment above the rule) - there's no outlier-content failure mode to reintroduce,
+    unlike the old table's `width: 100%` - so the cap is just gone now; the grid fills whatever
+    width `.server-detail` actually has.
+  - **Retroactive cross-listing**: the previous `alsoOn` fix (above) only checked a file against
+    CurseForge *while it was still `untracked`* - i.e. the first time it's ever seen, or while
+    it's sitting as an unidentified `'unknown'` entry. A mod already settled as `source:
+    'modrinth'` from a scan that predates the `alsoOn` feature (or predates a CurseForge key
+    being configured at all) is excluded from `untracked` by `settledFileNames` and was never
+    re-examined by any later Rescan, so it could never retroactively gain its CurseForge
+    cross-listing - exactly the case reported. `scanForInstalledMods` now also runs a new
+    `crossCheckSettledModrinthModsAgainstCurseForge` pass first (only when a CurseForge key is
+    configured): every already-settled `source: 'modrinth'` entry whose `alsoOn` is still
+    `undefined` has its on-disk file's fingerprint computed and checked against CurseForge in
+    one batched call. A match backfills `alsoOn: ['curseforge']`; no match sets `alsoOn: []`
+    (explicitly empty, not left `undefined`) so it's marked "already checked" and never
+    re-queried on every future scan - only entries truly never checked are considered each time.
+    Deliberately one-directional for now (Modrinth-primary entries checked against CurseForge,
+    not the reverse), since that's the concrete case reported.
+  - New tests in `tests/minecraftModScan.test.ts`: an already-settled Modrinth entry gets
+    `alsoOn: ['curseforge']` backfilled on the next scan when CurseForge has a fingerprint match
+    for its file; one with no match gets `alsoOn: []` and is never sent to CurseForge again on a
+    subsequent scan.

@@ -479,6 +479,74 @@ describe('scanForInstalledMods', () => {
     expect(updated.installedMods[0].source).toBe('curseforge')
   })
 
+  it('retroactively cross-checks an already-settled Modrinth entry against CurseForge, backfilling alsoOn', async () => {
+    // Regression test: a mod matched by Modrinth back before the cross-listing feature existed
+    // (or before a CurseForge key was configured) is "settled" and excluded from `untracked` -
+    // only crossCheckSettledModrinthModsAgainstCurseForge's separate pass can ever give it
+    // `alsoOn`, since it's never examined as part of the main untracked-files loop again.
+    const existingModrinth: InstalledMinecraftMod = {
+      source: 'modrinth',
+      projectId: 'project-root',
+      slug: 'root-mod',
+      title: 'Root Mod',
+      versionId: 'version-root',
+      versionNumber: '1.0.0',
+      fileName: 'root.jar',
+      enabled: true,
+      installedAs: 'user',
+      installedAt: Date.now()
+    }
+    const profile = makeProfile({ installedMods: [existingModrinth] }, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'root.jar'), 'root content')
+    mockGetSettings.mockReturnValue({ curseforgeApiKey: 'test-key' })
+    const fingerprint = computeCurseForgeFingerprint(Buffer.from('root content'))
+    mockGetCurseForgeFingerprintMatches.mockResolvedValue([
+      {
+        id: 200,
+        file: { id: 55, modId: 200, fileName: 'root.jar', displayName: '2.0.0', fileFingerprint: fingerprint }
+      }
+    ])
+
+    const { profile: updated, result } = await scanForInstalledMods(profile)
+
+    expect(result.adopted).toHaveLength(0)
+    expect(updated.installedMods).toHaveLength(1)
+    expect(updated.installedMods[0]).toMatchObject({ source: 'modrinth', fileName: 'root.jar', alsoOn: ['curseforge'] })
+    expect(mockSaveMinecraftProfile).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks an already-settled Modrinth entry as checked (alsoOn: []) when CurseForge finds no match, and never re-queries it again', async () => {
+    const existingModrinth: InstalledMinecraftMod = {
+      source: 'modrinth',
+      projectId: 'project-root',
+      slug: 'root-mod',
+      title: 'Root Mod',
+      versionId: 'version-root',
+      versionNumber: '1.0.0',
+      fileName: 'root.jar',
+      enabled: true,
+      installedAs: 'user',
+      installedAt: Date.now()
+    }
+    const profile = makeProfile({ installedMods: [existingModrinth] }, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'root.jar'), 'root content')
+    mockGetSettings.mockReturnValue({ curseforgeApiKey: 'test-key' })
+    mockGetCurseForgeFingerprintMatches.mockResolvedValue([])
+
+    const { profile: updated } = await scanForInstalledMods(profile)
+
+    expect(updated.installedMods[0]).toMatchObject({ source: 'modrinth', alsoOn: [] })
+    expect(mockGetCurseForgeFingerprintMatches).toHaveBeenCalledTimes(1)
+
+    // A second scan must not re-send this file's fingerprint - alsoOn: [] means "already
+    // checked, nothing found", not "never checked".
+    mockGetCurseForgeFingerprintMatches.mockClear()
+    await scanForInstalledMods(updated)
+    expect(mockGetCurseForgeFingerprintMatches).not.toHaveBeenCalled()
+  })
+
   it('does not duplicate an existing "unknown" entry when it is still unmatched this round', async () => {
     const existingUnknown: InstalledMinecraftMod = {
       source: 'unknown',

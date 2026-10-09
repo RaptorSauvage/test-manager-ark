@@ -1921,13 +1921,12 @@ label.checkbox {
    track (see the two variants below) is the only one that grows to fill leftover space, and
    `fr` distribution is a deterministic share of the grid's own width, not content-dependent the
    way table auto-layout's "leftover space" was. There's no outlier-content failure mode to
-   reintroduce by letting this stretch, so it's free to actually use the available width instead
-   of sitting cramped on the left of a wide window. max-width is just a sanity cap for a truly
-   huge (e.g. 4K) window. */
+   reintroduce by letting this stretch, so no max-width cap either - a 1600px cap still left the
+   grid cramped on a 2K monitor's wide window; just let it fill whatever width .server-detail
+   actually has. */
 .mc-mods-grid {
   display: grid;
   width: 100%;
-  max-width: 1600px;
   column-gap: 12px;
 }
 
