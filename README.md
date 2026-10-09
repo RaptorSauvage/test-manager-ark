@@ -2860,3 +2860,7 @@ async function findProfileIdByName(name) {
   a more direct mechanism with less indirection to silently fail - alongside a generous
   `max-width: 1600px` cap, picked now that dropping the cap entirely confirmed the available
   width is genuinely wide enough for 1600px to read as "spread out," not "shrunk."
+
+- **Change: ARK's Mods grid now shows Mod ID before Name** (user request) - both the header row
+  and each data row in `ModsTab.tsx` swap their order, and `grid-template-columns` in
+  `styles.css` (`ark-mods-grid--ascended`/`--evolved`) swaps the two columns' tracks to match.

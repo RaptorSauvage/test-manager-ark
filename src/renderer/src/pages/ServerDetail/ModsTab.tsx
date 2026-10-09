@@ -342,8 +342,8 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
             </div>
           </div>
         )}
-        <div className="ark-mods-grid-header">Name</div>
         <div className="ark-mods-grid-header">Mod ID</div>
+        <div className="ark-mods-grid-header">Name</div>
         <div className="ark-mods-grid-header"></div>
         {mods.map((mod, i) => (
           <Fragment key={mod.id}>
@@ -360,6 +360,10 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
                 <input type="checkbox" checked={mod.dev} onChange={() => toggleField(mod.id, 'dev')} />
               </div>
             )}
+            <div className={`ark-mods-grid-cell mod-id ${mod.enabled ? '' : 'mod-disabled'}`}>
+              {mod.id}
+              {mod.dev ? '-dev' : ''}
+            </div>
             <div className={`ark-mods-grid-cell ark-mod-name-cell ${mod.enabled ? '' : 'mod-disabled'}`}>
               {isEvolved ? (
                 <input
@@ -385,10 +389,6 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
                   </span>
                 </>
               )}
-            </div>
-            <div className={`ark-mods-grid-cell mod-id ${mod.enabled ? '' : 'mod-disabled'}`}>
-              {mod.id}
-              {mod.dev ? '-dev' : ''}
             </div>
             <div className={`ark-mods-grid-cell ark-mods-grid-actions ${mod.enabled ? '' : 'mod-disabled'}`}>
               <button onClick={() => moveToTop(i)} disabled={i === 0} title="Move to top of list">

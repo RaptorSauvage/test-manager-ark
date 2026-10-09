@@ -1795,11 +1795,11 @@ label.checkbox {
    claiming the rest of *that* bounded width is the right amount of stretch - comfortably sized
    without reproducing the original edge-to-edge gap problem. */
 .ark-mods-grid--ascended {
-  grid-template-columns: 90px 90px 90px minmax(0, 1fr) 120px auto;
+  grid-template-columns: 90px 90px 90px 120px minmax(0, 1fr) auto;
 }
 
 .ark-mods-grid--evolved {
-  grid-template-columns: 90px minmax(0, 1fr) 120px auto;
+  grid-template-columns: 90px 120px minmax(0, 1fr) auto;
 }
 
 .ark-mods-grid-header,
