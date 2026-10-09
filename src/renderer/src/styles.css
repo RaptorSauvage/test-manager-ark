@@ -1762,15 +1762,22 @@ label.checkbox {
 }
 
 /* Ascended has Passive/Dev checkbox columns Evolved doesn't (see ModsTab.tsx's own isEvolved
-   gating) - Name gets the lion's share via its own 1fr, Mod ID is a known-bounded small
-   vocabulary (short numeric ids, nothing that can produce a surprise long outlier) so a fixed
-   track is fine, and the checkbox columns are a fixed, identical width on every row. */
+   gating) - Mod ID is a known-bounded small vocabulary (short numeric ids, nothing that can
+   produce a surprise long outlier) so a fixed track is fine, and the checkbox columns are a
+   fixed, identical width on every row. Name is capped (minmax(0, 360px), not minmax(0, 1fr))
+   rather than greedily claiming every bit of leftover space - most real mod names are much
+   shorter than the row is wide, and giving Name the whole 1fr share (as if it were the primary
+   column the way the Minecraft Mods tab's own Name column is) just pushed Mod ID/Actions off
+   to the far right with a big dead gap in between for anything short. No fr track at all means
+   the grid's own tracks size to their content/cap and stop - any truly leftover width (a very
+   wide window, mods with uniformly short names) just sits unused past the last column instead
+   of being forced into a gap mid-row. */
 .ark-mods-grid--ascended {
-  grid-template-columns: 90px 90px 90px minmax(0, 1fr) 120px auto;
+  grid-template-columns: 90px 90px 90px minmax(0, 360px) 120px auto;
 }
 
 .ark-mods-grid--evolved {
-  grid-template-columns: 90px minmax(0, 1fr) 120px auto;
+  grid-template-columns: 90px minmax(0, 360px) 120px auto;
 }
 
 .ark-mods-grid-header,

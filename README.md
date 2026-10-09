@@ -2791,3 +2791,16 @@ async function findProfileIdByName(name) {
   tag's own `onError` handler just hiding the broken image rather than surfacing anything. Now
   `https://*.forgecdn.net` (wildcard subdomain) instead of the one specific hostname, so this
   class of bug can't recur for whichever subdomain CurseForge actually uses for a given asset.
+
+- **Fix: once the icon fix above actually showed CurseForge-resolved names, ARK: Survival
+  Ascended's Mods grid had a big dead gap between a short Name and the Mod ID/Actions columns
+  pinned at the far right.** `ark-mods-grid--ascended`/`--evolved`'s own Name track was
+  `minmax(0, 1fr)` - the same "give the primary column the whole leftover share" choice that's
+  correct for the Minecraft Mods tab's own Name column (genuinely the widest, most-attention-
+  grabbing thing in that grid), but wrong here: most real ARK mod names are much shorter than
+  the row is wide, so claiming all the leftover space just pushed Mod ID/Actions far off to the
+  right with nothing filling the space between. Name is now capped (`minmax(0, 360px)`) like
+  Mod ID already was, instead of an `fr` track - with no `fr` track left at all, the grid's
+  columns size to their own content/cap and stop, so any genuinely leftover width (a very wide
+  window, or every mod in the list having a short name) just sits unused past the last column
+  instead of being forced into a gap mid-row.
