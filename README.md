@@ -2826,3 +2826,10 @@ async function findProfileIdByName(name) {
     layout so nothing stretches all the way out to a wide browser's own edge, letting Name claim
     the rest of that already-bounded width is the right amount of stretch: comfortably sized
     without reproducing the original edge-to-edge gap problem the cap was there to fix.
+
+- **Fix: still reported "too shrunk" after the 1200px cap above, on a wide enough monitor.**
+  `.ark-mods-list`'s `max-width` is now a percentage (`95%`) rather than another fixed pixel
+  guess - after two rounds of a fixed cap (1100px, then 1200px) each getting reported as too
+  narrow on a wide enough window, a percentage scales with however wide the window actually is
+  instead of requiring yet another pixel number to guess at, while still leaving a modest,
+  proportional margin on both sides rather than stretching flush to the tab's own edges.

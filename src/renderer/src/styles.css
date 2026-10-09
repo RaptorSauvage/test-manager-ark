@@ -1737,9 +1737,13 @@ label.checkbox {
    specifically because centering them *separately* (each with its own narrower max-width) left
    them centered on the same point but starting at different left edges, which read as broken/
    misaligned (a real report: the Add row stayed pinned to the page's own left edge while the
-   grid centered itself below it). */
+   grid centered itself below it). max-width is a percentage, not a fixed px value, after two
+   rounds of a fixed cap (1100px, then 1200px) each getting reported as "still too shrunk" on a
+   wide enough monitor - a percentage scales with however wide the window actually is instead of
+   requiring another guess at a pixel number, while still leaving a modest, proportional margin
+   on both sides rather than stretching flush to the tab's own edges. */
 .ark-mods-list {
-  max-width: 1200px;
+  max-width: 95%;
   margin: 0 auto;
 }
 
