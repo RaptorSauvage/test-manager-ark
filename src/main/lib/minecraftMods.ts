@@ -26,10 +26,13 @@ import {
 import {
   searchCurseForgeMods,
   getCurseForgeMod,
+  getCurseForgeMods,
   getCurseForgeModFiles,
+  getCurseForgeFingerprintMatches,
   type CurseForgeFile,
   type CurseForgeFileDependency
 } from './curseforgeClient'
+import { computeCurseForgeFingerprint } from './curseforgeFingerprint'
 import { saveMinecraftProfile, getSettings } from '../store'
 import { logManagerEvent, newTaskId } from './managerLog'
 import { delay } from './delay'
@@ -712,12 +715,16 @@ function titleFromFileName(fileName: string): string {
 /**
  * Recognizes mods/plugins already sitting in the folder that this app didn't itself install -
  * dropped in by hand, or installed before this feature existed. Identifies each untracked
- * `.jar`/`.jar.disabled` file by its sha1 hash (the same mechanism Modrinth's own official app
- * uses), in one batched lookup rather than one request per file. Every untracked file gets
- * added to installedMods either way: a hash match becomes a full source: 'modrinth' entry, and
- * anything that doesn't match anything Modrinth knows about (CurseForge-sourced, hand-built, or
- * just not on Modrinth) still becomes a source: 'unknown' entry - still visible and manageable
- * in the Mods tab, just without Modrinth's own metadata attached.
+ * `.jar`/`.jar.disabled` file by its sha1 hash against Modrinth first (the same mechanism
+ * Modrinth's own official app uses), in one batched lookup rather than one request per file.
+ * Anything Modrinth doesn't recognize gets a second pass against CurseForge's own
+ * "fingerprint" matching (murmur2 of the whitespace-stripped bytes - see
+ * curseforgeFingerprint.ts), only if AppSettings.curseforgeApiKey is set - again batched, and
+ * only for files still unmatched at that point. Every untracked file ends up in installedMods
+ * either way: a match from either source becomes a full source: 'modrinth'/'curseforge' entry,
+ * and anything neither source recognizes (hand-built, or genuinely not published to either)
+ * still becomes a source: 'unknown' entry - still visible and manageable in the Mods tab, just
+ * without either source's own metadata attached.
  */
 export async function scanForInstalledMods(
   profile: MinecraftProfile
@@ -731,15 +738,21 @@ export async function scanForInstalledMods(
     return { profile, result: { adopted: [] } }
   }
 
+  // Read every untracked file's bytes exactly once, computing both the sha1 (for Modrinth's
+  // hash lookup) and the CurseForge fingerprint (murmur2 of the whitespace-stripped bytes -
+  // see curseforgeFingerprint.ts) from the same buffer, rather than re-reading the file for
+  // each source's own identification scheme.
   const fileByHash = new Map<string, UntrackedModFile>()
+  const fileByFingerprint = new Map<number, UntrackedModFile>()
   for (const file of untracked) {
     const buffer = fs.readFileSync(path.join(targetDir, file.diskName))
     const hash = crypto.createHash('sha1').update(buffer).digest('hex')
-    // A hash collision between two different untracked files is astronomically unlikely and
-    // not worth guarding - at worst one of them is skipped this scan and picked up (still
-    // correctly) on the next one, once the other has already been adopted and is no longer
-    // "untracked".
+    // A hash/fingerprint collision between two different untracked files is astronomically
+    // unlikely and not worth guarding - at worst one of them is skipped this scan and picked
+    // up (still correctly) on the next one, once the other has already been adopted and is no
+    // longer "untracked".
     fileByHash.set(hash, file)
+    fileByFingerprint.set(computeCurseForgeFingerprint(buffer), file)
   }
 
   const versionsByHash = await getModrinthVersionsFromHashes([...fileByHash.keys()], 'sha1')
@@ -771,7 +784,52 @@ export async function scanForInstalledMods(
     })
   }
 
+  // Anything Modrinth didn't recognize gets a second pass against CurseForge's own
+  // fingerprint-matching endpoint, if a key is configured - only fingerprints for files still
+  // unmatched at this point are sent, so a mostly-Modrinth folder doesn't cost extra CurseForge
+  // requests for files already identified.
   const matchedFileNames = new Set(adopted.map((m) => m.fileName))
+  const apiKey = getSettings().curseforgeApiKey.trim()
+  if (apiKey) {
+    const remainingFingerprints = [...fileByFingerprint.entries()]
+      .filter(([, file]) => !matchedFileNames.has(file.fileName))
+      .map(([fingerprint]) => fingerprint)
+
+    if (remainingFingerprints.length > 0) {
+      try {
+        const matches = await getCurseForgeFingerprintMatches(apiKey, remainingFingerprints)
+        const modIds = [...new Set(matches.map((match) => match.file.modId))]
+        const mods = await getCurseForgeMods(apiKey, modIds)
+        const modById = new Map(mods.map((mod) => [mod.id, mod]))
+
+        for (const match of matches) {
+          const file = fileByFingerprint.get(match.file.fileFingerprint)
+          const mod = modById.get(match.file.modId)
+          if (!file || !mod || matchedFileNames.has(file.fileName)) continue
+          adopted.push({
+            source: 'curseforge',
+            projectId: String(match.file.modId),
+            slug: mod.slug,
+            title: mod.name,
+            iconUrl: mod.logo?.thumbnailUrl ?? undefined,
+            versionId: String(match.file.id),
+            versionNumber: match.file.displayName,
+            fileName: file.fileName,
+            enabled: file.enabled,
+            installedAs: 'user',
+            installedAt: Date.now()
+          })
+          matchedFileNames.add(file.fileName)
+        }
+      } catch (err) {
+        // Best-effort, same reasoning as the search path's own CurseForge try/catch - a
+        // CurseForge failure here shouldn't stop Modrinth's already-found matches from being
+        // adopted, it just means this round's leftovers fall through to 'unknown' below.
+        logManagerEvent(newTaskId('mc-mod-scan'), `Scan mods/plugins folder — ${profile.name}`, `CurseForge fingerprint check failed: ${(err as Error).message}`, 'error')
+      }
+    }
+  }
+
   for (const file of untracked) {
     if (matchedFileNames.has(file.fileName)) continue
     adopted.push({

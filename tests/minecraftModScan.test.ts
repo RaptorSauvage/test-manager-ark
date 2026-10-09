@@ -11,8 +11,10 @@ const mockOpenPath = vi.fn(async () => '')
 vi.mock('electron', () => ({ shell: { openPath: (p: string) => mockOpenPath(p) } }))
 
 const mockSaveMinecraftProfile = vi.fn((profile: MinecraftProfile) => [profile])
+const mockGetSettings = vi.fn(() => ({ curseforgeApiKey: '' }))
 vi.mock('../src/main/store', () => ({
-  saveMinecraftProfile: (profile: MinecraftProfile) => mockSaveMinecraftProfile(profile)
+  saveMinecraftProfile: (profile: MinecraftProfile) => mockSaveMinecraftProfile(profile),
+  getSettings: () => mockGetSettings()
 }))
 
 vi.mock('../src/main/lib/managerLog', () => ({
@@ -31,7 +33,19 @@ vi.mock('../src/main/lib/modrinthClient', async () => {
   }
 })
 
+const mockGetCurseForgeFingerprintMatches = vi.fn()
+const mockGetCurseForgeMods = vi.fn()
+vi.mock('../src/main/lib/curseforgeClient', async () => {
+  const actual = await vi.importActual<typeof import('../src/main/lib/curseforgeClient')>('../src/main/lib/curseforgeClient')
+  return {
+    ...actual,
+    getCurseForgeFingerprintMatches: (...args: unknown[]) => mockGetCurseForgeFingerprintMatches(...args),
+    getCurseForgeMods: (...args: unknown[]) => mockGetCurseForgeMods(...args)
+  }
+})
+
 import { scanForInstalledMods, openMinecraftModsFolder, modTargetDir } from '../src/main/lib/minecraftMods'
+import { computeCurseForgeFingerprint } from '../src/main/lib/curseforgeFingerprint'
 
 function makeProfile(overrides: Partial<MinecraftProfile> = {}, installDir: string): MinecraftProfile {
   return {
@@ -90,6 +104,9 @@ describe('scanForInstalledMods', () => {
     mockGetModrinthVersionsFromHashes.mockReset()
     mockGetModrinthProjects.mockReset()
     mockGetModrinthProjects.mockResolvedValue([])
+    mockGetSettings.mockReturnValue({ curseforgeApiKey: '' })
+    mockGetCurseForgeFingerprintMatches.mockReset()
+    mockGetCurseForgeMods.mockReset()
     mockOpenPath.mockClear()
   })
 
@@ -282,6 +299,109 @@ describe('scanForInstalledMods', () => {
 
     expect(result.adopted).toHaveLength(1)
     expect(result.adopted[0]).toMatchObject({ fileName: 'root.jar', enabled: false })
+  })
+
+  it('does not call CurseForge when no API key is configured - unmatched files just fall back to "unknown"', async () => {
+    const profile = makeProfile({}, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'mystery.jar'), 'unknown content')
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({})
+
+    const { result } = await scanForInstalledMods(profile)
+
+    expect(result.adopted).toHaveLength(1)
+    expect(result.adopted[0].source).toBe('unknown')
+    expect(mockGetCurseForgeFingerprintMatches).not.toHaveBeenCalled()
+  })
+
+  it('identifies a file Modrinth missed via a CurseForge fingerprint match, when an API key is set', async () => {
+    const profile = makeProfile({}, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'cf-mod.jar'), 'curseforge content')
+    mockGetSettings.mockReturnValue({ curseforgeApiKey: 'test-key' })
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({})
+    const fingerprint = computeCurseForgeFingerprint(Buffer.from('curseforge content'))
+    mockGetCurseForgeFingerprintMatches.mockResolvedValue([
+      {
+        id: 200,
+        file: { id: 55, modId: 200, fileName: 'cf-mod.jar', displayName: '2.0.0', fileFingerprint: fingerprint }
+      }
+    ])
+    mockGetCurseForgeMods.mockResolvedValue([
+      { id: 200, slug: 'cf-mod', name: 'CF Mod', summary: '', downloadCount: 10, logo: null, allowModDistribution: true }
+    ])
+
+    const { profile: updated, result } = await scanForInstalledMods(profile)
+
+    expect(result.adopted).toHaveLength(1)
+    expect(result.adopted[0]).toMatchObject({
+      source: 'curseforge',
+      projectId: '200',
+      title: 'CF Mod',
+      fileName: 'cf-mod.jar',
+      versionId: '55',
+      versionNumber: '2.0.0'
+    })
+    expect(updated.installedMods).toHaveLength(1)
+    expect(mockGetCurseForgeFingerprintMatches).toHaveBeenCalledWith('test-key', [fingerprint])
+  })
+
+  it('only sends CurseForge fingerprints for files Modrinth did not already match', async () => {
+    const profile = makeProfile({}, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'root.jar'), 'root content')
+    fs.writeFileSync(path.join(modTargetDir(profile), 'cf-mod.jar'), 'curseforge content')
+    mockGetSettings.mockReturnValue({ curseforgeApiKey: 'test-key' })
+    const modrinthHash = sha1('root content')
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({
+      [modrinthHash]: makeVersion({ id: 'version-root', project_id: 'project-root' })
+    })
+    mockGetModrinthProjects.mockResolvedValue([
+      { id: 'project-root', slug: 'root-mod', title: 'Root Mod', description: '', icon_url: null, client_side: 'optional', server_side: 'required' }
+    ])
+    mockGetCurseForgeFingerprintMatches.mockResolvedValue([])
+
+    await scanForInstalledMods(profile)
+
+    const expectedFingerprint = computeCurseForgeFingerprint(Buffer.from('curseforge content'))
+    expect(mockGetCurseForgeFingerprintMatches).toHaveBeenCalledWith('test-key', [expectedFingerprint])
+  })
+
+  it('falls back to "unknown" when CurseForge finds no fingerprint match either', async () => {
+    const profile = makeProfile({}, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'mystery.jar'), 'unknown content')
+    mockGetSettings.mockReturnValue({ curseforgeApiKey: 'test-key' })
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({})
+    mockGetCurseForgeFingerprintMatches.mockResolvedValue([])
+
+    const { result } = await scanForInstalledMods(profile)
+
+    expect(result.adopted).toHaveLength(1)
+    expect(result.adopted[0].source).toBe('unknown')
+  })
+
+  it('still adopts the Modrinth-matched files even if the CurseForge fingerprint check itself fails', async () => {
+    const profile = makeProfile({}, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'root.jar'), 'root content')
+    fs.writeFileSync(path.join(modTargetDir(profile), 'mystery.jar'), 'unknown content')
+    mockGetSettings.mockReturnValue({ curseforgeApiKey: 'test-key' })
+    const modrinthHash = sha1('root content')
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({
+      [modrinthHash]: makeVersion({ id: 'version-root', project_id: 'project-root' })
+    })
+    mockGetModrinthProjects.mockResolvedValue([
+      { id: 'project-root', slug: 'root-mod', title: 'Root Mod', description: '', icon_url: null, client_side: 'optional', server_side: 'required' }
+    ])
+    mockGetCurseForgeFingerprintMatches.mockRejectedValue(new Error('CurseForge is down'))
+
+    const { result } = await scanForInstalledMods(profile)
+
+    expect(result.adopted).toHaveLength(2)
+    const byFileName = Object.fromEntries(result.adopted.map((m) => [m.fileName, m]))
+    expect(byFileName['root.jar'].source).toBe('modrinth')
+    expect(byFileName['mystery.jar'].source).toBe('unknown')
   })
 })
 

@@ -111,10 +111,10 @@ export interface MinecraftModUpdateCheckResult {
 }
 
 /** Result of scanForInstalledMods - what it found sitting in the mods/plugins folder that
- *  wasn't already tracked. Modrinth-only for now: CurseForge's own file-identification
- *  endpoint (murmur2 fingerprints, not a simple file hash) is a real follow-up, not
- *  implemented yet - an existing CurseForge-sourced file still gets picked up here, just as
- *  source: 'unknown' like anything else scanning can't place. */
+ *  wasn't already tracked. Checks Modrinth first (by sha1 hash), then CurseForge (by its own
+ *  murmur2 "fingerprint" - see curseforgeFingerprint.ts) for anything still unmatched, when
+ *  AppSettings.curseforgeApiKey is set. A file neither source recognizes (hand-built, or
+ *  genuinely not on either) still becomes source: 'unknown'. */
 export interface MinecraftModScanResult {
   /** Every untracked file found this scan, now added to installedMods (already reflected in
    *  the profile this call also returns) - identified files have source: 'modrinth' with full

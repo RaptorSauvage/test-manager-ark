@@ -91,7 +91,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
       const { profile: updated, result } = await window.api.minecraft.mods.scan(profile.id)
       if (result.adopted.length > 0) onProfileChange(updated)
       if (result.adopted.length > 0) {
-        const identified = result.adopted.filter((m) => m.source === 'modrinth')
+        const identified = result.adopted.filter((m) => m.source === 'modrinth' || m.source === 'curseforge')
         const unidentified = result.adopted.filter((m) => m.source === 'unknown')
         const parts: string[] = []
         if (identified.length > 0) {
@@ -99,7 +99,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
         }
         if (unidentified.length > 0) {
           parts.push(
-            `${unidentified.length} file${unidentified.length === 1 ? '' : 's'} in the folder could not be identified (not on Modrinth, or CurseForge-sourced) - added below as "Unidentified", still manageable`
+            `${unidentified.length} file${unidentified.length === 1 ? '' : 's'} in the folder could not be identified - added below as "Unidentified", still manageable`
           )
         }
         setScanNote(parts.join(' - '))

@@ -81,6 +81,11 @@ export interface CurseForgeFile {
   fileDate: string
   hashes: CurseForgeFileHash[]
   dependencies: CurseForgeFileDependency[]
+  /** The CurseForge fingerprint (murmur2 of the whitespace-stripped file, see
+   *  curseforgeFingerprint.ts) CurseForge itself computed for this exact file - every File
+   *  object carries one, not just fingerprint-match responses. Used to map a /fingerprints
+   *  match back to the on-disk file whose fingerprint was submitted. */
+  fileFingerprint: number
 }
 
 interface CurseForgeSearchResponse {
@@ -99,7 +104,7 @@ interface CurseForgeFileResponse {
   data: CurseForgeFile
 }
 
-interface CurseForgeFingerprintMatch {
+export interface CurseForgeFingerprintMatch {
   id: number
   file: CurseForgeFile
 }
@@ -150,6 +155,24 @@ export async function getCurseForgeMod(apiKey: string, modId: number): Promise<C
   return response.data
 }
 
+/** Same data as getCurseForgeMod, but for many mods in one request - CurseForge's own batch
+ *  counterpart to /mods/{id} (POST /v1/mods, body {modIds}), same reasoning as
+ *  modrinthClient's getModrinthProjects: a folder scan that fingerprint-matches several
+ *  CurseForge mods at once should cost one mod-info request, not one per match. */
+export async function getCurseForgeMods(apiKey: string, modIds: number[]): Promise<CurseForgeMod[]> {
+  if (modIds.length === 0) return []
+  const response = await fetch(`${API_BASE}/mods`, {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ modIds })
+  })
+  if (!response.ok) {
+    throw new Error(`CurseForge request failed (HTTP ${response.status}): /mods`)
+  }
+  const body = (await response.json()) as CurseForgeSearchResponse
+  return body.data
+}
+
 /** Compatible files for one mod, newest first (CurseForge's /files endpoint doesn't guarantee
  *  an order, so this sorts by fileDate itself) - `[0]` is "the latest compatible file"
  *  wherever this app needs just that, same convention as modrinthClient's
@@ -175,10 +198,8 @@ export async function getCurseForgeFile(apiKey: string, modId: number, fileId: n
 
 /**
  * Identifies files by CurseForge's own "fingerprint" (a murmur2 hash of the file with
- * whitespace bytes stripped - not implemented here, since nothing in this app computes one
- * yet; see shared/minecraftMods.ts's MinecraftModScanResult doc comment). Kept here now so
- * the endpoint exists and is tested the moment fingerprinting itself is added, without
- * another round of client-module work.
+ * whitespace bytes stripped - see curseforgeFingerprint.ts for the actual computation, used by
+ * scanForInstalledMods for files Modrinth's own hash lookup didn't recognize).
  */
 export async function getCurseForgeFingerprintMatches(apiKey: string, fingerprints: number[]): Promise<CurseForgeFingerprintMatch[]> {
   if (fingerprints.length === 0) return []

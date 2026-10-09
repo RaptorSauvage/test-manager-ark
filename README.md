@@ -2463,3 +2463,53 @@ async function findProfileIdByName(name) {
   `mc-mod-title` ellipsis-plus-tooltip treatment from the previous fix carries over unchanged
   (still needed - Grid doesn't make genuinely long content disappear, it just stops that
   content from distorting every other row).
+
+- **Follow-up: the Grid version was still sitting cramped on the left of a wide window, not
+  using the available width.** `.mc-mods-grid` kept the old `max-width: 1040px` cap from the
+  `<table>` era, carried over without reconsidering it. That cap existed because a `<table>`'s
+  `width: 100%` was unpredictable (the exact bug this whole thread of fixes was chasing) - but
+  Grid's `fr` units don't have that problem: `minmax(0, 1fr)` is a deterministic share of
+  whatever width the grid actually has, regardless of any row's content, so there's no outlier-
+  content failure mode to reintroduce by letting it stretch. `.mc-mods-grid` now has
+  `width: 100%` (with a much larger `max-width: 1600px` just as a sanity cap for a genuinely
+  huge monitor) - the flexible column (Description in the Browse grid, Name in the Installed
+  grid) now actually fills the section's width instead of leaving most of the window empty.
+
+- **CurseForge fingerprint matching for scanForInstalledMods - the deliberate follow-up flagged
+  in the CurseForge v1 entry above is now implemented.** A file Modrinth's hash lookup didn't
+  recognize used to become `source: 'unknown'` outright, even if it was actually a CurseForge
+  mod the app could have identified. Now, when `AppSettings.curseforgeApiKey` is set, anything
+  still unmatched after the Modrinth pass gets a second pass against CurseForge's own file-
+  identification scheme before falling back to `'unknown'`.
+  - **New `src/main/lib/curseforgeFingerprint.ts`**: CurseForge doesn't use a normal file hash
+    for this - it's MurmurHash2 (32-bit, the original Austin Appleby algorithm, seed `1`)
+    computed over the file's bytes with whitespace bytes (tab/LF/CR/space) stripped out first.
+    This is CurseForge's own published algorithm (the same one their official app and every
+    third-party CurseForge-aware launcher uses), not something invented here -
+    `computeCurseForgeFingerprint(buffer)` implements it directly against the reference
+    description. *Caveat worth being upfront about*: this sandbox has no network access to
+    CurseForge to validate the implementation against a real server response, so it's verified
+    here by internal consistency (determinism, the whitespace-stripping behavior specifically,
+    tail-byte handling for lengths not a multiple of 4) rather than a known-good fingerprint
+    value from a real file. If it doesn't actually match anything on a real mods folder, that's
+    the first thing to double-check.
+  - **`scanForInstalledMods` reads each file's bytes once**, computing both the sha1 (for
+    Modrinth) and the CurseForge fingerprint (for CurseForge) from the same buffer, rather than
+    reading the file twice for two different identification schemes.
+  - **Only fingerprints for files Modrinth didn't already match are sent to CurseForge** -
+    consistent with the whole app's existing "don't cost more requests than necessary" pattern
+    (the same reasoning as the earlier Modrinth batch-project fix for this same function).
+  - **New `getCurseForgeMods` batch function** (`POST /v1/mods`, CurseForge's own counterpart to
+    Modrinth's `/projects`) fetches every matched mod's title/slug/icon in one request instead
+    of one per match - the exact N+1 mistake already fixed once for Modrinth's own scan path,
+    avoided here from the start instead of needing a second round of discovery.
+  - **A CurseForge fingerprint-check failure doesn't lose the Modrinth matches already found** -
+    wrapped in its own try/catch (logged as a soft warning), same "one source's failure
+    shouldn't take down the other's results" reasoning used for the search path's own
+    CurseForge try/catch.
+  - New `tests/curseforgeFingerprint.test.ts` (determinism, different-content differences, the
+    whitespace-stripping behavior specifically, tail-byte lengths, always-unsigned-32-bit) and
+    new tests in `tests/minecraftModScan.test.ts` (no CurseForge key - no CurseForge calls made;
+    a fingerprint match adopts as `source: 'curseforge'`; only unmatched files' fingerprints are
+    sent; still falls back to `'unknown'` when CurseForge also finds nothing; a CurseForge
+    failure doesn't lose the Modrinth-matched results).

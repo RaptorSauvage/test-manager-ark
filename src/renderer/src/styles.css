@@ -1917,9 +1917,17 @@ label.checkbox {
  * anything any row's content does; an overflowing value just truncates on its own
  * (mc-mod-title), it can never push the column - or any other row - wider.
  */
+/* width: 100% is safe here in a way it never was for the old <table> - Name's `minmax(0, 1fr)`
+   track (see the two variants below) is the only one that grows to fill leftover space, and
+   `fr` distribution is a deterministic share of the grid's own width, not content-dependent the
+   way table auto-layout's "leftover space" was. There's no outlier-content failure mode to
+   reintroduce by letting this stretch, so it's free to actually use the available width instead
+   of sitting cramped on the left of a wide window. max-width is just a sanity cap for a truly
+   huge (e.g. 4K) window. */
 .mc-mods-grid {
   display: grid;
-  max-width: 1040px;
+  width: 100%;
+  max-width: 1600px;
   column-gap: 12px;
 }
 
