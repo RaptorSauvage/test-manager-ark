@@ -9,18 +9,37 @@ import type {
   MinecraftModUpdateCheckResult
 } from '@shared/minecraftMods'
 import { confirmAction } from '../../lib/confirmAction'
+import modrinthLogo from '../../assets/mod-sources/modrinth.png'
+import curseforgeLogo from '../../assets/mod-sources/forge.png'
 
 function sourceLabel(source: MinecraftModSource): string {
   return source === 'curseforge' ? 'CurseForge' : 'Modrinth'
 }
 
-/** An installed mod's Source column text - "Modrinth, CurseForge" (not just "Modrinth") when a
- *  scan found the exact same file published on both (InstalledMinecraftMod.alsoOn), so the
- *  column doesn't silently imply it's only available from the one source actually used for
- *  install/update. */
-function installedSourceLabel(mod: InstalledMinecraftMod): string {
-  if (!mod.alsoOn || mod.alsoOn.length === 0) return sourceLabel(mod.source)
-  return [mod.source, ...mod.alsoOn].map(sourceLabel).join(', ')
+function sourceLogo(source: MinecraftModSource): string {
+  return source === 'curseforge' ? curseforgeLogo : modrinthLogo
+}
+
+/** Renders a single source's logo (Source column) in place of its plain-text name, with the
+ *  name still available as a tooltip/alt text so it's not lost for accessibility or at a
+ *  glance. */
+function SourceIcon({ source }: { source: MinecraftModSource }): JSX.Element {
+  return <img src={sourceLogo(source)} alt={sourceLabel(source)} title={sourceLabel(source)} className="mc-mod-source-icon" />
+}
+
+/** An installed mod's Source column content - both logos (not just the primary one's) when a
+ *  scan found the exact same file published on more than one source
+ *  (InstalledMinecraftMod.alsoOn), so the column doesn't silently imply it's only available
+ *  from the one source actually used for install/update. */
+function InstalledSourceIcons({ mod }: { mod: InstalledMinecraftMod }): JSX.Element {
+  const sources = mod.alsoOn && mod.alsoOn.length > 0 ? [mod.source, ...mod.alsoOn] : [mod.source]
+  return (
+    <>
+      {sources.map((source) => (
+        <SourceIcon key={source} source={source} />
+      ))}
+    </>
+  )
 }
 
 interface ModsTabProps {
@@ -274,7 +293,9 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
                 <div className="mc-mods-grid-cell mc-mod-description-cell" title={r.description}>
                   {r.description}
                 </div>
-                <div className="mc-mods-grid-cell muted">{sourceLabel(r.source)}</div>
+                <div className="mc-mods-grid-cell mc-mod-source-cell">
+                  <SourceIcon source={r.source} />
+                </div>
                 <div className="mc-mods-grid-cell">{r.downloads.toLocaleString()}</div>
                 <div className="mc-mods-grid-cell mc-mods-grid-actions">
                   <button
@@ -348,7 +369,9 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
                   </span>
                   {m.installedAs === 'dependency' && <span className="muted">(dependency)</span>}
                 </div>
-                <div className="mc-mods-grid-cell muted">{unidentified ? '—' : installedSourceLabel(m)}</div>
+                <div className="mc-mods-grid-cell mc-mod-source-cell">
+                  {unidentified ? <span className="muted">—</span> : <InstalledSourceIcons mod={m} />}
+                </div>
                 <div className="mc-mods-grid-cell mc-mod-title" title={m.versionNumber}>
                   {m.versionNumber || '—'}
                 </div>

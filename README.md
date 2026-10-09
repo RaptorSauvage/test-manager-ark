@@ -2632,3 +2632,19 @@ async function findProfileIdByName(name) {
   `BrowserWindow` itself (previously just its `webContents`) and calls `mainWindow.focus()`
   right after `addFirewallRulesForSteamCmd` settles, success/failure/cancellation alike - same
   pattern as `confirmAction()` and `dialog.ts`'s pickers.
+
+- **Change: the Mods tab's Source column shows each mod source's own logo instead of its
+  plain-text name.** User-provided logo files (`forge.png`, `Modrinth_Logo.png` - added at the
+  repo root for this) moved into `src/renderer/src/assets/mod-sources/` as
+  `forge.png`/`modrinth.png`. Note `forge.png` is actually the Forge *mod loader*'s anvil logo,
+  not CurseForge's own brand logo - used here for CurseForge anyway at the user's explicit
+  request, since no CurseForge-specific logo was provided.
+  - New `SourceIcon`/`InstalledSourceIcons` in `ModsTab.tsx` replace the old plain-text
+    `sourceLabel`/`installedSourceLabel` helpers in both grids' Source column - the name is
+    still there as the image's `alt`/`title` (a tooltip, and not lost for accessibility). The
+    Installed grid's cross-listed case (`alsoOn`) now renders every logo that applies
+    side by side instead of a comma-joined "Modrinth, CurseForge" string.
+  - New `.mc-mod-source-cell`/`.mc-mod-source-icon` CSS - a small (22px) `object-fit: contain`
+    icon, with `flex-wrap: wrap` on the cell itself for the Installed grid's multi-logo case.
+  - Scoped to the Source column cells only, per explicit confirmation - the "Browse Modrinth
+    [& CurseForge]" section headings/paragraphs above the grid stay as plain text.

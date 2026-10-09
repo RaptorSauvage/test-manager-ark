@@ -1970,6 +1970,22 @@ label.checkbox {
   gap: 8px;
 }
 
+/* Source column: the source's own logo instead of its plain-text name (Modrinth/CurseForge) -
+   the name's still there as alt text/a title tooltip. gap/flex-wrap matter here since the
+   Installed grid can show more than one logo side by side when a mod's alsoOn means it's
+   cross-listed on more than one source. */
+.mc-mod-source-cell {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mc-mod-source-icon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 /* Prose, not a single value - wraps within its track rather than truncating to one line (the
    row grows to fit, same as the old <table>'s own wrapping <td> did). */
 .mc-mod-description-cell {
