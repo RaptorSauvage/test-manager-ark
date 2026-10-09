@@ -2757,3 +2757,24 @@ async function findProfileIdByName(name) {
     the `ModsTab.tsx` changes themselves (same as every other UI-only change here) - `npm run
     typecheck`/`build` both pass, but this wasn't visually verified running the actual app (no
     display in this environment to drive Electron's UI with).
+
+- **Follow-up, from a real screenshot of the above: the free-text Mod Name field was redundant
+  once a resolved CurseForge name already existed, and the table's right-most Actions column
+  (↑/↓/⤒/Remove) was visibly misaligned from the rest of the row once a row's resolved name got
+  long.** Both ARK: Survival Ascended's own CurseForge enrichment and the Minecraft Mods tab hit
+  the exact same underlying issue the Minecraft tab already had to fix once before (see its own
+  "CSS Grid, not a `<table>`" entry above) - so the fix is the same one, applied here too.
+  - **ARK: Survival Ascended's Name column is no longer an editable text input.** It now shows
+    the real icon + name resolved from CurseForge (falling back to whatever label a mod already
+    had, typed in before this feature existed, if CurseForge hasn't resolved it) - purely
+    informational, same as the Minecraft Mods tab's own Name cell. **ARK: Survival Evolved is
+    unaffected and keeps its editable free-text Name field exactly as before** - it has no
+    CurseForge data to show instead, since its mod ids are Steam Workshop ids.
+  - **The whole mods list is now a CSS Grid** (`ark-mods-grid`/`ark-mods-grid--ascended`/
+    `ark-mods-grid--evolved` in `styles.css`, `ModsTab.tsx`'s own `<table>` replaced with the
+    same Fragment-per-row flat-children markup the Minecraft tab's grid already uses) instead of
+    an HTML `<table>` - this is what actually fixes the reported Actions-column misalignment,
+    not a tweak to the old table's own CSS, for the same reason incremental table-CSS patches
+    never fully fixed it for the Minecraft tab either: a column's width in table auto-layout
+    depends on content across every row at once, which Grid's explicit per-track
+    `grid-template-columns` doesn't.

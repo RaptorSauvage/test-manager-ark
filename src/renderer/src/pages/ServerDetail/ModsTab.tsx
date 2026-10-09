@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import type { ServerProfile, ServerMod, ArkModInfoMap, ArkModSearchResult } from '@shared/types'
 
 interface ModsTabProps {
@@ -147,6 +147,16 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
     applyMods(mods.map((m) => (m.id === id ? { ...m, name: name || undefined } : m)))
   }
 
+  // ARK: Survival Ascended's own Name cell - the real CurseForge name once resolved (arkInfo),
+  // falling back to whatever label this mod already had (typed in by hand before this feature
+  // existed, back when that was the only way to name a row) rather than showing nothing. ARK:
+  // Survival Evolved never has CurseForge info at all (see arkInfo's own gating above), so its
+  // Name cell stays the editable free-text input it always was - resolvedName is only ever
+  // called for an Ascended row.
+  function resolvedName(mod: ServerMod): string | undefined {
+    return arkInfo[mod.id]?.name ?? mod.name
+  }
+
   function move(index: number, direction: -1 | 1): void {
     const next = [...mods]
     const target = index + direction
@@ -206,10 +216,10 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
             Mod IDs, applied in this order. <strong>Enabled</strong> mods are passed via the server&apos;s{' '}
             <code>-mods=</code> launch flag at the next start, unless <strong>Passive</strong> is checked, in
             which case they go via <code>-passivemods=</code> instead. Check <strong>Dev</strong> to load a
-            mod&apos;s in-development build (appends <code>-dev</code> to its ID). Mod Name is just your own
-            label, typed in by hand - not looked up automatically, though with a CurseForge API key configured
-            each row also shows the mod&apos;s real icon/name resolved from CurseForge alongside it. Changes save
-            immediately - restart the server to actually apply them.
+            mod&apos;s in-development build (appends <code>-dev</code> to its ID). Name shows each mod&apos;s
+            real icon/name resolved from CurseForge once a CurseForge API key is configured - search for a mod
+            below to add it by name instead of typing a numeric id by hand. Changes save immediately - restart
+            the server to actually apply them.
           </>
         )}
       </p>
@@ -290,80 +300,75 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
         />
         <button onClick={addMod}>Add</button>
       </div>
-      <table className="mods-table">
-        <thead>
-          <tr>
-            <th className="mods-select-col">
-              <div className="mods-select-col-header">
-                <input
-                  type="checkbox"
-                  checked={mods.length > 0 && mods.every((m) => m.enabled)}
-                  onChange={() => toggleAll('enabled')}
-                  disabled={mods.length === 0}
-                  title="Enable all"
-                />
-                <span>Enable</span>
+      <div className={`ark-mods-grid ${isEvolved ? 'ark-mods-grid--evolved' : 'ark-mods-grid--ascended'}`}>
+        <div className="ark-mods-grid-header">
+          <div className="mods-select-col-header">
+            <input
+              type="checkbox"
+              checked={mods.length > 0 && mods.every((m) => m.enabled)}
+              onChange={() => toggleAll('enabled')}
+              disabled={mods.length === 0}
+              title="Enable all"
+            />
+            <span>Enable</span>
+          </div>
+        </div>
+        {!isEvolved && (
+          <div className="ark-mods-grid-header">
+            <div className="mods-select-col-header">
+              <input
+                type="checkbox"
+                checked={mods.length > 0 && mods.every((m) => m.passive)}
+                onChange={() => toggleAll('passive')}
+                disabled={mods.length === 0}
+                title="Mark all as passive"
+              />
+              <span>Passive</span>
+            </div>
+          </div>
+        )}
+        {!isEvolved && (
+          <div className="ark-mods-grid-header">
+            <div className="mods-select-col-header">
+              <input
+                type="checkbox"
+                checked={mods.length > 0 && mods.every((m) => m.dev)}
+                onChange={() => toggleAll('dev')}
+                disabled={mods.length === 0}
+                title="Mark all as dev"
+              />
+              <span>Dev</span>
+            </div>
+          </div>
+        )}
+        <div className="ark-mods-grid-header">Name</div>
+        <div className="ark-mods-grid-header">Mod ID</div>
+        <div className="ark-mods-grid-header"></div>
+        {mods.map((mod, i) => (
+          <Fragment key={mod.id}>
+            <div className={`ark-mods-grid-cell ${mod.enabled ? '' : 'mod-disabled'}`}>
+              <input type="checkbox" checked={mod.enabled} onChange={() => toggleField(mod.id, 'enabled')} />
+            </div>
+            {!isEvolved && (
+              <div className={`ark-mods-grid-cell ${mod.enabled ? '' : 'mod-disabled'}`}>
+                <input type="checkbox" checked={mod.passive} onChange={() => toggleField(mod.id, 'passive')} />
               </div>
-            </th>
-            {!isEvolved && (
-              <th className="mods-select-col">
-                <div className="mods-select-col-header">
-                  <input
-                    type="checkbox"
-                    checked={mods.length > 0 && mods.every((m) => m.passive)}
-                    onChange={() => toggleAll('passive')}
-                    disabled={mods.length === 0}
-                    title="Mark all as passive"
-                  />
-                  <span>Passive</span>
-                </div>
-              </th>
             )}
             {!isEvolved && (
-              <th className="mods-select-col">
-                <div className="mods-select-col-header">
-                  <input
-                    type="checkbox"
-                    checked={mods.length > 0 && mods.every((m) => m.dev)}
-                    onChange={() => toggleAll('dev')}
-                    disabled={mods.length === 0}
-                    title="Mark all as dev"
-                  />
-                  <span>Dev</span>
-                </div>
-              </th>
+              <div className={`ark-mods-grid-cell ${mod.enabled ? '' : 'mod-disabled'}`}>
+                <input type="checkbox" checked={mod.dev} onChange={() => toggleField(mod.id, 'dev')} />
+              </div>
             )}
-            <th>Mod Name</th>
-            <th>Mod ID</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {mods.map((mod, i) => (
-            <tr key={mod.id} className={mod.enabled ? '' : 'mod-disabled'}>
-              <td className="mods-select-col">
-                <input type="checkbox" checked={mod.enabled} onChange={() => toggleField(mod.id, 'enabled')} />
-              </td>
-              {!isEvolved && (
-                <td className="mods-select-col">
-                  <input type="checkbox" checked={mod.passive} onChange={() => toggleField(mod.id, 'passive')} />
-                </td>
-              )}
-              {!isEvolved && (
-                <td className="mods-select-col">
-                  <input type="checkbox" checked={mod.dev} onChange={() => toggleField(mod.id, 'dev')} />
-                </td>
-              )}
-              <td>
+            <div className={`ark-mods-grid-cell ark-mod-name-cell ${mod.enabled ? '' : 'mod-disabled'}`}>
+              {isEvolved ? (
                 <input
                   className="mod-name-input"
                   value={mod.name ?? ''}
                   onChange={(e) => renameMod(mod.id, e.target.value)}
                   placeholder="Optional label"
                 />
-              </td>
-              <td className="mod-id">
-                <div className="ark-mod-id-cell">
+              ) : (
+                <>
                   {arkInfo[mod.id]?.iconUrl && (
                     <img
                       src={arkInfo[mod.id].iconUrl}
@@ -374,42 +379,34 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
                       }}
                     />
                   )}
-                  <span>
-                    {mod.id}
-                    {mod.dev ? '-dev' : ''}
+                  <span className="ark-mod-title" title={resolvedName(mod)}>
+                    {resolvedName(mod) ?? <span className="muted">—</span>}
                   </span>
-                  {arkInfo[mod.id]?.name && (
-                    <span className="muted ark-mod-resolved-name" title="Resolved from CurseForge">
-                      {arkInfo[mod.id].name}
-                    </span>
-                  )}
-                </div>
-              </td>
-              <td className="mods-list-actions">
-                <button onClick={() => moveToTop(i)} disabled={i === 0} title="Move to top of list">
-                  ⤒
-                </button>
-                <button onClick={() => move(i, -1)} disabled={i === 0}>
-                  ↑
-                </button>
-                <button onClick={() => move(i, 1)} disabled={i === mods.length - 1}>
-                  ↓
-                </button>
-                <button className="danger" onClick={() => removeMod(mod.id)}>
-                  Remove
-                </button>
-              </td>
-            </tr>
-          ))}
-          {mods.length === 0 && (
-            <tr>
-              <td colSpan={isEvolved ? 4 : 6} className="empty-state">
-                No mods configured.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+                </>
+              )}
+            </div>
+            <div className={`ark-mods-grid-cell mod-id ${mod.enabled ? '' : 'mod-disabled'}`}>
+              {mod.id}
+              {mod.dev ? '-dev' : ''}
+            </div>
+            <div className={`ark-mods-grid-cell ark-mods-grid-actions ${mod.enabled ? '' : 'mod-disabled'}`}>
+              <button onClick={() => moveToTop(i)} disabled={i === 0} title="Move to top of list">
+                ⤒
+              </button>
+              <button onClick={() => move(i, -1)} disabled={i === 0}>
+                ↑
+              </button>
+              <button onClick={() => move(i, 1)} disabled={i === mods.length - 1}>
+                ↓
+              </button>
+              <button className="danger" onClick={() => removeMod(mod.id)}>
+                Remove
+              </button>
+            </div>
+          </Fragment>
+        ))}
+        {mods.length === 0 && <div className="ark-mods-grid-empty">No mods configured.</div>}
+      </div>
       {error && <p className="error-message">{error}</p>}
       {status && (
         <div className="form-actions">
