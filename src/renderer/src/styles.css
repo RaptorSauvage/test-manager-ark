@@ -1737,18 +1737,21 @@ label.checkbox {
    centered them on the same point but left their *left edges* different, which read as broken/
    misaligned (a real report: the Add row stayed pinned to the page's own left edge while the
    grid centered itself below it).
-   No width cap here any more - three rounds of a centered max-width (1100px, 1200px, then a
-   95% percentage) each still got reported back as "hasn't moved"/"too shrunk" even on a
-   maximized 2K monitor, which stopped being explainable by the actual cap value and started
-   pointing at something about centering a capped width in this specific layout not taking
-   effect the way plain width:100% does elsewhere. Matching the Minecraft Mods tab's own grid
-   exactly (no cap, width: 100%, Name as a real 1fr track below) is the one arrangement already
-   proven to behave correctly on this exact CSS Grid architecture - if "fill the available
-   width" turns out to still be too wide/need margins again once it's confirmed working, that's
-   a much smaller, easier follow-up than continuing to guess at cap values that may not even be
-   the actual constraint in play. */
+   .mods-tab is `display: flex; flex-direction: column`, so .ark-mods-list is itself a flex
+   item - confirmed (by dropping the cap entirely to a plain width: 100% and seeing that
+   actually, visibly, fill the tab edge-to-edge) that a flex item's own width genuinely does
+   apply here. What's suspect in hindsight is centering it with `margin: 0 auto`: three rounds
+   of max-width + margin: 0 auto (1100px, 1200px, a 95% percentage) each came back
+   indistinguishable from the last - plausible if the cap was actually narrowing it correctly
+   each time but the auto-margin centering silently never took effect, leaving it flush-left at
+   each (similar-looking) narrower width instead of centered, which would explain "hasn't
+   moved" between three cosmetically-similar flush-left results. align-self: center is a more
+   direct, less indirection-dependent way to center a single flex item along its container's
+   cross axis than relying on its margins absorbing leftover space - used here instead. */
 .ark-mods-list {
   width: 100%;
+  max-width: 1600px;
+  align-self: center;
 }
 
 .mods-add {

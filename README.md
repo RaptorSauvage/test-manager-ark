@@ -2847,3 +2847,16 @@ async function findProfileIdByName(name) {
   available width turns out to need centered margins again once that's confirmed actually
   working, that's a much smaller, easier follow-up than continuing to guess at cap values that
   may not even have been the real constraint.
+
+- **Fix: confirmed from the above - dropping the cap entirely did visibly fill the tab
+  edge-to-edge (user: "back to square one"), proving a flex item's own `width` genuinely
+  applies in `.ark-mods-list` (a flex item of `.mods-tab`'s column layout). In hindsight, the
+  actual likely culprit all along was `margin: 0 auto` itself never centering it - each of the
+  three earlier capped attempts could easily have been correctly narrowed but left flush-left
+  instead of centered, which would explain three cosmetically-similar "hasn't moved" results
+  between slightly different cap values.** `.ark-mods-list` now uses `align-self: center`
+  (overriding just this one flex item's own cross-axis alignment, overriding `.mods-tab`'s
+  default `align-items: stretch`) instead of relying on auto margins absorbing leftover space -
+  a more direct mechanism with less indirection to silently fail - alongside a generous
+  `max-width: 1600px` cap, picked now that dropping the cap entirely confirmed the available
+  width is genuinely wide enough for 1600px to read as "spread out," not "shrunk."
