@@ -2778,3 +2778,16 @@ async function findProfileIdByName(name) {
     never fully fixed it for the Minecraft tab either: a column's width in table auto-layout
     depends on content across every row at once, which Grid's explicit per-track
     `grid-template-columns` doesn't.
+
+- **Fix: the CurseForge-resolved icon never actually showed up, in either ARK's new Mods tab
+  enrichment/search or (very possibly, silently, just never reported) the Minecraft Mods tab's
+  own CurseForge results.** `index.html`'s CSP `img-src` only allow-listed the one specific host
+  `https://media.forgecdn.net`, picked without ever having a live response to confirm it against
+  (no network access to CurseForge from this sandbox - see the fingerprint-algorithm
+  verification entry above for the same caveat on a different piece of CurseForge integration
+  work). CurseForge's own CDN serves different asset kinds from different `forgecdn.net`
+  subdomains (e.g. `edge.forgecdn.net` for file downloads) - if mod logos are served from a
+  different one than `media.`, the CSP silently blocked every one of them, with the `<img>`
+  tag's own `onError` handler just hiding the broken image rather than surfacing anything. Now
+  `https://*.forgecdn.net` (wildcard subdomain) instead of the one specific hostname, so this
+  class of bug can't recur for whichever subdomain CurseForge actually uses for a given asset.
