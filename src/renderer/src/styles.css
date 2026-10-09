@@ -1900,58 +1900,83 @@ label.checkbox {
   color: #fff;
 }
 
-/* No `width: 100%` here, deliberately - that was the actual remaining bug. Forcing the table
-   to fill its full (even capped) container width meant every column still had to collectively
-   stretch to reach that width, and since Name was the only column without a tight content-hugging
-   rule, it absorbed essentially all of that forced extra space - most mod names are short, so
-   that left a big visible gap between the name and the Source column on every row. Leaving
-   `width` at its default (`auto`) lets the table shrink-to-fit the sum of its columns' actual
-   content widths instead - max-width only caps it for the rare case content alone would make it
-   wider than reasonable. */
-.mc-mods-table {
+/*
+ * CSS Grid, not a <table>. Three rounds of fixing the <table>-based version (narrow-column
+ * width hints, flex-wrap, shrink-to-fit sizing, max-width caps on the Name column) each solved
+ * one real symptom but never the actual disease: HTML table auto-layout sizes a column based on
+ * the single most demanding piece of content anywhere in that column, across every row at once
+ * - there is no way to tell it "give normal rows a normal width and let only the one outlier
+ * truncate instead." A real screenshot of 357 installed mods kept showing the same shape of bug
+ * (a dead gap between Name and Source) through every one of those rounds, each time for a
+ * subtly different reason.
+ *
+ * Grid sidesteps this entirely: `grid-template-columns` declares each column's width explicitly
+ * and identically for the header row and every data row (they're all just direct children of
+ * the same grid container, flowing left-to-right/top-to-bottom through the same column tracks -
+ * see the Fragment-per-row markup in ModsTab.tsx). A column's width no longer depends on
+ * anything any row's content does; an overflowing value just truncates on its own
+ * (mc-mod-title), it can never push the column - or any other row - wider.
+ */
+.mc-mods-grid {
+  display: grid;
   max-width: 1040px;
-  border-collapse: collapse;
+  column-gap: 12px;
 }
 
-/* The Browse Modrinth/CurseForge results table is the one exception that does want
-   `width: 100%` - its Description column is prose that should wrap within the available
-   width, not render as one unbroken line at its natural max-content width the way shrink-to-
-   fit sizing would leave it. Two columns (Name, Description) share leftover space there
-   instead of just the one, so it doesn't reproduce the Installed table's all-of-it-goes-to-
-   Name bug above. */
-.mc-mods-table--browse {
-  width: 100%;
+/* Name gets the lion's share (capped, not fixed, so a narrow window can still shrink it) since
+   it's the primary identifying column; Description is the other flexible one (prose that
+   should wrap within its track, not render as one unbroken line) and splits remaining space
+   with Name via its own 1fr. Source/Downloads/the Install button are all a known-bounded small
+   vocabulary - fixed-ish tracks are fine, nothing there can produce a surprise long outlier. */
+.mc-mods-grid--browse {
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr) 100px 110px auto;
 }
 
-.mc-mods-table th,
-.mc-mods-table td {
-  text-align: left;
+/* No Description column here - Name alone gets the flexible 1fr share. Version is free-form
+   text from whichever source installed it (same unbounded-outlier risk as a mod's title), so
+   it also gets the mc-mod-title ellipsis treatment in ModsTab.tsx even though its own column
+   track is a fixed width here. */
+.mc-mods-grid--installed {
+  grid-template-columns: minmax(0, 1fr) 100px 150px 130px auto;
+}
+
+.mc-mods-grid-header,
+.mc-mods-grid-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
   padding: 8px;
   border-bottom: 1px solid var(--border);
   font-size: 0.85rem;
 }
 
-/* Caps how wide the Name column can get - without this, the column still sizes itself to
-   whichever single mod has the longest name across the *entire* list (nowrap means that one
-   row's content can't shrink), so every other, normally-named row ends up with a big dead gap
-   before Source starts - exactly what a 357-mod screenshot kept showing even after the table
-   itself stopped being force-stretched. A long name now truncates with an ellipsis instead
-   (mc-mod-title below) - the full name is still available as a native title-attribute tooltip
-   on hover. */
-.mc-mods-col-name {
-  max-width: 260px;
+.mc-mods-grid-header {
+  font-weight: 600;
+}
+
+.mc-mods-grid-empty {
+  grid-column: 1 / -1;
+  color: var(--muted);
 }
 
 .mc-mod-name-cell {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  /* A flex item's default min-width is auto (= its content's natural width), which defeats
-     text-overflow: ellipsis below by letting this cell grow past the column's max-width
-     instead of actually truncating. 0 lets it shrink down to that cap. */
-  min-width: 0;
 }
 
+/* Prose, not a single value - wraps within its track rather than truncating to one line (the
+   row grows to fit, same as the old <table>'s own wrapping <td> did). */
+.mc-mod-description-cell {
+  white-space: normal;
+  align-items: flex-start;
+}
+
+/* Truncates with an ellipsis instead of forcing its column wider - applied to both the Name
+   cell's title text and (in the Installed grid) the Version text, the two free-form,
+   unbounded-length values in these grids. The full value is still available as a native
+   title-attribute tooltip on hover (set in ModsTab.tsx). min-width: 0 matters here: a flex
+   item's default min-width is its own content's natural width, which silently defeats
+   text-overflow: ellipsis by letting the item grow past its track instead of actually
+   truncating. */
 .mc-mod-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1959,24 +1984,8 @@ label.checkbox {
   min-width: 0;
 }
 
-/* Keeps Version/Status/Downloads/Actions hugging their content instead of each getting an
-   equal (and much too wide) share of the table's auto layout - without this, a table with a
-   short Name/Status but an empty-header Actions column stretches those columns out and leaves
-   a wide dead gap before the actual buttons (see mc-mods-table's columns). */
-.mc-mods-col-narrow {
-  width: 1%;
-  white-space: nowrap;
-}
-
-/* .backup-management-actions wraps its buttons by default (fine for the Backups tab, which
-   only ever has a couple). Combined with mc-mods-col-narrow's width: 1% here, that wrap
-   collapses the whole actions column down to its single widest button's width (a wrapping
-   flex container's min-content is just its largest item, not the sum of all of them) and
-   stacks Disable/Remove/Update on top of each other instead of side by side, inflating every
-   row's height. Force one line instead - three short buttons always fit a reasonably wide
-   window, and letting the column size to their combined width is exactly the point of
-   mc-mods-col-narrow in the first place. */
-.mc-mods-table .backup-management-actions {
+.mc-mods-grid-actions {
+  gap: 8px;
   flex-wrap: nowrap;
 }
 
@@ -1985,6 +1994,7 @@ label.checkbox {
   height: 24px;
   border-radius: 4px;
   object-fit: cover;
+  flex-shrink: 0;
 }
 
 .backups-select-col {

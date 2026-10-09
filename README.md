@@ -2440,3 +2440,26 @@ async function findProfileIdByName(name) {
   max-width instead of actually truncating). The full name is still available as a native
   `title` attribute tooltip on hover. Same treatment in both tables (Browse results and
   Installed).
+
+- **Rebuilt the Mods tab's two tables as CSS Grid instead of `<table>`, after a fourth
+  screenshot showed the same shape of gap again despite the fix directly above.** Each of the
+  three previous rounds fixed a real, distinct bug (narrow-column width hints, then flex-wrap
+  collapsing the actions column, then the table being force-stretched, then one outlier mod
+  name sizing the whole column) - but they kept recurring because the underlying mechanism,
+  HTML table auto-layout, fundamentally sizes a column from the single most demanding piece of
+  content anywhere in that column, across every row at once. There's no way to tell a `<table>`
+  "give normal rows a normal width and only truncate the outlier" - short of the per-cell
+  `max-width` + ellipsis combination already in place, which *should* have been the final word,
+  but kept interacting with table layout in ways that were hard to fully pin down without
+  physically running it. Replaced both tables with CSS Grid (`.mc-mods-grid`,
+  `grid-template-columns` declaring each column's width once and for all) - header and every
+  data row are literally just a flat sequence of same-sized div children of one grid container
+  (the `Fragment`-per-row markup in `ModsTab.tsx`, no `<tr>` wrapper), so a column's width is
+  now entirely independent of what any row's content does; it can never be widened by one
+  outlier or collapsed by `flex-wrap`, because nothing about Grid's explicit track sizing model
+  works that way to begin with. `mc-mods-grid--browse` (`minmax(0,260px) minmax(0,1fr) 100px
+  110px auto`) keeps Description as the one wrapping/flexible column; `mc-mods-grid--installed`
+  (`minmax(0,1fr) 100px 150px 130px auto`) gives Name the flexible share instead. The
+  `mc-mod-title` ellipsis-plus-tooltip treatment from the previous fix carries over unchanged
+  (still needed - Grid doesn't make genuinely long content disappear, it just stops that
+  content from distorting every other row).

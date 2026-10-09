@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { supportsMinecraftMods } from '@shared/minecraftMods'
 import type {
@@ -238,55 +238,51 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
           </form>
           {error && <p className="error-message">{error}</p>}
           {lastNote && <p className="empty-state">{lastNote}</p>}
-          <table className="mc-mods-table mc-mods-table--browse">
-            <thead>
-              <tr>
-                <th className="mc-mods-col-name">Name</th>
-                <th>Description</th>
-                <th className="mc-mods-col-narrow">Source</th>
-                <th className="mc-mods-col-narrow">Downloads</th>
-                <th className="mc-mods-col-narrow"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((r) => (
-                <tr key={`${r.source}:${r.projectId}`}>
-                  <td className="mc-mod-name-cell">
-                    {r.iconUrl && (
-                      <img
-                        src={r.iconUrl}
-                        alt=""
-                        className="mc-mod-icon"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none'
-                        }}
-                      />
-                    )}
-                    <span className="mc-mod-title" title={r.title}>
-                      {r.title}
-                    </span>
-                  </td>
-                  <td>{r.description}</td>
-                  <td className="mc-mods-col-narrow muted">{sourceLabel(r.source)}</td>
-                  <td className="mc-mods-col-narrow">{r.downloads.toLocaleString()}</td>
-                  <td className="mc-mods-col-narrow">
-                    <button
-                      type="button"
-                      disabled={r.installed || busyId === r.projectId}
-                      onClick={() => void handleInstall(r.source, r.projectId)}
-                    >
-                      {r.installed ? 'Installed' : busyId === r.projectId ? 'Installing...' : 'Install'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {results.length === 0 && (
-                <tr>
-                  <td colSpan={5}>{searched ? 'No results.' : 'Search above to find mods/plugins for this server.'}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          <div className="mc-mods-grid mc-mods-grid--browse">
+            <div className="mc-mods-grid-header">Name</div>
+            <div className="mc-mods-grid-header">Description</div>
+            <div className="mc-mods-grid-header">Source</div>
+            <div className="mc-mods-grid-header">Downloads</div>
+            <div className="mc-mods-grid-header"></div>
+            {results.map((r) => (
+              <Fragment key={`${r.source}:${r.projectId}`}>
+                <div className="mc-mods-grid-cell mc-mod-name-cell">
+                  {r.iconUrl && (
+                    <img
+                      src={r.iconUrl}
+                      alt=""
+                      className="mc-mod-icon"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  )}
+                  <span className="mc-mod-title" title={r.title}>
+                    {r.title}
+                  </span>
+                </div>
+                <div className="mc-mods-grid-cell mc-mod-description-cell" title={r.description}>
+                  {r.description}
+                </div>
+                <div className="mc-mods-grid-cell muted">{sourceLabel(r.source)}</div>
+                <div className="mc-mods-grid-cell">{r.downloads.toLocaleString()}</div>
+                <div className="mc-mods-grid-cell mc-mods-grid-actions">
+                  <button
+                    type="button"
+                    disabled={r.installed || busyId === r.projectId}
+                    onClick={() => void handleInstall(r.source, r.projectId)}
+                  >
+                    {r.installed ? 'Installed' : busyId === r.projectId ? 'Installing...' : 'Install'}
+                  </button>
+                </div>
+              </Fragment>
+            ))}
+            {results.length === 0 && (
+              <div className="mc-mods-grid-cell mc-mods-grid-empty">
+                {searched ? 'No results.' : 'Search above to find mods/plugins for this server.'}
+              </div>
+            )}
+          </div>
         </section>
       ) : (
         <section className="cluster-section">
@@ -315,80 +311,74 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
           </button>
         </div>
         {scanNote && <p className="empty-state">{scanNote}</p>}
-        <table className="mc-mods-table">
-          <thead>
-            <tr>
-              <th className="mc-mods-col-name">Name</th>
-              <th className="mc-mods-col-narrow">Source</th>
-              <th className="mc-mods-col-narrow">Version</th>
-              <th className="mc-mods-col-narrow">Status</th>
-              <th className="mc-mods-col-narrow"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {profile.installedMods.map((m) => {
-              const update = updates[m.projectId]
-              const unidentified = m.source === 'unknown'
-              return (
-                <tr key={m.projectId}>
-                  <td className="mc-mod-name-cell">
-                    {m.iconUrl && (
-                      <img
-                        src={m.iconUrl}
-                        alt=""
-                        className="mc-mod-icon"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none'
-                        }}
-                      />
-                    )}
-                    <span className="mc-mod-title" title={m.title}>
-                      {m.title}
+        <div className="mc-mods-grid mc-mods-grid--installed">
+          <div className="mc-mods-grid-header">Name</div>
+          <div className="mc-mods-grid-header">Source</div>
+          <div className="mc-mods-grid-header">Version</div>
+          <div className="mc-mods-grid-header">Status</div>
+          <div className="mc-mods-grid-header"></div>
+          {profile.installedMods.map((m) => {
+            const update = updates[m.projectId]
+            const unidentified = m.source === 'unknown'
+            return (
+              <Fragment key={m.projectId}>
+                <div className="mc-mods-grid-cell mc-mod-name-cell">
+                  {m.iconUrl && (
+                    <img
+                      src={m.iconUrl}
+                      alt=""
+                      className="mc-mod-icon"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  )}
+                  <span className="mc-mod-title" title={m.title}>
+                    {m.title}
+                  </span>
+                  {m.installedAs === 'dependency' && <span className="muted">(dependency)</span>}
+                </div>
+                <div className="mc-mods-grid-cell muted">{unidentified ? '—' : sourceLabel(m.source)}</div>
+                <div className="mc-mods-grid-cell mc-mod-title" title={m.versionNumber}>
+                  {m.versionNumber || '—'}
+                </div>
+                <div className="mc-mods-grid-cell">
+                  {unidentified ? (
+                    <span className="muted" title="Not found on Modrinth (CurseForge-sourced, hand-built, or hash didn't match) - enable/disable/remove still work.">
+                      Unidentified
                     </span>
-                    {m.installedAs === 'dependency' && <span className="muted">(dependency)</span>}
-                  </td>
-                  <td className="mc-mods-col-narrow muted">{unidentified ? '—' : sourceLabel(m.source)}</td>
-                  <td className="mc-mods-col-narrow">{m.versionNumber || '—'}</td>
-                  <td className="mc-mods-col-narrow">
-                    {unidentified ? (
-                      <span className="muted" title="Not found on Modrinth (CurseForge-sourced, hand-built, or hash didn't match) - enable/disable/remove still work.">
-                        Unidentified
-                      </span>
-                    ) : !m.enabled ? (
-                      'Disabled'
-                    ) : update?.updateAvailable ? (
-                      'Update available'
-                    ) : (
-                      'Up to date'
-                    )}
-                  </td>
-                  <td className="mc-mods-col-narrow backup-management-actions">
-                    {update?.updateAvailable && (
-                      <button
-                        type="button"
-                        disabled={busyId === m.projectId}
-                        onClick={() => void handleUpdate(m.source, m.projectId)}
-                      >
-                        {busyId === m.projectId ? 'Updating...' : 'Update'}
-                      </button>
-                    )}
-                    <button type="button" onClick={() => void handleToggleEnabled(m.projectId, !m.enabled)}>
-                      {m.enabled ? 'Disable' : 'Enable'}
+                  ) : !m.enabled ? (
+                    'Disabled'
+                  ) : update?.updateAvailable ? (
+                    'Update available'
+                  ) : (
+                    'Up to date'
+                  )}
+                </div>
+                <div className="mc-mods-grid-cell mc-mods-grid-actions">
+                  {update?.updateAvailable && (
+                    <button
+                      type="button"
+                      disabled={busyId === m.projectId}
+                      onClick={() => void handleUpdate(m.source, m.projectId)}
+                    >
+                      {busyId === m.projectId ? 'Updating...' : 'Update'}
                     </button>
-                    <button type="button" className="danger" onClick={() => void handleRemove(m.projectId, m.title)}>
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
-            {profile.installedMods.length === 0 && (
-              <tr>
-                <td colSpan={5}>No mods/plugins installed yet.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                  )}
+                  <button type="button" onClick={() => void handleToggleEnabled(m.projectId, !m.enabled)}>
+                    {m.enabled ? 'Disable' : 'Enable'}
+                  </button>
+                  <button type="button" className="danger" onClick={() => void handleRemove(m.projectId, m.title)}>
+                    Remove
+                  </button>
+                </div>
+              </Fragment>
+            )
+          })}
+          {profile.installedMods.length === 0 && (
+            <div className="mc-mods-grid-cell mc-mods-grid-empty">No mods/plugins installed yet.</div>
+          )}
+        </div>
       </section>
     </div>
   )
