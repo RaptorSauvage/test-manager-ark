@@ -2810,3 +2810,19 @@ async function findProfileIdByName(name) {
   is centered within its own column rather than left-aligned** (user request, follow-up to the
   gap fix above - once nothing stretched the grid to fill the tab's full width, the leftover
   space all sat to its right instead of being split evenly on both sides).
+
+- **Fix, from a real screenshot of the centering change above: the "Add mod ID" input row
+  stayed pinned to the tab's own left edge while the grid below it centered itself, visibly
+  misaligned from it - and capping Name to stop it stretching to a multi-thousand-pixel-wide
+  browser's own edge had shrunk the whole table down to a visibly tiny, overly-narrow block
+  once an outer centered cap existed to constrain it anyway.**
+  - New `.ark-mods-list` wrapper (`ModsTab.tsx`) now holds the "Add mod ID" row and the grid
+    together, with the `max-width: 1200px; margin: 0 auto` centering living on *it* instead of
+    on the grid and `.mods-add` separately - centering two siblings independently, each with
+    its own (different) max-width, centers them on the same point but leaves their *left edges*
+    different, which is exactly what read as misaligned. Both now share one bounding box.
+  - Name's column track is back to `minmax(0, 1fr)` instead of the capped `minmax(0, 360px)`
+    from the gap fix above - with `.ark-mods-list` already capping/centering the *overall*
+    layout so nothing stretches all the way out to a wide browser's own edge, letting Name claim
+    the rest of that already-bounded width is the right amount of stretch: comfortably sized
+    without reproducing the original edge-to-edge gap problem the cap was there to fix.

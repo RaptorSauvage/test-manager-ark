@@ -1732,10 +1732,22 @@ label.checkbox {
   font-weight: 600;
 }
 
+/* Wraps the "Add mod ID" row and the grid together so they share one left/right edge and move
+   together - centering max-width/margin lives here, not on the grid or .mods-add individually,
+   specifically because centering them *separately* (each with its own narrower max-width) left
+   them centered on the same point but starting at different left edges, which read as broken/
+   misaligned (a real report: the Add row stayed pinned to the page's own left edge while the
+   grid centered itself below it). */
+.ark-mods-list {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
 .mods-add {
   display: flex;
   gap: 8px;
   max-width: 520px;
+  margin-bottom: 12px;
 }
 
 .mods-add input {
@@ -1755,35 +1767,28 @@ label.checkbox {
  * markup in ModsTab.tsx), so a column's width no longer depends on anything any row's content
  * does.
  */
-/* max-width + margin: 0 auto centers the whole grid in the tab instead of letting it stretch
-   edge-to-edge on a wide window - none of its columns use an fr track (see the comment below),
-   so there's nothing to usefully fill that leftover width with anyway; centering it with empty
-   space on both sides reads better than pinning it to the left. */
 .ark-mods-grid {
   display: grid;
   width: 100%;
-  max-width: 1100px;
-  margin: 0 auto;
   column-gap: 8px;
 }
 
 /* Ascended has Passive/Dev checkbox columns Evolved doesn't (see ModsTab.tsx's own isEvolved
    gating) - Mod ID is a known-bounded small vocabulary (short numeric ids, nothing that can
    produce a surprise long outlier) so a fixed track is fine, and the checkbox columns are a
-   fixed, identical width on every row. Name is capped (minmax(0, 360px), not minmax(0, 1fr))
-   rather than greedily claiming every bit of leftover space - most real mod names are much
-   shorter than the row is wide, and giving Name the whole 1fr share (as if it were the primary
-   column the way the Minecraft Mods tab's own Name column is) just pushed Mod ID/Actions off
-   to the far right with a big dead gap in between for anything short. No fr track at all means
-   the grid's own tracks size to their content/cap and stop, which is exactly what lets
-   .ark-mods-grid's own max-width/margin centering above actually show as empty space on both
-   sides rather than being swallowed by a column stretching to fill it. */
+   fixed, identical width on every row. Name is back to minmax(0, 1fr) - capping it
+   (minmax(0, 360px)) to stop it from claiming all the way out to the edge of a multi-thousand-
+   pixel-wide browser window just made the whole grid shrink-wrap down to a visibly tiny table
+   (a real report: "too shrunk") once .ark-mods-list above started capping/centering the overall
+   layout instead. With that outer cap already doing the "don't stretch edge-to-edge" job, Name
+   claiming the rest of *that* bounded width is the right amount of stretch - comfortably sized
+   without reproducing the original edge-to-edge gap problem. */
 .ark-mods-grid--ascended {
-  grid-template-columns: 90px 90px 90px minmax(0, 360px) 120px auto;
+  grid-template-columns: 90px 90px 90px minmax(0, 1fr) 120px auto;
 }
 
 .ark-mods-grid--evolved {
-  grid-template-columns: 90px minmax(0, 360px) 120px auto;
+  grid-template-columns: 90px minmax(0, 1fr) 120px auto;
 }
 
 .ark-mods-grid-header,

@@ -286,21 +286,22 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
         </section>
       )}
 
-      <div className="mods-add">
-        <input
-          value={newModId}
-          onChange={(e) => setNewModId(e.target.value)}
-          placeholder="Mod ID"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              addMod()
-            }
-          }}
-        />
-        <button onClick={addMod}>Add</button>
-      </div>
-      <div className={`ark-mods-grid ${isEvolved ? 'ark-mods-grid--evolved' : 'ark-mods-grid--ascended'}`}>
+      <div className="ark-mods-list">
+        <div className="mods-add">
+          <input
+            value={newModId}
+            onChange={(e) => setNewModId(e.target.value)}
+            placeholder="Mod ID"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addMod()
+              }
+            }}
+          />
+          <button onClick={addMod}>Add</button>
+        </div>
+        <div className={`ark-mods-grid ${isEvolved ? 'ark-mods-grid--evolved' : 'ark-mods-grid--ascended'}`}>
         <div className="ark-mods-grid-header">
           <div className="mods-select-col-header">
             <input
@@ -406,6 +407,7 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
           </Fragment>
         ))}
         {mods.length === 0 && <div className="ark-mods-grid-empty">No mods configured.</div>}
+        </div>
       </div>
       {error && <p className="error-message">{error}</p>}
       {status && (
