@@ -333,21 +333,35 @@ export function sendStdinCommand(profileId: string, command: string): boolean {
   }
 }
 
-/** Waits for the process to exit on its own, or force-kills it after `graceMs`. Two ways of
- *  detecting "it exited": a live child's own 'exit' event, or - for an adopted process with
- *  no such event available (see RunningMinecraftServer.process) - polling isPidAlive. Kills
- *  via entry.pid (the real server pid, not necessarily entry.process's own pid - see
- *  RunningMinecraftServer.pid) rather than entry.process.kill(): after a Windows launchMode
- *  'script' handoff, entry.process is still the cmd.exe wrapper, and killing just that
- *  leaves the real java process it spawned running orphaned in the background. */
+/** Waits for the process to exit on its own, or force-kills it after `graceMs`. Three ways of
+ *  detecting "it exited": a live child's own 'exit' event, polling isPidAlive(entry.pid) (the
+ *  real server pid, which can differ from entry.process's own pid - see
+ *  RunningMinecraftServer.pid), or - for an adopted process with no 'exit' event available at
+ *  all (see RunningMinecraftServer.process) - that same poll alone. The poll matters even for
+ *  a live process: after a Windows launchMode 'script' handoff, entry.process is cmd.exe, and
+ *  cmd.exe isn't guaranteed to exit just because the java process it spawned did - some
+ *  servers' generated run.bat ends in a `pause` (or similar) that blocks forever on a piped,
+ *  non-interactive stdin once there's nothing left to ever satisfy it. Without the poll, the
+ *  Manager would report that server stuck "Stopping" forever even though it's actually long
+ *  gone. Once the real pid is confirmed gone, the still-hung wrapper is force-killed directly
+ *  below rather than left running forever in the background - which also makes it actually
+ *  emit 'exit' and run the cleanup registered on it in startServer. */
 async function waitForExitOrKill(entry: RunningMinecraftServer, profileId: string, graceMs: number): Promise<void> {
   const exited = await new Promise<boolean>((resolve) => {
     if (entry.process) {
-      const timeout = setTimeout(() => resolve(false), graceMs)
-      entry.process.once('exit', () => {
+      let settled = false
+      const finish = (result: boolean): void => {
+        if (settled) return
+        settled = true
         clearTimeout(timeout)
-        resolve(true)
-      })
+        clearInterval(poll)
+        resolve(result)
+      }
+      const timeout = setTimeout(() => finish(false), graceMs)
+      const poll = setInterval(() => {
+        if (!isPidAlive(entry.pid)) finish(true)
+      }, 1000)
+      entry.process.once('exit', () => finish(true))
       return
     }
     const start = Date.now()
@@ -362,6 +376,8 @@ async function waitForExitOrKill(entry: RunningMinecraftServer, profileId: strin
 
   if (entry.process) {
     if (!exited && running.has(profileId)) killByPid(entry.pid)
+    const wrapperPid = entry.process.pid
+    if (wrapperPid && wrapperPid !== entry.pid && isPidAlive(wrapperPid)) killByPid(wrapperPid)
     return
   }
   // Adopted process: no child.on('exit') handler exists to clean up its bookkeeping for us.
@@ -402,6 +418,12 @@ export function killServer(profileId: string): MinecraftServerStatus {
   emitStatus({ ...entry.status, state: 'stopping' })
   // See waitForExitOrKill's comment - entry.pid, not entry.process, for the same reason.
   killByPid(entry.pid)
+  // Also kill the wrapper (cmd.exe, after a Windows launchMode 'script' handoff) directly if
+  // it's a different pid - it isn't guaranteed to exit just because the real pid above did
+  // (same "hangs on a trailing pause" case as waitForExitOrKill's own comment), and this is a
+  // force-kill, so there's no reason to wait and see before doing it.
+  const wrapperPid = entry.process?.pid
+  if (wrapperPid && wrapperPid !== entry.pid) killByPid(wrapperPid)
   // A live process's own child.on('exit') handler (registered in startServer) finalizes it
   // once the kill actually takes effect; an adopted one (entry.process === null) has no
   // such handler, so nothing else would ever clear its bookkeeping without this.

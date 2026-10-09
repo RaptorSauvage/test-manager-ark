@@ -2593,3 +2593,42 @@ async function findProfileIdByName(name) {
     `alsoOn: ['curseforge']` backfilled on the next scan when CurseForge has a fingerprint match
     for its file; one with no match gets `alsoOn: []` and is never sent to CurseForge again on a
     subsequent scan.
+
+- **Fix: stopping a modded (Forge) Minecraft server on Windows left the Manager stuck showing
+  "Stopping" forever, even though the server itself had already fully exited.** A `launchMode:
+  'script'` launch on Windows runs through a `cmd.exe` wrapper (`entry.process` in
+  `minecraftProcess.ts`) that spawns the real java process as its own child rather than
+  replacing itself the way a POSIX shell's `exec` does - `watchForScriptPidHandoff` already
+  corrects the *tracked pid* to the real java one once it's found listening on the port, but
+  `entry.process` itself stays the wrapper forever. Stop/kill used to finalize "stopped" only
+  from `entry.process`'s own `'exit'` event - and some servers' generated `run.bat` ends in a
+  `pause` (or similar) that blocks forever on a piped, non-interactive stdin once java has
+  already exited, since there's nothing left to ever supply the keystroke it's waiting for. So
+  `cmd.exe` never actually exits, that event never fires, and the Manager waits on it forever.
+  - `waitForExitOrKill` now also polls `isPidAlive(entry.pid)` (the real tracked pid) in
+    parallel with waiting for `entry.process`'s own `'exit'` - whichever happens first resolves
+    it. Once the real pid is confirmed gone, a still-alive wrapper is force-killed directly
+    (rather than left running forever in the background), which in turn makes it actually emit
+    `'exit'` and run the cleanup already registered on it in `startServer`.
+  - `killServer` (the force-kill/Kill button path) now also force-kills the wrapper pid
+    directly alongside the real one, rather than relying on the wrapper to exit by itself once
+    its child is gone.
+  - New `tests/minecraftProcessWindowsScriptWrapperHang.test.ts`: pins `platform: 'win32'` and
+    fakes the `cmd.exe` wrapper/real-java-pid split directly (same technique
+    `tests/findListeningPid.test.ts` uses for ARK's equivalent handoff logic) to reproduce a
+    wrapper that never emits its own `'exit'` event while the real pid it spawned does exit -
+    confirmed to fail without this fix (`stopServer` never resolves away from `'stopping'`) and
+    pass with it.
+
+- **Fix: a long-standing regression of the manager-wide input-freeze bug (`bb7204c` - a text
+  field silently stops accepting keystrokes after certain actions, Electron/Windows sometimes
+  failing to hand OS-level keyboard focus back to the main window once a native modal closes).**
+  That fix covered every `window.confirm()` call site and the file/folder pickers, but missed
+  one real native modal that predates it: the Windows UAC elevation prompt triggered by
+  `firewall.ts`'s "Add firewall rule for SteamCMD" button (`Start-Process -Verb RunAs`) never
+  refocused the main window afterward - same class of OS-level dialog as the ones already
+  fixed, so triggering it reproduced the exact same "fields silently stop accepting keystrokes"
+  symptom through an unfixed path. `registerSteamcmdInstallHandlers` now takes the
+  `BrowserWindow` itself (previously just its `webContents`) and calls `mainWindow.focus()`
+  right after `addFirewallRulesForSteamCmd` settles, success/failure/cancellation alike - same
+  pattern as `confirmAction()` and `dialog.ts`'s pickers.

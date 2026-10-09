@@ -33,7 +33,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerSettingsHandlers()
   registerWebDashboardAccessTokensHandlers()
   registerWebDashboardApiKeysHandlers()
-  registerSteamcmdInstallHandlers(mainWindow.webContents)
+  registerSteamcmdInstallHandlers(mainWindow)
   registerMapsHandlers()
   registerCustomMapsHandlers()
   registerDataDirHandlers()
