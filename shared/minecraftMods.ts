@@ -84,6 +84,15 @@ export interface InstalledMinecraftMod {
    *  dependency. Purely informational (e.g. so the UI can label it "required by X"). */
   installedAs: 'user' | 'dependency'
   installedAt: number
+  /** Set by scanForInstalledMods when the exact same file (same bytes - same sha1 *and* same
+   *  CurseForge fingerprint) is also published on another source, beyond the one `source`
+   *  above names (some mod authors upload an identical build to both Modrinth and
+   *  CurseForge). `source`/`projectId`/`versionId` still name the one source actually used for
+   *  install/update - this is purely informational, so the Mods tab can show "Modrinth,
+   *  CurseForge" instead of silently implying it's Modrinth-only. Only populated by a scan
+   *  that actually checked both sources for this file; an older entry from before this existed
+   *  won't have it retroactively. */
+  alsoOn?: MinecraftModSource[]
 }
 
 /** Result of installMod - what actually happened, so the UI can show it plainly rather than

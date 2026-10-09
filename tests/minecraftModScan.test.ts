@@ -346,7 +346,7 @@ describe('scanForInstalledMods', () => {
     expect(mockGetCurseForgeFingerprintMatches).toHaveBeenCalledWith('test-key', [fingerprint])
   })
 
-  it('only sends CurseForge fingerprints for files Modrinth did not already match', async () => {
+  it('sends CurseForge fingerprints for every untracked file, including ones Modrinth already matched - to detect cross-listing', async () => {
     const profile = makeProfile({}, tmpDir)
     fs.mkdirSync(modTargetDir(profile), { recursive: true })
     fs.writeFileSync(path.join(modTargetDir(profile), 'root.jar'), 'root content')
@@ -363,8 +363,39 @@ describe('scanForInstalledMods', () => {
 
     await scanForInstalledMods(profile)
 
-    const expectedFingerprint = computeCurseForgeFingerprint(Buffer.from('curseforge content'))
-    expect(mockGetCurseForgeFingerprintMatches).toHaveBeenCalledWith('test-key', [expectedFingerprint])
+    const rootFingerprint = computeCurseForgeFingerprint(Buffer.from('root content'))
+    const cfFingerprint = computeCurseForgeFingerprint(Buffer.from('curseforge content'))
+    const sentFingerprints = mockGetCurseForgeFingerprintMatches.mock.calls[0][1] as number[]
+    expect(sentFingerprints.sort()).toEqual([rootFingerprint, cfFingerprint].sort())
+  })
+
+  it('marks a file matched by both sources as cross-listed (alsoOn), keeping Modrinth as the primary source', async () => {
+    const profile = makeProfile({}, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'dual.jar'), 'dual content')
+    mockGetSettings.mockReturnValue({ curseforgeApiKey: 'test-key' })
+    const hash = sha1('dual content')
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({
+      [hash]: makeVersion({ id: 'version-root', project_id: 'project-root' })
+    })
+    mockGetModrinthProjects.mockResolvedValue([
+      { id: 'project-root', slug: 'root-mod', title: 'Root Mod', description: '', icon_url: null, client_side: 'optional', server_side: 'required' }
+    ])
+    const fingerprint = computeCurseForgeFingerprint(Buffer.from('dual content'))
+    mockGetCurseForgeFingerprintMatches.mockResolvedValue([
+      {
+        id: 200,
+        file: { id: 55, modId: 200, fileName: 'dual.jar', displayName: '2.0.0', fileFingerprint: fingerprint }
+      }
+    ])
+    mockGetCurseForgeMods.mockResolvedValue([
+      { id: 200, slug: 'cf-mod', name: 'CF Mod', summary: '', downloadCount: 10, logo: null, allowModDistribution: true }
+    ])
+
+    const { result } = await scanForInstalledMods(profile)
+
+    expect(result.adopted).toHaveLength(1)
+    expect(result.adopted[0]).toMatchObject({ source: 'modrinth', title: 'Root Mod', alsoOn: ['curseforge'] })
   })
 
   it('falls back to "unknown" when CurseForge finds no fingerprint match either', async () => {
@@ -402,6 +433,77 @@ describe('scanForInstalledMods', () => {
     const byFileName = Object.fromEntries(result.adopted.map((m) => [m.fileName, m]))
     expect(byFileName['root.jar'].source).toBe('modrinth')
     expect(byFileName['mystery.jar'].source).toBe('unknown')
+  })
+
+  it('re-examines a file previously adopted as "unknown", instead of leaving it unidentified forever', async () => {
+    // Regression test: a file scanned back when only Modrinth hash-matching existed (or before
+    // a CurseForge key was configured) got adopted as source: 'unknown' - and, being tracked,
+    // was then silently excluded from every future scan, even after this app gained the
+    // ability to recognize it. A real user report: searching for the mod by name in the
+    // Browse tab found it on CurseForge, but repeated "Rescan folder" clicks never picked it
+    // up, because it was already "tracked" as unknown.
+    const existingUnknown: InstalledMinecraftMod = {
+      source: 'unknown',
+      projectId: 'local:cf-mod.jar',
+      slug: 'cf-mod',
+      title: 'cf-mod',
+      versionId: '',
+      versionNumber: '',
+      fileName: 'cf-mod.jar',
+      enabled: true,
+      installedAs: 'user',
+      installedAt: Date.now()
+    }
+    const profile = makeProfile({ installedMods: [existingUnknown] }, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'cf-mod.jar'), 'curseforge content')
+    mockGetSettings.mockReturnValue({ curseforgeApiKey: 'test-key' })
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({})
+    const fingerprint = computeCurseForgeFingerprint(Buffer.from('curseforge content'))
+    mockGetCurseForgeFingerprintMatches.mockResolvedValue([
+      {
+        id: 200,
+        file: { id: 55, modId: 200, fileName: 'cf-mod.jar', displayName: '2.0.0', fileFingerprint: fingerprint }
+      }
+    ])
+    mockGetCurseForgeMods.mockResolvedValue([
+      { id: 200, slug: 'cf-mod', name: 'CF Mod', summary: '', downloadCount: 10, logo: null, allowModDistribution: true }
+    ])
+
+    const { profile: updated, result } = await scanForInstalledMods(profile)
+
+    expect(result.adopted).toHaveLength(1)
+    expect(result.adopted[0]).toMatchObject({ source: 'curseforge', title: 'CF Mod', fileName: 'cf-mod.jar' })
+    // The stale 'unknown' entry is replaced, not left alongside the new one.
+    expect(updated.installedMods).toHaveLength(1)
+    expect(updated.installedMods[0].source).toBe('curseforge')
+  })
+
+  it('does not duplicate an existing "unknown" entry when it is still unmatched this round', async () => {
+    const existingUnknown: InstalledMinecraftMod = {
+      source: 'unknown',
+      projectId: 'local:mystery.jar',
+      slug: 'mystery',
+      title: 'mystery',
+      versionId: '',
+      versionNumber: '',
+      fileName: 'mystery.jar',
+      enabled: true,
+      installedAs: 'user',
+      installedAt: Date.now()
+    }
+    const profile = makeProfile({ installedMods: [existingUnknown] }, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'mystery.jar'), 'unknown content')
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({})
+
+    const { profile: updated, result } = await scanForInstalledMods(profile)
+
+    // Nothing changed this round - not re-reported as newly "adopted", and not duplicated in
+    // installedMods either.
+    expect(result.adopted).toHaveLength(0)
+    expect(updated.installedMods).toHaveLength(1)
+    expect(mockSaveMinecraftProfile).not.toHaveBeenCalled()
   })
 })
 

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { supportsMinecraftMods } from '@shared/minecraftMods'
 import type {
+  InstalledMinecraftMod,
   MinecraftModInstallResult,
   MinecraftModSearchResult,
   MinecraftModSource,
@@ -11,6 +12,15 @@ import { confirmAction } from '../../lib/confirmAction'
 
 function sourceLabel(source: MinecraftModSource): string {
   return source === 'curseforge' ? 'CurseForge' : 'Modrinth'
+}
+
+/** An installed mod's Source column text - "Modrinth, CurseForge" (not just "Modrinth") when a
+ *  scan found the exact same file published on both (InstalledMinecraftMod.alsoOn), so the
+ *  column doesn't silently imply it's only available from the one source actually used for
+ *  install/update. */
+function installedSourceLabel(mod: InstalledMinecraftMod): string {
+  if (!mod.alsoOn || mod.alsoOn.length === 0) return sourceLabel(mod.source)
+  return [mod.source, ...mod.alsoOn].map(sourceLabel).join(', ')
 }
 
 interface ModsTabProps {
@@ -338,7 +348,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
                   </span>
                   {m.installedAs === 'dependency' && <span className="muted">(dependency)</span>}
                 </div>
-                <div className="mc-mods-grid-cell muted">{unidentified ? '—' : sourceLabel(m.source)}</div>
+                <div className="mc-mods-grid-cell muted">{unidentified ? '—' : installedSourceLabel(m)}</div>
                 <div className="mc-mods-grid-cell mc-mod-title" title={m.versionNumber}>
                   {m.versionNumber || '—'}
                 </div>

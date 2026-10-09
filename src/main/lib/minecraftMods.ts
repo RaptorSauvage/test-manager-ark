@@ -715,24 +715,40 @@ function titleFromFileName(fileName: string): string {
 /**
  * Recognizes mods/plugins already sitting in the folder that this app didn't itself install -
  * dropped in by hand, or installed before this feature existed. Identifies each untracked
- * `.jar`/`.jar.disabled` file by its sha1 hash against Modrinth first (the same mechanism
- * Modrinth's own official app uses), in one batched lookup rather than one request per file.
- * Anything Modrinth doesn't recognize gets a second pass against CurseForge's own
- * "fingerprint" matching (murmur2 of the whitespace-stripped bytes - see
- * curseforgeFingerprint.ts), only if AppSettings.curseforgeApiKey is set - again batched, and
- * only for files still unmatched at that point. Every untracked file ends up in installedMods
- * either way: a match from either source becomes a full source: 'modrinth'/'curseforge' entry,
- * and anything neither source recognizes (hand-built, or genuinely not published to either)
- * still becomes a source: 'unknown' entry - still visible and manageable in the Mods tab, just
- * without either source's own metadata attached.
+ * `.jar`/`.jar.disabled` file by its sha1 hash against Modrinth (the same mechanism Modrinth's
+ * own official app uses) and, if AppSettings.curseforgeApiKey is set, its CurseForge
+ * "fingerprint" (murmur2 of the whitespace-stripped bytes - see curseforgeFingerprint.ts) -
+ * both batched, one request per source regardless of how many files are untracked. Checked
+ * against *every* untracked file's fingerprint, not just the ones Modrinth missed: some mod
+ * authors upload an identical build to both sites, and a file matched by both ends up with
+ * `alsoOn: ['curseforge']` on its (still Modrinth-sourced) entry rather than silently only
+ * reporting one source. Every untracked file ends up in installedMods either way: a match from
+ * either source becomes a full source: 'modrinth'/'curseforge' entry, and anything neither
+ * source recognizes (hand-built, or genuinely not published to either) still becomes a source:
+ * 'unknown' entry - still visible and manageable in the Mods tab, just without either source's
+ * own metadata attached.
  */
 export async function scanForInstalledMods(
   profile: MinecraftProfile
 ): Promise<{ profile: MinecraftProfile; result: MinecraftModScanResult }> {
   requireLoaderSupportsMods(profile)
   const targetDir = modTargetDir(profile)
-  const trackedFileNames = new Set(profile.installedMods.map((m) => m.fileName))
-  const untracked = listUntrackedModFiles(targetDir, trackedFileNames)
+  // Only a real match (source: 'modrinth'/'curseforge') is "settled" and skipped on future
+  // scans - an 'unknown' entry is re-examined every time instead of being excluded just
+  // because it's already in installedMods. Without this, a file that couldn't be identified
+  // the first time it was scanned would stay "Unidentified" forever even after this app
+  // gained the ability to recognize it (a newly-configured CurseForge key, or CurseForge
+  // adding/fixing a file's fingerprint on their end) - a real report had a CurseForge mod the
+  // user could find by searching for it by name stay stuck as unidentified through repeated
+  // Rescan folder clicks, because it had already been adopted as 'unknown' back when only
+  // Modrinth hash-matching existed.
+  const existingUnknownFileNames = new Set(
+    profile.installedMods.filter((m) => m.source === 'unknown').map((m) => m.fileName)
+  )
+  const settledFileNames = new Set(
+    profile.installedMods.filter((m) => m.source !== 'unknown').map((m) => m.fileName)
+  )
+  const untracked = listUntrackedModFiles(targetDir, settledFileNames)
 
   if (untracked.length === 0) {
     return { profile, result: { adopted: [] } }
@@ -784,20 +800,19 @@ export async function scanForInstalledMods(
     })
   }
 
-  // Anything Modrinth didn't recognize gets a second pass against CurseForge's own
-  // fingerprint-matching endpoint, if a key is configured - only fingerprints for files still
-  // unmatched at this point are sent, so a mostly-Modrinth folder doesn't cost extra CurseForge
-  // requests for files already identified.
+  // Every untracked file's fingerprint is checked against CurseForge too, if a key is
+  // configured - not just the ones Modrinth missed. Some mod authors upload an identical build
+  // to both Modrinth and CurseForge, and a file already matched by Modrinth is still worth
+  // checking so that case shows as "Modrinth, CurseForge" in the Mods tab (via `alsoOn` below)
+  // instead of silently implying it's Modrinth-only.
   const matchedFileNames = new Set(adopted.map((m) => m.fileName))
   const apiKey = getSettings().curseforgeApiKey.trim()
   if (apiKey) {
-    const remainingFingerprints = [...fileByFingerprint.entries()]
-      .filter(([, file]) => !matchedFileNames.has(file.fileName))
-      .map(([fingerprint]) => fingerprint)
+    const allFingerprints = [...fileByFingerprint.keys()]
 
-    if (remainingFingerprints.length > 0) {
+    if (allFingerprints.length > 0) {
       try {
-        const matches = await getCurseForgeFingerprintMatches(apiKey, remainingFingerprints)
+        const matches = await getCurseForgeFingerprintMatches(apiKey, allFingerprints)
         const modIds = [...new Set(matches.map((match) => match.file.modId))]
         const mods = await getCurseForgeMods(apiKey, modIds)
         const modById = new Map(mods.map((mod) => [mod.id, mod]))
@@ -805,7 +820,18 @@ export async function scanForInstalledMods(
         for (const match of matches) {
           const file = fileByFingerprint.get(match.file.fileFingerprint)
           const mod = modById.get(match.file.modId)
-          if (!file || !mod || matchedFileNames.has(file.fileName)) continue
+          if (!file || !mod) continue
+
+          const alreadyAdopted = adopted.find((m) => m.fileName === file.fileName)
+          if (alreadyAdopted) {
+            // Already matched by Modrinth this round - note the cross-listing rather than
+            // adding a second, competing entry for the same file.
+            if (!alreadyAdopted.alsoOn?.includes('curseforge')) {
+              alreadyAdopted.alsoOn = [...(alreadyAdopted.alsoOn ?? []), 'curseforge']
+            }
+            continue
+          }
+
           adopted.push({
             source: 'curseforge',
             projectId: String(match.file.modId),
@@ -830,8 +856,12 @@ export async function scanForInstalledMods(
     }
   }
 
+  // A file still unmatched after both sources either stays - or, if this is its first time
+  // being seen, becomes - a source: 'unknown' entry. Skip ones already tracked as 'unknown'
+  // from a previous scan rather than pushing a duplicate - they're already in
+  // profile.installedMods and nothing about them changed this round.
   for (const file of untracked) {
-    if (matchedFileNames.has(file.fileName)) continue
+    if (matchedFileNames.has(file.fileName) || existingUnknownFileNames.has(file.fileName)) continue
     adopted.push({
       source: 'unknown',
       projectId: localModId(file.fileName),
@@ -846,8 +876,17 @@ export async function scanForInstalledMods(
     })
   }
 
+  // A file that just got a real match this round (modrinth/curseforge) replaces its stale
+  // 'unknown' entry from a previous scan, rather than ending up tracked twice under the same
+  // file name.
+  const newlyIdentifiedFileNames = new Set(adopted.filter((m) => m.source !== 'unknown').map((m) => m.fileName))
   const updatedProfile: MinecraftProfile =
-    adopted.length === 0 ? profile : { ...profile, installedMods: [...profile.installedMods, ...adopted] }
+    adopted.length === 0
+      ? profile
+      : {
+          ...profile,
+          installedMods: [...profile.installedMods.filter((m) => !newlyIdentifiedFileNames.has(m.fileName)), ...adopted]
+        }
   if (adopted.length > 0) {
     saveMinecraftProfile(updatedProfile)
     logManagerEvent(

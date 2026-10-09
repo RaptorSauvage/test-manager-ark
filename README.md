@@ -2513,3 +2513,55 @@ async function findProfileIdByName(name) {
     a fingerprint match adopts as `source: 'curseforge'`; only unmatched files' fingerprints are
     sent; still falls back to `'unknown'` when CurseForge also finds nothing; a CurseForge
     failure doesn't lose the Modrinth-matched results).
+
+- **Fix: CurseForge fingerprint matching never actually found anything, even for a mod
+  confirmed to be on CurseForge (findable by searching for it by name in the Browse tab).** Not
+  a bug in the fingerprint algorithm itself - that part was verified independently (see below) -
+  but in `scanForInstalledMods`'s own tracking logic, and it's a bug that predates CurseForge
+  support entirely: `trackedFileNames` (now `settledFileNames`) was built from *every* installed
+  mod's file name, `source: 'unknown'` included. Once a file got adopted as `'unknown'` on some
+  earlier scan (back when only Modrinth hash-matching existed, or before a CurseForge key was
+  ever configured), it counted as "tracked" from then on - so `listUntrackedModFiles` excluded
+  it from every future scan, permanently. The file was never wrong about being unidentified at
+  the time; it just could never be re-examined later, even after this app gained a second
+  identification method entirely.
+  - **Fixed by splitting "tracked" into two states**: only a real match (`source: 'modrinth'` or
+    `'curseforge'`) is now treated as settled and excluded from re-scanning; a `'unknown'` entry
+    is included in `untracked` again on every scan, so it gets a fresh shot at both Modrinth and
+    CurseForge matching each time - a newly-configured API key, or a mod that's since been
+    published, can now actually fix a previously-"Unidentified" row. A file still unmatched
+    isn't re-added as a duplicate (its existing `'unknown'` entry is just left alone); a file
+    that *does* get matched this time has its stale `'unknown'` entry replaced by the real one,
+    rather than ending up tracked twice under the same file name.
+  - **Verifying the fingerprint algorithm itself, since no network access to CurseForge exists
+    in this sandbox to test against a live response**: cross-checked the core MurmurHash2
+    implementation against an independent npm package's own published test vector (input bytes
+    `[1,2,3,4]`, seed `0`, expected output `1487941662`) - confirmed to match exactly, so the
+    hashing math itself is correct. The CurseForge-specific details (seed `1`; the four
+    whitespace byte values `0x09`/`0x0a`/`0x0d`/`0x20` stripped before hashing; the
+    `/v1/fingerprints` endpoint path; the request body `{fingerprints: [...]}`; the `File`
+    object's `fileFingerprint` field name) were each independently confirmed against a public
+    OpenAPI spec and multiple third-party CurseForge API client libraries' own documentation,
+    not just a single source. None of that pointed to a bug - which is what led to looking at
+    the tracking logic instead, and that's where the actual bug was.
+  - New tests in `tests/minecraftModScan.test.ts`: a file previously adopted as `'unknown'` gets
+    re-examined and upgraded to `'curseforge'` once a match exists; an `'unknown'` entry that's
+    still unmatched isn't duplicated or re-reported as newly adopted on a later scan.
+
+- **Addition: a mod published identically on both Modrinth and CurseForge used to just show
+  one of the two in the Source column, since a file already matched by Modrinth was never even
+  checked against CurseForge.** `scanForInstalledMods` now checks CurseForge fingerprints for
+  *every* untracked file, not just the ones Modrinth missed - a file matched by both (same
+  bytes, so the same sha1 *and* the same CurseForge fingerprint) keeps Modrinth as its primary
+  `source` (the one actually used for install/update, since Modrinth needs no API key), but
+  gains a new `alsoOn: ['curseforge']`. The Mods tab's Source column now shows "Modrinth,
+  CurseForge" for that case instead of silently implying it's Modrinth-only.
+  - `InstalledMinecraftMod.alsoOn?: MinecraftModSource[]` - purely informational, only set by a
+    scan that actually checked both sources for that exact file; an entry from before this
+    existed (or one `source`'s match from a profile that's never had a CurseForge key
+    configured) won't have it retroactively without a fresh Rescan.
+  - New `installedSourceLabel` in `ModsTab.tsx` joins `source` and `alsoOn` for display
+    (`"Modrinth, CurseForge"`) instead of the plain single-source `sourceLabel`.
+  - New tests in `tests/minecraftModScan.test.ts`: CurseForge fingerprints are now sent for
+    every untracked file including Modrinth-matched ones; a dual match sets `alsoOn` on the
+    Modrinth-sourced entry rather than creating a second, competing entry for the same file.
