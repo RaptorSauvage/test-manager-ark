@@ -2804,3 +2804,9 @@ async function findProfileIdByName(name) {
   columns size to their own content/cap and stop, so any genuinely leftover width (a very wide
   window, or every mod in the list having a short name) just sits unused past the last column
   instead of being forced into a gap mid-row.
+
+- **Change: ARK's Mods grid is now centered in the tab (with `max-width: 1100px` + `margin: 0
+  auto`) on a wide window instead of sitting pinned to the left, and the Mod ID column's text
+  is centered within its own column rather than left-aligned** (user request, follow-up to the
+  gap fix above - once nothing stretched the grid to fill the tab's full width, the leftover
+  space all sat to its right instead of being split evenly on both sides).

@@ -1755,9 +1755,15 @@ label.checkbox {
  * markup in ModsTab.tsx), so a column's width no longer depends on anything any row's content
  * does.
  */
+/* max-width + margin: 0 auto centers the whole grid in the tab instead of letting it stretch
+   edge-to-edge on a wide window - none of its columns use an fr track (see the comment below),
+   so there's nothing to usefully fill that leftover width with anyway; centering it with empty
+   space on both sides reads better than pinning it to the left. */
 .ark-mods-grid {
   display: grid;
   width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
   column-gap: 8px;
 }
 
@@ -1769,9 +1775,9 @@ label.checkbox {
    shorter than the row is wide, and giving Name the whole 1fr share (as if it were the primary
    column the way the Minecraft Mods tab's own Name column is) just pushed Mod ID/Actions off
    to the far right with a big dead gap in between for anything short. No fr track at all means
-   the grid's own tracks size to their content/cap and stop - any truly leftover width (a very
-   wide window, mods with uniformly short names) just sits unused past the last column instead
-   of being forced into a gap mid-row. */
+   the grid's own tracks size to their content/cap and stop, which is exactly what lets
+   .ark-mods-grid's own max-width/margin centering above actually show as empty space on both
+   sides rather than being swallowed by a column stretching to fill it. */
 .ark-mods-grid--ascended {
   grid-template-columns: 90px 90px 90px minmax(0, 360px) 120px auto;
 }
@@ -1833,6 +1839,8 @@ label.checkbox {
 .mod-id {
   color: var(--warn);
   white-space: nowrap;
+  justify-content: center;
+  text-align: center;
 }
 
 /* ARK: Survival Ascended's own CurseForge enrichment (ModsTab.tsx's arkInfo) - a real icon
