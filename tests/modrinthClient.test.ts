@@ -36,10 +36,15 @@ describe('loaderCategoriesFor', () => {
 })
 
 describe('buildModrinthFacets', () => {
-  it('always requires project_type:mod and excludes client-only (server_side:unsupported)', () => {
+  it('requires project_type mod OR plugin (both are real, distinct Modrinth types - filtering to mod alone silently excluded every plugin) and excludes client-only (server_side:unsupported)', () => {
     const facets = JSON.parse(buildModrinthFacets('fabric', '1.20.1'))
-    expect(facets[0]).toEqual(['project_type:mod'])
+    expect(facets[0]).toEqual(['project_type:mod', 'project_type:plugin'])
     expect(facets[1]).toEqual(['server_side:required', 'server_side:optional'])
+  })
+
+  it('still requires project_type mod OR plugin for a plugin-ecosystem loader (Paper/Spigot/Sponge) too - not narrowed to plugin only', () => {
+    const facets = JSON.parse(buildModrinthFacets('paper', '1.20.1'))
+    expect(facets[0]).toEqual(['project_type:mod', 'project_type:plugin'])
   })
 
   it('adds a loader category facet (OR-ed) for a loader that has one', () => {

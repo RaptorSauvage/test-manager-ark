@@ -3426,3 +3426,31 @@ async function findProfileIdByName(name) {
     visually verified (no React testing setup exists in this project, and no display to drive
     the actual renderer from this sandbox - same standing limitation noted throughout this
     round). `npm run typecheck`, the full `npx vitest run`, and `npm run build` all pass.
+
+- **Real bug fix, surfaced by the Plugins tab split above: the Plugins tab's own search was
+  silently only ever able to find mods, never actual plugins** (user report: "you replaced
+  the Mods tab with Plugins for Sponge, and this tab searches for mods"). The root cause
+  predates the Plugins tab itself - `buildModrinthFacets` (`modrinthClient.ts`) has always
+  hardcoded its search to `project_type:mod`, on the documented (but wrong) assumption that
+  Modrinth's v2 API has no separate project type for plugins at all. Confirmed against
+  Modrinth's own source (`labrinth`/`knossos`): `plugin` and `datapack` are genuinely distinct
+  project types in their real data model - Bukkit/Spigot/Paper/Sponge loaders are explicitly
+  linked to `project_type: "plugin"`, not `"mod"`. The v2 API's *response* serializer rewrites
+  that field to the string `"mod"` in what it hands back to an already-fetched hit (so nothing
+  client-side ever saw `"plugin"` as a value) - but that rewrite is cosmetic on the way out
+  only, never applied to search filtering itself, so a `facets` query literally filtering on
+  `project_type:mod` was excluding every real plugin from every search, for every server type,
+  the entire time this app has had mod/plugin search at all (not something the Sponge/Plugins
+  round introduced - it just made the gap directly visible for the first time, since Paper/
+  Spigot's own `['paper','spigot','bukkit']` loader-category facet coincidentally still
+  matched a handful of crossover/mistagged results before, giving a false impression of
+  "mostly working"). Fixed by OR'ing both real project types in the same facet group
+  (`['project_type:mod', 'project_type:plugin']`) - confirmed correct against Modrinth's own
+  frontend code, which does exactly this when it wants to cover more than one content type at
+  once. `tests/modrinthClient.test.ts` updated for the corrected facet shape, across both a
+  mod-ecosystem loader and a plugin-ecosystem one (so it can't silently regress back to
+  excluding plugins again for just one of the two tabs) - 989 tests total now. `npm run
+  typecheck`, the full `npx vitest run`, and `npm run build` all pass. Not verified against a
+  real Modrinth search response (no network access from this sandbox, same standing caveat as
+  every API client in this codebase) - please confirm Paper/Spigot/Sponge search results
+  actually include real plugins now, on a machine with real internet access.

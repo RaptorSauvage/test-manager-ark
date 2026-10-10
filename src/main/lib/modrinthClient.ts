@@ -110,9 +110,20 @@ export function loaderCategoriesFor(serverType: MinecraftServerType): string[] {
 /**
  * Builds the `facets` search param - a JSON array of arrays, where entries within one inner
  * array are OR'd together and the outer arrays are AND'd (confirmed against Modrinth's own
- * facet-parsing code: outer = AND, inner = OR). `project_type:mod` covers plugins/datapacks
- * too under v2's flattened model (there's no separate v2 project type for them - distinguish
- * by loader category instead, same reasoning as loaderCategoriesFor above).
+ * facet-parsing code: outer = AND, inner = OR).
+ *
+ * Bug fix: this used to filter to `project_type:mod` only, on the (wrong) assumption that v2's
+ * API flattened "plugin"/"datapack" into "mod" with no separate project type to filter by at
+ * all. In reality, Modrinth's real data model (confirmed against their own labrinth/knossos
+ * source) has always kept `plugin` as its own, genuinely distinct project_type - Bukkit/
+ * Spigot/Paper/Sponge content is tagged `plugin`, not `mod`. v2's response *serializer*
+ * rewrites that field to the string "mod" in what it hands back to the client (so an already-
+ * fetched hit/version never shows "plugin" as its type), but that rewrite is purely cosmetic
+ * on the way out - it is NOT applied to search filtering, so a `facets` query still filtering
+ * on literal `project_type:mod` was silently excluding every real plugin from every search for
+ * a Paper/Spigot/Sponge server - the Plugins tab was, in effect, only ever able to find mods.
+ * Fixed by OR'ing both real project types in the same facet group, the same way Modrinth's own
+ * frontend does when it wants to cover more than one content type at once.
  *
  * The `server_side` facet is the one piece of filtering the user explicitly asked for:
  * excludes anything that does nothing on a dedicated server (a pure client-side content/UI
@@ -120,7 +131,10 @@ export function loaderCategoriesFor(serverType: MinecraftServerType): string[] {
  * filtered after the fact, so pagination/limit counts stay meaningful.
  */
 export function buildModrinthFacets(serverType: MinecraftServerType, minecraftVersion: string): string {
-  const facets: string[][] = [['project_type:mod'], ['server_side:required', 'server_side:optional']]
+  const facets: string[][] = [
+    ['project_type:mod', 'project_type:plugin'],
+    ['server_side:required', 'server_side:optional']
+  ]
   const loaderCategories = loaderCategoriesFor(serverType)
   if (loaderCategories.length > 0) facets.push(loaderCategories.map((c) => `categories:${c}`))
   if (minecraftVersion.trim()) facets.push([`versions:${minecraftVersion.trim()}`])
