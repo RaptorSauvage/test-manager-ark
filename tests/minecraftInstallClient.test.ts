@@ -10,7 +10,10 @@ import {
   getLatestFabricInstallerVersion,
   fabricServerJarUrl,
   listForgeVersionsForMinecraft,
-  forgeInstallerUrl
+  forgeInstallerUrl,
+  listNeoForgeVersions,
+  neoForgeInstallerUrl,
+  neoForgeVersionToMinecraftVersion
 } from '../src/main/lib/minecraftInstallClient'
 
 function fakeJsonResponse(body: unknown, ok = true, status = 200): Response {
@@ -170,5 +173,33 @@ describe('Forge client', () => {
     expect(forgeInstallerUrl('1.20.1', '47.2.0')).toBe(
       'https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.2.0/forge-1.20.1-47.2.0-installer.jar'
     )
+  })
+})
+
+describe('NeoForge client', () => {
+  it('listNeoForgeVersions reverses the oldest-first maven-metadata.xml listing to newest-first', async () => {
+    const xml = `<metadata><versioning><versions>
+      <version>20.2.86</version>
+      <version>21.1.72</version>
+    </versions></versioning></metadata>`
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fakeTextResponse(xml)))
+    expect(await listNeoForgeVersions()).toEqual(['21.1.72', '20.2.86'])
+  })
+
+  it('neoForgeInstallerUrl builds the documented Maven installer path', () => {
+    expect(neoForgeInstallerUrl('21.1.72')).toBe(
+      'https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.72/neoforge-21.1.72-installer.jar'
+    )
+  })
+
+  it('neoForgeVersionToMinecraftVersion derives the Minecraft version per NeoForge\'s documented scheme', () => {
+    expect(neoForgeVersionToMinecraftVersion('21.1.72')).toBe('1.21.1')
+    expect(neoForgeVersionToMinecraftVersion('20.2.86')).toBe('1.20.2')
+    // A zero patch component is dropped, not kept as "1.21.0".
+    expect(neoForgeVersionToMinecraftVersion('21.0.15')).toBe('1.21')
+  })
+
+  it('neoForgeVersionToMinecraftVersion throws clearly for a string that does not match the scheme', () => {
+    expect(() => neoForgeVersionToMinecraftVersion('not-a-version')).toThrow(/Not a recognized NeoForge version/)
   })
 })

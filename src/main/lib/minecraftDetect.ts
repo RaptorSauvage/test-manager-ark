@@ -17,23 +17,38 @@ export interface DetectedLaunchable {
  * Best-effort guess at the server flavor, purely from the jar/script file name - none of
  * these ship any other cheap, reliable marker to read instead (no manifest, no version
  * file with a consistent name across all of them). A script launch is treated as Forge
- * unless the name itself says otherwise: modern Forge (1.17+) is the actual reason
+ * unless the name itself says otherwise (or, when `installDir` is given, the libraries/
+ * folder says otherwise - see below): modern Forge (1.17+) is the actual reason
  * launchMode 'script' exists at all (see shared/minecraft.ts), so it's the far more likely
  * case than "someone's fully custom launcher happens to be named something else" - wrong
  * either way is a one-click fix via the manual override in Settings, not a functional
  * problem (this never affects how the server is actually launched).
+ *
+ * NeoForge is checked before plain Forge - "neoforge" contains "forge" as a substring, so
+ * checking the other order would misclassify every NeoForge jar/script as Forge instead.
+ * NeoForge's own generated run.sh/run.bat is named identically to modern Forge's (just
+ * "run.sh"/"run.bat", no "neoforge" in the name), so the file name alone can't tell the two
+ * apart for a script launch at all - when `installDir` is passed, this instead checks which
+ * of libraries/net/neoforged or libraries/net/minecraftforge actually exists on disk (both
+ * installers always create their own, never the other's), a reliable signal the file name
+ * alone doesn't carry.
  */
 export function detectMinecraftServerType(
   launchMode: MinecraftLaunchMode,
   jarFileName: string,
-  scriptFileName: string
+  scriptFileName: string,
+  installDir?: string
 ): MinecraftServerType {
   const name = (launchMode === 'jar' ? jarFileName : scriptFileName).toLowerCase()
   if (name.includes('fabric')) return 'fabric'
   if (name.includes('paper')) return 'paper'
   if (name.includes('spigot') || name.includes('bukkit')) return 'spigot'
+  if (name.includes('neoforge')) return 'neoforge'
   if (name.includes('forge')) return 'forge'
-  if (launchMode === 'script') return 'forge'
+  if (launchMode === 'script') {
+    if (installDir && fs.existsSync(path.join(installDir, 'libraries', 'net', 'neoforged'))) return 'neoforge'
+    return 'forge'
+  }
   return name ? 'vanilla' : 'unknown'
 }
 
@@ -67,7 +82,7 @@ export function detectMinecraftLaunchable(installDir: string): DetectedLaunchabl
       launchMode: 'script',
       jarFileName: '',
       scriptFileName: script.name,
-      serverType: detectMinecraftServerType('script', '', script.name)
+      serverType: detectMinecraftServerType('script', '', script.name, installDir)
     }
   }
 

@@ -3135,3 +3135,70 @@ async function findProfileIdByName(name) {
     exactly like their own documentation says today, and the renderer side (a desktop Electron
     dialog, not the web dashboard) wasn't visually verified either - this environment has no
     display to drive the actual app's UI in.
+
+- **NeoForge support, for both mods and server install - the mod/plugin ecosystem's modern
+  successor to Forge, added as a full peer of every other `MinecraftServerType` rather than
+  bolted on separately.** `MinecraftServerType` gained `'neoforge'`, threaded through every
+  place the other loader types already were:
+  - **Mod search**: Modrinth's own `neoforge` loader category (`loaderCategoriesFor`) and
+    CurseForge's own `modLoaderType` enum value 6 (`modLoaderTypeFor`) - both confirmed
+    against each API's own public documentation, same caveat as everywhere else in this app
+    that talks to either (no live network access to verify from this sandbox).
+    `supportsMinecraftMods`/`modTargetDir` (mods/ folder, same as Forge/Fabric) both updated
+    too, so the Mods tab (desktop and web dashboard alike) just works for a NeoForge profile
+    with no further changes - they already dispatch on `serverType` generically.
+  - **Detection fix**: `detectMinecraftServerType`'s jar/script-name heuristic checked
+    `name.includes('forge')` before a NeoForge-specific check existed - since `"neoforge"`
+    contains `"forge"` as a substring, every NeoForge jar/script was being silently
+    misclassified as plain Forge. Now checks `neoforge` first. NeoForge's own generated
+    `run.sh`/`run.bat` is named identically to modern Forge's (no "neoforge" in the name at
+    all), so the file name alone can't disambiguate a script launch either way -
+    `detectMinecraftServerType` now optionally takes `installDir` and checks for
+    `libraries/net/neoforged` (vs Forge's own `libraries/net/minecraftforge`) when the name
+    alone isn't enough, a reliable signal neither installer's own file naming carries.
+  - **Install from scratch**: new `minecraftInstallClient.ts` functions
+    (`listNeoForgeVersions`/`neoForgeInstallerUrl`/`neoForgeVersionToMinecraftVersion`) and
+    `minecraftInstall.ts`'s `installNeoForgeServer` - same installer-jar-then-
+    `--installServer` flow as Forge's own install path (NeoForge's installer is a fork of
+    Forge's), reusing the exact same `detectMinecraftLaunchable` call afterward to figure out
+    the result. The one real difference from Forge: NeoForge's own `maven-metadata.xml` lists
+    plain build versions with no Minecraft version combined into the string at all (Forge's
+    lists `<mcVersion>-<forgeVersion>` combos) - `neoForgeVersionToMinecraftVersion` derives
+    the Minecraft version from the build version per NeoForge's own documented scheme
+    (`<mcMinor>.<mcPatch>.<build>`, e.g. "21.1.72" → Minecraft 1.21.1), and the version
+    picker's label spells out the derived version alongside the raw build string so it isn't
+    just a bare, meaningless-looking number. Covers the modern NeoForge versioning scheme
+    (Minecraft 1.20.2 onward, the vast majority of real NeoForge usage) - 1.20.1's own
+    legacy-numbered NeoForge builds (a narrow historical case, published under a different
+    Maven artifact with Forge-style combo versioning) aren't covered.
+  - **UI**: `'neoforge'` added to every `MinecraftServerType` picker (desktop Start Settings,
+    the install dialog, the web dashboard's own MC Start Settings) and the "not available"
+    guidance text on the Mods tab that used to say "Forge/Fabric/Paper/Spigot".
+  - **Icon**: a user-provided `neoforge.png` is now a proper asset
+    (`src/renderer/src/assets/games/neoforge.png` for the desktop app, `build/games/
+    neoforge.png` served by the web dashboard's existing `/game-icons/<fileName>` route -
+    same mechanism `minecraft.png` already used, just added to its known-file-names
+    allow-list). New `MINECRAFT_SERVER_TYPE_ICONS` (a deliberately sparse
+    `Partial<Record<MinecraftServerType, string>>` - every other type has no icon asset yet
+    and just keeps showing its plain text label, nothing degrades) wires it into the three
+    spots asked for: the Minecraft Dashboard's server card Type line, the Server type picker
+    in Start Settings/the install dialog (shown as a live preview next to the dropdown, since
+    a native `<select>` can't show an icon per `<option>`), and the Mods tab's Browse header -
+    all three mirrored into the web dashboard too (its own MC Start Settings type picker and
+    MC Mods search header), with a new `serverType` field added to its `/api/servers`
+    Minecraft payload so the client has something to key the icon off.
+  - New tests: `detectMinecraftServerType`'s substring-bug fix and the `installDir`-based
+    script disambiguation (`tests/minecraftDetect.test.ts`), every new
+    `minecraftInstallClient.ts` function (`tests/minecraftInstallClient.test.ts`), the
+    `installNeoForgeServer`/`listInstallableMinecraftVersions('neoforge')` dispatch paths
+    including the missing-Java and bad-version-string failure cases
+    (`tests/minecraftInstall.test.ts`), `modTargetDir`'s mods/ folder for NeoForge
+    (`tests/minecraftMods.test.ts`), the Modrinth/CurseForge loader mappings
+    (`tests/modrinthClient.test.ts`/`tests/curseforgeClient.test.ts`), and the web
+    dashboard's `/game-icons/neoforge.png` route (`tests/webDashboard.test.ts`) - 946 tests
+    total now. **This round's web dashboard icon wiring was additionally verified in a real
+    headless Chromium** (same approach as the Minecraft-tabs round above): selected a NeoForge
+    profile, confirmed the icon actually renders at `/game-icons/neoforge.png` in both the MC
+    Start Settings picker and the Mods browse header, and confirmed it disappears again live
+    (no page reload) when switching the type dropdown to a type with no icon - zero
+    `pageerror` events. `npm run typecheck` and `npm run build` both pass too.

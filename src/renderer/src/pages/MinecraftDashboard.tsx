@@ -6,6 +6,7 @@ import { createDefaultMinecraftProfile } from '../lib/minecraftProfile'
 import { confirmAction } from '../lib/confirmAction'
 import type { MinecraftTabKey } from './MinecraftServerDetail'
 import InstallMinecraftServerPanel from './InstallMinecraftServerPanel'
+import { MINECRAFT_SERVER_TYPE_ICONS } from '../lib/minecraftServerTypeIcons'
 import minecraftIcon from '../assets/games/minecraft.png'
 
 const SERVER_TYPE_LABELS: Record<MinecraftServerType, string> = {
@@ -14,6 +15,7 @@ const SERVER_TYPE_LABELS: Record<MinecraftServerType, string> = {
   spigot: 'Spigot',
   fabric: 'Fabric',
   forge: 'Forge',
+  neoforge: 'NeoForge',
   unknown: 'Unknown'
 }
 
@@ -264,7 +266,12 @@ export default function MinecraftDashboard({
           </div>
           <div>
             <dt>Type</dt>
-            <dd>{SERVER_TYPE_LABELS[profile.serverType]}</dd>
+            <dd className="server-type-value">
+              {MINECRAFT_SERVER_TYPE_ICONS[profile.serverType] && (
+                <img src={MINECRAFT_SERVER_TYPE_ICONS[profile.serverType]} alt="" className="server-type-icon" />
+              )}
+              {SERVER_TYPE_LABELS[profile.serverType]}
+            </dd>
           </div>
           <div className="server-card-info-address">
             <dt>Address</dt>

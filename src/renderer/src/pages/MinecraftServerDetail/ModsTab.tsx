@@ -8,6 +8,7 @@ import type {
   MinecraftModUpdateCheckResult
 } from '@shared/minecraftMods'
 import { confirmAction } from '../../lib/confirmAction'
+import { MINECRAFT_SERVER_TYPE_ICONS } from '../../lib/minecraftServerTypeIcons'
 import modrinthLogo from '../../assets/mod-sources/modrinth.png'
 import curseforgeLogo from '../../assets/mod-sources/forge.png'
 
@@ -237,7 +238,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
         <p className="empty-state">
           {profile.serverType === 'vanilla'
             ? "Vanilla servers don't support mods or plugins."
-            : 'Set Server type to Forge/Fabric/Paper/Spigot in Start Settings to use this tab.'}
+            : 'Set Server type to Forge/NeoForge/Fabric/Paper/Spigot in Start Settings to use this tab.'}
         </p>
         {profile.serverType !== 'vanilla' && (
           <button type="button" onClick={onGoToStartSettings}>
@@ -252,7 +253,12 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
     <div className="mods-tab">
       {hasVersion ? (
         <section className="cluster-section">
-          <h3>Browse Modrinth{hasCurseForgeKey ? ' & CurseForge' : ''}</h3>
+          <h3 className="mc-mods-browse-heading">
+            {MINECRAFT_SERVER_TYPE_ICONS[profile.serverType] && (
+              <img src={MINECRAFT_SERVER_TYPE_ICONS[profile.serverType]} alt="" className="server-type-icon" />
+            )}
+            Browse Modrinth{hasCurseForgeKey ? ' & CurseForge' : ''}
+          </h3>
           <p className="empty-state">
             Searching for {profile.serverType} mods/plugins compatible with Minecraft {profile.minecraftVersion}.
             Client-only content (nothing to do with a server) is already excluded.

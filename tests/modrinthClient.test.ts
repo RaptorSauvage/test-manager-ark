@@ -13,9 +13,10 @@ function fakeResponse(init: { ok: boolean; status: number; retryAfter?: string; 
 }
 
 describe('loaderCategoriesFor', () => {
-  it('maps fabric/forge to their own single category', () => {
+  it('maps fabric/forge/neoforge to their own single category', () => {
     expect(loaderCategoriesFor('fabric')).toEqual(['fabric'])
     expect(loaderCategoriesFor('forge')).toEqual(['forge'])
+    expect(loaderCategoriesFor('neoforge')).toEqual(['neoforge'])
   })
 
   it('maps paper and spigot to the same cross-compatible category group', () => {

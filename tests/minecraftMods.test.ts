@@ -152,6 +152,11 @@ describe('minecraftMods', () => {
     expect(modTargetDir(profile)).toBe(path.join(tmpDir, 'plugins'))
   })
 
+  it('uses the mods/ folder for NeoForge, same as Forge/Fabric', () => {
+    const profile = makeProfile({ serverType: 'neoforge' }, tmpDir)
+    expect(modTargetDir(profile)).toBe(path.join(tmpDir, 'mods'))
+  })
+
   it('rejects when no version is compatible with this server', async () => {
     mockGetModrinthProjectVersions.mockResolvedValue([])
     const profile = makeProfile({}, tmpDir)

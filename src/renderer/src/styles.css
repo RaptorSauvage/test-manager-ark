@@ -965,6 +965,35 @@ label.checkbox {
   flex-shrink: 0;
 }
 
+.server-type-value {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.server-type-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.mc-mods-browse-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.server-type-icon-large {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  align-self: center;
+}
+
 .drag-handle {
   cursor: grab;
   color: var(--muted);

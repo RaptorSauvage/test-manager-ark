@@ -91,6 +91,8 @@ export function loaderCategoriesFor(serverType: MinecraftServerType): string[] {
       return ['fabric']
     case 'forge':
       return ['forge']
+    case 'neoforge':
+      return ['neoforge']
     case 'paper':
     case 'spigot':
       return ['paper', 'spigot', 'bukkit']

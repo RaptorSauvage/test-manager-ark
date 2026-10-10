@@ -17,6 +17,9 @@ import {
   fabricServerJarUrl,
   listForgeVersionsForMinecraft,
   forgeInstallerUrl,
+  listNeoForgeVersions,
+  neoForgeInstallerUrl,
+  neoForgeVersionToMinecraftVersion,
   SPIGOT_BUILDTOOLS_URL
 } from './minecraftInstallClient'
 
@@ -45,6 +48,24 @@ export async function listInstallableMinecraftVersions(
     // available proxy for "a version that plausibly works", same list vanilla itself offers.
     const versions = await listVanillaVersions()
     return versions.map((v) => ({ id: v.id, label: v.id }))
+  }
+  if (serverType === 'neoforge') {
+    // NeoForge's own version string doesn't carry the Minecraft version in it the way Forge's
+    // combo strings do (see minecraftInstallClient.ts) - the label spells out the derived
+    // Minecraft version alongside the raw build (the `id` sent back to installMinecraftServerFiles)
+    // so the picker reads as "this build, for this Minecraft version" rather than a bare,
+    // meaningless-looking number. A build whose version string doesn't match NeoForge's own
+    // documented scheme is skipped rather than shown with a broken label.
+    const versions = await listNeoForgeVersions()
+    const options: MinecraftVersionOption[] = []
+    for (const id of versions) {
+      try {
+        options.push({ id, label: `${id} (Minecraft ${neoForgeVersionToMinecraftVersion(id)})` })
+      } catch {
+        // Skip - see doc comment above.
+      }
+    }
+    return options
   }
   // forge: list every mcVersion-forgeVersion combo on Forge's own maven across every version,
   // then present the combined string as the selectable "version" - Forge itself doesn't offer
@@ -171,6 +192,22 @@ async function installForgeServer(installDir: string, versionCombo: string, task
   return { ...detected, installDir, minecraftVersion: mcVersion, serverType: 'forge' }
 }
 
+async function installNeoForgeServer(installDir: string, neoForgeVersion: string, taskId: string): Promise<MinecraftInstallResult> {
+  const minecraftVersion = neoForgeVersionToMinecraftVersion(neoForgeVersion)
+  requireExecutableOnPath('java', 'Java')
+  const installerPath = path.join(installDir, 'neoforge-installer.jar')
+  await downloadToFile(neoForgeInstallerUrl(neoForgeVersion), installerPath)
+  logManagerEvent(taskId, `Install Minecraft server (NeoForge ${neoForgeVersion})`, 'Running the NeoForge installer...')
+  await runProcess('java', ['-jar', 'neoforge-installer.jar', '--installServer'], installDir, taskId, 'NeoForge install')
+  const detected = detectMinecraftLaunchable(installDir)
+  if (!detected) {
+    throw new Error('The NeoForge installer ran, but no launchable jar or script was found afterward - check the install directory.')
+  }
+  // serverType is forced to 'neoforge' regardless of what detectMinecraftLaunchable's generic
+  // heuristic guessed - this install path is definitely NeoForge, no need to guess.
+  return { ...detected, installDir, minecraftVersion, serverType: 'neoforge' }
+}
+
 async function installSpigotServer(installDir: string, minecraftVersion: string, taskId: string): Promise<MinecraftInstallResult> {
   requireExecutableOnPath('java', 'Java')
   requireExecutableOnPath('git', 'Git')
@@ -208,6 +245,7 @@ export async function installMinecraftServerFiles(params: MinecraftInstallParams
     else if (params.serverType === 'paper') result = await installPaperServer(params.installDir, params.minecraftVersion)
     else if (params.serverType === 'fabric') result = await installFabricServer(params.installDir, params.minecraftVersion)
     else if (params.serverType === 'forge') result = await installForgeServer(params.installDir, params.minecraftVersion, taskId)
+    else if (params.serverType === 'neoforge') result = await installNeoForgeServer(params.installDir, params.minecraftVersion, taskId)
     else result = await installSpigotServer(params.installDir, params.minecraftVersion, taskId)
 
     writeEula(params.installDir)

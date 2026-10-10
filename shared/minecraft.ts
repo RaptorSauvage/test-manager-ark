@@ -32,7 +32,7 @@ export type MinecraftLaunchMode = 'jar' | 'script'
  *  behavior. Detected from the jar/script file name (minecraftDetect.ts's
  *  detectMinecraftServerType) since none of these ship any other cheap, reliable signal to
  *  read instead. */
-export type MinecraftServerType = 'vanilla' | 'paper' | 'spigot' | 'fabric' | 'forge' | 'unknown'
+export type MinecraftServerType = 'vanilla' | 'paper' | 'spigot' | 'fabric' | 'forge' | 'neoforge' | 'unknown'
 
 export interface MinecraftProfile {
   id: string

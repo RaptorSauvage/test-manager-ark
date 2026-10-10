@@ -39,7 +39,7 @@ import { delay } from './delay'
 
 /** Forge/Fabric read mods from `mods/`; Paper/Spigot read plugins from `plugins/`. */
 export function modTargetDir(profile: MinecraftProfile): string {
-  const sub = profile.serverType === 'forge' || profile.serverType === 'fabric' ? 'mods' : 'plugins'
+  const sub = profile.serverType === 'forge' || profile.serverType === 'neoforge' || profile.serverType === 'fabric' ? 'mods' : 'plugins'
   return path.join(profile.installDir, sub)
 }
 

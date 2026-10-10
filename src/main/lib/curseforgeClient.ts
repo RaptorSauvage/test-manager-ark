@@ -42,6 +42,8 @@ function modLoaderTypeFor(serverType: MinecraftServerType): number | undefined {
       return 1
     case 'fabric':
       return 4
+    case 'neoforge':
+      return 6
     default:
       return undefined
   }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { MinecraftInstallableType } from '@shared/minecraftInstall'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { createDefaultMinecraftProfile } from '../lib/minecraftProfile'
+import { MINECRAFT_SERVER_TYPE_ICONS } from '../lib/minecraftServerTypeIcons'
 
 interface InstallMinecraftServerPanelProps {
   existingNameCount: number
@@ -14,6 +15,7 @@ const SERVER_TYPE_OPTIONS: Array<{ value: MinecraftInstallableType; label: strin
   { value: 'paper', label: 'Paper', hint: 'High-performance fork with a plugin ecosystem (Bukkit/Spigot-compatible).' },
   { value: 'fabric', label: 'Fabric', hint: 'Lightweight, widely-used modding platform.' },
   { value: 'forge', label: 'Forge', hint: 'The original modding platform - the largest modpack ecosystem.' },
+  { value: 'neoforge', label: 'NeoForge', hint: "Forge's modern successor - most new Forge-ecosystem modpacks target this instead today." },
   {
     value: 'spigot',
     label: 'Spigot',
@@ -136,13 +138,18 @@ export default function InstallMinecraftServerPanel({
       </label>
       <label>
         Server type
-        <select value={serverType} onChange={(e) => setServerType(e.target.value as MinecraftInstallableType)} disabled={installing}>
-          {SERVER_TYPE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+        <div className="path-input-row">
+          <select value={serverType} onChange={(e) => setServerType(e.target.value as MinecraftInstallableType)} disabled={installing}>
+            {SERVER_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          {MINECRAFT_SERVER_TYPE_ICONS[serverType] && (
+            <img src={MINECRAFT_SERVER_TYPE_ICONS[serverType]} alt="" className="server-type-icon-large" />
+          )}
+        </div>
       </label>
       {selectedOption && <p className="empty-state">{selectedOption.hint}</p>}
       <label>

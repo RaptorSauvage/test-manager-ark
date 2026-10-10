@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { MinecraftLaunchMode, MinecraftProfile, MinecraftServerType } from '@shared/minecraft'
+import { MINECRAFT_SERVER_TYPE_ICONS } from '../../lib/minecraftServerTypeIcons'
 
 const SERVER_TYPE_OPTIONS: Array<{ value: MinecraftServerType; label: string }> = [
   { value: 'vanilla', label: 'Vanilla' },
@@ -7,6 +8,7 @@ const SERVER_TYPE_OPTIONS: Array<{ value: MinecraftServerType; label: string }> 
   { value: 'spigot', label: 'Spigot' },
   { value: 'fabric', label: 'Fabric' },
   { value: 'forge', label: 'Forge' },
+  { value: 'neoforge', label: 'NeoForge' },
   { value: 'unknown', label: 'Unknown' }
 ]
 
@@ -73,13 +75,18 @@ export default function StartSettingsTab({ profile, onProfileChange }: StartSett
         </label>
         <label>
           Server type
-          <select value={form.serverType} onChange={(e) => update('serverType', e.target.value as MinecraftServerType)}>
-            {SERVER_TYPE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+          <div className="path-input-row">
+            <select value={form.serverType} onChange={(e) => update('serverType', e.target.value as MinecraftServerType)}>
+              {SERVER_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            {MINECRAFT_SERVER_TYPE_ICONS[form.serverType] && (
+              <img src={MINECRAFT_SERVER_TYPE_ICONS[form.serverType]} alt="" className="server-type-icon-large" />
+            )}
+          </div>
         </label>
         <p className="empty-state">
           Cosmetic only (shown on the Dashboard card) - best-effort guessed from the jar/script name on import or

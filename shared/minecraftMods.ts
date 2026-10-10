@@ -23,7 +23,13 @@ export type MinecraftModSource = 'modrinth' | 'curseforge' | 'unknown'
  *  to assume either. Shared (not just main-process) so the renderer's Mods tab can decide
  *  whether to show its content or a "not applicable" message without an IPC round-trip. */
 export function supportsMinecraftMods(serverType: MinecraftServerType): boolean {
-  return serverType === 'forge' || serverType === 'fabric' || serverType === 'paper' || serverType === 'spigot'
+  return (
+    serverType === 'forge' ||
+    serverType === 'neoforge' ||
+    serverType === 'fabric' ||
+    serverType === 'paper' ||
+    serverType === 'spigot'
+  )
 }
 
 /** A dependency `dependency_type` can mean four different things for install purposes:

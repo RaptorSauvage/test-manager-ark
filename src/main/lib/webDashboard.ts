@@ -79,9 +79,17 @@ import type { MinecraftModSource } from '@shared/minecraftMods'
 // Minecraft isn't part of shared/games.ts's GameDefinition registry (that one's ARK-only by
 // design - see its own top-of-file comment) - its icon is served the same way regardless,
 // just added to the known-file-names allow-list by hand instead of coming from
-// listGameDefinitions().
+// listGameDefinitions(). NeoForge's own icon (a per-loader-type icon, not a per-game one -
+// shown next to "NeoForge" wherever a Minecraft server's type is displayed) is served through
+// this exact same route/allow-list for simplicity, rather than a second icon-serving
+// mechanism just for loader icons.
 const MINECRAFT_ICON_FILE_NAME = 'minecraft.png'
-const KNOWN_GAME_ICON_FILE_NAMES = new Set([...listGameDefinitions().map((g) => g.iconFileName), MINECRAFT_ICON_FILE_NAME])
+const NEOFORGE_ICON_FILE_NAME = 'neoforge.png'
+const KNOWN_GAME_ICON_FILE_NAMES = new Set([
+  ...listGameDefinitions().map((g) => g.iconFileName),
+  MINECRAFT_ICON_FILE_NAME,
+  NEOFORGE_ICON_FILE_NAME
+])
 
 /**
  * Orders Minecraft profiles the same way sortProfilesForDisplay does for ARK ones (ungrouped
@@ -431,6 +439,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           // SteamCMD-style installed-build-id check the way ARK's getCachedGameVersion reads) -
           // still the most useful single "version" string to show for one of these.
           gameVersion: profile.minecraftVersion || null,
+          // Only consumed client-side to pick a per-loader icon (see
+          // MC_SERVER_TYPE_ICON_URLS) where one exists - sparse by design, same as that map.
+          serverType: profile.serverType,
           statsEnabled: undefined,
           gameIconUrl: `/game-icons/${MINECRAFT_ICON_FILE_NAME}`,
           gameDisplayName: 'Minecraft'
@@ -1827,6 +1838,9 @@ const DASHBOARD_HTML = `<!doctype html>
   .data-table td.mod-disabled-row { color: var(--muted); }
   .playerbackup-select-col { width: 28px; }
   .ark-mod-icon { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+  .server-type-icon-large { width: 28px; height: 28px; border-radius: 5px; object-fit: cover; flex-shrink: 0; align-self: center; }
+  .server-type-icon { width: 16px; height: 16px; border-radius: 3px; object-fit: cover; flex-shrink: 0; }
+  .mc-mods-browse-heading { display: flex; align-items: center; gap: 6px; }
   .ark-mod-name-cell { display: flex; align-items: center; gap: 8px; }
   .ark-mod-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ark-mod-search-results { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-height: 260px; overflow-y: auto; }
@@ -2412,14 +2426,18 @@ const DASHBOARD_HTML = `<!doctype html>
           </label>
           <label>
             Server type
-            <select id="mcss-servertype">
-              <option value="vanilla">Vanilla</option>
-              <option value="paper">Paper</option>
-              <option value="spigot">Spigot</option>
-              <option value="fabric">Fabric</option>
-              <option value="forge">Forge</option>
-              <option value="unknown">Unknown</option>
-            </select>
+            <div class="form-actions">
+              <select id="mcss-servertype">
+                <option value="vanilla">Vanilla</option>
+                <option value="paper">Paper</option>
+                <option value="spigot">Spigot</option>
+                <option value="fabric">Fabric</option>
+                <option value="forge">Forge</option>
+                <option value="neoforge">NeoForge</option>
+                <option value="unknown">Unknown</option>
+              </select>
+              <img id="mcss-servertype-icon" class="server-type-icon-large" alt="" style="display: none" />
+            </div>
           </label>
           <label>
             Minecraft version
@@ -2514,7 +2532,10 @@ const DASHBOARD_HTML = `<!doctype html>
           mod/plugin ecosystem to search.
         </p>
         <section id="mc-mods-search-section" class="settings-section">
-          <h3>Search Modrinth / CurseForge</h3>
+          <h3 class="mc-mods-browse-heading">
+            <img id="mc-mods-browse-icon" class="server-type-icon" alt="" style="display: none" />
+            Search Modrinth / CurseForge
+          </h3>
           <div class="form-actions">
             <input id="mc-mods-search-query" placeholder="Search mods/plugins..." />
             <button id="btn-mc-mods-search" type="button">Search</button>
@@ -4608,6 +4629,17 @@ function initDashboard(resolvedRole) {
   var mcStartSettingsErrorEl = document.getElementById('mc-startsettings-error');
   var mcssName = document.getElementById('mcss-name');
   var mcssServerType = document.getElementById('mcss-servertype');
+  var mcssServerTypeIcon = document.getElementById('mcss-servertype-icon');
+  // Sparse by design - only NeoForge has a real icon asset right now (served the same way as
+  // Minecraft's own game icon, see KNOWN_GAME_ICON_FILE_NAMES on the server side); every other
+  // type just shows no icon, exactly as before this existed.
+  var MC_SERVER_TYPE_ICON_URLS = { neoforge: '/game-icons/neoforge.png' };
+  function updateMcssServerTypeIcon() {
+    var url = MC_SERVER_TYPE_ICON_URLS[mcssServerType.value];
+    mcssServerTypeIcon.src = url || '';
+    mcssServerTypeIcon.style.display = url ? '' : 'none';
+  }
+  mcssServerType.addEventListener('change', updateMcssServerTypeIcon);
   var mcssVersion = document.getElementById('mcss-version');
   var mcssInstallDir = document.getElementById('mcss-installdir');
   var mcssLaunchMode = document.getElementById('mcss-launchmode');
@@ -4652,6 +4684,7 @@ function initDashboard(resolvedRole) {
     var p = mcStartSettingsProfile;
     mcssName.value = p.name;
     mcssServerType.value = p.serverType;
+    updateMcssServerTypeIcon();
     mcssVersion.value = p.minecraftVersion;
     mcssInstallDir.value = p.installDir;
     mcssLaunchMode.value = p.launchMode;
@@ -4894,6 +4927,7 @@ function initDashboard(resolvedRole) {
   var mcModsServerSelectEl = document.getElementById('mc-mods-server-select');
   var mcModsNoServerEl = document.getElementById('mc-mods-no-server');
   var mcModsContentEl = document.getElementById('mc-mods-content');
+  var mcModsBrowseIcon = document.getElementById('mc-mods-browse-icon');
   var mcModsSearchQueryInput = document.getElementById('mc-mods-search-query');
   var btnMcModsSearch = document.getElementById('btn-mc-mods-search');
   var mcModsSearchErrorEl = document.getElementById('mc-mods-search-error');
@@ -5165,6 +5199,10 @@ function initDashboard(resolvedRole) {
     showMcModsSearchError('');
     mcModsNoServerEl.style.display = 'none';
     mcModsContentEl.classList.add('active');
+    var server = latestServers.find(function (s) { return s.id === id; });
+    var iconUrl = server && MC_SERVER_TYPE_ICON_URLS[server.serverType];
+    mcModsBrowseIcon.src = iconUrl || '';
+    mcModsBrowseIcon.style.display = iconUrl ? '' : 'none';
     mcModsSearched = false;
     mcModsSearchResults = [];
     mcModsSearchQueryInput.value = '';

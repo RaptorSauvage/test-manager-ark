@@ -129,4 +129,36 @@ describe('detectMinecraftServerType', () => {
   it('reports unknown when there is no name to go on at all', () => {
     expect(detectMinecraftServerType('jar', '', '')).toBe('unknown')
   })
+
+  it('recognizes NeoForge from the jar name, not misclassified as plain Forge ("neoforge" contains "forge")', () => {
+    expect(detectMinecraftServerType('jar', 'neoforge-21.1.72-universal.jar', '')).toBe('neoforge')
+  })
+
+  it('still recognizes NeoForge from a script name that happens to say so', () => {
+    expect(detectMinecraftServerType('script', '', 'neoforge-run.sh')).toBe('neoforge')
+  })
+
+  it('falls back to Forge for an unrecognized script with no installDir to check', () => {
+    expect(detectMinecraftServerType('script', '', 'run.bat')).toBe('forge')
+  })
+
+  it('disambiguates an unrecognized script as NeoForge when installDir has a libraries/net/neoforged folder', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'minecraft-detect-neoforge-'))
+    try {
+      fs.mkdirSync(path.join(dir, 'libraries', 'net', 'neoforged'), { recursive: true })
+      expect(detectMinecraftServerType('script', '', 'run.sh', dir)).toBe('neoforge')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('stays Forge when installDir has no libraries/net/neoforged folder', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'minecraft-detect-forge-'))
+    try {
+      fs.mkdirSync(path.join(dir, 'libraries', 'net', 'minecraftforge'), { recursive: true })
+      expect(detectMinecraftServerType('script', '', 'run.sh', dir)).toBe('forge')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

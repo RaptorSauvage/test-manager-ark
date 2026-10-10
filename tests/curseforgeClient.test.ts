@@ -45,6 +45,17 @@ describe('searchCurseForgeMods', () => {
     expect(url.searchParams.get('gameId')).toBe('432')
   })
 
+  it('uses the Mods class id and modLoaderType 6 for NeoForge', async () => {
+    const fetchMock = vi.fn(async () => fakeResponse({ data: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await searchCurseForgeMods('key', 'jei', 'neoforge', '1.21.1')
+
+    const url = fetchMock.mock.calls[0][0] as URL
+    expect(url.searchParams.get('classId')).toBe('6')
+    expect(url.searchParams.get('modLoaderType')).toBe('6')
+  })
+
   it('uses the Bukkit Plugins class id and omits modLoaderType for Paper/Spigot', async () => {
     const fetchMock = vi.fn(async () => fakeResponse({ data: [] }))
     vi.stubGlobal('fetch', fetchMock)

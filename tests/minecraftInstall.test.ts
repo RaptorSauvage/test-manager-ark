@@ -16,6 +16,7 @@ const mockListFabricGameVersions = vi.fn()
 const mockGetLatestFabricLoaderVersion = vi.fn()
 const mockGetLatestFabricInstallerVersion = vi.fn()
 const mockListForgeVersionsForMinecraft = vi.fn()
+const mockListNeoForgeVersions = vi.fn()
 
 vi.mock('../src/main/lib/minecraftInstallClient', async () => {
   const actual = await vi.importActual<typeof import('../src/main/lib/minecraftInstallClient')>(
@@ -30,7 +31,8 @@ vi.mock('../src/main/lib/minecraftInstallClient', async () => {
     listFabricGameVersions: () => mockListFabricGameVersions(),
     getLatestFabricLoaderVersion: (mcVersion: string) => mockGetLatestFabricLoaderVersion(mcVersion),
     getLatestFabricInstallerVersion: () => mockGetLatestFabricInstallerVersion(),
-    listForgeVersionsForMinecraft: (mcVersion: string) => mockListForgeVersionsForMinecraft(mcVersion)
+    listForgeVersionsForMinecraft: (mcVersion: string) => mockListForgeVersionsForMinecraft(mcVersion),
+    listNeoForgeVersions: () => mockListNeoForgeVersions()
   }
 })
 
@@ -261,6 +263,59 @@ describe('installMinecraftServerFiles', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('installs neoforge: downloads the installer, runs it, then detects the launchable result', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('installer-jar').buffer })
+    )
+    mockDetectMinecraftLaunchable.mockReturnValue({
+      launchMode: 'script',
+      jarFileName: '',
+      scriptFileName: 'run.sh',
+      serverType: 'unknown'
+    })
+
+    const result = await installMinecraftServerFiles({
+      serverType: 'neoforge',
+      minecraftVersion: '21.1.72',
+      installDir: TEST_DIR,
+      acceptEula: true
+    })
+
+    expect(lastSpawnCall).toEqual({ command: 'java', args: ['-jar', 'neoforge-installer.jar', '--installServer'] })
+    // minecraftVersion is the derived Minecraft version (1.21.1), not the raw NeoForge build
+    // string that was passed in as params.minecraftVersion.
+    expect(result).toEqual({
+      installDir: TEST_DIR,
+      launchMode: 'script',
+      jarFileName: '',
+      scriptFileName: 'run.sh',
+      minecraftVersion: '1.21.1',
+      serverType: 'neoforge'
+    })
+  })
+
+  it('neoforge install fails clearly, before downloading anything, if Java is not on PATH', async () => {
+    spawnSyncMissing = new Set(['java'])
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      installMinecraftServerFiles({ serverType: 'neoforge', minecraftVersion: '21.1.72', installDir: TEST_DIR, acceptEula: true })
+    ).rejects.toThrow(/Java was not found/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('neoforge install fails clearly for a version string that does not match the documented scheme', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      installMinecraftServerFiles({ serverType: 'neoforge', minecraftVersion: 'garbage', installDir: TEST_DIR, acceptEula: true })
+    ).rejects.toThrow(/Not a recognized NeoForge version/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('installs spigot: downloads BuildTools, runs it, and finds the produced jar', async () => {
     vi.stubGlobal(
       'fetch',
@@ -334,5 +389,18 @@ describe('listInstallableMinecraftVersions', () => {
   it('dispatches spigot to the vanilla release list (BuildTools can target any of them)', async () => {
     mockListVanillaVersions.mockResolvedValue([{ id: '1.20.1', type: 'release', url: 'x' }])
     expect(await listInstallableMinecraftVersions('spigot')).toEqual([{ id: '1.20.1', label: '1.20.1' }])
+  })
+
+  it('dispatches neoforge to listNeoForgeVersions, labeling each with its derived Minecraft version', async () => {
+    mockListNeoForgeVersions.mockResolvedValue(['21.1.72', '20.2.86'])
+    expect(await listInstallableMinecraftVersions('neoforge')).toEqual([
+      { id: '21.1.72', label: '21.1.72 (Minecraft 1.21.1)' },
+      { id: '20.2.86', label: '20.2.86 (Minecraft 1.20.2)' }
+    ])
+  })
+
+  it('skips a neoforge version string that does not match the documented scheme instead of crashing', async () => {
+    mockListNeoForgeVersions.mockResolvedValue(['21.1.72', 'garbage'])
+    expect(await listInstallableMinecraftVersions('neoforge')).toEqual([{ id: '21.1.72', label: '21.1.72 (Minecraft 1.21.1)' }])
   })
 })

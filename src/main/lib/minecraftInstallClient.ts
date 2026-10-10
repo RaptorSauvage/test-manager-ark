@@ -8,6 +8,9 @@
  *  - fabric: FabricMC's own meta API (https://fabricmc.net/wiki/documentation:fabric_meta)
  *  - forge: Forge's own Maven (no JSON API - maven-metadata.xml is the only machine-readable
  *    version listing Forge publishes)
+ *  - neoforge: NeoForge's own Maven, same shape as Forge's - except its metadata lists plain
+ *    build versions with no Minecraft version combined into the string (see
+ *    neoForgeVersionToMinecraftVersion below for how the two relate)
  *  - spigot: no download API at all - Spigot's own license terms require building it
  *    yourself from Mojang's mappings via BuildTools.jar (https://www.spigotmc.org/wiki/buildtools/),
  *    so installMinecraftServerFiles (minecraftInstall.ts) runs that instead of downloading a
@@ -15,8 +18,8 @@
  *
  * None of these endpoints could be reached from the sandbox this was written in (outbound
  * network access to piston-meta.mojang.com/api.papermc.io/meta.fabricmc.net/
- * maven.minecraftforge.net is all blocked by this environment's own proxy policy) - every
- * shape below follows each project's own published, versioned public documentation, the same
+ * maven.minecraftforge.net/maven.neoforged.net is all blocked by this environment's own proxy
+ * policy) - every shape below follows each project's own published, versioned public documentation, the same
  * "confirmed against docs, not a live response" caveat already true of this codebase's
  * CurseForge fingerprint algorithm (see curseforgeFingerprint.ts). Please confirm an install
  * of each type actually works end to end on a machine with real internet access.
@@ -194,6 +197,49 @@ export async function listForgeVersionsForMinecraft(mcVersion: string): Promise<
 export function forgeInstallerUrl(mcVersion: string, forgeVersion: string): string {
   const full = `${mcVersion}-${forgeVersion}`
   return `https://maven.minecraftforge.net/net/minecraftforge/forge/${full}/forge-${full}-installer.jar`
+}
+
+// ---- NeoForge (NeoForged) ------------------------------------------------------------------
+
+const NEOFORGE_MAVEN_METADATA_URL = 'https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml'
+
+/**
+ * Unlike Forge, NeoForge's own maven-metadata.xml (1.20.2 onward - NeoForge didn't exist
+ * before that) lists plain build versions with no Minecraft version combined into the
+ * string at all (e.g. "21.1.72", not "1.21.1-21.1.72") - see neoForgeVersionToMinecraftVersion
+ * below for how the two actually relate. Parsed the same plain-regex way as Forge's own
+ * maven-metadata.xml, for the same reason (simple, uniform, machine-generated, not arbitrary
+ * XML worth a real parser for).
+ */
+export async function listNeoForgeVersions(): Promise<string[]> {
+  const xml = await fetchText(NEOFORGE_MAVEN_METADATA_URL)
+  const matches = [...xml.matchAll(/<version>([^<]+)<\/version>/g)].map((m) => m[1])
+  // Newest-published-first - maven-metadata.xml lists them oldest-first.
+  return matches.reverse()
+}
+
+export function neoForgeInstallerUrl(neoForgeVersion: string): string {
+  return `https://maven.neoforged.net/releases/net/neoforged/neoforge/${neoForgeVersion}/neoforge-${neoForgeVersion}-installer.jar`
+}
+
+/**
+ * NeoForge's own documented version scheme (https://docs.neoforged.net/docs/gettingstarted/versioning/):
+ * `<mcMinor>.<mcPatch>.<build>`, where the Minecraft version is `1.<mcMinor>` if `<mcPatch>`
+ * is `0`, else `1.<mcMinor>.<mcPatch>` - e.g. "21.1.72" is Minecraft 1.21.1, "20.2.86" is
+ * Minecraft 1.20.2. Used to fill MinecraftProfile.minecraftVersion (needed by the Mods tab to
+ * filter compatible mod versions) from the one version string NeoForge's own maven actually
+ * publishes - there's no separate "which Minecraft version is this" field anywhere in its
+ * metadata to read instead. Throws rather than guessing if a version string doesn't match
+ * this scheme at all (a version NeoForge itself never published, or a scheme change this
+ * hasn't been updated for).
+ */
+export function neoForgeVersionToMinecraftVersion(neoForgeVersion: string): string {
+  const match = /^(\d+)\.(\d+)\./.exec(neoForgeVersion)
+  if (!match) {
+    throw new Error(`Not a recognized NeoForge version ("<mcMinor>.<mcPatch>.<build>" expected): ${neoForgeVersion}`)
+  }
+  const [, mcMinor, mcPatch] = match
+  return mcPatch === '0' ? `1.${mcMinor}` : `1.${mcMinor}.${mcPatch}`
 }
 
 // ---- Spigot (BuildTools) -------------------------------------------------------------------
