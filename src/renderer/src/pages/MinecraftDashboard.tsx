@@ -5,6 +5,7 @@ import { useMinecraftServerStatuses } from '../lib/useMinecraftServerStatuses'
 import { createDefaultMinecraftProfile } from '../lib/minecraftProfile'
 import { confirmAction } from '../lib/confirmAction'
 import type { MinecraftTabKey } from './MinecraftServerDetail'
+import InstallMinecraftServerPanel from './InstallMinecraftServerPanel'
 import minecraftIcon from '../assets/games/minecraft.png'
 
 const SERVER_TYPE_LABELS: Record<MinecraftServerType, string> = {
@@ -40,6 +41,7 @@ export default function MinecraftDashboard({
   const [bulkBusy, setBulkBusy] = useState(false)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [dragGroupName, setDragGroupName] = useState<string | null>(null)
+  const [showInstallPanel, setShowInstallPanel] = useState(false)
 
   useEffect(() => {
     void window.api.webDashboard.getLocalIps().then((ips) => {
@@ -139,9 +141,21 @@ export default function MinecraftDashboard({
     }
   }
 
+  // The blank/manual path, kept available from inside the install panel below ("configure
+  // manually instead") for a server whose files will be set up by hand afterward - the
+  // install panel itself is now the primary "+ Add server" entry point, fetching/building
+  // the right files for the chosen type/version instead of leaving every field blank.
   async function handleCreate(): Promise<void> {
     const profile = createDefaultMinecraftProfile(`Minecraft Server ${profiles.length + 1}`)
     const updated = await window.api.minecraft.profiles.save(profile)
+    setShowInstallPanel(false)
+    onProfilesChange(updated)
+    onOpenProfile(profile.id, 'startSettings')
+  }
+
+  async function handleInstalled(profile: MinecraftProfile): Promise<void> {
+    const updated = await window.api.minecraft.profiles.save(profile)
+    setShowInstallPanel(false)
     onProfilesChange(updated)
     onOpenProfile(profile.id, 'startSettings')
   }
@@ -313,7 +327,7 @@ export default function MinecraftDashboard({
           <button onClick={() => void handleImport()} disabled={importing}>
             {importing ? 'Scanning...' : 'Import existing server'}
           </button>
-          <button onClick={() => void handleCreate()}>+ Add server</button>
+          <button onClick={() => setShowInstallPanel(true)}>+ Add server</button>
         </div>
       </header>
 
@@ -321,6 +335,22 @@ export default function MinecraftDashboard({
 
       <div className="dashboard-body">
         <div className="dashboard-content">
+          {showInstallPanel && (
+            <>
+              <InstallMinecraftServerPanel
+                existingNameCount={profiles.length}
+                onInstalled={(profile) => void handleInstalled(profile)}
+                onCancel={() => setShowInstallPanel(false)}
+              />
+              <p className="empty-state">
+                Already have a server set up somewhere, or want to start from a blank profile instead?{' '}
+                <button type="button" className="link-button" onClick={() => void handleCreate()}>
+                  Configure manually
+                </button>
+                .
+              </p>
+            </>
+          )}
           {visibleProfiles.length > 0 && (
             <section className="server-controls">
               <h3>Server Controls</h3>

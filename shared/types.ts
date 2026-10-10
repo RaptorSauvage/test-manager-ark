@@ -11,6 +11,7 @@ import type {
   MinecraftModUpdateCheckResult,
   MinecraftModScanResult
 } from './minecraftMods'
+import type { MinecraftInstallableType, MinecraftInstallParams, MinecraftInstallResult, MinecraftVersionOption } from './minecraftInstall'
 
 export interface ServerProfile {
   id: string
@@ -605,7 +606,10 @@ export const IPC = {
   minecraftModsCheckUpdates: 'minecraft-mods:check-updates',
   minecraftModsUpdate: 'minecraft-mods:update',
   minecraftModsScan: 'minecraft-mods:scan',
-  minecraftModsOpenFolder: 'minecraft-mods:open-folder'
+  minecraftModsOpenFolder: 'minecraft-mods:open-folder',
+
+  minecraftInstallListVersions: 'minecraft-install:list-versions',
+  minecraftInstallRun: 'minecraft-install:run'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -981,6 +985,17 @@ export interface Api {
       /** Opens the mods/plugins folder (mods/ or plugins/, depending on server type) in the
        *  OS file explorer. */
       openFolder: (profileId: string) => Promise<void>
+    }
+    /** Fetches/builds the right server files for a brand-new server (vanilla/Paper/Fabric
+     *  download a prebuilt jar; Forge downloads and runs its own installer; Spigot downloads
+     *  and runs BuildTools, which compiles it locally per Spigot's own license terms) - the
+     *  "+ Add server" flow's alternative to "Import existing server" for a folder that has
+     *  nothing in it yet. Doesn't create or save a MinecraftProfile itself; the caller does
+     *  that with the returned launchMode/jarFileName/scriptFileName/minecraftVersion/
+     *  serverType, same "caller saves" pattern as profiles.importFromInstall. */
+    install: {
+      listVersions: (serverType: MinecraftInstallableType) => Promise<MinecraftVersionOption[]>
+      run: (params: MinecraftInstallParams) => Promise<MinecraftInstallResult>
     }
   }
 }

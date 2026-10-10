@@ -3046,3 +3046,92 @@ async function findProfileIdByName(name) {
     searching Mods for the mock profile's `serverType: 'vanilla'`, which has no mod ecosystem
     by design) - genuine evidence this round's ~1600 lines of new client JS run without a
     runtime exception, not just that they parse and typecheck.
+
+- **"+ Add server" on the Minecraft Dashboard now fetches (or, for Forge/Spigot, downloads
+  and runs an installer for) the right server files for a brand-new server, instead of
+  always creating a completely blank profile with nothing on disk.** Previously, setting up a
+  new Minecraft server from scratch meant installing it by hand outside the Manager first,
+  then either "Import existing server" or configuring every field manually - there was no
+  install-from-scratch path for any server type.
+  - **New `shared/minecraftInstall.ts`**: `MinecraftInstallableType` (every real
+    `MinecraftServerType` except `'unknown'`), `MinecraftVersionOption`,
+    `MinecraftInstallParams` (serverType/minecraftVersion/installDir/acceptEula),
+    `MinecraftInstallResult` (installDir/launchMode/jarFileName/scriptFileName/
+    minecraftVersion/serverType) - the shape both `window.api.minecraft.install` and the new
+    main-process modules below share.
+  - **New `src/main/lib/minecraftInstallClient.ts`**: thin fetch wrappers around each loader's
+    own official (or de-facto-standard) public API/distribution channel - Mojang's version
+    manifest for vanilla, PaperMC's download API for Paper, FabricMC's meta API for Fabric
+    (whose `.../server/jar` endpoint builds a ready-to-run server jar on the fly - no separate
+    installer step needed, unlike Forge), and Forge's own Maven `maven-metadata.xml` (parsed
+    with a plain regex - a flat, machine-generated, single-level list, not worth a real XML
+    parser for) since Forge publishes no JSON API at all. Spigot has no download endpoint
+    whatsoever - its own license terms require building it locally from Mojang's mappings via
+    BuildTools.jar, so there's nothing to "fetch" for it beyond that one fixed jar; the actual
+    build happens in `minecraftInstall.ts` below.
+  - **New `src/main/lib/minecraftInstall.ts`**: `listInstallableMinecraftVersions(serverType)`
+    (dispatches to the right client function per loader - Forge's own listing additionally
+    walks the last ~20 Vanilla release versions checking each one's Maven metadata, since
+    Forge has no "list every Minecraft version it ever targeted" endpoint, only a flat combo
+    list filterable by one Minecraft version at a time) and
+    `installMinecraftServerFiles(params)`, which refuses outright - before downloading
+    anything - if `acceptEula` isn't `true` ("you must accept the Minecraft EULA to
+    continue", linking to the real EULA) or no version was picked, then dispatches per
+    `serverType`:
+    - **vanilla/Paper**: download the server jar, verified against the checksum each API
+      actually publishes for it (sha1 for vanilla, sha256 for Paper) - a corrupted/truncated
+      download is discarded with a clear error rather than left as a jar the server might
+      fail to load.
+    - **Fabric**: downloads the on-the-fly-built `fabric-server-launch.jar` - no checksum to
+      verify against, since Fabric's meta server generates it per request rather than
+      publishing one fixed artifact.
+    - **Forge**: downloads the installer jar, runs `java -jar forge-installer.jar
+      --installServer` (failing clearly up front, before any download, if `java` isn't on
+      PATH at all - `requireExecutableOnPath`), then reuses the *existing*
+      `detectMinecraftLaunchable` (minecraftDetect.ts, already used by the Settings tab's
+      "Re-detect" button) to figure out whether the result is a script (modern Forge) or a
+      jar (older Forge), rather than re-implementing that detection a second time.
+    - **Spigot**: downloads BuildTools.jar and runs `java -jar BuildTools.jar --rev
+      <version>` (failing clearly up front if either `java` or `git` - BuildTools needs both
+      - isn't on PATH), then looks for the `spigot-<version>.jar` it produces. This is a
+      genuinely heavy operation (BuildTools clones and compiles from source, routinely taking
+      several minutes) - the install dialog says so, and recommends Paper (a faster,
+      drop-in-compatible alternative most servers prefer today) as the first-listed option
+      instead.
+    Every step logs to the Manager Log (`logManagerEvent`) the same way every other
+    long-running operation in this app does, and `eula.txt` is only ever written after every
+    other step has already succeeded.
+  - **New IPC**: `minecraft-install:list-versions`/`minecraft-install:run`
+    (`src/main/ipc/minecraftInstall.ts`, registered in `ipc/index.ts`), exposed as
+    `window.api.minecraft.install.{listVersions,run}` - doesn't create or save a
+    `MinecraftProfile` itself, mirroring `profiles.importFromInstall`'s "caller reviews/saves
+    the result" pattern; the renderer builds the profile from `createDefaultMinecraftProfile`
+    plus whatever `install.run` returned.
+  - **New `InstallMinecraftServerPanel.tsx`**, opened from "+ Add server" on
+    `MinecraftDashboard.tsx` (replacing the old instant blank-profile creation as the primary
+    path): name, server type (with a one-line hint per type, Spigot's explaining the
+    BuildTools trade-off above), Minecraft version (fetched live for whichever type is
+    selected, re-fetched on every type change), install directory (text field + the existing
+    folder-picker dialog), and the required EULA checkbox, with an inline progress line while
+    installing and a "Configure manually" link back to the old blank-profile path for a
+    server whose files will be set up by hand afterward (e.g. a modpack's own custom launch
+    script) - the install path was added as the new default, not a replacement, for every
+    other way of getting a server into this app.
+  - **Verified against mocked network/process boundaries, not real network access**: this
+    sandbox's own proxy policy blocks every one of these APIs outright (confirmed via
+    `curl`/the proxy's own status endpoint - `connect_rejected` for
+    piston-meta.mojang.com/api.papermc.io/meta.fabricmc.net/maven.minecraftforge.net alike),
+    so every client function and the install orchestration were written against each
+    project's own published, versioned public documentation and tested with a mocked
+    `fetch`/`child_process` (new `tests/minecraftInstallClient.test.ts` and
+    `tests/minecraftInstall.test.ts`, 16+18 tests - URL construction, response parsing,
+    checksum verification success/failure, the EULA/missing-version/missing-executable
+    refusal paths, and the full install flow for all five server types) - the same "confirmed
+    against docs, not a live response" caveat this codebase's CurseForge fingerprint
+    algorithm already carries. **Please run an install of each type end to end on a machine
+    with real internet access (and, for Forge/Spigot, a JDK + Git on PATH) before relying on
+    it** - `npm run typecheck`, the full `npx vitest run` (929 tests), and `npm run build` all
+    pass, but none of that proves the real Mojang/PaperMC/FabricMC/Forge endpoints still look
+    exactly like their own documentation says today, and the renderer side (a desktop Electron
+    dialog, not the web dashboard) wasn't visually verified either - this environment has no
+    display to drive the actual app's UI in.

@@ -15,6 +15,7 @@ import {
 } from '@shared/types'
 import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine, MinecraftPropertiesData } from '@shared/minecraft'
 import type { MinecraftModSource } from '@shared/minecraftMods'
+import type { MinecraftInstallableType, MinecraftInstallParams } from '@shared/minecraftInstall'
 
 const api: Api = {
   profiles: {
@@ -267,6 +268,10 @@ const api: Api = {
         ipcRenderer.invoke(IPC.minecraftModsUpdate, profileId, source, projectId),
       scan: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsScan, profileId),
       openFolder: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsOpenFolder, profileId)
+    },
+    install: {
+      listVersions: (serverType: MinecraftInstallableType) => ipcRenderer.invoke(IPC.minecraftInstallListVersions, serverType),
+      run: (params: MinecraftInstallParams) => ipcRenderer.invoke(IPC.minecraftInstallRun, params)
     }
   }
 }
