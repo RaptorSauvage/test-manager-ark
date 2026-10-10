@@ -9,7 +9,8 @@ import type {
   MinecraftModSearchResult,
   MinecraftModInstallResult,
   MinecraftModUpdateCheckResult,
-  MinecraftModScanResult
+  MinecraftModScanResult,
+  MinecraftModEcosystem
 } from './minecraftMods'
 import type { MinecraftInstallableType, MinecraftInstallParams, MinecraftInstallResult, MinecraftVersionOption } from './minecraftInstall'
 
@@ -965,12 +966,16 @@ export interface Api {
      *  just pass it to onProfileChange instead of re-fetching the whole profile list. */
     mods: {
       /** Searches Modrinth, plus CurseForge too if an API key is configured - results from
-       *  both are merged and sorted by downloads, each tagged with its own `source`. */
-      search: (profileId: string, query: string) => Promise<MinecraftModSearchResult[]>
+       *  both are merged and sorted by downloads, each tagged with its own `source`.
+       *  `ecosystem` picks which of the server's own Mods/Plugins tabs this search is for -
+       *  see minecraftServerSupportsEcosystem in shared/minecraftMods.ts; rejected if this
+       *  server type doesn't actually have that ecosystem. */
+      search: (profileId: string, query: string, ecosystem: MinecraftModEcosystem) => Promise<MinecraftModSearchResult[]>
       install: (
         profileId: string,
         source: MinecraftModSource,
-        projectId: string
+        projectId: string,
+        ecosystem: MinecraftModEcosystem
       ) => Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }>
       remove: (profileId: string, projectId: string) => Promise<MinecraftProfile>
       setEnabled: (profileId: string, projectId: string, enabled: boolean) => Promise<MinecraftProfile>

@@ -384,7 +384,7 @@ describe('web dashboard HTTP server', () => {
     expect(res.body.length).toBeGreaterThan(0)
   })
 
-  it.each(['vanilla.png', 'paper.png', 'fabric.png', 'forge.png'])(
+  it.each(['vanilla.png', 'paper.png', 'fabric.png', 'forge.png', 'sponge.png'])(
     'serves the %s per-loader-type icon as a PNG',
     async (fileName) => {
       const res = await request(`/game-icons/${fileName}`)

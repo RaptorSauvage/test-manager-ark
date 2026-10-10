@@ -12,7 +12,7 @@ import {
   openMinecraftModsFolder
 } from '../lib/minecraftMods'
 import type { MinecraftProfile } from '@shared/minecraft'
-import type { MinecraftModSource } from '@shared/minecraftMods'
+import type { MinecraftModSource, MinecraftModEcosystem } from '@shared/minecraftMods'
 
 function requireProfile(profileId: string): MinecraftProfile {
   const profile = getMinecraftProfile(profileId)
@@ -21,12 +21,14 @@ function requireProfile(profileId: string): MinecraftProfile {
 }
 
 export function registerMinecraftModsHandlers(): void {
-  ipcMain.handle(IPC.minecraftModsSearch, (_event, profileId: string, query: string) =>
-    searchMinecraftMods(requireProfile(profileId), query)
+  ipcMain.handle(IPC.minecraftModsSearch, (_event, profileId: string, query: string, ecosystem: MinecraftModEcosystem) =>
+    searchMinecraftMods(requireProfile(profileId), query, ecosystem)
   )
 
-  ipcMain.handle(IPC.minecraftModsInstall, (_event, profileId: string, source: MinecraftModSource, projectId: string) =>
-    installMinecraftMod(requireProfile(profileId), source, projectId)
+  ipcMain.handle(
+    IPC.minecraftModsInstall,
+    (_event, profileId: string, source: MinecraftModSource, projectId: string, ecosystem: MinecraftModEcosystem) =>
+      installMinecraftMod(requireProfile(profileId), source, projectId, ecosystem)
   )
 
   ipcMain.handle(IPC.minecraftModsRemove, (_event, profileId: string, projectId: string) =>

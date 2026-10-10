@@ -134,7 +134,7 @@ describe('minecraftMods - CurseForge', () => {
     mockSearchCurseForgeMods.mockResolvedValue([makeMod({ id: 200, name: 'High Downloads', downloadCount: 9999 })])
 
     const profile = makeProfile({}, tmpDir)
-    const results = await searchMinecraftMods(profile, 'query')
+    const results = await searchMinecraftMods(profile, 'query', 'mods')
 
     expect(results).toHaveLength(2)
     expect(results[0].title).toBe('High Downloads')
@@ -149,7 +149,7 @@ describe('minecraftMods - CurseForge', () => {
     mockSearchCurseForgeMods.mockResolvedValue([makeMod({ id: 200, slug: 'jei', name: 'Just Enough Items', downloadCount: 9999 })])
 
     const profile = makeProfile({}, tmpDir)
-    const results = await searchMinecraftMods(profile, 'jei')
+    const results = await searchMinecraftMods(profile, 'jei', 'mods')
 
     expect(results).toHaveLength(1)
     expect(results[0]).toMatchObject({
@@ -167,7 +167,7 @@ describe('minecraftMods - CurseForge', () => {
     mockSearchCurseForgeMods.mockResolvedValue([makeMod({ id: 200, slug: 'jei', name: 'Just Enough Items ', downloadCount: 20 })])
 
     const profile = makeProfile({ installedMods: [] }, tmpDir)
-    const results = await searchMinecraftMods(profile, 'jei')
+    const results = await searchMinecraftMods(profile, 'jei', 'mods')
 
     expect(results).toHaveLength(1)
   })
@@ -179,7 +179,7 @@ describe('minecraftMods - CurseForge', () => {
     mockSearchCurseForgeMods.mockResolvedValue([makeMod({ id: 200, slug: 'rei', name: 'Roughly Enough Items', downloadCount: 300 })])
 
     const profile = makeProfile({}, tmpDir)
-    const results = await searchMinecraftMods(profile, 'items')
+    const results = await searchMinecraftMods(profile, 'items', 'mods')
 
     expect(results).toHaveLength(2)
     expect(results.every((r) => r.alsoAvailableOn === undefined)).toBe(true)
@@ -190,7 +190,7 @@ describe('minecraftMods - CurseForge', () => {
     mockSearchModrinthProjects.mockResolvedValue([])
 
     const profile = makeProfile({}, tmpDir)
-    await searchMinecraftMods(profile, 'query')
+    await searchMinecraftMods(profile, 'query', 'mods')
 
     expect(mockSearchCurseForgeMods).not.toHaveBeenCalled()
   })
@@ -202,7 +202,7 @@ describe('minecraftMods - CurseForge', () => {
     mockSearchCurseForgeMods.mockRejectedValue(new Error('CurseForge is down'))
 
     const profile = makeProfile({}, tmpDir)
-    const results = await searchMinecraftMods(profile, 'query')
+    const results = await searchMinecraftMods(profile, 'query', 'mods')
 
     expect(results).toHaveLength(1)
     expect(results[0].title).toBe('OK Mod')
@@ -212,7 +212,7 @@ describe('minecraftMods - CurseForge', () => {
     mockSearchCurseForgeMods.mockResolvedValue([makeMod({ allowModDistribution: false })])
 
     const profile = makeProfile({}, tmpDir)
-    const results = await searchMinecraftMods(profile, 'query')
+    const results = await searchMinecraftMods(profile, 'query', 'mods')
 
     expect(results).toHaveLength(0)
   })
@@ -222,7 +222,7 @@ describe('minecraftMods - CurseForge', () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeFetchResponse(Buffer.from('fake jar content'))))
 
     const profile = makeProfile({}, tmpDir)
-    const { profile: updated, result } = await installMinecraftMod(profile, 'curseforge', '100')
+    const { profile: updated, result } = await installMinecraftMod(profile, 'curseforge', '100', 'mods')
 
     expect(fs.readFileSync(path.join(modTargetDir(profile), 'root.jar')).toString()).toBe('fake jar content')
     expect(updated.installedMods).toHaveLength(1)
@@ -240,19 +240,19 @@ describe('minecraftMods - CurseForge', () => {
   it('rejects installing a CurseForge mod when no compatible file exists', async () => {
     mockGetCurseForgeModFiles.mockResolvedValue([])
     const profile = makeProfile({}, tmpDir)
-    await expect(installMinecraftMod(profile, 'curseforge', '100')).rejects.toThrow(/compatible/)
+    await expect(installMinecraftMod(profile, 'curseforge', '100', 'mods')).rejects.toThrow(/compatible/)
   })
 
   it('rejects installing a CurseForge mod when no API key is configured', async () => {
     mockGetSettings.mockReturnValue({ curseforgeApiKey: '' })
     const profile = makeProfile({}, tmpDir)
-    await expect(installMinecraftMod(profile, 'curseforge', '100')).rejects.toThrow(/API key/)
+    await expect(installMinecraftMod(profile, 'curseforge', '100', 'mods')).rejects.toThrow(/API key/)
   })
 
   it('rejects downloading a file whose author disabled third-party distribution', async () => {
     mockGetCurseForgeModFiles.mockResolvedValue([makeFile({ downloadUrl: null })])
     const profile = makeProfile({}, tmpDir)
-    await expect(installMinecraftMod(profile, 'curseforge', '100')).rejects.toThrow(/third-party distribution/)
+    await expect(installMinecraftMod(profile, 'curseforge', '100', 'mods')).rejects.toThrow(/third-party distribution/)
   })
 
   it('installs a required CurseForge dependency alongside the requested mod', async () => {
@@ -265,7 +265,7 @@ describe('minecraftMods - CurseForge', () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeFetchResponse(Buffer.from('x'))))
 
     const profile = makeProfile({}, tmpDir)
-    const { profile: updated, result } = await installMinecraftMod(profile, 'curseforge', '100')
+    const { profile: updated, result } = await installMinecraftMod(profile, 'curseforge', '100', 'mods')
 
     expect(updated.installedMods.map((m) => m.projectId).sort()).toEqual(['100', '200'])
     expect(result.dependenciesInstalled).toHaveLength(1)

@@ -3,7 +3,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { shell } from 'electron'
 import type { MinecraftProfile, MinecraftServerType } from '@shared/minecraft'
-import { supportsMinecraftMods } from '@shared/minecraftMods'
+import { supportsMinecraftMods, minecraftModEcosystem, minecraftServerSupportsEcosystem } from '@shared/minecraftMods'
 import type {
   MinecraftModSource,
   MinecraftModSearchResult,
@@ -11,7 +11,8 @@ import type {
   MinecraftModDependency,
   InstalledMinecraftMod,
   MinecraftModUpdateCheckResult,
-  MinecraftModScanResult
+  MinecraftModScanResult,
+  MinecraftModEcosystem
 } from '@shared/minecraftMods'
 import {
   searchModrinthProjects,
@@ -63,26 +64,42 @@ function requireLoaderSupportsMods(profile: MinecraftProfile): void {
   }
 }
 
-/** Checked by search/install/update/checkUpdates - unlike scanning (hash identification
- *  alone), picking a *compatible* version genuinely needs to know the server's Minecraft
- *  version. */
-function requireModsSupported(profile: MinecraftProfile): void {
-  requireLoaderSupportsMods(profile)
+/** Checked by search/install/checkUpdates - unlike scanning (hash identification alone),
+ *  picking a *compatible* version genuinely needs to know the server's Minecraft version. */
+function requireMinecraftVersionSet(profile: MinecraftProfile): void {
   if (!profile.minecraftVersion.trim()) {
     throw new Error("Set this server's Minecraft version in Start Settings first.")
   }
+}
+
+/** Checked by search/install specifically - picking a *compatible* version also needs to
+ *  know which of the server's own ecosystems to search. Most types only ever have one real
+ *  answer, but SpongeForge genuinely offers both its own Sponge-plugin layer and the
+ *  underlying Forge-mod layer at once (see minecraftServerSupportsEcosystem), so this is
+ *  rejected per-ecosystem, not just per-type. */
+function requireModsSupported(profile: MinecraftProfile, ecosystem: MinecraftModEcosystem): void {
+  requireLoaderSupportsMods(profile)
+  if (!minecraftServerSupportsEcosystem(profile.serverType, ecosystem)) {
+    throw new Error(`This server type has no "${ecosystem}" ecosystem to search.`)
+  }
+  requireMinecraftVersionSet(profile)
 }
 
 /** Searches Modrinth, plus CurseForge too when an API key is configured (AppSettings.
  *  curseforgeApiKey - see the README for where to get one). CurseForge failing (bad key,
  *  network hiccup) doesn't fail the whole search - it's logged and dropped, leaving the
  *  Modrinth results intact, same "best effort, don't let one source wreck the other"
- *  reasoning as scanForInstalledMods' own adoption loop. */
-export async function searchMinecraftMods(profile: MinecraftProfile, query: string): Promise<MinecraftModSearchResult[]> {
-  requireModsSupported(profile)
+ *  reasoning as scanForInstalledMods' own adoption loop. `ecosystem` picks which of the
+ *  server's own Mods/Plugins tabs this search is for - see requireModsSupported above. */
+export async function searchMinecraftMods(
+  profile: MinecraftProfile,
+  query: string,
+  ecosystem: MinecraftModEcosystem
+): Promise<MinecraftModSearchResult[]> {
+  requireModsSupported(profile, ecosystem)
   const installedIds = new Set(profile.installedMods.map((m) => m.projectId))
 
-  const hits = await searchModrinthProjects(query, profile.serverType, profile.minecraftVersion)
+  const hits = await searchModrinthProjects(query, profile.serverType, profile.minecraftVersion, ecosystem)
   const modrinthResults: MinecraftModSearchResult[] = hits.map((hit) => ({
     source: 'modrinth' as const,
     projectId: hit.project_id,
@@ -99,7 +116,7 @@ export async function searchMinecraftMods(profile: MinecraftProfile, query: stri
 
   let curseforgeResults: MinecraftModSearchResult[] = []
   try {
-    const cfHits = await searchCurseForgeMods(apiKey, query, profile.serverType, profile.minecraftVersion)
+    const cfHits = await searchCurseForgeMods(apiKey, query, profile.serverType, profile.minecraftVersion, ecosystem)
     curseforgeResults = cfHits
       .filter((hit) => hit.allowModDistribution !== false)
       .map((hit) => ({
@@ -194,11 +211,13 @@ export async function resolveModInstallPlan(
   rootVersion: ModrinthVersion,
   profile: Pick<MinecraftProfile, 'serverType' | 'minecraftVersion'>,
   alreadyInstalledProjectIds: ReadonlySet<string>,
+  ecosystem: MinecraftModEcosystem,
   deps: {
     getProjectVersions: (
       projectId: string,
       serverType: MinecraftServerType,
-      mcVersion: string
+      mcVersion: string,
+      ecosystem: MinecraftModEcosystem
     ) => Promise<ModrinthVersion[]>
     getVersion: (versionId: string) => Promise<ModrinthVersion>
   }
@@ -238,7 +257,7 @@ export async function resolveModInstallPlan(
       if (dep.version_id) {
         depVersion = await deps.getVersion(dep.version_id)
       } else if (dep.project_id) {
-        const versions = await deps.getProjectVersions(dep.project_id, profile.serverType, profile.minecraftVersion)
+        const versions = await deps.getProjectVersions(dep.project_id, profile.serverType, profile.minecraftVersion, ecosystem)
         depVersion = versions[0] ?? null
       }
       if (!depVersion || seenProjectIds.has(depVersion.project_id)) continue
@@ -296,7 +315,8 @@ function removeExistingFile(targetDir: string, fileName: string): void {
 async function installResolvedVersion(
   version: ModrinthVersion,
   installedAs: 'user' | 'dependency',
-  targetDir: string
+  targetDir: string,
+  ecosystem: MinecraftModEcosystem
 ): Promise<InstalledMinecraftMod> {
   const file = primaryFileOf(version)
   const project = await getModrinthProject(version.project_id)
@@ -315,7 +335,8 @@ async function installResolvedVersion(
     fileName: file.filename,
     enabled: true,
     installedAs,
-    installedAt: Date.now()
+    installedAt: Date.now(),
+    ecosystem
   }
 }
 
@@ -324,18 +345,21 @@ async function installResolvedVersion(
  * compatible: matching loader + the profile's own minecraftVersion), plus every 'required'
  * dependency it declares, recursively (see resolveModInstallPlan). No version picker in this
  * first pass - always the latest compatible release, same simplification ARK's own mod
- * system makes (no version picker there either, just an id).
+ * system makes (no version picker there either, just an id). `ecosystem` picks which of the
+ * server's own Mods/Plugins tabs this install is for (see requireModsSupported) - every
+ * resulting entry (the root mod and every dependency it pulls in) is tagged with it.
  */
 async function installModrinthMod(
   profile: MinecraftProfile,
-  projectId: string
+  projectId: string,
+  ecosystem: MinecraftModEcosystem
 ): Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }> {
-  requireModsSupported(profile)
+  requireModsSupported(profile, ecosystem)
   const taskId = newTaskId('mc-mod-install')
   const taskLabel = `Install mod/plugin — ${profile.name}`
   logManagerEvent(taskId, taskLabel, `Resolving ${projectId}...`)
 
-  const versions = await getModrinthProjectVersions(projectId, profile.serverType, profile.minecraftVersion)
+  const versions = await getModrinthProjectVersions(projectId, profile.serverType, profile.minecraftVersion, ecosystem)
   const rootVersion = versions[0]
   if (!rootVersion) {
     const message = "No version of this mod/plugin is compatible with this server's loader/Minecraft version."
@@ -344,7 +368,7 @@ async function installModrinthMod(
   }
 
   const alreadyInstalled = new Set(profile.installedMods.map((m) => m.projectId))
-  const plan = await resolveModInstallPlan(rootVersion, profile, alreadyInstalled, {
+  const plan = await resolveModInstallPlan(rootVersion, profile, alreadyInstalled, ecosystem, {
     getProjectVersions: getModrinthProjectVersions,
     getVersion: getModrinthVersion
   })
@@ -357,7 +381,7 @@ async function installModrinthMod(
   const previousEnabledByProjectId = new Map(profile.installedMods.map((m) => [m.projectId, m.enabled]))
   const installedNow: InstalledMinecraftMod[] = []
   for (const { version, installedAs } of plan.toInstall) {
-    const installed = await installResolvedVersion(version, installedAs, targetDir)
+    const installed = await installResolvedVersion(version, installedAs, targetDir, ecosystem)
     if (previousEnabledByProjectId.get(installed.projectId) === false) {
       const fromPath = path.join(targetDir, diskFileName(installed.fileName, true))
       const toPath = path.join(targetDir, diskFileName(installed.fileName, false))
@@ -421,8 +445,14 @@ export async function resolveCurseForgeInstallPlan(
   rootFile: CurseForgeFile,
   profile: Pick<MinecraftProfile, 'serverType' | 'minecraftVersion'>,
   alreadyInstalledProjectIds: ReadonlySet<string>,
+  ecosystem: MinecraftModEcosystem,
   deps: {
-    getModFiles: (modId: number, serverType: MinecraftServerType, mcVersion: string) => Promise<CurseForgeFile[]>
+    getModFiles: (
+      modId: number,
+      serverType: MinecraftServerType,
+      mcVersion: string,
+      ecosystem: MinecraftModEcosystem
+    ) => Promise<CurseForgeFile[]>
   }
 ): Promise<CurseForgeInstallPlan> {
   const toInstall: CurseForgeResolvedInstall[] = [{ modId: rootModId, file: rootFile, installedAs: 'user' }]
@@ -457,7 +487,7 @@ export async function resolveCurseForgeInstallPlan(
       // required (3)
       if (seenModIds.has(depId)) continue
 
-      const files = await deps.getModFiles(dep.modId, profile.serverType, profile.minecraftVersion)
+      const files = await deps.getModFiles(dep.modId, profile.serverType, profile.minecraftVersion, ecosystem)
       const depFile = files[0]
       if (!depFile) continue
 
@@ -504,7 +534,8 @@ async function installResolvedCurseForgeFile(
   modId: number,
   file: CurseForgeFile,
   installedAs: 'user' | 'dependency',
-  targetDir: string
+  targetDir: string,
+  ecosystem: MinecraftModEcosystem
 ): Promise<InstalledMinecraftMod> {
   const mod = await getCurseForgeMod(apiKey, modId)
 
@@ -522,7 +553,8 @@ async function installResolvedCurseForgeFile(
     fileName: file.fileName,
     enabled: true,
     installedAs,
-    installedAt: Date.now()
+    installedAt: Date.now(),
+    ecosystem
   }
 }
 
@@ -535,9 +567,10 @@ async function installResolvedCurseForgeFile(
  *  case the key was cleared in between. */
 async function installCurseForgeMod(
   profile: MinecraftProfile,
-  projectId: string
+  projectId: string,
+  ecosystem: MinecraftModEcosystem
 ): Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }> {
-  requireModsSupported(profile)
+  requireModsSupported(profile, ecosystem)
   const apiKey = getSettings().curseforgeApiKey.trim()
   if (!apiKey) {
     throw new Error('Set a CurseForge API key in Settings first.')
@@ -547,7 +580,7 @@ async function installCurseForgeMod(
   const taskLabel = `Install mod/plugin — ${profile.name}`
   logManagerEvent(taskId, taskLabel, `Resolving CurseForge mod ${modId}...`)
 
-  const files = await getCurseForgeModFiles(apiKey, modId, profile.serverType, profile.minecraftVersion)
+  const files = await getCurseForgeModFiles(apiKey, modId, profile.serverType, profile.minecraftVersion, ecosystem)
   const rootFile = files[0]
   if (!rootFile) {
     const message = "No file of this mod/plugin is compatible with this server's loader/Minecraft version."
@@ -556,15 +589,16 @@ async function installCurseForgeMod(
   }
 
   const alreadyInstalled = new Set(profile.installedMods.map((m) => m.projectId))
-  const plan = await resolveCurseForgeInstallPlan(modId, rootFile, profile, alreadyInstalled, {
-    getModFiles: (depModId, serverType, mcVersion) => getCurseForgeModFiles(apiKey, depModId, serverType, mcVersion)
+  const plan = await resolveCurseForgeInstallPlan(modId, rootFile, profile, alreadyInstalled, ecosystem, {
+    getModFiles: (depModId, serverType, mcVersion, depEcosystem) =>
+      getCurseForgeModFiles(apiKey, depModId, serverType, mcVersion, depEcosystem)
   })
 
   const targetDir = modTargetDir(profile)
   const previousEnabledByProjectId = new Map(profile.installedMods.map((m) => [m.projectId, m.enabled]))
   const installedNow: InstalledMinecraftMod[] = []
   for (const { modId: installModId, file, installedAs } of plan.toInstall) {
-    const installed = await installResolvedCurseForgeFile(apiKey, installModId, file, installedAs, targetDir)
+    const installed = await installResolvedCurseForgeFile(apiKey, installModId, file, installedAs, targetDir, ecosystem)
     if (previousEnabledByProjectId.get(installed.projectId) === false) {
       const fromPath = path.join(targetDir, diskFileName(installed.fileName, true))
       const toPath = path.join(targetDir, diskFileName(installed.fileName, false))
@@ -602,14 +636,17 @@ async function installCurseForgeMod(
 
 /** Dispatches to the right source's own install path - the Mods tab always has a `source`
  *  handy (either from a search result or from an already-installed entry), so this is the
- *  only install entry point the rest of the app (IPC, tests) needs to know about. */
+ *  only install entry point the rest of the app (IPC, tests) needs to know about.
+ *  `ecosystem` picks which of the server's own Mods/Plugins tabs this install is for (see
+ *  requireModsSupported) - the search that produced `projectId` was already scoped to it. */
 export async function installMinecraftMod(
   profile: MinecraftProfile,
   source: MinecraftModSource,
-  projectId: string
+  projectId: string,
+  ecosystem: MinecraftModEcosystem
 ): Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }> {
-  if (source === 'modrinth') return installModrinthMod(profile, projectId)
-  if (source === 'curseforge') return installCurseForgeMod(profile, projectId)
+  if (source === 'modrinth') return installModrinthMod(profile, projectId, ecosystem)
+  if (source === 'curseforge') return installCurseForgeMod(profile, projectId, ecosystem)
   throw new Error('Cannot install an unidentified mod - remove it and search for it by name instead.')
 }
 
@@ -669,8 +706,15 @@ async function mapWithRateLimit<T, R>(items: T[], perSecond: number, fn: (item: 
   return results
 }
 
+/** Checks every installed mod/plugin at once, regardless of which ecosystem it belongs to -
+ *  for a server type with just one ecosystem this is moot, but for SpongeForge (both at
+ *  once) there's no single "Check for updates" button click to scope by; each entry is
+ *  checked against its own `ecosystem` tag instead (falling back to the server's single
+ *  natural ecosystem for an untagged/pre-existing entry - see InstalledMinecraftMod.ecosystem
+ *  and minecraftModEcosystem). */
 export async function checkMinecraftModUpdates(profile: MinecraftProfile): Promise<MinecraftModUpdateCheckResult[]> {
-  requireModsSupported(profile)
+  requireLoaderSupportsMods(profile)
+  requireMinecraftVersionSet(profile)
   const apiKey = getSettings().curseforgeApiKey.trim()
   const results = await mapWithRateLimit(profile.installedMods, 4, async (mod): Promise<MinecraftModUpdateCheckResult | null> => {
     // 'unknown' entries (unidentified by scanForInstalledMods) have no real project id to
@@ -679,10 +723,11 @@ export async function checkMinecraftModUpdates(profile: MinecraftProfile): Promi
     // A CurseForge entry with no API key configured (anymore) can't be checked either -
     // skip it the same way, rather than failing every other mod's check along with it.
     if (mod.source === 'curseforge' && !apiKey) return null
+    const ecosystem = mod.ecosystem ?? minecraftModEcosystem(profile.serverType) ?? 'mods'
 
     try {
       if (mod.source === 'curseforge') {
-        const files = await getCurseForgeModFiles(apiKey, Number(mod.projectId), profile.serverType, profile.minecraftVersion)
+        const files = await getCurseForgeModFiles(apiKey, Number(mod.projectId), profile.serverType, profile.minecraftVersion, ecosystem)
         const latest = files[0]
         return {
           projectId: mod.projectId,
@@ -692,7 +737,7 @@ export async function checkMinecraftModUpdates(profile: MinecraftProfile): Promi
         }
       }
 
-      const versions = await getModrinthProjectVersions(mod.projectId, profile.serverType, profile.minecraftVersion)
+      const versions = await getModrinthProjectVersions(mod.projectId, profile.serverType, profile.minecraftVersion, ecosystem)
       const latest = versions[0]
       return {
         projectId: mod.projectId,
@@ -713,13 +758,18 @@ export async function checkMinecraftModUpdates(profile: MinecraftProfile): Promi
 /** Reinstalls a mod at its latest compatible version - same install path as a fresh install
  *  (including re-walking its dependencies, in case a newer version needs a new one), the old
  *  file is just replaced rather than left behind (see installResolvedVersion's own
- *  removeExistingFile call). */
+ *  removeExistingFile call). The ecosystem to search by is read straight off the existing
+ *  entry's own `ecosystem` tag (falling back to the server's single natural ecosystem for an
+ *  untagged one) rather than asked for again - the UI already settled that the moment this
+ *  mod was first installed or adopted. */
 export async function updateMinecraftMod(
   profile: MinecraftProfile,
   source: MinecraftModSource,
   projectId: string
 ): Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }> {
-  return installMinecraftMod(profile, source, projectId)
+  const existing = profile.installedMods.find((m) => m.projectId === projectId)
+  const ecosystem = existing?.ecosystem ?? minecraftModEcosystem(profile.serverType) ?? 'mods'
+  return installMinecraftMod(profile, source, projectId, ecosystem)
 }
 
 /** A file sitting in the mods/plugins folder that isn't in profile.installedMods yet - the
@@ -756,6 +806,26 @@ function localModId(fileName: string): string {
  *  "worldedit-7.3.0" when there's no real Modrinth title to show instead. */
 function titleFromFileName(fileName: string): string {
   return fileName.replace(/\.jar$/i, '')
+}
+
+const PLUGIN_LOADER_TAGS = new Set(['sponge', 'paper', 'spigot', 'bukkit'])
+const MOD_LOADER_TAGS = new Set(['forge', 'fabric', 'neoforge'])
+
+/** Best-effort ecosystem detection from a matched version/file's own loader-ish tags - needed
+ *  only when adopting an untracked file during a scan, where (unlike an explicit install from
+ *  a search result, which already knows its own tab/ecosystem - see installMinecraftMod)
+ *  there's no tab context to just trust directly. Modrinth's own `loaders` field on a version
+ *  is exactly this; CurseForge has no equivalent dedicated field, but its `gameVersions`
+ *  array commonly mixes loader-name strings in with Minecraft version strings (e.g. "Forge",
+ *  "1.20.1"), so the same tag lookup is reused there too, best-effort. Returns undefined
+ *  (shown in every ecosystem tab a server type offers, never silently hidden from one) when
+ *  nothing recognizable is found - including when `tags` itself is missing entirely, since
+ *  this reads an external API's own response shape rather than something this app controls. */
+function ecosystemFromLoaderTags(tags: string[] | undefined | null): MinecraftModEcosystem | undefined {
+  const lower = (tags ?? []).map((t) => t.toLowerCase())
+  if (lower.some((t) => PLUGIN_LOADER_TAGS.has(t))) return 'plugins'
+  if (lower.some((t) => MOD_LOADER_TAGS.has(t))) return 'mods'
+  return undefined
 }
 
 /** Catches up installedMods entries that were already settled as source: 'modrinth' before
@@ -814,6 +884,9 @@ async function preferCurseForgeForSettledModrinthMods(
           enabled: existing.enabled,
           installedAs: existing.installedAs,
           installedAt: existing.installedAt,
+          // Carried over rather than re-derived - same underlying file, just promoted to a
+          // different primary source, its actual ecosystem hasn't changed.
+          ecosystem: existing.ecosystem,
           alsoOn: ['modrinth']
         })
       }
@@ -942,7 +1015,8 @@ export async function scanForInstalledMods(
       fileName: file.fileName,
       enabled: file.enabled,
       installedAs: 'user',
-      installedAt: Date.now()
+      installedAt: Date.now(),
+      ecosystem: ecosystemFromLoaderTags(version.loaders)
     })
   }
 
@@ -980,7 +1054,8 @@ export async function scanForInstalledMods(
             fileName: file.fileName,
             enabled: file.enabled,
             installedAs: 'user',
-            installedAt: Date.now()
+            installedAt: Date.now(),
+            ecosystem: ecosystemFromLoaderTags(match.file.gameVersions)
           }
 
           if (alreadyAdoptedIndex !== -1) {

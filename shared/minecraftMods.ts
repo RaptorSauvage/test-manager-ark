@@ -52,6 +52,19 @@ export function minecraftModEcosystem(serverType: MinecraftServerType): Minecraf
   return null
 }
 
+/** Whether a server type genuinely offers a *given* ecosystem - almost always the same as
+ *  `minecraftModEcosystem(serverType) === ecosystem`, except for SpongeForge, which uniquely
+ *  offers BOTH at once: its own SpongeAPI "plugins" layer, and the underlying Forge "mods"
+ *  layer it actually runs on top of (a real Forge server, just one SpongeForge is also
+ *  installed into). Every other type has exactly one ecosystem or none - see
+ *  minecraftModEcosystem's own doc comment. Used to decide which of the Mods/Plugins tabs (or
+ *  both) a server actually gets, and to reject a search/install call made against an
+ *  ecosystem this server type doesn't have at all. */
+export function minecraftServerSupportsEcosystem(serverType: MinecraftServerType, ecosystem: MinecraftModEcosystem): boolean {
+  if (serverType === 'spongeforge') return true
+  return minecraftModEcosystem(serverType) === ecosystem
+}
+
 /** A dependency `dependency_type` can mean four different things for install purposes:
  *  'required' ones are walked and installed automatically (installMod), 'optional' ones are
  *  listed for the user to decide (never auto-installed), 'embedded' ones are already bundled
@@ -117,6 +130,16 @@ export interface InstalledMinecraftMod {
    *  dependency. Purely informational (e.g. so the UI can label it "required by X"). */
   installedAs: 'user' | 'dependency'
   installedAt: number
+  /** Which tab (Mods vs Plugins) this entry belongs under - matters only for a server type
+   *  that offers both at once (SpongeForge; see minecraftServerSupportsEcosystem), where
+   *  profile.installedMods is one flat list spanning both ecosystems and each tab needs to
+   *  show only its own slice of it. Set directly from the search/tab context for an explicit
+   *  install (the UI already knows which tab initiated it); derived best-effort from the
+   *  matched version/file's own loader tags for a scanForInstalledMods adoption, where no tab
+   *  context exists. Undefined when it genuinely can't be determined (an "unknown"/
+   *  unidentified entry, or a pre-existing entry from before this field existed) - shown in
+   *  every ecosystem tab a server type offers rather than silently hidden from any of them. */
+  ecosystem?: MinecraftModEcosystem
   /** Set by scanForInstalledMods when the exact same file (same bytes - same sha1 *and* same
    *  CurseForge fingerprint) is also published on another source, beyond the one `source`
    *  above names (some mod authors upload an identical build to both Modrinth and

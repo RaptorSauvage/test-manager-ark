@@ -346,6 +346,47 @@ describe('scanForInstalledMods', () => {
     expect(mockGetCurseForgeFingerprintMatches).toHaveBeenCalledWith('test-key', [fingerprint])
   })
 
+  it('tags an adopted Modrinth match with the ecosystem derived from its own loaders field', async () => {
+    const profile = makeProfile({ serverType: 'spongeforge' }, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'plugin.jar'), 'plugin content')
+    const hash = sha1('plugin content')
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({
+      [hash]: makeVersion({ id: 'version-plugin', project_id: 'project-plugin', loaders: ['sponge'] })
+    })
+    mockGetModrinthProjects.mockResolvedValue([
+      { id: 'project-plugin', slug: 'plugin', title: 'A Plugin', description: '', icon_url: null, client_side: 'unsupported', server_side: 'required' }
+    ])
+
+    const { result } = await scanForInstalledMods(profile)
+
+    expect(result.adopted).toHaveLength(1)
+    expect(result.adopted[0].ecosystem).toBe('plugins')
+  })
+
+  it('still adopts a CurseForge fingerprint match even when the response omits gameVersions entirely - tags it untagged (ecosystem undefined) rather than crashing', async () => {
+    const profile = makeProfile({}, tmpDir)
+    fs.mkdirSync(modTargetDir(profile), { recursive: true })
+    fs.writeFileSync(path.join(modTargetDir(profile), 'cf-mod.jar'), 'curseforge content')
+    mockGetSettings.mockReturnValue({ curseforgeApiKey: 'test-key' })
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({})
+    const fingerprint = computeCurseForgeFingerprint(Buffer.from('curseforge content'))
+    mockGetCurseForgeFingerprintMatches.mockResolvedValue([
+      // Deliberately missing gameVersions - real CurseForgeFile responses always have it, but
+      // this app shouldn't crash (and silently fall back to "unknown") if one ever doesn't.
+      { id: 200, file: { id: 55, modId: 200, fileName: 'cf-mod.jar', displayName: '2.0.0', fileFingerprint: fingerprint } }
+    ])
+    mockGetCurseForgeMods.mockResolvedValue([
+      { id: 200, slug: 'cf-mod', name: 'CF Mod', summary: '', downloadCount: 10, logo: null, allowModDistribution: true }
+    ])
+
+    const { result } = await scanForInstalledMods(profile)
+
+    expect(result.adopted).toHaveLength(1)
+    expect(result.adopted[0].source).toBe('curseforge')
+    expect(result.adopted[0].ecosystem).toBeUndefined()
+  })
+
   it('sends CurseForge fingerprints for every untracked file, including ones Modrinth already matched - to detect cross-listing', async () => {
     const profile = makeProfile({}, tmpDir)
     fs.mkdirSync(modTargetDir(profile), { recursive: true })

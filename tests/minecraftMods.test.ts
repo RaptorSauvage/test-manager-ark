@@ -137,7 +137,7 @@ describe('minecraftMods', () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeFetchResponse(fileContent)))
 
     const profile = makeProfile({}, tmpDir)
-    const { profile: updated, result } = await installMinecraftMod(profile, 'modrinth', 'project-root')
+    const { profile: updated, result } = await installMinecraftMod(profile, 'modrinth', 'project-root', 'mods')
 
     expect(fs.readFileSync(path.join(modTargetDir(profile), 'root.jar'))).toEqual(fileContent)
     expect(updated.installedMods).toHaveLength(1)
@@ -165,18 +165,37 @@ describe('minecraftMods', () => {
   it('rejects when no version is compatible with this server', async () => {
     mockGetModrinthProjectVersions.mockResolvedValue([])
     const profile = makeProfile({}, tmpDir)
-    await expect(installMinecraftMod(profile, 'modrinth', 'project-root')).rejects.toThrow(/compatible/)
+    await expect(installMinecraftMod(profile, 'modrinth', 'project-root', 'mods')).rejects.toThrow(/compatible/)
     expect(mockSaveMinecraftProfile).not.toHaveBeenCalled()
   })
 
   it('rejects for a server type with no mod ecosystem', async () => {
     const profile = makeProfile({ serverType: 'vanilla' }, tmpDir)
-    await expect(installMinecraftMod(profile, 'modrinth', 'project-root')).rejects.toThrow(/mod\/plugin ecosystem/)
+    await expect(installMinecraftMod(profile, 'modrinth', 'project-root', 'mods')).rejects.toThrow(/mod\/plugin ecosystem/)
   })
 
   it('rejects when the Minecraft version is not set', async () => {
     const profile = makeProfile({ minecraftVersion: '' }, tmpDir)
-    await expect(installMinecraftMod(profile, 'modrinth', 'project-root')).rejects.toThrow(/Minecraft version/)
+    await expect(installMinecraftMod(profile, 'modrinth', 'project-root', 'mods')).rejects.toThrow(/Minecraft version/)
+  })
+
+  it('rejects searching/installing an ecosystem this server type does not have at all', async () => {
+    const paperProfile = makeProfile({ serverType: 'paper' }, tmpDir)
+    await expect(installMinecraftMod(paperProfile, 'modrinth', 'project-root', 'mods')).rejects.toThrow(/"mods" ecosystem/)
+    const fabricProfile = makeProfile({ serverType: 'fabric' }, tmpDir)
+    await expect(installMinecraftMod(fabricProfile, 'modrinth', 'project-root', 'plugins')).rejects.toThrow(/"plugins" ecosystem/)
+  })
+
+  it('SpongeForge genuinely offers both ecosystems - an install tags the resulting entry with whichever one was asked for', async () => {
+    mockGetModrinthProjectVersions.mockResolvedValue([makeVersion()])
+    vi.stubGlobal('fetch', vi.fn(async () => fakeFetchResponse(Buffer.from('x'))))
+
+    const profile = makeProfile({ serverType: 'spongeforge' }, tmpDir)
+    const { profile: afterMods } = await installMinecraftMod(profile, 'modrinth', 'project-root', 'mods')
+    expect(afterMods.installedMods[0].ecosystem).toBe('mods')
+
+    const { profile: afterPlugins } = await installMinecraftMod(afterMods, 'modrinth', 'project-root', 'plugins')
+    expect(afterPlugins.installedMods[0].ecosystem).toBe('plugins')
   })
 
   it('installs a required dependency alongside the requested mod', async () => {
@@ -189,7 +208,7 @@ describe('minecraftMods', () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeFetchResponse(Buffer.from('x'))))
 
     const profile = makeProfile({}, tmpDir)
-    const { profile: updated, result } = await installMinecraftMod(profile, 'modrinth', 'project-root')
+    const { profile: updated, result } = await installMinecraftMod(profile, 'modrinth', 'project-root', 'mods')
 
     expect(updated.installedMods.map((m) => m.projectId).sort()).toEqual(['project-dep', 'project-root'])
     expect(result.dependenciesInstalled).toHaveLength(1)
@@ -213,7 +232,7 @@ describe('minecraftMods', () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeFetchResponse(badContent)))
 
     const profile = makeProfile({}, tmpDir)
-    await expect(installMinecraftMod(profile, 'modrinth', 'project-root')).rejects.toThrow(/checksum/)
+    await expect(installMinecraftMod(profile, 'modrinth', 'project-root', 'mods')).rejects.toThrow(/checksum/)
     expect(fs.existsSync(path.join(modTargetDir(profile), 'root.jar'))).toBe(false)
   })
 

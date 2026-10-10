@@ -22,7 +22,7 @@ function makeFile(overrides: Partial<CurseForgeFile> = {}): CurseForgeFile {
 
 describe('resolveCurseForgeInstallPlan', () => {
   it('installs just the root when it has no dependencies', async () => {
-    const plan = await resolveCurseForgeInstallPlan(100, makeFile(), profile, new Set(), {
+    const plan = await resolveCurseForgeInstallPlan(100, makeFile(), profile, new Set(), 'mods', {
       getModFiles: async () => []
     })
     expect(plan.toInstall).toHaveLength(1)
@@ -35,7 +35,7 @@ describe('resolveCurseForgeInstallPlan', () => {
     const depFile = makeFile({ id: 2, modId: 200, fileName: 'dep.jar' })
     const root = makeFile({ dependencies: [{ modId: 200, relationType: 3 }] })
 
-    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), {
+    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), 'mods', {
       getModFiles: async (modId) => {
         expect(modId).toBe(200)
         return [depFile]
@@ -54,7 +54,7 @@ describe('resolveCurseForgeInstallPlan', () => {
         { modId: 203, relationType: 6 }
       ]
     })
-    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), {
+    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), 'mods', {
       getModFiles: async () => {
         throw new Error('should not be called for embedded/tool/include dependencies')
       }
@@ -64,7 +64,7 @@ describe('resolveCurseForgeInstallPlan', () => {
 
   it('never auto-installs an optional dependency (relationType 2), but surfaces it', async () => {
     const root = makeFile({ dependencies: [{ modId: 201, relationType: 2 }] })
-    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), {
+    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), 'mods', {
       getModFiles: async () => {
         throw new Error('should not be called for an optional dependency')
       }
@@ -75,12 +75,12 @@ describe('resolveCurseForgeInstallPlan', () => {
 
   it('warns about an incompatible dependency (relationType 5) only when already installed', async () => {
     const root = makeFile({ dependencies: [{ modId: 201, relationType: 5 }] })
-    const notInstalled = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), {
+    const notInstalled = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), 'mods', {
       getModFiles: async () => []
     })
     expect(notInstalled.incompatible).toEqual([])
 
-    const alreadyInstalled = await resolveCurseForgeInstallPlan(100, root, profile, new Set(['201']), {
+    const alreadyInstalled = await resolveCurseForgeInstallPlan(100, root, profile, new Set(['201']), 'mods', {
       getModFiles: async () => []
     })
     expect(alreadyInstalled.incompatible).toEqual([{ projectId: '201', dependencyType: 'incompatible' }])
@@ -88,7 +88,7 @@ describe('resolveCurseForgeInstallPlan', () => {
 
   it('does not re-install a required dependency that is already installed', async () => {
     const root = makeFile({ dependencies: [{ modId: 201, relationType: 3 }] })
-    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(['201']), {
+    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(['201']), 'mods', {
       getModFiles: async () => {
         throw new Error('should not fetch files for an already-installed dependency')
       }
@@ -108,7 +108,7 @@ describe('resolveCurseForgeInstallPlan', () => {
     })
     const filesByModId: Record<number, CurseForgeFile[]> = { 301: [depA], 302: [depB], 300: [shared] }
 
-    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), {
+    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), 'mods', {
       getModFiles: async (modId) => filesByModId[modId]
     })
 
@@ -123,7 +123,7 @@ describe('resolveCurseForgeInstallPlan', () => {
     const root = makeFile({ dependencies: [{ modId: 400, relationType: 3 }] })
     const filesByModId: Record<number, CurseForgeFile[]> = { 400: [depA], 401: [depB] }
 
-    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), {
+    const plan = await resolveCurseForgeInstallPlan(100, root, profile, new Set(), 'mods', {
       getModFiles: async (modId) => filesByModId[modId]
     })
 

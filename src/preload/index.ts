@@ -14,7 +14,7 @@ import {
   type ManagerLogEntry
 } from '@shared/types'
 import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine, MinecraftPropertiesData } from '@shared/minecraft'
-import type { MinecraftModSource } from '@shared/minecraftMods'
+import type { MinecraftModSource, MinecraftModEcosystem } from '@shared/minecraftMods'
 import type { MinecraftInstallableType, MinecraftInstallParams } from '@shared/minecraftInstall'
 
 const api: Api = {
@@ -257,9 +257,10 @@ const api: Api = {
       }
     },
     mods: {
-      search: (profileId: string, query: string) => ipcRenderer.invoke(IPC.minecraftModsSearch, profileId, query),
-      install: (profileId: string, source: MinecraftModSource, projectId: string) =>
-        ipcRenderer.invoke(IPC.minecraftModsInstall, profileId, source, projectId),
+      search: (profileId: string, query: string, ecosystem: MinecraftModEcosystem) =>
+        ipcRenderer.invoke(IPC.minecraftModsSearch, profileId, query, ecosystem),
+      install: (profileId: string, source: MinecraftModSource, projectId: string, ecosystem: MinecraftModEcosystem) =>
+        ipcRenderer.invoke(IPC.minecraftModsInstall, profileId, source, projectId, ecosystem),
       remove: (profileId: string, projectId: string) => ipcRenderer.invoke(IPC.minecraftModsRemove, profileId, projectId),
       setEnabled: (profileId: string, projectId: string, enabled: boolean) =>
         ipcRenderer.invoke(IPC.minecraftModsSetEnabled, profileId, projectId, enabled),

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { MinecraftProfile, MinecraftServerType } from '@shared/minecraft'
-import { minecraftModEcosystem } from '@shared/minecraftMods'
+import { minecraftServerSupportsEcosystem } from '@shared/minecraftMods'
 import ConsoleTab from './ConsoleTab'
 import StartSettingsTab from './StartSettingsTab'
 import ServerSettingsTab from './ServerSettingsTab'
@@ -17,20 +17,21 @@ interface MinecraftServerDetailProps {
   onProfileChange: (profile: MinecraftProfile) => void
 }
 
-/** "Mods" and "Plugins" are mutually exclusive - a server's own ecosystem
- *  (minecraftModEcosystem) decides which one applies, never both at once - rather than one
- *  tab whose label just changes, so each loader's own user-facing terminology shows up as
- *  its own real tab (same ModsTab component/content underneath either way). Neither one
- *  shows at all for vanilla/unknown. */
+/** Most server types get exactly one of "Mods" or "Plugins" (minecraftServerSupportsEcosystem
+ *  decides which), never both - but SpongeForge genuinely offers both ecosystems at once (its
+ *  own Sponge-plugin layer, and the underlying Forge-mod layer it runs on), so it gets both
+ *  tabs, each independently backed by its own ModsTab instance (own ecosystem prop, own
+ *  search/install, own slice of profile.installedMods - see ModsTab's own doc comment).
+ *  Neither tab shows at all for vanilla/unknown. */
 function tabsFor(serverType: MinecraftServerType): Array<{ key: MinecraftTabKey; label: string }> {
-  const ecosystem = minecraftModEcosystem(serverType)
-  const modOrPluginsTab: Array<{ key: MinecraftTabKey; label: string }> =
-    ecosystem === 'mods' ? [{ key: 'mods', label: 'Mods' }] : ecosystem === 'plugins' ? [{ key: 'plugins', label: 'Plugins' }] : []
+  const modOrPluginsTabs: Array<{ key: MinecraftTabKey; label: string }> = []
+  if (minecraftServerSupportsEcosystem(serverType, 'mods')) modOrPluginsTabs.push({ key: 'mods', label: 'Mods' })
+  if (minecraftServerSupportsEcosystem(serverType, 'plugins')) modOrPluginsTabs.push({ key: 'plugins', label: 'Plugins' })
   return [
     { key: 'console', label: 'Console' },
     { key: 'startSettings', label: 'Start Settings' },
     { key: 'serverSettings', label: 'Server Settings' },
-    ...modOrPluginsTab,
+    ...modOrPluginsTabs,
     { key: 'backup', label: 'Backup' },
     { key: 'management', label: 'Server Management' }
   ]
@@ -63,7 +64,12 @@ export default function MinecraftServerDetail({
         {tab === 'startSettings' && <StartSettingsTab profile={profile} onProfileChange={onProfileChange} />}
         {tab === 'serverSettings' && <ServerSettingsTab profile={profile} />}
         {(tab === 'mods' || tab === 'plugins') && (
-          <ModsTab profile={profile} onProfileChange={onProfileChange} onGoToStartSettings={() => setTab('startSettings')} />
+          <ModsTab
+            profile={profile}
+            ecosystem={tab}
+            onProfileChange={onProfileChange}
+            onGoToStartSettings={() => setTab('startSettings')}
+          />
         )}
         {tab === 'backup' && <BackupsTab profile={profile} onProfileChange={onProfileChange} />}
         {tab === 'management' && <ServerManagementTab profile={profile} onProfileChange={onProfileChange} />}

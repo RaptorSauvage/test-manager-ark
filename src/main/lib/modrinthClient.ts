@@ -1,4 +1,5 @@
 import type { MinecraftServerType } from '@shared/minecraft'
+import type { MinecraftModEcosystem } from '@shared/minecraftMods'
 
 /**
  * Thin wrapper around Modrinth's public v2 REST API (https://docs.modrinth.com) - no API key
@@ -74,18 +75,35 @@ export interface ModrinthProject {
 }
 
 /**
- * Maps a Minecraft server type to the Modrinth "category" facet value(s) that identify a
- * mod/plugin's loader - the v2 API lumps loaders into the same `categories` facet type as
- * everything else (confirmed against Modrinth's own search result model, which extends
- * `categories` with `loaders` for v2 responses). Paper and Spigot share one facet group since
- * Paper plugins are themselves Spigot/Bukkit-API-compatible and most plugin authors tag for
- * all three interchangeably - splitting them would just hide results that do work.
+ * Maps a (server type, ecosystem) pair to the Modrinth "category" facet value(s) that
+ * identify a mod/plugin's loader - the v2 API lumps loaders into the same `categories` facet
+ * type as everything else (confirmed against Modrinth's own search result model, which
+ * extends `categories` with `loaders` for v2 responses). Paper and Spigot share one facet
+ * group since Paper plugins are themselves Spigot/Bukkit-API-compatible and most plugin
+ * authors tag for all three interchangeably - splitting them would just hide results that do
+ * work.
+ *
+ * `ecosystem` matters for SpongeForge specifically - the one server type with two real,
+ * independently-searchable ecosystems at once (see minecraftServerSupportsEcosystem):
+ * `ecosystem: 'plugins'` searches its own Sponge plugin layer (`sponge` category, same as
+ * SpongeVanilla), `ecosystem: 'mods'` searches the Forge-mod layer it actually runs on top of
+ * (plain `forge`). For every other type, `ecosystem` is redundant with `serverType` alone
+ * (there's only ever one to ask for) - callers always have a concrete value either way, from
+ * minecraftModEcosystem/minecraftServerSupportsEcosystem.
  *
  * Vanilla and unknown have no mod/plugin ecosystem at all - callers should never reach this
  * for those (minecraftMods.ts guards it before ever calling into this client), but an empty
  * array here means "no loader facet" rather than silently matching everything.
  */
-export function loaderCategoriesFor(serverType: MinecraftServerType): string[] {
+export function loaderCategoriesFor(serverType: MinecraftServerType, ecosystem: MinecraftModEcosystem): string[] {
+  if (ecosystem === 'plugins') {
+    if (serverType === 'paper' || serverType === 'spigot') return ['paper', 'spigot', 'bukkit']
+    // SpongeVanilla and SpongeForge share one category - SpongeAPI plugins are
+    // implementation-agnostic, a plugin tagged 'sponge' runs on either.
+    if (serverType === 'spongevanilla' || serverType === 'spongeforge') return ['sponge']
+    return []
+  }
+  // ecosystem === 'mods'
   switch (serverType) {
     case 'fabric':
       return ['fabric']
@@ -93,15 +111,8 @@ export function loaderCategoriesFor(serverType: MinecraftServerType): string[] {
       return ['forge']
     case 'neoforge':
       return ['neoforge']
-    case 'paper':
-    case 'spigot':
-      return ['paper', 'spigot', 'bukkit']
-    case 'spongevanilla':
     case 'spongeforge':
-      // Modrinth's own 'sponge' category isn't split by SpongeVanilla vs SpongeForge -
-      // SpongeAPI plugins are implementation-agnostic, so a plugin tagged 'sponge' runs on
-      // either.
-      return ['sponge']
+      return ['forge']
     default:
       return []
   }
@@ -130,12 +141,12 @@ export function loaderCategoriesFor(serverType: MinecraftServerType): string[] {
  * mod reports `server_side: "unsupported"`) - kept in the search query itself rather than
  * filtered after the fact, so pagination/limit counts stay meaningful.
  */
-export function buildModrinthFacets(serverType: MinecraftServerType, minecraftVersion: string): string {
+export function buildModrinthFacets(serverType: MinecraftServerType, minecraftVersion: string, ecosystem: MinecraftModEcosystem): string {
   const facets: string[][] = [
     ['project_type:mod', 'project_type:plugin'],
     ['server_side:required', 'server_side:optional']
   ]
-  const loaderCategories = loaderCategoriesFor(serverType)
+  const loaderCategories = loaderCategoriesFor(serverType, ecosystem)
   if (loaderCategories.length > 0) facets.push(loaderCategories.map((c) => `categories:${c}`))
   if (minecraftVersion.trim()) facets.push([`versions:${minecraftVersion.trim()}`])
   return JSON.stringify(facets)
@@ -182,11 +193,12 @@ export async function searchModrinthProjects(
   query: string,
   serverType: MinecraftServerType,
   minecraftVersion: string,
+  ecosystem: MinecraftModEcosystem,
   limit = 20
 ): Promise<ModrinthSearchHit[]> {
   const response = await modrinthFetch<ModrinthSearchResponse>('/search', {
     query,
-    facets: buildModrinthFacets(serverType, minecraftVersion),
+    facets: buildModrinthFacets(serverType, minecraftVersion, ecosystem),
     limit: String(limit)
   })
   return response.hits
@@ -197,10 +209,11 @@ export async function searchModrinthProjects(
 export async function getModrinthProjectVersions(
   projectId: string,
   serverType: MinecraftServerType,
-  minecraftVersion: string
+  minecraftVersion: string,
+  ecosystem: MinecraftModEcosystem
 ): Promise<ModrinthVersion[]> {
   const params: Record<string, string> = {}
-  const loaderCategories = loaderCategoriesFor(serverType)
+  const loaderCategories = loaderCategoriesFor(serverType, ecosystem)
   if (loaderCategories.length > 0) params.loaders = JSON.stringify(loaderCategories)
   if (minecraftVersion.trim()) params.game_versions = JSON.stringify([minecraftVersion.trim()])
   return modrinthFetch<ModrinthVersion[]>(`/project/${encodeURIComponent(projectId)}/version`, params)

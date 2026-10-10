@@ -3454,3 +3454,85 @@ async function findProfileIdByName(name) {
   real Modrinth search response (no network access from this sandbox, same standing caveat as
   every API client in this codebase) - please confirm Paper/Spigot/Sponge search results
   actually include real plugins now, on a machine with real internet access.
+
+- **Follow-up to the Plugins-tab split above: SpongeForge gets a genuinely separate "Mods"
+  tab AND "Plugins" tab, each with its own independent search/install** (user correction -
+  the previous round's dynamic-label approach on the web dashboard, and even the desktop's
+  one-component-two-labels framing, didn't go far enough: SpongeForge really does run two
+  independent ecosystems at once - its own Sponge plugin layer, and the Forge mod layer it's
+  actually built on - and the user explicitly wanted both searchable separately, not one tab
+  that just changes its label).
+  - **Core model**: new `minecraftServerSupportsEcosystem(serverType, ecosystem)` (shared/
+    minecraftMods.ts) - true for a type's one matching ecosystem same as before, but true for
+    **both** `'mods'` and `'plugins'` specifically for `spongeforge`. Every search/install
+    function from the Mods tab down to the Modrinth/CurseForge clients now takes an explicit
+    `ecosystem` parameter deciding which loader category to filter by - `loaderCategoriesFor`/
+    `modLoaderTypeFor`/`classIdFor` all gained a second parameter, where SpongeForge is the one
+    real case `serverType` alone no longer determines (`ecosystem: 'mods'` → plain `forge`
+    category/loader type; `ecosystem: 'plugins'` → `sponge` category, no CurseForge loader
+    type, same as SpongeVanilla).
+  - **Tracking which ecosystem each installed entry belongs to**: `InstalledMinecraftMod`
+    gained an optional `ecosystem` field - set directly from the search/tab context for an
+    explicit install (the UI already knows which tab initiated it, so no guessing needed),
+    and derived best-effort from the matched version/file's own loader tags
+    (`ecosystemFromLoaderTags`, reading Modrinth's `loaders` field or CurseForge's
+    `gameVersions` array) when `scanForInstalledMods` adopts an untracked file with no tab
+    context to trust. An entry whose ecosystem genuinely can't be determined is shown in
+    *every* ecosystem tab a server type offers rather than hidden from any of them - the same
+    "never silently hide a mod" philosophy already used for `source: 'unknown'` entries.
+    `updateMinecraftMod`/`checkMinecraftModUpdates` read each entry's own stored tag rather
+    than asking the caller to pick again.
+  - **Desktop** (`ModsTab.tsx`): takes the `ecosystem` prop that was already added in the
+    previous round and now actually uses it end to end - passes it into every search/install
+    IPC call, and filters which slice of `profile.installedMods` its own "Installed" grid
+    shows (`installedModsFor`). For SpongeForge, `MinecraftServerDetail/index.tsx` now renders
+    two fully independent `ModsTab` instances (one per tab) instead of one component whose
+    label happened to change - each with its own search box, its own search results, and its
+    own filtered Installed list.
+  - **Web dashboard**: replaced last round's single "always-relabeled" MC Mods view with two
+    real, independent views - a genuinely new `view-mc-plugins`/`nav-mc-plugins` alongside the
+    existing `view-mc-mods`/`nav-mc-mods` (both admin-gated, both always visible within
+    Minecraft mode like every other MC nav button). The entire client-side controller (search,
+    install, installed-list render, rescan, update-check) was refactored from one hardcoded
+    set of functions into `createMcModEcosystemView(ecosystem, ids)`, instantiated twice -
+    each instance owns its own DOM element refs and closure state, so the two tabs genuinely
+    don't share so much as a search box. Both still hit the exact same backend routes
+    (`/api/servers/:id/mc-mods/search`/`install`), now carrying an `ecosystem` query param/
+    body field; the "list installed" route is unchanged (still returns the full list) and each
+    view filters its own slice client-side, same reasoning as the desktop side. Each view also
+    shows a clear "this server type has no \"X\" ecosystem" message (rather than an empty
+    search box) when the currently selected server doesn't actually offer that ecosystem -
+    true for most types in one direction, false for both at once only for SpongeForge.
+  - **Two real bugs found and fixed along the way**: (1) a stray backtick inside a new code
+    comment inside the client `<script>` template literal silently terminated the whole
+    template early, breaking the entire dashboard - same class of mistake flagged and fixed in
+    an earlier round, now doubly confirmed as a real hazard specific to this file's
+    architecture (the syntax-check script this project already uses catches it immediately,
+    but it's easy to introduce by hand). (2) `ecosystemFromLoaderTags` crashed on a CurseForge
+    fingerprint match whose response happened to omit `gameVersions` (an edge case a stricter
+    mock fixture exposed) - fixed to tolerate a missing/non-array input and tag the result
+    `ecosystem: undefined` instead of crashing the whole scan silently back to "unknown". (3)
+    *Found via an actual browser check, not inspection*: `sponge.png` was never added to
+    `KNOWN_GAME_ICON_FILE_NAMES` in the round that introduced it - `/game-icons/sponge.png`
+    (used by both the MC Start Settings type picker and, now, both Mods/Plugins tabs' Browse
+    headers) was 404ing the entire time despite the file existing on disk. Fixed, and a new
+    `tests/webDashboard.test.ts` case added alongside the other per-loader icon routes so this
+    can't quietly regress again.
+  - **Verified**: new SpongeForge-specific tests in `tests/minecraftMods.test.ts` (rejecting a
+    search/install for an ecosystem a type genuinely doesn't have; a SpongeForge install
+    tagging its result with whichever ecosystem was asked for), `tests/minecraftModScan.test.ts`
+    (ecosystem derived correctly from a Modrinth match's `loaders` field; a CurseForge match
+    with no `gameVersions` at all still adopts instead of crashing), `tests/curseforgeClient.test.ts`
+    (SpongeForge's split modLoaderType/classId behavior per ecosystem), and
+    `tests/minecraftModEcosystem.test.ts` (`minecraftServerSupportsEcosystem` covering every
+    type, including SpongeForge's both-at-once case) - 1000 tests total now. A temporary
+    headless-Chromium check (deleted after use) drove the full real-world scenario end to end:
+    a Forge server shows Mods-only (Plugins tab shows the "no ecosystem" message and vice
+    versa for a Paper server), a SpongeForge server shows **both** tabs fully populated at
+    once with correctly separated Installed lists (a Forge-tagged mod only ever appears under
+    Mods, a Sponge-tagged plugin only under Plugins), and searching from each tab independently
+    sends its own distinct `ecosystem` value to the backend - zero `pageerror`/console-error/
+    bad-response events once the sponge.png bug above was caught and fixed. The desktop side's
+    two-instance rendering was only typechecked, not visually verified (same standing
+    limitation as every desktop-only change in this project). `npm run typecheck`, the full
+    `npx vitest run`, and `npm run build` all pass.

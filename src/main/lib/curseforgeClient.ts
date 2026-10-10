@@ -1,4 +1,5 @@
 import type { MinecraftServerType } from '@shared/minecraft'
+import type { MinecraftModEcosystem } from '@shared/minecraftMods'
 
 /**
  * Thin wrapper around the CurseForge Core API (https://docs.curseforge.com/) - unlike
@@ -38,10 +39,14 @@ const BUKKIT_PLUGINS_CLASS_ID = 4471
  *  filtered by loader on CurseForge) - omit the param entirely for those. Sponge has no
  *  CurseForge loader-type value either (there's no real Sponge content category there at
  *  all - plugins for it are almost always published on Modrinth/Ore instead), same "omit the
- *  param" treatment. */
-function modLoaderTypeFor(serverType: MinecraftServerType): number | undefined {
+ *  param" treatment. For SpongeForge's own `ecosystem: 'mods'` (its underlying Forge layer -
+ *  see minecraftServerSupportsEcosystem), this is the one case where `serverType` alone
+ *  doesn't already determine the loader - filtered as plain Forge (type 1). */
+function modLoaderTypeFor(serverType: MinecraftServerType, ecosystem: MinecraftModEcosystem): number | undefined {
+  if (ecosystem !== 'mods') return undefined
   switch (serverType) {
     case 'forge':
+    case 'spongeforge':
       return 1
     case 'fabric':
       return 4
@@ -54,9 +59,13 @@ function modLoaderTypeFor(serverType: MinecraftServerType): number | undefined {
 
 /** Sponge has no dedicated CurseForge class the way Paper/Spigot do (BUKKIT_PLUGINS_CLASS_ID)
  *  - falls back to the generic Mods class, same as Forge/Fabric/NeoForge, even though real
- *  Sponge content there is sparse to nonexistent in practice. */
-function classIdFor(serverType: MinecraftServerType): number {
-  return serverType === 'paper' || serverType === 'spigot' ? BUKKIT_PLUGINS_CLASS_ID : MODS_CLASS_ID
+ *  Sponge content there is sparse to nonexistent in practice. Only Paper/Spigot's own
+ *  `ecosystem: 'plugins'` search actually uses the Bukkit Plugins class - SpongeForge's
+ *  `ecosystem: 'plugins'` (its Sponge layer) still falls back to the generic Mods class, same
+ *  reasoning as SpongeVanilla. */
+function classIdFor(serverType: MinecraftServerType, ecosystem: MinecraftModEcosystem): number {
+  if (ecosystem === 'plugins' && (serverType === 'paper' || serverType === 'spigot')) return BUKKIT_PLUGINS_CLASS_ID
+  return MODS_CLASS_ID
 }
 
 export interface CurseForgeModLogo {
@@ -153,18 +162,19 @@ export async function searchCurseForgeMods(
   query: string,
   serverType: MinecraftServerType,
   minecraftVersion: string,
+  ecosystem: MinecraftModEcosystem,
   limit = 20
 ): Promise<CurseForgeMod[]> {
   const params: Record<string, string> = {
     gameId: String(MINECRAFT_GAME_ID),
-    classId: String(classIdFor(serverType)),
+    classId: String(classIdFor(serverType, ecosystem)),
     searchFilter: query,
     pageSize: String(limit),
     sortField: '2', // Popularity
     sortOrder: 'desc'
   }
   if (minecraftVersion.trim()) params.gameVersion = minecraftVersion.trim()
-  const loaderType = modLoaderTypeFor(serverType)
+  const loaderType = modLoaderTypeFor(serverType, ecosystem)
   if (loaderType !== undefined) params.modLoaderType = String(loaderType)
   const response = await curseforgeFetch<CurseForgeSearchResponse>(apiKey, '/mods/search', params)
   return response.data
@@ -217,11 +227,12 @@ export async function getCurseForgeModFiles(
   apiKey: string,
   modId: number,
   serverType: MinecraftServerType,
-  minecraftVersion: string
+  minecraftVersion: string,
+  ecosystem: MinecraftModEcosystem
 ): Promise<CurseForgeFile[]> {
   const params: Record<string, string> = {}
   if (minecraftVersion.trim()) params.gameVersion = minecraftVersion.trim()
-  const loaderType = modLoaderTypeFor(serverType)
+  const loaderType = modLoaderTypeFor(serverType, ecosystem)
   if (loaderType !== undefined) params.modLoaderType = String(loaderType)
   const response = await curseforgeFetch<CurseForgeFilesResponse>(apiKey, `/mods/${modId}/files`, params)
   return [...response.data].sort((a, b) => new Date(b.fileDate).getTime() - new Date(a.fileDate).getTime())

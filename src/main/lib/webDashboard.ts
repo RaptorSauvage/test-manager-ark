@@ -76,7 +76,7 @@ import {
   scanForInstalledMods,
   checkMinecraftModUpdates
 } from './minecraftMods'
-import type { MinecraftModSource } from '@shared/minecraftMods'
+import type { MinecraftModSource, MinecraftModEcosystem } from '@shared/minecraftMods'
 
 // Minecraft isn't part of shared/games.ts's GameDefinition registry (that one's ARK-only by
 // design - see its own top-of-file comment) - its icon is served the same way regardless,
@@ -92,6 +92,7 @@ const VANILLA_ICON_FILE_NAME = 'vanilla.png'
 const PAPER_ICON_FILE_NAME = 'paper.png'
 const FABRIC_ICON_FILE_NAME = 'fabric.png'
 const SPIGOT_ICON_FILE_NAME = 'spigot.jpg'
+const SPONGE_ICON_FILE_NAME = 'sponge.png'
 const KNOWN_GAME_ICON_FILE_NAMES = new Set([
   ...listGameDefinitions().map((g) => g.iconFileName),
   MINECRAFT_ICON_FILE_NAME,
@@ -100,7 +101,8 @@ const KNOWN_GAME_ICON_FILE_NAMES = new Set([
   VANILLA_ICON_FILE_NAME,
   PAPER_ICON_FILE_NAME,
   FABRIC_ICON_FILE_NAME,
-  SPIGOT_ICON_FILE_NAME
+  SPIGOT_ICON_FILE_NAME,
+  SPONGE_ICON_FILE_NAME
 ])
 
 /**
@@ -1311,7 +1313,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return
     }
     try {
-      const hits = await searchMinecraftMods(profile, url.searchParams.get('q') ?? '')
+      const ecosystem = (url.searchParams.get('ecosystem') as MinecraftModEcosystem) || 'mods'
+      const hits = await searchMinecraftMods(profile, url.searchParams.get('q') ?? '', ecosystem)
       sendJson(res, 200, hits)
     } catch (err) {
       sendJson(res, 400, { error: (err as Error).message })
@@ -1349,7 +1352,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       .then(async (body) => {
         const source = body.source as MinecraftModSource
         const projectId = typeof body.projectId === 'string' ? body.projectId : ''
-        const { profile: updated, result } = await installMinecraftMod(profile, source, projectId)
+        const ecosystem = (body.ecosystem as MinecraftModEcosystem) || 'mods'
+        const { profile: updated, result } = await installMinecraftMod(profile, source, projectId, ecosystem)
         sendJson(res, 200, { ok: true, installedMods: updated.installedMods, result })
       })
       .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
@@ -2016,6 +2020,7 @@ const DASHBOARD_HTML = `<!doctype html>
     <button id="nav-mc-startsettings" class="nav-btn" type="button">MC Start Settings</button>
     <button id="nav-mc-serversettings" class="nav-btn" type="button">MC Server Settings</button>
     <button id="nav-mc-mods" class="nav-btn" type="button">MC Mods</button>
+    <button id="nav-mc-plugins" class="nav-btn" type="button">MC Plugins</button>
     <button id="nav-mc-backup" class="nav-btn" type="button">MC Backup</button>
     <button id="nav-mc-management" class="nav-btn" type="button">MC Server Management</button>
   </div>
@@ -2609,16 +2614,16 @@ const DASHBOARD_HTML = `<!doctype html>
   </section>
   <section id="view-mc-mods" class="view">
     <header>
-      <h1 id="mc-mods-heading">MC Mods</h1>
+      <h1>MC Mods</h1>
       <select id="mc-mods-server-select" class="server-picker"></select>
     </header>
     <main>
       <p id="mc-mods-no-server" class="empty-state">No Minecraft server selected - choose one above.</p>
+      <p id="mc-mods-unsupported" class="empty-state" style="display: none">This server type has no "mods" ecosystem - set Server type in Start Settings to a loader that does (Forge/NeoForge/Fabric, or SpongeForge's own underlying Forge layer).</p>
       <div id="mc-mods-content" class="admin-tab-content">
         <p class="empty-state">
-          Mods/plugins are searched and installed from Modrinth, plus CurseForge too once a CurseForge API key is
-          configured - set this server's Minecraft version and server type in Start Settings first. Vanilla has no
-          mod/plugin ecosystem to search.
+          Mods are searched and installed from Modrinth, plus CurseForge too once a CurseForge API key is
+          configured - set this server's Minecraft version and server type in Start Settings first.
         </p>
         <section id="mc-mods-search-section" class="settings-section">
           <h3 class="mc-mods-browse-heading">
@@ -2626,7 +2631,7 @@ const DASHBOARD_HTML = `<!doctype html>
             Search Modrinth / CurseForge
           </h3>
           <div class="form-actions">
-            <input id="mc-mods-search-query" placeholder="Search mods/plugins..." />
+            <input id="mc-mods-search-query" placeholder="Search mods..." />
             <button id="btn-mc-mods-search" type="button">Search</button>
           </div>
           <p id="mc-mods-search-error" class="error-message" style="display: none"></p>
@@ -2643,6 +2648,45 @@ const DASHBOARD_HTML = `<!doctype html>
           <tbody id="mc-mods-table-body"></tbody>
         </table>
         <p id="mc-mods-error" class="error-message" style="display: none"></p>
+      </div>
+    </main>
+  </section>
+  <section id="view-mc-plugins" class="view">
+    <header>
+      <h1>MC Plugins</h1>
+      <select id="mc-plugins-server-select" class="server-picker"></select>
+    </header>
+    <main>
+      <p id="mc-plugins-no-server" class="empty-state">No Minecraft server selected - choose one above.</p>
+      <p id="mc-plugins-unsupported" class="empty-state" style="display: none">This server type has no "plugins" ecosystem - set Server type in Start Settings to a loader that does (Paper/Spigot/SpongeVanilla, or SpongeForge's own Sponge layer).</p>
+      <div id="mc-plugins-content" class="admin-tab-content">
+        <p class="empty-state">
+          Plugins are searched and installed from Modrinth, plus CurseForge too once a CurseForge API key is
+          configured - set this server's Minecraft version and server type in Start Settings first.
+        </p>
+        <section id="mc-plugins-search-section" class="settings-section">
+          <h3 class="mc-mods-browse-heading">
+            <img id="mc-plugins-browse-icon" class="server-type-icon" alt="" style="display: none" />
+            Search Modrinth / CurseForge
+          </h3>
+          <div class="form-actions">
+            <input id="mc-plugins-search-query" placeholder="Search plugins..." />
+            <button id="btn-mc-plugins-search" type="button">Search</button>
+          </div>
+          <p id="mc-plugins-search-error" class="error-message" style="display: none"></p>
+          <div id="mc-plugins-search-results" class="ark-mod-search-results"></div>
+        </section>
+        <div class="form-actions">
+          <button id="btn-mc-plugins-rescan" type="button">Rescan folder</button>
+          <button id="btn-mc-plugins-updatecheck" type="button">Check for updates</button>
+        </div>
+        <table id="mc-plugins-table" class="data-table">
+          <thead>
+            <tr><th>Enable</th><th>Name</th><th>Source</th><th>Version</th><th></th></tr>
+          </thead>
+          <tbody id="mc-plugins-table-body"></tbody>
+        </table>
+        <p id="mc-plugins-error" class="error-message" style="display: none"></p>
       </div>
     </main>
   </section>
@@ -3019,6 +3063,7 @@ function initDashboard(resolvedRole) {
   var navMcStartSettingsBtn = document.getElementById('nav-mc-startsettings');
   var navMcServerSettingsBtn = document.getElementById('nav-mc-serversettings');
   var navMcModsBtn = document.getElementById('nav-mc-mods');
+  var navMcPluginsBtn = document.getElementById('nav-mc-plugins');
   var navMcBackupBtn = document.getElementById('nav-mc-backup');
   var navMcManagementBtn = document.getElementById('nav-mc-management');
   var viewMcDashboardEl = document.getElementById('view-mcdashboard');
@@ -3026,6 +3071,7 @@ function initDashboard(resolvedRole) {
   var viewMcStartSettingsEl = document.getElementById('view-mc-startsettings');
   var viewMcServerSettingsEl = document.getElementById('view-mc-serversettings');
   var viewMcModsEl = document.getElementById('view-mc-mods');
+  var viewMcPluginsEl = document.getElementById('view-mc-plugins');
   var viewMcBackupEl = document.getElementById('view-mc-backup');
   var viewMcManagementEl = document.getElementById('view-mc-management');
   var viewDashboardEl = document.getElementById('view-dashboard');
@@ -3115,6 +3161,7 @@ function initDashboard(resolvedRole) {
   if (role && !canAdmin) {
     navMcStartSettingsBtn.style.display = 'none';
     navMcModsBtn.style.display = 'none';
+    navMcPluginsBtn.style.display = 'none';
   }
   if (role && !canOperate) {
     navMcServerSettingsBtn.style.display = 'none';
@@ -3134,7 +3181,7 @@ function initDashboard(resolvedRole) {
   // Servers" instead of ARK's "Cluster Dashboard". Unlike SERVER_SCOPED_VIEWS, this list
   // doesn't drive nav-button visibility - the Minecraft nav section stays always-visible (see
   // its own comment above, near adminNavBtns/moderatorNavBtns).
-  var MC_SERVER_SCOPED_VIEWS = ['mc-startsettings', 'mc-serversettings', 'mc-mods', 'mc-backup', 'mc-management'];
+  var MC_SERVER_SCOPED_VIEWS = ['mc-startsettings', 'mc-serversettings', 'mc-mods', 'mc-plugins', 'mc-backup', 'mc-management'];
   function updateServerScopedNavVisibility() {
     var show = SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1;
     navConsoleBtn.style.display = show ? '' : 'none';
@@ -3187,12 +3234,14 @@ function initDashboard(resolvedRole) {
     navMcStartSettingsBtn.classList.toggle('active', activeView === 'mc-startsettings');
     navMcServerSettingsBtn.classList.toggle('active', activeView === 'mc-serversettings');
     navMcModsBtn.classList.toggle('active', activeView === 'mc-mods');
+    navMcPluginsBtn.classList.toggle('active', activeView === 'mc-plugins');
     navMcBackupBtn.classList.toggle('active', activeView === 'mc-backup');
     navMcManagementBtn.classList.toggle('active', activeView === 'mc-management');
     viewMcDashboardEl.classList.toggle('active', activeView === 'mcdashboard');
     viewMcStartSettingsEl.classList.toggle('active', activeView === 'mc-startsettings');
     viewMcServerSettingsEl.classList.toggle('active', activeView === 'mc-serversettings');
     viewMcModsEl.classList.toggle('active', activeView === 'mc-mods');
+    viewMcPluginsEl.classList.toggle('active', activeView === 'mc-plugins');
     viewMcBackupEl.classList.toggle('active', activeView === 'mc-backup');
     viewMcManagementEl.classList.toggle('active', activeView === 'mc-management');
     viewDashboardEl.classList.toggle('active', activeView === 'dashboard');
@@ -3217,6 +3266,7 @@ function initDashboard(resolvedRole) {
     if (activeView === 'mc-startsettings') loadMcStartSettingsView();
     if (activeView === 'mc-serversettings') loadMcServerSettingsView();
     if (activeView === 'mc-mods') loadMcModsView();
+    if (activeView === 'mc-plugins') loadMcPluginsView();
     if (activeView === 'mc-backup') loadMcBackupView();
     if (activeView === 'mc-management') loadMcManagementView();
   }
@@ -3240,6 +3290,7 @@ function initDashboard(resolvedRole) {
   navMcStartSettingsBtn.addEventListener('click', function () { selectView('mc-startsettings'); });
   navMcServerSettingsBtn.addEventListener('click', function () { selectView('mc-serversettings'); });
   navMcModsBtn.addEventListener('click', function () { selectView('mc-mods'); });
+  navMcPluginsBtn.addEventListener('click', function () { selectView('mc-plugins'); });
   navMcBackupBtn.addEventListener('click', function () { selectView('mc-backup'); });
   navMcManagementBtn.addEventListener('click', function () { selectView('mc-management'); });
 
@@ -5145,315 +5196,374 @@ function initDashboard(resolvedRole) {
       });
   }
 
-  // -- MC Mods ------------------------------------------------------------------------------
-  var mcModsHeadingEl = document.getElementById('mc-mods-heading');
-  // Mirrors shared/minecraftMods.ts's minecraftModEcosystem (duplicated here, same reasoning
-  // as every other small lookup in this client script - no module imports at all, see its
-  // own top-of-file comment) - "Mods" vs "Plugins" is purely a label, the same nav button/
-  // view/APIs serve either server type, nothing else behaves differently.
-  var MC_MOD_ECOSYSTEM_LABELS = {
-    forge: 'Mods', neoforge: 'Mods', fabric: 'Mods',
-    paper: 'Plugins', spigot: 'Plugins', spongevanilla: 'Plugins', spongeforge: 'Plugins'
+  // -- MC Mods / MC Plugins -------------------------------------------------------------------
+  // Two fully independent instances of the exact same controller, one per ecosystem - not two
+  // tabs that happen to share a label. SpongeForge genuinely has both at once (its own Sponge-
+  // plugin layer, and the Forge-mod layer it actually runs on), each with its own search/
+  // install/installed-list; every other type only ever has one of the two populated (the
+  // other instance's "unsupported" message shows instead - see mcServerSupportsEcosystem).
+  // Mirrors shared/minecraftMods.ts's minecraftServerSupportsEcosystem (duplicated here, same
+  // reasoning as every other small lookup in this client script - no module imports at all,
+  // see its own top-of-file comment).
+  var MC_ECOSYSTEM_SERVER_TYPES = {
+    mods: ['forge', 'neoforge', 'fabric', 'spongeforge'],
+    plugins: ['paper', 'spigot', 'spongevanilla', 'spongeforge']
   };
-  function updateMcModsHeading(serverType) {
-    var label = 'MC ' + (MC_MOD_ECOSYSTEM_LABELS[serverType] || 'Mods');
-    mcModsHeadingEl.textContent = label;
-    navMcModsBtn.textContent = label;
+  function mcServerSupportsEcosystem(serverType, ecosystem) {
+    return MC_ECOSYSTEM_SERVER_TYPES[ecosystem].indexOf(serverType) !== -1;
   }
-  var mcModsServerSelectEl = document.getElementById('mc-mods-server-select');
-  var mcModsNoServerEl = document.getElementById('mc-mods-no-server');
-  var mcModsContentEl = document.getElementById('mc-mods-content');
-  var mcModsBrowseIcon = document.getElementById('mc-mods-browse-icon');
-  var mcModsSearchQueryInput = document.getElementById('mc-mods-search-query');
-  var btnMcModsSearch = document.getElementById('btn-mc-mods-search');
-  var mcModsSearchErrorEl = document.getElementById('mc-mods-search-error');
-  var mcModsSearchResultsEl = document.getElementById('mc-mods-search-results');
-  var btnMcModsRescan = document.getElementById('btn-mc-mods-rescan');
-  var btnMcModsUpdateCheck = document.getElementById('btn-mc-mods-updatecheck');
-  var mcModsTableBody = document.getElementById('mc-mods-table-body');
-  var mcModsErrorEl = document.getElementById('mc-mods-error');
-  var mcInstalledMods = [];
-  var mcModsSearchResults = [];
-  var mcModsSearched = false;
-  var mcModsUpdateInfo = {};
-
-  function showMcModsError(message) {
-    mcModsErrorEl.textContent = message || '';
-    mcModsErrorEl.style.display = message ? '' : 'none';
-  }
-  function showMcModsSearchError(message) {
-    mcModsSearchErrorEl.textContent = message || '';
-    mcModsSearchErrorEl.style.display = message ? '' : 'none';
+  // Only this instance's own slice of a server's installedMods - an entry whose own
+  // ecosystem tag couldn't be determined (scanForInstalledMods' best-effort case) is shown
+  // in every ecosystem tab the server type offers rather than hidden from all of them, same
+  // reasoning as ModsTab.tsx's own installedModsFor on the desktop side.
+  function mcModsForEcosystem(mods, ecosystem) {
+    return (mods || []).filter(function (m) { return m.ecosystem === undefined || m.ecosystem === ecosystem; });
   }
 
-  function renderMcModsTable() {
-    mcModsTableBody.innerHTML = '';
-    if (mcInstalledMods.length === 0) {
-      var emptyRow = document.createElement('tr');
-      var emptyCell = document.createElement('td');
-      emptyCell.colSpan = 5;
-      emptyCell.className = 'empty-state';
-      emptyCell.textContent = 'No mods/plugins installed yet.';
-      emptyRow.appendChild(emptyCell);
-      mcModsTableBody.appendChild(emptyRow);
-      return;
+  function createMcModEcosystemView(ecosystem, ids) {
+    var noun = ecosystem === 'mods' ? 'mod' : 'plugin';
+    var serverSelectEl = document.getElementById(ids.serverSelect);
+    var noServerEl = document.getElementById(ids.noServer);
+    var unsupportedEl = document.getElementById(ids.unsupported);
+    var contentEl = document.getElementById(ids.content);
+    var browseIcon = document.getElementById(ids.browseIcon);
+    var searchQueryInput = document.getElementById(ids.searchQuery);
+    var btnSearch = document.getElementById(ids.btnSearch);
+    var searchErrorEl = document.getElementById(ids.searchError);
+    var searchResultsEl = document.getElementById(ids.searchResults);
+    var btnRescan = document.getElementById(ids.btnRescan);
+    var btnUpdateCheck = document.getElementById(ids.btnUpdateCheck);
+    var tableBody = document.getElementById(ids.tableBody);
+    var errorEl = document.getElementById(ids.error);
+
+    var installedMods = [];
+    var searchResults = [];
+    var searched = false;
+    var updateInfo = {};
+
+    function showError(message) {
+      errorEl.textContent = message || '';
+      errorEl.style.display = message ? '' : 'none';
     }
-    mcInstalledMods.forEach(function (mod) {
-      var row = document.createElement('tr');
-
-      var enableCell = document.createElement('td');
-      var enableInput = document.createElement('input');
-      enableInput.type = 'checkbox';
-      enableInput.checked = !!mod.enabled;
-      enableInput.addEventListener('change', function () {
-        fetch('/api/servers/' + encodeURIComponent(currentId) + '/mc-mods/enabled', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId: mod.projectId, enabled: enableInput.checked })
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (result) {
-            if (!result.ok) { showMcModsError(result.error || 'Save failed'); return; }
-            mcInstalledMods = result.installedMods;
-            renderMcModsTable();
-          })
-          .catch(function () { showMcModsError('Request failed'); });
-      });
-      enableCell.appendChild(enableInput);
-      row.appendChild(enableCell);
-
-      var nameCell = document.createElement('td');
-      nameCell.className = 'ark-mod-name-cell';
-      if (mod.iconUrl) {
-        var icon = document.createElement('img');
-        icon.src = mod.iconUrl;
-        icon.alt = '';
-        icon.className = 'ark-mod-icon';
-        icon.addEventListener('error', function () { icon.style.display = 'none'; });
-        nameCell.appendChild(icon);
-      }
-      var nameSpan = document.createElement('span');
-      nameSpan.className = 'ark-mod-title';
-      nameSpan.title = mod.title;
-      nameSpan.textContent = mod.title;
-      nameCell.appendChild(nameSpan);
-      row.appendChild(nameCell);
-
-      var sourceCell = document.createElement('td');
-      sourceCell.textContent = mod.source === 'unknown' ? 'Unidentified' : mod.source;
-      if (mod.alsoOn && mod.alsoOn.length > 0) sourceCell.textContent += ' (also on ' + mod.alsoOn.join(', ') + ')';
-      row.appendChild(sourceCell);
-
-      var versionCell = document.createElement('td');
-      versionCell.textContent = mod.versionNumber || '-';
-      var updateInfo = mcModsUpdateInfo[mod.projectId];
-      if (updateInfo && updateInfo.updateAvailable) {
-        var badge = document.createElement('span');
-        badge.className = 'status-message';
-        badge.textContent = ' (update: ' + (updateInfo.latestVersionNumber || 'available') + ')';
-        versionCell.appendChild(badge);
-      }
-      row.appendChild(versionCell);
-
-      var actionsCell = document.createElement('td');
-      if (mod.source !== 'unknown' && updateInfo && updateInfo.updateAvailable) {
-        var updateBtn = document.createElement('button');
-        updateBtn.type = 'button';
-        updateBtn.textContent = 'Update';
-        updateBtn.addEventListener('click', function () { void installMcMod(mod.source, mod.projectId); });
-        actionsCell.appendChild(updateBtn);
-      }
-      var removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.className = 'danger';
-      removeBtn.textContent = 'Remove';
-      removeBtn.addEventListener('click', function () {
-        fetch('/api/servers/' + encodeURIComponent(currentId) + '/mc-mods/remove', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId: mod.projectId })
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (result) {
-            if (!result.ok) { showMcModsError(result.error || 'Remove failed'); return; }
-            mcInstalledMods = result.installedMods;
-            renderMcModsTable();
-          })
-          .catch(function () { showMcModsError('Request failed'); });
-      });
-      actionsCell.appendChild(removeBtn);
-      row.appendChild(actionsCell);
-
-      mcModsTableBody.appendChild(row);
-    });
-  }
-
-  function renderMcModsSearchResults() {
-    mcModsSearchResultsEl.innerHTML = '';
-    if (mcModsSearchResults.length === 0) {
-      var empty = document.createElement('p');
-      empty.className = 'empty-state';
-      empty.textContent = mcModsSearched ? 'No results.' : 'Search above to find mods/plugins to install.';
-      mcModsSearchResultsEl.appendChild(empty);
-      return;
+    function showSearchError(message) {
+      searchErrorEl.textContent = message || '';
+      searchErrorEl.style.display = message ? '' : 'none';
     }
-    mcModsSearchResults.forEach(function (r) {
-      var row = document.createElement('div');
-      row.className = 'ark-mod-search-result';
-      if (r.iconUrl) {
-        var icon = document.createElement('img');
-        icon.src = r.iconUrl;
-        icon.alt = '';
-        icon.className = 'ark-mod-icon';
-        icon.addEventListener('error', function () { icon.style.display = 'none'; });
-        row.appendChild(icon);
-      }
-      var info = document.createElement('div');
-      info.className = 'ark-mod-search-result-info';
-      var nameSpan = document.createElement('span');
-      nameSpan.className = 'ark-mod-search-result-name';
-      nameSpan.textContent = r.title + ' (' + r.source + ')';
-      var summarySpan = document.createElement('span');
-      summarySpan.className = 'empty-state ark-mod-search-result-summary';
-      summarySpan.title = r.description || '';
-      summarySpan.textContent = r.description || '';
-      info.appendChild(nameSpan);
-      info.appendChild(summarySpan);
-      row.appendChild(info);
-      var downloadsSpan = document.createElement('span');
-      downloadsSpan.className = 'empty-state ark-mod-search-result-downloads';
-      downloadsSpan.textContent = (r.downloads || 0).toLocaleString() + ' downloads';
-      row.appendChild(downloadsSpan);
-      var addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.disabled = !!r.installed;
-      addBtn.textContent = r.installed ? 'Installed' : 'Install';
-      addBtn.addEventListener('click', function () { void installMcMod(r.source, r.projectId); });
-      row.appendChild(addBtn);
-      mcModsSearchResultsEl.appendChild(row);
-    });
-  }
 
-  function installMcMod(source, projectId) {
-    if (!currentId) return;
-    showMcModsError('');
-    return fetch('/api/servers/' + encodeURIComponent(currentId) + '/mc-mods/install', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: source, projectId: projectId })
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (result) {
-        if (!result.ok) { showMcModsError(result.error || 'Install failed'); return; }
-        mcInstalledMods = result.installedMods;
-        renderMcModsTable();
-        renderMcModsSearchResults();
-        if (result.result && result.result.optionalDependenciesSkipped && result.result.optionalDependenciesSkipped.length > 0) {
-          showToast(result.result.optionalDependenciesSkipped.length + ' optional dependenc' + (result.result.optionalDependenciesSkipped.length === 1 ? 'y' : 'ies') + ' skipped - install by hand if needed.');
+    function renderTable() {
+      tableBody.innerHTML = '';
+      if (installedMods.length === 0) {
+        var emptyRow = document.createElement('tr');
+        var emptyCell = document.createElement('td');
+        emptyCell.colSpan = 5;
+        emptyCell.className = 'empty-state';
+        emptyCell.textContent = 'No ' + noun + 's installed yet.';
+        emptyRow.appendChild(emptyCell);
+        tableBody.appendChild(emptyRow);
+        return;
+      }
+      installedMods.forEach(function (mod) {
+        var row = document.createElement('tr');
+
+        var enableCell = document.createElement('td');
+        var enableInput = document.createElement('input');
+        enableInput.type = 'checkbox';
+        enableInput.checked = !!mod.enabled;
+        enableInput.addEventListener('change', function () {
+          fetch('/api/servers/' + encodeURIComponent(currentId) + '/mc-mods/enabled', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: mod.projectId, enabled: enableInput.checked })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (result) {
+              if (!result.ok) { showError(result.error || 'Save failed'); return; }
+              installedMods = mcModsForEcosystem(result.installedMods, ecosystem);
+              renderTable();
+            })
+            .catch(function () { showError('Request failed'); });
+        });
+        enableCell.appendChild(enableInput);
+        row.appendChild(enableCell);
+
+        var nameCell = document.createElement('td');
+        nameCell.className = 'ark-mod-name-cell';
+        if (mod.iconUrl) {
+          var icon = document.createElement('img');
+          icon.src = mod.iconUrl;
+          icon.alt = '';
+          icon.className = 'ark-mod-icon';
+          icon.addEventListener('error', function () { icon.style.display = 'none'; });
+          nameCell.appendChild(icon);
         }
-      })
-      .catch(function () { showMcModsError('Request failed'); });
-  }
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'ark-mod-title';
+        nameSpan.title = mod.title;
+        nameSpan.textContent = mod.title;
+        nameCell.appendChild(nameSpan);
+        row.appendChild(nameCell);
 
-  function runMcModsSearch() {
-    var query = mcModsSearchQueryInput.value.trim();
-    if (!query || !currentId) return;
-    var id = currentId;
-    btnMcModsSearch.disabled = true;
-    btnMcModsSearch.textContent = 'Searching...';
-    showMcModsSearchError('');
-    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods/search?q=' + encodeURIComponent(query))
-      .then(function (r) { return r.json(); })
-      .then(function (results) {
-        mcModsSearched = true;
-        if (id !== currentId) return;
-        if (results && results.error) { showMcModsSearchError(results.error); mcModsSearchResults = []; }
-        else mcModsSearchResults = results || [];
-        renderMcModsSearchResults();
-      })
-      .catch(function () { if (id === currentId) showMcModsSearchError('Search failed'); })
-      .finally(function () {
-        btnMcModsSearch.disabled = false;
-        btnMcModsSearch.textContent = 'Search';
+        var sourceCell = document.createElement('td');
+        sourceCell.textContent = mod.source === 'unknown' ? 'Unidentified' : mod.source;
+        if (mod.alsoOn && mod.alsoOn.length > 0) sourceCell.textContent += ' (also on ' + mod.alsoOn.join(', ') + ')';
+        row.appendChild(sourceCell);
+
+        var versionCell = document.createElement('td');
+        versionCell.textContent = mod.versionNumber || '-';
+        var info = updateInfo[mod.projectId];
+        if (info && info.updateAvailable) {
+          var badge = document.createElement('span');
+          badge.className = 'status-message';
+          badge.textContent = ' (update: ' + (info.latestVersionNumber || 'available') + ')';
+          versionCell.appendChild(badge);
+        }
+        row.appendChild(versionCell);
+
+        var actionsCell = document.createElement('td');
+        if (mod.source !== 'unknown' && info && info.updateAvailable) {
+          var updateBtn = document.createElement('button');
+          updateBtn.type = 'button';
+          updateBtn.textContent = 'Update';
+          updateBtn.addEventListener('click', function () { void installMod(mod.source, mod.projectId); });
+          actionsCell.appendChild(updateBtn);
+        }
+        var removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'danger';
+        removeBtn.textContent = 'Remove';
+        removeBtn.addEventListener('click', function () {
+          fetch('/api/servers/' + encodeURIComponent(currentId) + '/mc-mods/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: mod.projectId })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (result) {
+              if (!result.ok) { showError(result.error || 'Remove failed'); return; }
+              installedMods = mcModsForEcosystem(result.installedMods, ecosystem);
+              renderTable();
+            })
+            .catch(function () { showError('Request failed'); });
+        });
+        actionsCell.appendChild(removeBtn);
+        row.appendChild(actionsCell);
+
+        tableBody.appendChild(row);
       });
-  }
-
-  btnMcModsSearch.addEventListener('click', runMcModsSearch);
-  mcModsSearchQueryInput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); runMcModsSearch(); }
-  });
-
-  btnMcModsRescan.addEventListener('click', function () {
-    if (!currentId) return;
-    var id = currentId;
-    btnMcModsRescan.disabled = true;
-    btnMcModsRescan.textContent = 'Rescanning...';
-    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods/rescan', { method: 'POST' })
-      .then(function (r) { return r.json(); })
-      .then(function (result) {
-        if (!result.ok) { showMcModsError(result.error || 'Rescan failed'); return; }
-        if (id !== currentId) return;
-        mcInstalledMods = result.installedMods;
-        renderMcModsTable();
-        showToast(result.result && result.result.adopted.length > 0 ? 'Recognized ' + result.result.adopted.length + ' file(s).' : 'No new files found.');
-      })
-      .catch(function () { showMcModsError('Request failed'); })
-      .finally(function () {
-        btnMcModsRescan.disabled = false;
-        btnMcModsRescan.textContent = 'Rescan folder';
-      });
-  });
-
-  btnMcModsUpdateCheck.addEventListener('click', function () {
-    if (!currentId) return;
-    var id = currentId;
-    btnMcModsUpdateCheck.disabled = true;
-    btnMcModsUpdateCheck.textContent = 'Checking...';
-    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods/updatecheck')
-      .then(function (r) { return r.json(); })
-      .then(function (results) {
-        if (id !== currentId) return;
-        mcModsUpdateInfo = {};
-        (results || []).forEach(function (r) { mcModsUpdateInfo[r.projectId] = r; });
-        renderMcModsTable();
-      })
-      .catch(function () { showMcModsError('Update check failed'); })
-      .finally(function () {
-        btnMcModsUpdateCheck.disabled = false;
-        btnMcModsUpdateCheck.textContent = 'Check for updates';
-      });
-  });
-
-  function loadMcModsView() {
-    var id = currentId;
-    if (!id || !isMinecraftServer(id)) {
-      mcModsNoServerEl.style.display = '';
-      mcModsContentEl.classList.remove('active');
-      updateMcModsHeading(null);
-      return;
     }
-    showMcModsError('');
-    showMcModsSearchError('');
-    mcModsNoServerEl.style.display = 'none';
-    mcModsContentEl.classList.add('active');
-    var server = latestServers.find(function (s) { return s.id === id; });
-    updateMcModsHeading(server && server.serverType);
-    var iconUrl = server && MC_SERVER_TYPE_ICON_URLS[server.serverType];
-    mcModsBrowseIcon.src = iconUrl || '';
-    mcModsBrowseIcon.style.display = iconUrl ? '' : 'none';
-    mcModsSearched = false;
-    mcModsSearchResults = [];
-    mcModsSearchQueryInput.value = '';
-    mcModsUpdateInfo = {};
-    renderMcModsSearchResults();
-    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods')
-      .then(function (r) { return r.json(); })
-      .then(function (mods) {
-        if (id !== currentId) return;
-        mcInstalledMods = mods || [];
-        renderMcModsTable();
+
+    function renderSearchResults() {
+      searchResultsEl.innerHTML = '';
+      if (searchResults.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'empty-state';
+        empty.textContent = searched ? 'No results.' : ('Search above to find ' + noun + 's to install.');
+        searchResultsEl.appendChild(empty);
+        return;
+      }
+      searchResults.forEach(function (r) {
+        var row = document.createElement('div');
+        row.className = 'ark-mod-search-result';
+        if (r.iconUrl) {
+          var icon = document.createElement('img');
+          icon.src = r.iconUrl;
+          icon.alt = '';
+          icon.className = 'ark-mod-icon';
+          icon.addEventListener('error', function () { icon.style.display = 'none'; });
+          row.appendChild(icon);
+        }
+        var info = document.createElement('div');
+        info.className = 'ark-mod-search-result-info';
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'ark-mod-search-result-name';
+        nameSpan.textContent = r.title + ' (' + r.source + ')';
+        var summarySpan = document.createElement('span');
+        summarySpan.className = 'empty-state ark-mod-search-result-summary';
+        summarySpan.title = r.description || '';
+        summarySpan.textContent = r.description || '';
+        info.appendChild(nameSpan);
+        info.appendChild(summarySpan);
+        row.appendChild(info);
+        var downloadsSpan = document.createElement('span');
+        downloadsSpan.className = 'empty-state ark-mod-search-result-downloads';
+        downloadsSpan.textContent = (r.downloads || 0).toLocaleString() + ' downloads';
+        row.appendChild(downloadsSpan);
+        var addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.disabled = !!r.installed;
+        addBtn.textContent = r.installed ? 'Installed' : 'Install';
+        addBtn.addEventListener('click', function () { void installMod(r.source, r.projectId); });
+        row.appendChild(addBtn);
+        searchResultsEl.appendChild(row);
       });
+    }
+
+    function installMod(source, projectId) {
+      if (!currentId) return;
+      showError('');
+      return fetch('/api/servers/' + encodeURIComponent(currentId) + '/mc-mods/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: source, projectId: projectId, ecosystem: ecosystem })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (result) {
+          if (!result.ok) { showError(result.error || 'Install failed'); return; }
+          installedMods = mcModsForEcosystem(result.installedMods, ecosystem);
+          renderTable();
+          renderSearchResults();
+          if (result.result && result.result.optionalDependenciesSkipped && result.result.optionalDependenciesSkipped.length > 0) {
+            showToast(result.result.optionalDependenciesSkipped.length + ' optional dependenc' + (result.result.optionalDependenciesSkipped.length === 1 ? 'y' : 'ies') + ' skipped - install by hand if needed.');
+          }
+        })
+        .catch(function () { showError('Request failed'); });
+    }
+
+    function runSearch() {
+      var query = searchQueryInput.value.trim();
+      if (!query || !currentId) return;
+      var id = currentId;
+      btnSearch.disabled = true;
+      btnSearch.textContent = 'Searching...';
+      showSearchError('');
+      fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods/search?q=' + encodeURIComponent(query) + '&ecosystem=' + ecosystem)
+        .then(function (r) { return r.json(); })
+        .then(function (results) {
+          searched = true;
+          if (id !== currentId) return;
+          if (results && results.error) { showSearchError(results.error); searchResults = []; }
+          else searchResults = results || [];
+          renderSearchResults();
+        })
+        .catch(function () { if (id === currentId) showSearchError('Search failed'); })
+        .finally(function () {
+          btnSearch.disabled = false;
+          btnSearch.textContent = 'Search';
+        });
+    }
+
+    btnSearch.addEventListener('click', runSearch);
+    searchQueryInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
+    });
+
+    btnRescan.addEventListener('click', function () {
+      if (!currentId) return;
+      var id = currentId;
+      btnRescan.disabled = true;
+      btnRescan.textContent = 'Rescanning...';
+      fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods/rescan', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (result) {
+          if (!result.ok) { showError(result.error || 'Rescan failed'); return; }
+          if (id !== currentId) return;
+          installedMods = mcModsForEcosystem(result.installedMods, ecosystem);
+          renderTable();
+          showToast(result.result && result.result.adopted.length > 0 ? 'Recognized ' + result.result.adopted.length + ' file(s).' : 'No new files found.');
+        })
+        .catch(function () { showError('Request failed'); })
+        .finally(function () {
+          btnRescan.disabled = false;
+          btnRescan.textContent = 'Rescan folder';
+        });
+    });
+
+    btnUpdateCheck.addEventListener('click', function () {
+      if (!currentId) return;
+      var id = currentId;
+      btnUpdateCheck.disabled = true;
+      btnUpdateCheck.textContent = 'Checking...';
+      fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods/updatecheck')
+        .then(function (r) { return r.json(); })
+        .then(function (results) {
+          if (id !== currentId) return;
+          updateInfo = {};
+          (results || []).forEach(function (r) { updateInfo[r.projectId] = r; });
+          renderTable();
+        })
+        .catch(function () { showError('Update check failed'); })
+        .finally(function () {
+          btnUpdateCheck.disabled = false;
+          btnUpdateCheck.textContent = 'Check for updates';
+        });
+    });
+
+    function load() {
+      var id = currentId;
+      if (!id || !isMinecraftServer(id)) {
+        noServerEl.style.display = '';
+        unsupportedEl.style.display = 'none';
+        contentEl.classList.remove('active');
+        return;
+      }
+      var server = latestServers.find(function (s) { return s.id === id; });
+      if (!server || !mcServerSupportsEcosystem(server.serverType, ecosystem)) {
+        noServerEl.style.display = 'none';
+        unsupportedEl.style.display = '';
+        contentEl.classList.remove('active');
+        return;
+      }
+      showError('');
+      showSearchError('');
+      noServerEl.style.display = 'none';
+      unsupportedEl.style.display = 'none';
+      contentEl.classList.add('active');
+      var iconUrl = MC_SERVER_TYPE_ICON_URLS[server.serverType];
+      browseIcon.src = iconUrl || '';
+      browseIcon.style.display = iconUrl ? '' : 'none';
+      searched = false;
+      searchResults = [];
+      searchQueryInput.value = '';
+      updateInfo = {};
+      renderSearchResults();
+      fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods')
+        .then(function (r) { return r.json(); })
+        .then(function (mods) {
+          if (id !== currentId) return;
+          installedMods = mcModsForEcosystem(mods, ecosystem);
+          renderTable();
+        });
+    }
+
+    return { load: load };
   }
+
+  var mcModsView = createMcModEcosystemView('mods', {
+    serverSelect: 'mc-mods-server-select',
+    noServer: 'mc-mods-no-server',
+    unsupported: 'mc-mods-unsupported',
+    content: 'mc-mods-content',
+    browseIcon: 'mc-mods-browse-icon',
+    searchQuery: 'mc-mods-search-query',
+    btnSearch: 'btn-mc-mods-search',
+    searchError: 'mc-mods-search-error',
+    searchResults: 'mc-mods-search-results',
+    btnRescan: 'btn-mc-mods-rescan',
+    btnUpdateCheck: 'btn-mc-mods-updatecheck',
+    tableBody: 'mc-mods-table-body',
+    error: 'mc-mods-error'
+  });
+  var mcPluginsView = createMcModEcosystemView('plugins', {
+    serverSelect: 'mc-plugins-server-select',
+    noServer: 'mc-plugins-no-server',
+    unsupported: 'mc-plugins-unsupported',
+    content: 'mc-plugins-content',
+    browseIcon: 'mc-plugins-browse-icon',
+    searchQuery: 'mc-plugins-search-query',
+    btnSearch: 'btn-mc-plugins-search',
+    searchError: 'mc-plugins-search-error',
+    searchResults: 'mc-plugins-search-results',
+    btnRescan: 'btn-mc-plugins-rescan',
+    btnUpdateCheck: 'btn-mc-plugins-updatecheck',
+    tableBody: 'mc-plugins-table-body',
+    error: 'mc-plugins-error'
+  });
+  function loadMcModsView() { mcModsView.load(); }
+  function loadMcPluginsView() { mcPluginsView.load(); }
+  // Looked up again here (cheap, idempotent) for MC_SERVER_PICKERS further below - the actual
+  // <select> elements live inside createMcModEcosystemView's own closures, not as globals.
+  var mcModsServerSelectEl = document.getElementById('mc-mods-server-select');
+  var mcPluginsServerSelectEl = document.getElementById('mc-plugins-server-select');
 
   // -- MC Backup ----------------------------------------------------------------------------
   var mcBackupServerSelectEl = document.getElementById('mc-backup-server-select');
@@ -6783,6 +6893,7 @@ function initDashboard(resolvedRole) {
     mcStartSettingsServerSelectEl,
     mcServerSettingsServerSelectEl,
     mcModsServerSelectEl,
+    mcPluginsServerSelectEl,
     mcBackupServerSelectEl,
     mcManagementServerSelectEl
   ];
@@ -6848,6 +6959,7 @@ function initDashboard(resolvedRole) {
     if (activeView === 'mc-startsettings') loadMcStartSettingsView();
     if (activeView === 'mc-serversettings') loadMcServerSettingsView();
     if (activeView === 'mc-mods') loadMcModsView();
+    if (activeView === 'mc-plugins') loadMcPluginsView();
     if (activeView === 'mc-backup') loadMcBackupView();
     if (activeView === 'mc-management') loadMcManagementView();
     consoleEl.innerHTML = '';

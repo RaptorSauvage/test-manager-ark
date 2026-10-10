@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import type { MinecraftProfile } from '@shared/minecraft'
-import { supportsMinecraftMods } from '@shared/minecraftMods'
+import { minecraftServerSupportsEcosystem } from '@shared/minecraftMods'
 import type {
+  InstalledMinecraftMod,
+  MinecraftModEcosystem,
   MinecraftModInstallResult,
   MinecraftModSearchResult,
   MinecraftModSource,
@@ -46,8 +48,33 @@ function SourceIcons({ sources }: { sources: MinecraftModSource[] }): JSX.Elemen
 
 interface ModsTabProps {
   profile: MinecraftProfile
+  /** Which of the server's own ecosystems this particular tab instance is for - almost
+   *  always the server type's one and only ecosystem, except SpongeForge, which renders this
+   *  component twice (once per ecosystem - see minecraftServerSupportsEcosystem and
+   *  MinecraftServerDetail/index.tsx's own tabsFor): a "Mods" tab (its underlying Forge
+   *  layer) and a genuinely separate "Plugins" tab (its own Sponge layer), each with its own
+   *  independent search/install and its own slice of profile.installedMods. */
+  ecosystem: MinecraftModEcosystem
   onProfileChange: (profile: MinecraftProfile) => void
   onGoToStartSettings: () => void
+}
+
+/** "mods" -> "mod", "plugins" -> "plugin" - used wherever the UI talks about one of them by
+ *  name rather than generically ("mod/plugin"), so a server with two separate tabs (only
+ *  SpongeForge) reads as two distinct, independently-functioning sections rather than one
+ *  blurred-together ecosystem. */
+function ecosystemNoun(ecosystem: MinecraftModEcosystem): string {
+  return ecosystem === 'mods' ? 'mod' : 'plugin'
+}
+
+/** Only this tab's own slice of profile.installedMods - for almost every server type this is
+ *  every entry (there's only ever one ecosystem to belong to), but for SpongeForge's two
+ *  independent tabs it's the whole point: an entry tagged for the other ecosystem is left
+ *  for that other tab to show instead. An untagged entry (ecosystem could genuinely not be
+ *  determined - see InstalledMinecraftMod.ecosystem) is shown in every tab the server offers
+ *  rather than silently hidden from all of them. */
+function installedModsFor(installedMods: InstalledMinecraftMod[], ecosystem: MinecraftModEcosystem): InstalledMinecraftMod[] {
+  return installedMods.filter((m) => m.ecosystem === undefined || m.ecosystem === ecosystem)
 }
 
 /** Turns an install/update result into one readable line - dependencies pulled in, optional
@@ -76,7 +103,7 @@ function describeInstallResult(result: MinecraftModInstallResult): string {
   return parts.join(' - ')
 }
 
-export default function ModsTab({ profile, onProfileChange, onGoToStartSettings }: ModsTabProps): JSX.Element {
+export default function ModsTab({ profile, ecosystem, onProfileChange, onGoToStartSettings }: ModsTabProps): JSX.Element {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<MinecraftModSearchResult[]>([])
   const [searching, setSearching] = useState(false)
@@ -90,8 +117,10 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
   const [scanNote, setScanNote] = useState('')
   const [hasCurseForgeKey, setHasCurseForgeKey] = useState(false)
 
-  const supported = supportsMinecraftMods(profile.serverType)
+  const supported = minecraftServerSupportsEcosystem(profile.serverType, ecosystem)
   const hasVersion = profile.minecraftVersion.trim().length > 0
+  const noun = ecosystemNoun(ecosystem)
+  const installedMods = installedModsFor(profile.installedMods, ecosystem)
 
   useEffect(() => {
     window.api.settings.get().then((settings) => setHasCurseForgeKey(settings.curseforgeApiKey.trim().length > 0))
@@ -169,7 +198,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
     setSearched(true)
     setError('')
     try {
-      const hits = await window.api.minecraft.mods.search(profile.id, query)
+      const hits = await window.api.minecraft.mods.search(profile.id, query, ecosystem)
       setResults(hits)
     } catch (err) {
       setError((err as Error).message)
@@ -183,7 +212,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
     setError('')
     setLastNote('')
     try {
-      const { profile: updated, result } = await window.api.minecraft.mods.install(profile.id, source, projectId)
+      const { profile: updated, result } = await window.api.minecraft.mods.install(profile.id, source, projectId, ecosystem)
       onProfileChange(updated)
       setResults((prev) => prev.map((r) => (r.projectId === projectId ? { ...r, installed: true } : r)))
       setLastNote(describeInstallResult(result))
@@ -238,7 +267,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
         <p className="empty-state">
           {profile.serverType === 'vanilla'
             ? "Vanilla servers don't support mods or plugins."
-            : 'Set Server type to Forge/NeoForge/Fabric/Paper/Spigot in Start Settings to use this tab.'}
+            : `This server type has no "${ecosystem}" ecosystem - set Server type in Start Settings to a loader that does.`}
         </p>
         {profile.serverType !== 'vanilla' && (
           <button type="button" onClick={onGoToStartSettings}>
@@ -260,14 +289,14 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
             Browse Modrinth{hasCurseForgeKey ? ' & CurseForge' : ''}
           </h3>
           <p className="empty-state">
-            Searching for {profile.serverType} mods/plugins compatible with Minecraft {profile.minecraftVersion}.
+            Searching for {profile.serverType} {noun}s compatible with Minecraft {profile.minecraftVersion}.
             Client-only content (nothing to do with a server) is already excluded.
             {hasCurseForgeKey
               ? ' Results below are merged from both Modrinth and CurseForge, each labeled with its source.'
               : ' Set a CurseForge API key in Settings (General) to also search CurseForge - see the README for where to get one.'}
           </p>
           <form className="path-input-row" onSubmit={(e) => void handleSearch(e)}>
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search mods/plugins..." />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${noun}s...`} />
             <button type="submit" disabled={searching || !query.trim()}>
               {searching ? 'Searching...' : 'Search'}
             </button>
@@ -319,7 +348,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
             ))}
             {results.length === 0 && (
               <div className="mc-mods-grid-cell mc-mods-grid-empty">
-                {searched ? 'No results.' : 'Search above to find mods/plugins for this server.'}
+                {searched ? 'No results.' : `Search above to find ${noun}s for this server.`}
               </div>
             )}
           </div>
@@ -328,8 +357,8 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
         <section className="cluster-section">
           <h3>Browse Modrinth &amp; CurseForge</h3>
           <p className="empty-state">
-            Set this server&apos;s Minecraft version in Start Settings to search for and install mods/plugins. Mods
-            already in the mods/plugins folder can still be recognized below without it.
+            Set this server&apos;s Minecraft version in Start Settings to search for and install {noun}s. Existing{' '}
+            {noun}s already in the folder can still be recognized below without it.
           </p>
           <button type="button" onClick={onGoToStartSettings}>
             Go to Start Settings
@@ -338,7 +367,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
       )}
 
       <section className="cluster-section">
-        <h3>Installed ({profile.installedMods.length})</h3>
+        <h3>Installed ({installedMods.length})</h3>
         <div className="form-actions">
           <button type="button" onClick={() => void handleScan()} disabled={scanning}>
             {scanning ? 'Scanning...' : 'Rescan folder'}
@@ -347,7 +376,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
             {checkingUpdates ? 'Checking...' : 'Check for updates'}
           </button>
           <button type="button" onClick={() => void handleOpenModsFolder()}>
-            Open mods folder
+            Open folder
           </button>
         </div>
         {scanNote && <p className="empty-state">{scanNote}</p>}
@@ -357,7 +386,7 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
           <div className="mc-mods-grid-header">Version</div>
           <div className="mc-mods-grid-header">Status</div>
           <div className="mc-mods-grid-header"></div>
-          {profile.installedMods.map((m) => {
+          {installedMods.map((m) => {
             const update = updates[m.projectId]
             const unidentified = m.source === 'unknown'
             return (
@@ -421,8 +450,8 @@ export default function ModsTab({ profile, onProfileChange, onGoToStartSettings 
               </Fragment>
             )
           })}
-          {profile.installedMods.length === 0 && (
-            <div className="mc-mods-grid-cell mc-mods-grid-empty">No mods/plugins installed yet.</div>
+          {installedMods.length === 0 && (
+            <div className="mc-mods-grid-cell mc-mods-grid-empty">No {noun}s installed yet.</div>
           )}
         </div>
       </section>

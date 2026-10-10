@@ -21,7 +21,7 @@ function makeVersion(overrides: Partial<ModrinthVersion> = {}): ModrinthVersion 
 
 describe('resolveModInstallPlan', () => {
   it('installs just the root when it has no dependencies', async () => {
-    const plan = await resolveModInstallPlan(makeVersion(), profile, new Set(), {
+    const plan = await resolveModInstallPlan(makeVersion(), profile, new Set(), 'mods', {
       getProjectVersions: async () => [],
       getVersion: async () => makeVersion()
     })
@@ -40,7 +40,7 @@ describe('resolveModInstallPlan', () => {
       expect(id).toBe('version-dep')
       return depVersion
     }
-    const plan = await resolveModInstallPlan(root, profile, new Set(), {
+    const plan = await resolveModInstallPlan(root, profile, new Set(), 'mods', {
       getProjectVersions: async () => [],
       getVersion
     })
@@ -53,7 +53,7 @@ describe('resolveModInstallPlan', () => {
     const root = makeVersion({
       dependencies: [{ version_id: null, project_id: 'project-dep', file_name: null, dependency_type: 'required' }]
     })
-    const plan = await resolveModInstallPlan(root, profile, new Set(), {
+    const plan = await resolveModInstallPlan(root, profile, new Set(), 'mods', {
       getProjectVersions: async (projectId) => {
         expect(projectId).toBe('project-dep')
         return [depVersion]
@@ -69,7 +69,7 @@ describe('resolveModInstallPlan', () => {
     const root = makeVersion({
       dependencies: [{ version_id: null, project_id: 'project-embedded', file_name: 'lib.jar', dependency_type: 'embedded' }]
     })
-    const plan = await resolveModInstallPlan(root, profile, new Set(), {
+    const plan = await resolveModInstallPlan(root, profile, new Set(), 'mods', {
       getProjectVersions: async () => {
         throw new Error('should not be called for an embedded dependency')
       },
@@ -84,7 +84,7 @@ describe('resolveModInstallPlan', () => {
     const root = makeVersion({
       dependencies: [{ version_id: null, project_id: 'project-optional', file_name: null, dependency_type: 'optional' }]
     })
-    const plan = await resolveModInstallPlan(root, profile, new Set(), {
+    const plan = await resolveModInstallPlan(root, profile, new Set(), 'mods', {
       getProjectVersions: async () => {
         throw new Error('should not be called for an optional dependency')
       },
@@ -100,7 +100,7 @@ describe('resolveModInstallPlan', () => {
     const root = makeVersion({
       dependencies: [{ version_id: null, project_id: 'project-optional', file_name: null, dependency_type: 'optional' }]
     })
-    const plan = await resolveModInstallPlan(root, profile, new Set(['project-optional']), {
+    const plan = await resolveModInstallPlan(root, profile, new Set(['project-optional']), 'mods', {
       getProjectVersions: async () => [],
       getVersion: async () => makeVersion()
     })
@@ -111,13 +111,13 @@ describe('resolveModInstallPlan', () => {
     const root = makeVersion({
       dependencies: [{ version_id: null, project_id: 'project-conflict', file_name: null, dependency_type: 'incompatible' }]
     })
-    const notInstalled = await resolveModInstallPlan(root, profile, new Set(), {
+    const notInstalled = await resolveModInstallPlan(root, profile, new Set(), 'mods', {
       getProjectVersions: async () => [],
       getVersion: async () => makeVersion()
     })
     expect(notInstalled.incompatible).toEqual([])
 
-    const alreadyInstalled = await resolveModInstallPlan(root, profile, new Set(['project-conflict']), {
+    const alreadyInstalled = await resolveModInstallPlan(root, profile, new Set(['project-conflict']), 'mods', {
       getProjectVersions: async () => [],
       getVersion: async () => makeVersion()
     })
@@ -128,7 +128,7 @@ describe('resolveModInstallPlan', () => {
     const root = makeVersion({
       dependencies: [{ version_id: null, project_id: 'project-already', file_name: null, dependency_type: 'required' }]
     })
-    const plan = await resolveModInstallPlan(root, profile, new Set(['project-already']), {
+    const plan = await resolveModInstallPlan(root, profile, new Set(['project-already']), 'mods', {
       getProjectVersions: async () => {
         throw new Error('should not fetch versions for an already-installed dependency')
       },
@@ -159,7 +159,7 @@ describe('resolveModInstallPlan', () => {
       ]
     })
     const versionsById: Record<string, ModrinthVersion> = { 'v-a': depA, 'v-b': depB, 'v-shared': shared }
-    const plan = await resolveModInstallPlan(root, profile, new Set(), {
+    const plan = await resolveModInstallPlan(root, profile, new Set(), 'mods', {
       getProjectVersions: async () => [],
       getVersion: async (id) => versionsById[id]
     })
@@ -184,7 +184,7 @@ describe('resolveModInstallPlan', () => {
       dependencies: [{ version_id: 'v-a', project_id: null, file_name: null, dependency_type: 'required' }]
     })
     const versionsById: Record<string, ModrinthVersion> = { 'v-a': depA, 'v-b': depB }
-    const plan = await resolveModInstallPlan(root, profile, new Set(), {
+    const plan = await resolveModInstallPlan(root, profile, new Set(), 'mods', {
       getProjectVersions: async () => [],
       getVersion: async (id) => versionsById[id]
     })

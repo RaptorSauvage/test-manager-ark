@@ -36,7 +36,7 @@ describe('searchCurseForgeMods', () => {
     const fetchMock = vi.fn(async () => fakeResponse({ data: [] }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await searchCurseForgeMods('key', 'jei', 'fabric', '1.20.1')
+    await searchCurseForgeMods('key', 'jei', 'fabric', '1.20.1', 'mods')
 
     const url = fetchMock.mock.calls[0][0] as URL
     expect(url.searchParams.get('classId')).toBe('6')
@@ -49,7 +49,7 @@ describe('searchCurseForgeMods', () => {
     const fetchMock = vi.fn(async () => fakeResponse({ data: [] }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await searchCurseForgeMods('key', 'jei', 'neoforge', '1.21.1')
+    await searchCurseForgeMods('key', 'jei', 'neoforge', '1.21.1', 'mods')
 
     const url = fetchMock.mock.calls[0][0] as URL
     expect(url.searchParams.get('classId')).toBe('6')
@@ -60,7 +60,7 @@ describe('searchCurseForgeMods', () => {
     const fetchMock = vi.fn(async () => fakeResponse({ data: [] }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await searchCurseForgeMods('key', 'jei', 'spongevanilla', '1.21.1')
+    await searchCurseForgeMods('key', 'jei', 'spongevanilla', '1.21.1', 'plugins')
 
     const url = fetchMock.mock.calls[0][0] as URL
     expect(url.searchParams.get('classId')).toBe('6')
@@ -71,18 +71,33 @@ describe('searchCurseForgeMods', () => {
     const fetchMock = vi.fn(async () => fakeResponse({ data: [] }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await searchCurseForgeMods('key', 'worldedit', 'paper', '1.20.1')
+    await searchCurseForgeMods('key', 'worldedit', 'paper', '1.20.1', 'plugins')
 
     const url = fetchMock.mock.calls[0][0] as URL
     expect(url.searchParams.get('classId')).toBe('4471')
     expect(url.searchParams.has('modLoaderType')).toBe(false)
   })
 
+  it('uses Forge modLoaderType for SpongeForge\'s own "mods" ecosystem (its underlying Forge layer), but no modLoaderType at all for its "plugins" ecosystem (Sponge, same as SpongeVanilla)', async () => {
+    const fetchMock = vi.fn(async () => fakeResponse({ data: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await searchCurseForgeMods('key', 'jei', 'spongeforge', '1.20.1', 'mods')
+    const modsUrl = fetchMock.mock.calls[0][0] as URL
+    expect(modsUrl.searchParams.get('classId')).toBe('6')
+    expect(modsUrl.searchParams.get('modLoaderType')).toBe('1')
+
+    await searchCurseForgeMods('key', 'jei', 'spongeforge', '1.20.1', 'plugins')
+    const pluginsUrl = fetchMock.mock.calls[1][0] as URL
+    expect(pluginsUrl.searchParams.get('classId')).toBe('6')
+    expect(pluginsUrl.searchParams.get('modLoaderType')).toBeNull()
+  })
+
   it('sends the API key as the x-api-key header', async () => {
     const fetchMock = vi.fn(async () => fakeResponse({ data: [] }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await searchCurseForgeMods('my-secret-key', 'jei', 'forge', '1.20.1')
+    await searchCurseForgeMods('my-secret-key', 'jei', 'forge', '1.20.1', 'mods')
 
     const init = fetchMock.mock.calls[0][1] as RequestInit
     expect((init.headers as Record<string, string>)['x-api-key']).toBe('my-secret-key')
@@ -90,7 +105,7 @@ describe('searchCurseForgeMods', () => {
 
   it('throws a clear message on a 401/403 (bad key)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeResponse({}, false, 401)))
-    await expect(searchCurseForgeMods('bad-key', 'jei', 'forge', '1.20.1')).rejects.toThrow(/API key/)
+    await expect(searchCurseForgeMods('bad-key', 'jei', 'forge', '1.20.1', 'mods')).rejects.toThrow(/API key/)
   })
 })
 
@@ -128,7 +143,7 @@ describe('getCurseForgeModFiles', () => {
     const newer = makeFile({ id: 2, fileDate: '2026-01-01T00:00:00Z' })
     vi.stubGlobal('fetch', vi.fn(async () => fakeResponse({ data: [older, newer] })))
 
-    const files = await getCurseForgeModFiles('key', 100, 'forge', '1.20.1')
+    const files = await getCurseForgeModFiles('key', 100, 'forge', '1.20.1', 'mods')
 
     expect(files[0].id).toBe(2)
     expect(files[1].id).toBe(1)
