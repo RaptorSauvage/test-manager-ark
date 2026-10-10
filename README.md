@@ -3536,3 +3536,28 @@ async function findProfileIdByName(name) {
     two-instance rendering was only typechecked, not visually verified (same standing
     limitation as every desktop-only change in this project). `npm run typecheck`, the full
     `npx vitest run`, and `npm run build` all pass.
+
+- **Follow-up correctness fix: the Plugins tab's CurseForge search was still returning real
+  Forge/Fabric mods for Sponge** (user correction - the dual-ecosystem rebuild above was
+  structurally right, but one mapping inside it was still wrong: `classIdFor(serverType,
+  ecosystem)` fell back to CurseForge's generic "Mods" class (id 6) whenever no dedicated
+  CurseForge class existed for the requested ecosystem+type combo - true for Sponge's
+  `'plugins'` ecosystem, since CurseForge has no "Sponge Plugins" class at all, unlike Paper/
+  Spigot's real `BUKKIT_PLUGINS_CLASS_ID`. That fallback was a deliberate but wrong tradeoff
+  from the previous round (its own doc comment even predicted the risk and dismissed it) -
+  in practice it meant every CurseForge search from the Plugins tab, for SpongeVanilla or
+  SpongeForge, actually queried CurseForge's real Forge/Fabric Mods class and returned
+  genuine mod content mislabeled as plugin results. Modrinth's own side was unaffected (it
+  has a real `sponge` category already).
+  - **Fix** (`src/main/lib/curseforgeClient.ts`): `classIdFor` now returns `number | undefined`
+    - `undefined` means "no real CurseForge class exists for this combination," returned for
+    `ecosystem: 'plugins'` on every server type except Paper/Spigot. `searchCurseForgeMods`
+    (its only caller) now checks for `undefined` first and returns `[]` immediately, skipping
+    the CurseForge fetch entirely, instead of coercing `undefined` into the literal string
+    `"undefined"` as a query param.
+  - **Verified**: updated the two `tests/curseforgeClient.test.ts` cases that previously
+    asserted the old (buggy) `classId === '6'` fallback for Sponge's plugin ecosystem - they
+    now assert no CurseForge fetch happens at all for that case (both the plain SpongeVanilla
+    case and SpongeForge's own `'plugins'` half, which still correctly makes one real fetch
+    for its `'mods'` half). `npm run typecheck`, the full `npx vitest run` (1000 tests), and
+    `npm run build` all still pass.

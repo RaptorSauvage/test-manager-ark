@@ -57,14 +57,19 @@ function modLoaderTypeFor(serverType: MinecraftServerType, ecosystem: MinecraftM
   }
 }
 
-/** Sponge has no dedicated CurseForge class the way Paper/Spigot do (BUKKIT_PLUGINS_CLASS_ID)
- *  - falls back to the generic Mods class, same as Forge/Fabric/NeoForge, even though real
- *  Sponge content there is sparse to nonexistent in practice. Only Paper/Spigot's own
- *  `ecosystem: 'plugins'` search actually uses the Bukkit Plugins class - SpongeForge's
- *  `ecosystem: 'plugins'` (its Sponge layer) still falls back to the generic Mods class, same
- *  reasoning as SpongeVanilla. */
-function classIdFor(serverType: MinecraftServerType, ecosystem: MinecraftModEcosystem): number {
-  if (ecosystem === 'plugins' && (serverType === 'paper' || serverType === 'spigot')) return BUKKIT_PLUGINS_CLASS_ID
+/** Sponge has no dedicated CurseForge class the way Paper/Spigot do
+ *  (BUKKIT_PLUGINS_CLASS_ID) - real Sponge content on CurseForge is sparse to nonexistent in
+ *  practice (it's almost always published on Modrinth/Ore instead). Returns undefined for
+ *  that case rather than guessing the generic Mods class as a fallback: that would search
+ *  real Forge/Fabric mods under what's supposed to be a Sponge-*plugin*-only search, exactly
+ *  the "the Plugins tab searches mods on CurseForge" bug this was previously shipped with -
+ *  callers skip CurseForge's search entirely when this returns undefined instead (Modrinth,
+ *  which does have a real `sponge` category, is unaffected and still searches normally). */
+function classIdFor(serverType: MinecraftServerType, ecosystem: MinecraftModEcosystem): number | undefined {
+  if (ecosystem === 'plugins') {
+    if (serverType === 'paper' || serverType === 'spigot') return BUKKIT_PLUGINS_CLASS_ID
+    return undefined
+  }
   return MODS_CLASS_ID
 }
 
@@ -165,9 +170,11 @@ export async function searchCurseForgeMods(
   ecosystem: MinecraftModEcosystem,
   limit = 20
 ): Promise<CurseForgeMod[]> {
+  const classId = classIdFor(serverType, ecosystem)
+  if (classId === undefined) return []
   const params: Record<string, string> = {
     gameId: String(MINECRAFT_GAME_ID),
-    classId: String(classIdFor(serverType, ecosystem)),
+    classId: String(classId),
     searchFilter: query,
     pageSize: String(limit),
     sortField: '2', // Popularity

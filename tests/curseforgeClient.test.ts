@@ -56,15 +56,14 @@ describe('searchCurseForgeMods', () => {
     expect(url.searchParams.get('modLoaderType')).toBe('6')
   })
 
-  it('uses the Mods class id but no modLoaderType for Sponge - CurseForge has no Sponge loader type', async () => {
+  it('skips the CurseForge search entirely for Sponge plugins - CurseForge has no Sponge plugin class, and the generic Mods class would wrongly return real Forge/Fabric mods', async () => {
     const fetchMock = vi.fn(async () => fakeResponse({ data: [] }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await searchCurseForgeMods('key', 'jei', 'spongevanilla', '1.21.1', 'plugins')
+    const results = await searchCurseForgeMods('key', 'jei', 'spongevanilla', '1.21.1', 'plugins')
 
-    const url = fetchMock.mock.calls[0][0] as URL
-    expect(url.searchParams.get('classId')).toBe('6')
-    expect(url.searchParams.get('modLoaderType')).toBeNull()
+    expect(results).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('uses the Bukkit Plugins class id and omits modLoaderType for Paper/Spigot', async () => {
@@ -78,7 +77,7 @@ describe('searchCurseForgeMods', () => {
     expect(url.searchParams.has('modLoaderType')).toBe(false)
   })
 
-  it('uses Forge modLoaderType for SpongeForge\'s own "mods" ecosystem (its underlying Forge layer), but no modLoaderType at all for its "plugins" ecosystem (Sponge, same as SpongeVanilla)', async () => {
+  it('uses Forge modLoaderType for SpongeForge\'s own "mods" ecosystem (its underlying Forge layer), but skips CurseForge entirely for its "plugins" ecosystem (Sponge, same as SpongeVanilla)', async () => {
     const fetchMock = vi.fn(async () => fakeResponse({ data: [] }))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -87,10 +86,9 @@ describe('searchCurseForgeMods', () => {
     expect(modsUrl.searchParams.get('classId')).toBe('6')
     expect(modsUrl.searchParams.get('modLoaderType')).toBe('1')
 
-    await searchCurseForgeMods('key', 'jei', 'spongeforge', '1.20.1', 'plugins')
-    const pluginsUrl = fetchMock.mock.calls[1][0] as URL
-    expect(pluginsUrl.searchParams.get('classId')).toBe('6')
-    expect(pluginsUrl.searchParams.get('modLoaderType')).toBeNull()
+    const pluginsResults = await searchCurseForgeMods('key', 'jei', 'spongeforge', '1.20.1', 'plugins')
+    expect(pluginsResults).toEqual([])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('sends the API key as the x-api-key header', async () => {
