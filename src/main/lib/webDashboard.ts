@@ -85,10 +85,20 @@ import type { MinecraftModSource } from '@shared/minecraftMods'
 // mechanism just for loader icons.
 const MINECRAFT_ICON_FILE_NAME = 'minecraft.png'
 const NEOFORGE_ICON_FILE_NAME = 'neoforge.png'
+const FORGE_ICON_FILE_NAME = 'forge.png'
+const VANILLA_ICON_FILE_NAME = 'vanilla.png'
+const PAPER_ICON_FILE_NAME = 'paper.png'
+const FABRIC_ICON_FILE_NAME = 'fabric.png'
+const SPIGOT_ICON_FILE_NAME = 'spigot.jpg'
 const KNOWN_GAME_ICON_FILE_NAMES = new Set([
   ...listGameDefinitions().map((g) => g.iconFileName),
   MINECRAFT_ICON_FILE_NAME,
-  NEOFORGE_ICON_FILE_NAME
+  NEOFORGE_ICON_FILE_NAME,
+  FORGE_ICON_FILE_NAME,
+  VANILLA_ICON_FILE_NAME,
+  PAPER_ICON_FILE_NAME,
+  FABRIC_ICON_FILE_NAME,
+  SPIGOT_ICON_FILE_NAME
 ])
 
 /**
@@ -379,7 +389,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       res.end()
       return
     }
-    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache', ETag: icon.etag })
+    const iconContentType = /\.jpe?g$/i.test(fileName) ? 'image/jpeg' : 'image/png'
+    res.writeHead(200, { 'Content-Type': iconContentType, 'Cache-Control': 'no-cache', ETag: icon.etag })
     res.end(icon.buffer)
     return
   }
@@ -4689,10 +4700,17 @@ function initDashboard(resolvedRole) {
   var mcssName = document.getElementById('mcss-name');
   var mcssServerType = document.getElementById('mcss-servertype');
   var mcssServerTypeIcon = document.getElementById('mcss-servertype-icon');
-  // Sparse by design - only NeoForge has a real icon asset right now (served the same way as
-  // Minecraft's own game icon, see KNOWN_GAME_ICON_FILE_NAMES on the server side); every other
-  // type just shows no icon, exactly as before this existed.
-  var MC_SERVER_TYPE_ICON_URLS = { neoforge: '/game-icons/neoforge.png' };
+  // Sparse by design - only the types with a real icon asset are listed (served the same way
+  // as Minecraft's own game icon, see KNOWN_GAME_ICON_FILE_NAMES on the server side); any other
+  // type just shows no icon, exactly as before any of these existed.
+  var MC_SERVER_TYPE_ICON_URLS = {
+    vanilla: '/game-icons/vanilla.png',
+    paper: '/game-icons/paper.png',
+    fabric: '/game-icons/fabric.png',
+    forge: '/game-icons/forge.png',
+    neoforge: '/game-icons/neoforge.png',
+    spigot: '/game-icons/spigot.jpg'
+  };
   function updateMcssServerTypeIcon() {
     var url = MC_SERVER_TYPE_ICON_URLS[mcssServerType.value];
     mcssServerTypeIcon.src = url || '';

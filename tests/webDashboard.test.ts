@@ -384,6 +384,23 @@ describe('web dashboard HTTP server', () => {
     expect(res.body.length).toBeGreaterThan(0)
   })
 
+  it.each(['vanilla.png', 'paper.png', 'fabric.png', 'forge.png'])(
+    'serves the %s per-loader-type icon as a PNG',
+    async (fileName) => {
+      const res = await request(`/game-icons/${fileName}`)
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toBe('image/png')
+      expect(res.body.length).toBeGreaterThan(0)
+    }
+  )
+
+  it('serves the Spigot per-loader-type icon as a JPEG, matching its actual file type', async () => {
+    const res = await request('/game-icons/spigot.jpg')
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toBe('image/jpeg')
+    expect(res.body.length).toBeGreaterThan(0)
+  })
+
   it('404s /game-icons/<fileName> for a file name not in the game registry', async () => {
     const res = await request('/game-icons/not-a-real-game.png')
     expect(res.status).toBe(404)

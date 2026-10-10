@@ -3246,3 +3246,38 @@ async function findProfileIdByName(name) {
     throughout. `npm run typecheck`, the full `npx vitest run` (946 tests, all passing,
     including the existing `tests/webDashboard.test.ts` suite unaffected by the markup
     restructure), and `npm run build` all pass too.
+
+- **The remaining `MinecraftServerType` icons - Vanilla, Paper, Fabric, Spigot, and Forge -
+  filling in the gap NeoForge's own round left behind** (user-provided assets, pushed straight
+  to the repo root as `vanilla.png`/`paper.png`/`fabric.png`/`spigot.jpg`; Forge reuses the
+  existing `assets/mod-sources/forge.png` art per the user's own suggestion, rather than
+  needing a new asset). `MINECRAFT_SERVER_TYPE_ICONS` (`minecraftServerTypeIcons.ts`) is no
+  longer a near-empty `Partial` with just NeoForge in it - every real `MinecraftServerType`
+  now has an icon, so it's "sparse" only in the formal sense that `'unknown'` still has none.
+  - **Assets**: the four new files copied into `assets/games/` (desktop bundle) and
+    `build/games/` (the web dashboard's own `/game-icons/<fileName>` route, read from disk at
+    runtime rather than bundled) - same dual-location pattern NeoForge's icon already
+    established. Forge's icon is a second copy of `assets/mod-sources/forge.png` under
+    `assets/games/forge.png`/`build/games/forge.png`: same artwork, reused for two different
+    meanings (the CurseForge mod-source logo there, the Forge loader-type icon here) rather
+    than invented from scratch.
+  - **One real code gap this exposed**: `spigot.jpg` is a JPEG, and the web dashboard's
+    `/game-icons/<fileName>` route was hardcoded to always answer `Content-Type: image/png`
+    regardless of the actual file - harmless for every icon so far since they all happened to
+    be PNGs, but wrong for a JPEG. Fixed by picking the content type from the file extension
+    (`image/jpeg` for `.jpg`/`.jpeg`, `image/png` otherwise) rather than hardcoding one value.
+  - **Wiring**: all six loader types (`vanilla`/`paper`/`fabric`/`forge`/`neoforge`/`spigot`)
+    added to the web dashboard's own `MC_SERVER_TYPE_ICON_URLS` map, which already drove both
+    the MC Start Settings type picker's live icon preview and the Mods tab's Browse header icon
+    generically - no call-site changes needed there, same as the desktop side's
+    `MINECRAFT_SERVER_TYPE_ICONS` map already driving the Dashboard card's Type line, the
+    Server type picker (Start Settings/install dialog), and the Mods tab's Browse header for
+    every type at once. Added a `declare module '*.jpg'` to `assets.d.ts` (only `*.png` existed
+    there before, since Spigot's icon is this app's first non-PNG asset import).
+  - **Verified**: new `tests/webDashboard.test.ts` cases cover all five new icon routes,
+    including that `/game-icons/spigot.jpg` actually answers `image/jpeg` (not the old
+    hardcoded `image/png`). A temporary headless-Chromium check (deleted after use) selected
+    the Minecraft server in MC Start Settings, stepped the Server type dropdown through all six
+    loader types, and confirmed the live icon preview's `src` and visibility updated correctly
+    for every one of them - zero `pageerror`/console-error events. `npm run typecheck`, the
+    full `npx vitest run` (now 951 tests, all passing), and `npm run build` all pass too.
