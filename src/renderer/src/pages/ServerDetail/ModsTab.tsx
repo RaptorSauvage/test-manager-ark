@@ -176,7 +176,12 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
   async function copyMods(): Promise<void> {
     setError('')
     try {
-      await navigator.clipboard.writeText(JSON.stringify(mods, null, 2))
+      // Bare ids, one per line - not the full {id, name, enabled, passive, dev} JSON this used
+      // to produce. A mod's real name gets resolved automatically from CurseForge (Ascended)
+      // or typed in by hand afterward (Evolved) either way, so there's nothing useful to carry
+      // along with the id - and this format can be pasted in from anywhere a mod id list
+      // already exists, not just re-imported from this app's own previous export.
+      await navigator.clipboard.writeText(mods.map((m) => m.id).join('\n'))
       setStatus('Mod list copied to clipboard.')
       setTimeout(() => setStatus(''), 2000)
     } catch (err) {
@@ -419,19 +424,22 @@ export default function ModsTab({ profile, onProfileChange }: ModsTabProps): JSX
       <section className="mods-copy-paste">
         <h3>Copy / Paste Mod List</h3>
         <p className="empty-state">
-          Copy this server&apos;s current mod list as text to share it or keep as a backup, or paste a previously
-          copied list below to replace the mod list above with it.
+          Copy this server&apos;s current mod ids to share with someone else or keep as a backup, or paste a list
+          of mod ids below to replace the mod list above with it - one per line, or separated by commas/spaces.
+          Works with a list copied from here, or one found anywhere else (a wiki, a Discord message, a friend&apos;s
+          own list){!isEvolved && ' - each mod\'s name is resolved automatically from CurseForge afterward'}.
+          Enabled/Passive/Dev reset to their defaults for every imported id.
         </p>
         <div className="form-actions">
           <button type="button" onClick={() => void copyMods()}>
-            Copy mod list to clipboard
+            Copy mod IDs to clipboard
           </button>
         </div>
         <textarea
           className="mods-paste-area"
           value={pasteText}
           onChange={(e) => setPasteText(e.target.value)}
-          placeholder="Paste a copied mod list here..."
+          placeholder="Paste a list of mod ids here, one per line..."
           spellCheck={false}
         />
         <div className="form-actions">

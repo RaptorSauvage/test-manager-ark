@@ -2864,3 +2864,20 @@ async function findProfileIdByName(name) {
 - **Change: ARK's Mods grid now shows Mod ID before Name** (user request) - both the header row
   and each data row in `ModsTab.tsx` swap their order, and `grid-template-columns` in
   `styles.css` (`ark-mods-grid--ascended`/`--evolved`) swaps the two columns' tracks to match.
+
+- **Change: the Copy/Paste Mod List feature now works with bare mod ids, one per line, instead
+  of the full `{id, name, enabled, passive, dev}` JSON it used to round-trip** (user request -
+  now that the Mods tab resolves a mod's real name from CurseForge automatically, there was
+  nothing left worth carrying along with the id). `serializeMods`/`parseImportedMods`
+  (`src/main/lib/modsExport.ts`) rewritten accordingly:
+  - **Copy** now writes just `mods.map(m => m.id).join('\n')` instead of the old JSON blob.
+  - **Paste** splits on any run of non-digit characters (not strictly newlines), so a list
+    copied as `"123, 456 789"` parses the same as one id per line - the point of dropping the
+    structured JSON format entirely is accepting an id list from *anywhere* one already exists
+    (a wiki page, a Discord message, a friend's own modpack list), not just this app's own
+    previous export. Every parsed id becomes a fresh entry with the same enabled/not-passive/
+    not-dev defaults `addMod`'s own manual single-id path already uses, deduplicated, with a
+    clear error if the pasted text has no numeric ids in it at all.
+  - Updated copy/paste section text in `ModsTab.tsx` to describe the new format; rewrote
+    `tests/modsExport.test.ts` for the new behavior (separators, dedup, defaults, the empty-
+    result error case) in place of the old JSON-round-trip/validation tests.
