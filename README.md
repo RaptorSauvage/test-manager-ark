@@ -3561,3 +3561,31 @@ async function findProfileIdByName(name) {
     case and SpongeForge's own `'plugins'` half, which still correctly makes one real fetch
     for its `'mods'` half). `npm run typecheck`, the full `npx vitest run` (1000 tests), and
     `npm run build` all still pass.
+
+- **Correction to the fix immediately above: CurseForge's Plugins class isn't Paper/Spigot-
+  only - it's one generic class shared by every server-side plugin platform, Sponge
+  included** (user correction - "curseforge a une section plugins": CurseForge genuinely has
+  a Plugins section, so skipping the CurseForge search entirely for Sponge, as the previous
+  round just shipped, was throwing away real results instead of fixing the mislabeling). On
+  reflection, CurseForge's class taxonomy for Minecraft only ever splits "Mods" (class 6,
+  Forge/Fabric/NeoForge) from "Plugins" (class 4471) - that second class's URL slug is
+  `bukkit-plugins`, a naming leftover from when Bukkit was the only plugin API CurseForge
+  supported, but the class itself was never split per plugin platform the way Mods is split
+  from Plugins. Sponge plugins that do exist on CurseForge are filed under that same class,
+  not a separate one - so the right fix was to route Sponge's `'plugins'` ecosystem to the
+  same class Paper/Spigot already use, not to treat it as unmapped.
+  - **Fix** (`src/main/lib/curseforgeClient.ts`): renamed `BUKKIT_PLUGINS_CLASS_ID` to
+    `PLUGINS_CLASS_ID` and `classIdFor` now returns it for `ecosystem: 'plugins'` on *every*
+    server type, not just Paper/Spigot - back to a plain `number` return (no more `undefined`
+    case to special-case). `searchCurseForgeMods` reverted to its simpler pre-"skip" form.
+    `modLoaderTypeFor` is unaffected - CurseForge's Plugins class still isn't split by
+    loader/platform, so no `modLoaderType` param is sent for any plugin-ecosystem search,
+    Sponge included, same as it always was for Paper/Spigot.
+  - **Verified**: updated `tests/curseforgeClient.test.ts`'s Sponge cases back to asserting a
+    real CurseForge fetch happens with `classId=4471` and no `modLoaderType` (both the plain
+    SpongeVanilla case and SpongeForge's own `'plugins'` half). `npm run typecheck`, the full
+    `npx vitest run` (1000 tests), and `npm run build` all pass. Not re-verified in a live
+    browser against CurseForge's real API (no network access in this environment) - please
+    confirm on a machine with real internet access that Sponge plugin search now returns
+    genuine Sponge-platform plugins (mixed in among Bukkit/Spigot/Paper results under the
+    same class, since CurseForge itself doesn't separate them further).

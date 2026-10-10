@@ -29,19 +29,24 @@ const MINECRAFT_GAME_ID = 432
 const ARK_ASCENDED_GAME_ID = 83374
 
 /** CurseForge's own numeric "class" ids for the two kinds of thing this app installs - there's
- *  no single "mod" type covering both the way Modrinth's v2 API flattens it; Forge/Fabric
- *  content is class 6 ("Mods"), Paper/Spigot content is class 4471 ("Bukkit Plugins"). */
+ *  no single "mod" type covering both the way Modrinth's v2 API flattens it; Forge/Fabric/
+ *  NeoForge content is class 6 ("Mods"). Server-side plugin content - Bukkit, Spigot, Paper,
+ *  *and* Sponge alike - all share the one generic "Plugins" class 4471: CurseForge's own nav
+ *  only ever exposes a single "Plugins" section (its URL slug is "bukkit-plugins", a naming
+ *  leftover from when Bukkit was the only plugin API CurseForge supported, but the class
+ *  itself was never split per platform the way Mods vs Bukkit Plugins are two separate
+ *  classes) - there's no separate "Sponge Plugins" class to fall back from. */
 const MODS_CLASS_ID = 6
-const BUKKIT_PLUGINS_CLASS_ID = 4471
+const PLUGINS_CLASS_ID = 4471
 
 /** CurseForge's own numeric "mod loader type" enum, used to filter /mods/search and
- *  /mods/{id}/files by loader. There's no meaningful value for Paper/Spigot (plugins aren't
- *  filtered by loader on CurseForge) - omit the param entirely for those. Sponge has no
- *  CurseForge loader-type value either (there's no real Sponge content category there at
- *  all - plugins for it are almost always published on Modrinth/Ore instead), same "omit the
- *  param" treatment. For SpongeForge's own `ecosystem: 'mods'` (its underlying Forge layer -
- *  see minecraftServerSupportsEcosystem), this is the one case where `serverType` alone
- *  doesn't already determine the loader - filtered as plain Forge (type 1). */
+ *  /mods/{id}/files by loader. There's no meaningful value for the plugin ecosystem on
+ *  CurseForge (the single Plugins class above isn't split by platform the way loaderType
+ *  filters Mods, so Bukkit/Spigot/Paper/Sponge plugins can't be told apart this way) - omit
+ *  the param entirely for any `ecosystem !== 'mods'`. For SpongeForge's own `ecosystem: 'mods'`
+ *  (its underlying Forge layer - see minecraftServerSupportsEcosystem), this is the one case
+ *  where `serverType` alone doesn't already determine the loader - filtered as plain Forge
+ *  (type 1). */
 function modLoaderTypeFor(serverType: MinecraftServerType, ecosystem: MinecraftModEcosystem): number | undefined {
   if (ecosystem !== 'mods') return undefined
   switch (serverType) {
@@ -57,19 +62,11 @@ function modLoaderTypeFor(serverType: MinecraftServerType, ecosystem: MinecraftM
   }
 }
 
-/** Sponge has no dedicated CurseForge class the way Paper/Spigot do
- *  (BUKKIT_PLUGINS_CLASS_ID) - real Sponge content on CurseForge is sparse to nonexistent in
- *  practice (it's almost always published on Modrinth/Ore instead). Returns undefined for
- *  that case rather than guessing the generic Mods class as a fallback: that would search
- *  real Forge/Fabric mods under what's supposed to be a Sponge-*plugin*-only search, exactly
- *  the "the Plugins tab searches mods on CurseForge" bug this was previously shipped with -
- *  callers skip CurseForge's search entirely when this returns undefined instead (Modrinth,
- *  which does have a real `sponge` category, is unaffected and still searches normally). */
-function classIdFor(serverType: MinecraftServerType, ecosystem: MinecraftModEcosystem): number | undefined {
-  if (ecosystem === 'plugins') {
-    if (serverType === 'paper' || serverType === 'spigot') return BUKKIT_PLUGINS_CLASS_ID
-    return undefined
-  }
+/** The one CurseForge class to search for a given ecosystem - see PLUGINS_CLASS_ID's own doc
+ *  comment for why every plugin-ecosystem server type (Paper/Spigot/Sponge alike) shares the
+ *  same class id, unlike Modrinth which does distinguish them by category. */
+function classIdFor(serverType: MinecraftServerType, ecosystem: MinecraftModEcosystem): number {
+  if (ecosystem === 'plugins') return PLUGINS_CLASS_ID
   return MODS_CLASS_ID
 }
 
@@ -170,11 +167,9 @@ export async function searchCurseForgeMods(
   ecosystem: MinecraftModEcosystem,
   limit = 20
 ): Promise<CurseForgeMod[]> {
-  const classId = classIdFor(serverType, ecosystem)
-  if (classId === undefined) return []
   const params: Record<string, string> = {
     gameId: String(MINECRAFT_GAME_ID),
-    classId: String(classId),
+    classId: String(classIdFor(serverType, ecosystem)),
     searchFilter: query,
     pageSize: String(limit),
     sortField: '2', // Popularity
