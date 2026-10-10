@@ -3391,3 +3391,38 @@ async function findProfileIdByName(name) {
     in this project (no display to drive the actual Electron window from this sandbox) - only
     typechecked and reasoned through against the same APIs the web dashboard check exercised
     live. `npm run typecheck`, the full `npx vitest run`, and `npm run build` all pass.
+
+- **A real, separate "Plugins" tab, distinct from "Mods"** (user request - asked after being
+  told the tradeoff against just relabeling the one existing tab, and explicitly chose a
+  genuinely separate tab over a dynamic rename). The Mods tab's own content (search/install,
+  installed list, rescan, update check) was already fully generic - it already said "mods/
+  plugins" everywhere rather than assuming one or the other - so this is purely a navigation/
+  labeling split, not a new feature: a server's own ecosystem decides which single tab it
+  gets, never both. New `minecraftModEcosystem(serverType)` (`shared/minecraftMods.ts`)
+  returns `'mods'` for Forge/Fabric/NeoForge, `'plugins'` for Paper/Spigot/SpongeVanilla/
+  **and** SpongeForge (Sponge calls its own extensions "plugins" regardless of which
+  implementation hosts them - this app's existing SpongeForge mod search already only ever
+  searched the `sponge` Modrinth category, never a separate Forge-mod one, so "Plugins" was
+  already the only ecosystem it actually offered), and `null` for vanilla/unknown.
+  - **Desktop** (`MinecraftServerDetail/index.tsx`): the tab list is now computed from
+    `profile.serverType` instead of a static array - a genuinely different `MinecraftTabKey`
+    (`'mods'` or `'plugins'`) appears depending on the ecosystem, both rendering the exact
+    same `ModsTab` component underneath. Switching a server's own type in Start Settings away
+    from whichever tab is currently open doesn't force-navigate away from it (an accepted,
+    pre-existing-pattern edge case, not a crash) - same as every other tab already behaves
+    when its own preconditions change out from under it.
+  - **Web dashboard**: kept the existing single, always-visible nav button/view (its own
+    earlier design decision - MC nav buttons don't currently get per-selected-server
+    visibility at all, see the game-switcher round) rather than introducing that just for
+    this, but its label now switches live between "MC Mods" and "MC Plugins" (button text and
+    the view's own heading) based on whichever server is actually selected - functionally the
+    same outcome as the desktop's separate tab keys, since only one ecosystem is ever
+    relevant for a given selected server anyway.
+  - **Verified**: new `tests/minecraftModEcosystem.test.ts` covers every server type's
+    mapping - 988 tests total now. A temporary headless-Chromium check (deleted after use)
+    selected a Forge server and confirmed both the nav button and the view heading read "MC
+    Mods", then selected a Paper server and confirmed both switched live to "MC Plugins" -
+    zero `pageerror`/console-error events. The desktop tab-key split was only typechecked, not
+    visually verified (no React testing setup exists in this project, and no display to drive
+    the actual renderer from this sandbox - same standing limitation noted throughout this
+    round). `npm run typecheck`, the full `npx vitest run`, and `npm run build` all pass.

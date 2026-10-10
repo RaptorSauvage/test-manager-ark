@@ -2609,7 +2609,7 @@ const DASHBOARD_HTML = `<!doctype html>
   </section>
   <section id="view-mc-mods" class="view">
     <header>
-      <h1>MC Mods</h1>
+      <h1 id="mc-mods-heading">MC Mods</h1>
       <select id="mc-mods-server-select" class="server-picker"></select>
     </header>
     <main>
@@ -5146,6 +5146,20 @@ function initDashboard(resolvedRole) {
   }
 
   // -- MC Mods ------------------------------------------------------------------------------
+  var mcModsHeadingEl = document.getElementById('mc-mods-heading');
+  // Mirrors shared/minecraftMods.ts's minecraftModEcosystem (duplicated here, same reasoning
+  // as every other small lookup in this client script - no module imports at all, see its
+  // own top-of-file comment) - "Mods" vs "Plugins" is purely a label, the same nav button/
+  // view/APIs serve either server type, nothing else behaves differently.
+  var MC_MOD_ECOSYSTEM_LABELS = {
+    forge: 'Mods', neoforge: 'Mods', fabric: 'Mods',
+    paper: 'Plugins', spigot: 'Plugins', spongevanilla: 'Plugins', spongeforge: 'Plugins'
+  };
+  function updateMcModsHeading(serverType) {
+    var label = 'MC ' + (MC_MOD_ECOSYSTEM_LABELS[serverType] || 'Mods');
+    mcModsHeadingEl.textContent = label;
+    navMcModsBtn.textContent = label;
+  }
   var mcModsServerSelectEl = document.getElementById('mc-mods-server-select');
   var mcModsNoServerEl = document.getElementById('mc-mods-no-server');
   var mcModsContentEl = document.getElementById('mc-mods-content');
@@ -5415,6 +5429,7 @@ function initDashboard(resolvedRole) {
     if (!id || !isMinecraftServer(id)) {
       mcModsNoServerEl.style.display = '';
       mcModsContentEl.classList.remove('active');
+      updateMcModsHeading(null);
       return;
     }
     showMcModsError('');
@@ -5422,6 +5437,7 @@ function initDashboard(resolvedRole) {
     mcModsNoServerEl.style.display = 'none';
     mcModsContentEl.classList.add('active');
     var server = latestServers.find(function (s) { return s.id === id; });
+    updateMcModsHeading(server && server.serverType);
     var iconUrl = server && MC_SERVER_TYPE_ICON_URLS[server.serverType];
     mcModsBrowseIcon.src = iconUrl || '';
     mcModsBrowseIcon.style.display = iconUrl ? '' : 'none';

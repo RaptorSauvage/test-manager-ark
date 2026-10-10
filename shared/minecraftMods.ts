@@ -34,6 +34,24 @@ export function supportsMinecraftMods(serverType: MinecraftServerType): boolean 
   )
 }
 
+/** Which tab this server type's mod/plugin management belongs under - "Mods" vs "Plugins"
+ *  is purely a label/terminology split for otherwise identical functionality (both tabs
+ *  render the exact same UI/APIs - search, install, installed list, rescan, update check;
+ *  modTargetDir decides the actual on-disk folder regardless of which tab got you there),
+ *  following each ecosystem's own user-facing convention: Forge/Fabric/NeoForge content is
+ *  conventionally called "mods"; Bukkit/Spigot/Paper plugins and SpongeAPI plugins (both
+ *  SpongeVanilla and SpongeForge - Sponge calls its own extensions "plugins" regardless of
+ *  which implementation hosts them) are conventionally "plugins". null for vanilla/unknown,
+ *  which have no mod/plugin ecosystem at all (see supportsMinecraftMods). */
+export type MinecraftModEcosystem = 'mods' | 'plugins'
+export function minecraftModEcosystem(serverType: MinecraftServerType): MinecraftModEcosystem | null {
+  if (serverType === 'forge' || serverType === 'neoforge' || serverType === 'fabric') return 'mods'
+  if (serverType === 'paper' || serverType === 'spigot' || serverType === 'spongevanilla' || serverType === 'spongeforge') {
+    return 'plugins'
+  }
+  return null
+}
+
 /** A dependency `dependency_type` can mean four different things for install purposes:
  *  'required' ones are walked and installed automatically (installMod), 'optional' ones are
  *  listed for the user to decide (never auto-installed), 'embedded' ones are already bundled
