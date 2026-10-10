@@ -70,10 +70,28 @@ let mockMinecraftProfiles: any[] = [
   {
     id: 'mc1',
     name: 'Test Minecraft Server',
+    serverType: 'vanilla',
     installDir: MINECRAFT_INSTALL_DIR,
     minecraftVersion: '1.20.1',
+    launchMode: 'jar',
+    jarFileName: 'server.jar',
+    scriptFileName: '',
+    minMemoryMB: 1024,
+    maxMemoryMB: 2048,
+    extraJvmArgs: '',
+    extraProgramArgs: 'nogui',
     hidden: false,
-    group: ''
+    group: '',
+    startOnManagerLaunch: false,
+    scheduledRestartEnabled: false,
+    scheduledRestartTime: '00:00',
+    scheduledRestartDays: [] as number[],
+    scheduledRestartStartAfter: true,
+    backupDir: '',
+    maxBackups: 10,
+    backupScheduleEnabled: false,
+    backupSchedule: '',
+    installedMods: [] as unknown[]
   }
 ]
 
@@ -88,6 +106,12 @@ vi.mock('../src/main/store', () => ({
   },
   listMinecraftProfiles: () => mockMinecraftProfiles,
   getMinecraftProfile: (id: string) => mockMinecraftProfiles.find((p) => p.id === id),
+  saveMinecraftProfile: (profile: { id: string }) => {
+    const idx = mockMinecraftProfiles.findIndex((p) => p.id === profile.id)
+    if (idx >= 0) mockMinecraftProfiles[idx] = profile
+    else mockMinecraftProfiles.push(profile)
+    return mockMinecraftProfiles
+  },
   getSettings: () => mockSettings,
   saveSettings: (settings: typeof mockSettings) => {
     mockSettings = settings
@@ -1022,6 +1046,212 @@ describe('web dashboard HTTP server', () => {
       })
     })
   })
+
+  // Minecraft's own tabs - separate routes (mc-startsettings/mc-serversettings/mc-mods/
+  // mc-backups/mc-management) from every ARK one above, mirroring the desktop Manager's own
+  // separate MinecraftServerDetail tab set. Role tiers are covered in the auth-enabled describe
+  // block further down; these exercise the actual route behavior.
+  describe('Minecraft-specific tabs', () => {
+    it('GET /api/servers/:id/mc-startsettings returns the full profile', async () => {
+      const res = await request('/api/servers/mc1/mc-startsettings')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toMatchObject({ id: 'mc1', name: 'Test Minecraft Server', serverType: 'vanilla' })
+    })
+
+    it('GET /api/servers/:id/mc-startsettings 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/mc-startsettings')
+      expect(res.status).toBe(404)
+    })
+
+    it('GET /api/servers/:id/mc-startsettings 404s for an ARK server id', async () => {
+      const res = await request('/api/servers/p1/mc-startsettings')
+      expect(res.status).toBe(404)
+    })
+
+    it('POST /api/servers/:id/mc-startsettings merges and persists any field, ignoring an id in the body', async () => {
+      const res = await request('/api/servers/mc1/mc-startsettings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Renamed MC Server', id: 'not-mc1' })
+      })
+      expect(res.status).toBe(200)
+      const result = JSON.parse(res.body)
+      expect(result.ok).toBe(true)
+      expect(result.profile.id).toBe('mc1')
+      expect(result.profile.name).toBe('Renamed MC Server')
+
+      // restore for other tests
+      await request('/api/servers/mc1/mc-startsettings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Test Minecraft Server' })
+      })
+    })
+
+    it('GET /api/servers/:id/mc-serversettings returns {} before server.properties exists', async () => {
+      const res = await request('/api/servers/mc1/mc-serversettings')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({})
+    })
+
+    it('GET /api/servers/:id/mc-serversettings 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/mc-serversettings')
+      expect(res.status).toBe(404)
+    })
+
+    it('POST /api/servers/:id/mc-serversettings upserts keys into server.properties', async () => {
+      const res = await request('/api/servers/mc1/mc-serversettings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 'max-players': '30', motd: 'Hello' })
+      })
+      expect(res.status).toBe(200)
+      const result = JSON.parse(res.body)
+      expect(result.ok).toBe(true)
+      expect(result.properties).toEqual({ 'max-players': '30', motd: 'Hello' })
+
+      const reread = await request('/api/servers/mc1/mc-serversettings')
+      expect(JSON.parse(reread.body)).toEqual({ 'max-players': '30', motd: 'Hello' })
+
+      fs.rmSync(path.join(MINECRAFT_INSTALL_DIR, 'server.properties'), { force: true })
+    })
+
+    it('GET /api/servers/:id/mc-management returns only the whitelisted fields', async () => {
+      const res = await request('/api/servers/mc1/mc-management')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({
+        startOnManagerLaunch: false,
+        scheduledRestartEnabled: false,
+        scheduledRestartTime: '00:00',
+        scheduledRestartDays: [],
+        scheduledRestartStartAfter: true
+      })
+    })
+
+    it('GET /api/servers/:id/mc-management 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/mc-management')
+      expect(res.status).toBe(404)
+    })
+
+    it('POST /api/servers/:id/mc-management saves only whitelisted fields, ignoring the rest', async () => {
+      const res = await request('/api/servers/mc1/mc-management', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledRestartEnabled: true, scheduledRestartTime: '04:00', name: 'Hijacked name' })
+      })
+      expect(res.status).toBe(200)
+      const result = JSON.parse(res.body)
+      expect(result.ok).toBe(true)
+      expect(result.profile.scheduledRestartEnabled).toBe(true)
+      expect(result.profile.scheduledRestartTime).toBe('04:00')
+
+      const reread = await request('/api/servers/mc1/mc-startsettings')
+      expect(JSON.parse(reread.body).name).toBe('Test Minecraft Server')
+
+      // restore for other tests
+      await request('/api/servers/mc1/mc-management', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledRestartEnabled: false, scheduledRestartTime: '00:00' })
+      })
+    })
+
+    it('GET /api/servers/:id/mc-backups is empty with no backup directory configured', async () => {
+      const res = await request('/api/servers/mc1/mc-backups')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual([])
+    })
+
+    it('GET /api/servers/:id/mc-backups/log is empty by default', async () => {
+      const res = await request('/api/servers/mc1/mc-backups/log')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual([])
+    })
+
+    it('refuses to create an mc-backup with no backup directory configured', async () => {
+      const res = await request('/api/servers/mc1/mc-backups', { method: 'POST' })
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body)).toEqual({ ok: false, error: 'Set a backup directory in the Backup tab first.' })
+    })
+
+    it('POST /api/servers/:id/mc-backups/restore 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/mc-backups/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath: '/tmp/x.zip' })
+      })
+      expect(res.status).toBe(404)
+    })
+
+    // Unlike restore, delete only ever needs a file path (deleteMinecraftBackup doesn't take
+    // a profile at all) - same as ARK's own backups/delete route, it never looks up the
+    // profile, so an unrestricted token's request succeeds regardless of whether :id resolves
+    // to a real server.
+    it('POST /api/servers/:id/mc-backups/delete does not require :id to resolve to a real server', async () => {
+      const res = await request('/api/servers/nope/mc-backups/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath: '/tmp/x.zip' })
+      })
+      expect(res.status).toBe(200)
+    })
+
+    it('GET /api/servers/:id/mc-mods returns the profile\'s installed mods (empty by default)', async () => {
+      const res = await request('/api/servers/mc1/mc-mods')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual([])
+    })
+
+    it('GET /api/servers/:id/mc-mods 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/mc-mods')
+      expect(res.status).toBe(404)
+    })
+
+    // mc1 is serverType 'vanilla' in the mock profile - no mod/plugin ecosystem to search,
+    // so every mod-search-adjacent action should fail with that same clear error rather than
+    // attempting a real Modrinth/CurseForge network call.
+    it('GET /api/servers/:id/mc-mods/search fails clearly for a server type with no mod ecosystem', async () => {
+      const res = await request('/api/servers/mc1/mc-mods/search?q=anything')
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).error).toMatch(/no mod\/plugin ecosystem/)
+    })
+
+    it('POST /api/servers/:id/mc-mods/rescan fails clearly for a server type with no mod ecosystem', async () => {
+      const res = await request('/api/servers/mc1/mc-mods/rescan', { method: 'POST' })
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).error).toMatch(/no mod\/plugin ecosystem/)
+    })
+
+    it('POST /api/servers/:id/mc-mods/install fails clearly for a server type with no mod ecosystem', async () => {
+      const res = await request('/api/servers/mc1/mc-mods/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'modrinth', projectId: 'abc123' })
+      })
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).error).toMatch(/no mod\/plugin ecosystem/)
+    })
+
+    it('POST /api/servers/:id/mc-mods/remove on an unknown projectId is a harmless no-op', async () => {
+      const res = await request('/api/servers/mc1/mc-mods/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: 'does-not-exist' })
+      })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({ ok: true, installedMods: [] })
+    })
+
+    it('POST /api/servers/:id/mc-mods/enabled on an unknown projectId is a harmless no-op', async () => {
+      const res = await request('/api/servers/mc1/mc-mods/enabled', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: 'does-not-exist', enabled: true })
+      })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({ ok: true, installedMods: [] })
+    })
+  })
 })
 
 describe('web dashboard HTTP server, auth enabled', () => {
@@ -1194,6 +1424,86 @@ describe('web dashboard HTTP server, auth enabled', () => {
   it('blocks a readonly access token from the moderator-accessible Server Management route', async () => {
     const res = await authRequest('/api/servers/p1/servermanagement', {
       headers: { Authorization: `Bearer ${readonlyToken}` }
+    })
+    expect(res.status).toBe(403)
+  })
+
+  // Minecraft's own tabs: MC Start Settings and MC Mods stay admin+ only (same tier as ARK's
+  // Settings/Mods); MC Server Settings/MC Backup/MC Server Management are moderator+.
+  it('blocks a moderator access token from the admin-only mc-startsettings route', async () => {
+    const res = await authRequest('/api/servers/mc1/mc-startsettings', {
+      headers: { Authorization: `Bearer ${moderatorToken}` }
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('allows an admin access token to read mc-startsettings', async () => {
+    const res = await authRequest('/api/servers/mc1/mc-startsettings', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('blocks a moderator access token from the admin-only mc-mods route', async () => {
+    const res = await authRequest('/api/servers/mc1/mc-mods', {
+      headers: { Authorization: `Bearer ${moderatorToken}` }
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('allows an admin access token to read mc-mods', async () => {
+    const res = await authRequest('/api/servers/mc1/mc-mods', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('blocks a readonly access token from the moderator-accessible mc-serversettings route', async () => {
+    const res = await authRequest('/api/servers/mc1/mc-serversettings', {
+      headers: { Authorization: `Bearer ${readonlyToken}` }
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('allows a moderator access token to read mc-serversettings', async () => {
+    const res = await authRequest('/api/servers/mc1/mc-serversettings', {
+      headers: { Authorization: `Bearer ${moderatorToken}` }
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('blocks a readonly access token from the moderator-accessible mc-management route', async () => {
+    const res = await authRequest('/api/servers/mc1/mc-management', {
+      headers: { Authorization: `Bearer ${readonlyToken}` }
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('allows a moderator access token to read mc-management', async () => {
+    const res = await authRequest('/api/servers/mc1/mc-management', {
+      headers: { Authorization: `Bearer ${moderatorToken}` }
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('allows a readonly access token to list mc-backups but blocks it from creating one', async () => {
+    const list = await authRequest('/api/servers/mc1/mc-backups', {
+      headers: { Authorization: `Bearer ${readonlyToken}` }
+    })
+    expect(list.status).toBe(200)
+
+    const create = await authRequest('/api/servers/mc1/mc-backups', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${readonlyToken}` }
+    })
+    expect(create.status).toBe(403)
+  })
+
+  it('blocks a moderator access token from deleting an mc-backup', async () => {
+    const res = await authRequest('/api/servers/mc1/mc-backups/delete', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${moderatorToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath: '/tmp/does-not-matter.zip' })
     })
     expect(res.status).toBe(403)
   })

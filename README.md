@@ -2953,3 +2953,96 @@ async function findProfileIdByName(name) {
     Minecraft server, since this environment has no display, but the server-side behavior
     is covered by real HTTP requests against a real `http.Server` (this codebase's own
     established testing pattern for this file, not a new one introduced here).
+
+- **Follow-up: the web dashboard's ARK Mods tab gained the move-to-top/up/down reorder
+  buttons the desktop app's own ModsTab already had (user-reported gap), and Minecraft
+  servers are now fully separated from ARK ones in the web dashboard - their own "Minecraft
+  Servers" list and their own five admin tabs (Start Settings/Server Settings/Mods/Backup/
+  Server Management), matching the desktop Manager's own separate Minecraft section instead
+  of the six-way "not available for Minecraft servers yet" placeholder the previous entry
+  above left in place.**
+  - **ARK Mods reorder buttons**: `renderModsTable()`'s Actions column now has the same
+    ⤒/↑/↓ trio as the desktop `ModsTab.tsx` (move to top, swap with the previous/next row),
+    each disabled at the respective end of the list, alongside the existing Remove button -
+    all three just `saveMods()` a reordered copy of the array, reusing the exact same save
+    path every other mods edit here already goes through.
+  - **Minecraft/ARK separation on the server-list views**: `renderDashboardCards`/
+    `renderClusterCards` (ARK's Dashboard/Cluster Dashboard) now filter `latestServers` to
+    `isArkServerEntry` before rendering, and a new **Minecraft Servers** nav tab/view
+    (`renderMcDashboardCards`, sharing the same card-grid renderer via a new
+    `renderServerCardsGrid` helper both call into) shows Minecraft servers on their own,
+    filtered by the new `isMcServerEntry`. Clicking a card in either list still jumps straight
+    to the shared Console tab (already correctly dispatches by game - see the previous
+    entry), same as before.
+  - **Five new Minecraft-specific admin tabs**, in their own always-visible sidebar section
+    (unlike ARK's per-server tabs, which stay hidden outside a server-scoped view) with their
+    own server pickers populated from Minecraft profiles only (`MC_SERVER_PICKERS`,
+    `populatePickerGroup` factored out of the old single-purpose `populateServerPickers` so
+    both picker groups share the same optgroup-by-dashboard-group logic) - all syncing to the
+    one shared `currentId` the ARK pickers already use, so a card click in either list and a
+    picker change in either tab group stay in agreement:
+    - **MC Start Settings** (admin+, mirrors the desktop `StartSettingsTab.tsx`): name,
+      server type, Minecraft version, install directory, launch mode (jar/script) and its
+      file name, min/max memory, extra JVM/program arguments, dashboard group, hidden -
+      against a new, intentionally unrestricted `GET`/`POST /api/servers/:id/mc-startsettings`
+      (same "admin can change any field" shape as ARK's own `/profile` route, just backed by
+      `getMinecraftProfile`/`saveMinecraftProfile` instead).
+    - **MC Server Settings** (moderator+, mirrors `ServerSettingsTab.tsx`): every
+      server.properties field the desktop tab edits (gameplay/appearance/world/networking/
+      misc - ~35 fields), generated client-side from a `MC_PROPERTIES_SECTIONS` data array
+      (type + label + default + options, mirroring the desktop tab's own per-field objects)
+      rather than hand-writing 35 inputs, against new `GET`/`POST
+      /api/servers/:id/mc-serversettings` (`readServerProperties`/
+      `upsertServerPropertiesKeys`, both already existed for `minecraftProperties.ts`).
+    - **MC Backup** (moderator+ for list/create, admin+ for restore/delete - same split as
+      ARK's own Backups tab): backup directory/retention/schedule (saved through
+      mc-startsettings, same as ARK's own backup settings going through the admin-only
+      `/profile`), create-now, the backup table, and the backup process log - against new
+      `GET`/`POST /api/servers/:id/mc-backups`, `.../mc-backups/restore`,
+      `.../mc-backups/delete`, `.../mc-backups/log`, wired to the already-existing
+      `minecraftBackup.ts` functions (`createMinecraftBackup`/`listMinecraftBackups`/etc. -
+      built in an earlier round for the desktop `BackupsTab.tsx`, never exposed over HTTP
+      until now). No player-profile-backups panel - Minecraft has no equivalent feature.
+    - **MC Server Management** (moderator+, mirrors `ServerManagementTab.tsx`): start-on-
+      Manager-launch and the scheduled-restart day/time picker (with its own live countdown,
+      reusing the exact same `buildDayCheckboxes`/`computeNextOccurrence`/`formatCountdown`
+      helpers ARK's own Server Management view already defined) - against new `GET`/`POST
+      /api/servers/:id/mc-management`, a narrow whitelist route mirroring ARK's own
+      `/servermanagement` pattern exactly, just with Minecraft's much shorter field list (no
+      crash-watch/zombie-detection/dino-wipe - Minecraft has neither).
+    - **MC Mods** (admin+, mirrors `ModsTab.tsx`'s Modrinth/CurseForge integration): search
+      (both sources, CurseForge only once a key is configured - same `searchMinecraftMods`
+      the desktop tab already calls), install (walking required dependencies automatically,
+      same as desktop), per-mod enable/disable and remove, "Rescan folder" (adopts untracked
+      files already sitting in mods/plugins), and "Check for updates" (per-mod update badge,
+      with an inline Update action) - against six new routes (`GET .../mc-mods`, `GET
+      .../mc-mods/search`, `POST .../mc-mods/install`, `.../remove`, `.../enabled`,
+      `.../rescan`, `GET .../mc-mods/updatecheck`), all thin wrappers around the existing
+      `minecraftMods.ts` functions. A server type with no mod/plugin ecosystem (vanilla,
+      Forge/Fabric/Paper/Spigot's own `unknown`) gets the same clear error message
+      (`requireLoaderSupportsMods`'s own text) as the desktop tab, surfaced in the search/
+      rescan/install error areas rather than a separate "unsupported" banner.
+  - **Role tiers** match what was asked: MC Start Settings and MC Mods stay admin+ only (same
+    tier as ARK's own Settings/Mods); MC Server Settings, MC Backup, and MC Server Management
+    are moderator+ - a step more permissive than their ARK counterparts (ARK's Settings/Mods
+    are both admin-only with no moderator-accessible equivalent at all) per what was
+    specifically asked for Minecraft.
+  - New `describe('Minecraft-specific tabs', ...)` block in `tests/webDashboard.test.ts`
+    (profile/properties/management/backups/mods routes, including the "no mod ecosystem"
+    error path for every mod action against the mock profile's `serverType: 'vanilla'`) plus
+    role-gating tests in the auth-enabled describe block (moderator blocked from admin-only
+    mc-startsettings/mc-mods, readonly blocked from moderator-only mc-serversettings/
+    mc-management/creating an mc-backup). `npm run typecheck`, the full `npx vitest run` (895
+    tests), and `npm run build` all pass.
+  - **This round's client-side changes were additionally verified in a real headless
+    Chromium** (Playwright, pre-installed in this environment) rather than relying on
+    typecheck/build alone the way every earlier client-side-only round in this file had to -
+    a temporary, not-committed test drove every new/changed nav tab end to end (Dashboard →
+    card click → Console → every ARK per-server tab incl. the new mod-reorder buttons;
+    Minecraft Servers → card click → Console → every new MC tab, editing a field on each to
+    exercise the save path too) against the real rendered page, asserting zero `pageerror`/
+    `console.error` events. It came back clean on the first fully-corrected run (the only
+    flagged "error" was Chrome's own generic network-failure log for the one expected 400 -
+    searching Mods for the mock profile's `serverType: 'vanilla'`, which has no mod ecosystem
+    by design) - genuine evidence this round's ~1600 lines of new client JS run without a
+    runtime exception, not just that they parse and typecheck.
