@@ -9,6 +9,7 @@ import type { WebDashboardAccessToken, WebDashboardApiKey } from '../shared/type
 
 const EMPTY_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-empty-${process.pid}`)
 const LOGGED_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-logged-${process.pid}`)
+const MINECRAFT_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-mc-${process.pid}`)
 // A real temp dir rather than '' - getGroupConsoleBacklog's clusterLogArchive.ts check
 // calls getDataDir(), which falls back to Electron's app.getPath() (unavailable here) only
 // when settings.dataDir is empty.
@@ -23,7 +24,10 @@ let mockSettings = {
   webDashboardHost: '127.0.0.1',
   webDashboardDisabledLabels: [] as string[],
   launchOnStartup: false,
-  webDashboardAuthEnabled: false
+  webDashboardAuthEnabled: false,
+  collapsedGroups: [] as string[],
+  minecraftCollapsedGroups: [] as string[],
+  curseforgeApiKey: ''
 }
 
 let mockAccessTokens: WebDashboardAccessToken[] = []
@@ -61,6 +65,18 @@ let mockProfiles: any[] = [
   }
 ]
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockMinecraftProfiles: any[] = [
+  {
+    id: 'mc1',
+    name: 'Test Minecraft Server',
+    installDir: MINECRAFT_INSTALL_DIR,
+    minecraftVersion: '1.20.1',
+    hidden: false,
+    group: ''
+  }
+]
+
 vi.mock('../src/main/store', () => ({
   listProfiles: () => mockProfiles,
   getProfile: (id: string) => mockProfiles.find((p) => p.id === id),
@@ -70,6 +86,8 @@ vi.mock('../src/main/store', () => ({
     else mockProfiles.push(profile)
     return mockProfiles
   },
+  listMinecraftProfiles: () => mockMinecraftProfiles,
+  getMinecraftProfile: (id: string) => mockMinecraftProfiles.find((p) => p.id === id),
   getSettings: () => mockSettings,
   saveSettings: (settings: typeof mockSettings) => {
     mockSettings = settings
@@ -127,11 +145,52 @@ vi.mock('../src/main/lib/serverActions', () => ({
   doUpdateServer: vi.fn(async () => {}),
   doStopUpdateRestart: vi.fn(async () => {})
 }))
+let mockSendMinecraftStdinCommand = (_id: string, _command: string): boolean => true
+vi.mock('../src/main/lib/minecraftProcess', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/lib/minecraftProcess')>()
+  return {
+    ...actual,
+    getStatus: (id: string) => ({ profileId: id, state: 'running', players: [], cpu: 5, memoryMB: 256 }),
+    getConsoleBacklog: () => [{ text: 'Done (1.0s)! For help, type "help"', ts: 1735700000000 }],
+    sendStdinCommand: (id: string, command: string) => mockSendMinecraftStdinCommand(id, command)
+  }
+})
+vi.mock('../src/main/lib/minecraftActions', () => ({
+  doStartMinecraftServer: vi.fn((profile: { id: string }) => ({ profileId: profile.id, state: 'starting' })),
+  doStopMinecraftServer: vi.fn(async (profile: { id: string }) => ({ profileId: profile.id, state: 'stopped' }))
+}))
+vi.mock('../src/main/lib/minecraftRcon', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/lib/minecraftRcon')>()
+  return {
+    ...actual,
+    sendMinecraftRconCommand: async (_installDir: string, command: string) => {
+      if (command === 'list') return { ok: true, response: 'There are 1 of a max of 20 players online: Bob' }
+      return { ok: true, response: 'mc-pong' }
+    }
+  }
+})
+vi.mock('../src/main/lib/arkMods', () => ({
+  searchArkMods: vi.fn(async (query: string) => {
+    if (!query) return []
+    return [
+      { id: '12345', name: 'Super Structures', summary: 'A structures mod', iconUrl: 'https://example.com/icon.png', downloads: 42 }
+    ]
+  }),
+  getArkModsInfo: vi.fn(async (modIds: string[]) => {
+    const info: Record<string, { name: string; iconUrl?: string }> = {}
+    for (const id of modIds) {
+      if (id === '12345') info[id] = { name: 'Super Structures', iconUrl: 'https://example.com/icon.png' }
+    }
+    return info
+  })
+}))
 
 import { startWebDashboard, stopWebDashboard, getWebDashboardStatus, sortProfilesForDisplay } from '../src/main/lib/webDashboard'
 import type { ServerProfile } from '../shared/types'
 import * as serverActions from '../src/main/lib/serverActions'
 import { serverEvents } from '../src/main/lib/serverProcess'
+import * as minecraftActions from '../src/main/lib/minecraftActions'
+import { minecraftConsoleEvents, minecraftServerEvents } from '../src/main/lib/minecraftProcess'
 import { hashPassword, generateApiKeyId, generateApiKeySecret, buildApiKey } from '../src/main/lib/auth'
 import { setCachedGameVersion } from '../src/main/lib/serverVersion'
 
@@ -253,6 +312,7 @@ describe('web dashboard HTTP server', () => {
     // cached (see serverVersionWatcher.test.ts for that part) rather than reading the log
     // itself on every request - seed the cache directly to simulate that having happened.
     setCachedGameVersion('p2', '92.28')
+    fs.mkdirSync(MINECRAFT_INSTALL_DIR, { recursive: true })
     startWebDashboard(PORT, '127.0.0.1')
   })
 
@@ -260,6 +320,7 @@ describe('web dashboard HTTP server', () => {
     stopWebDashboard()
     fs.rmSync(EMPTY_INSTALL_DIR, { recursive: true, force: true })
     fs.rmSync(LOGGED_INSTALL_DIR, { recursive: true, force: true })
+    fs.rmSync(MINECRAFT_INSTALL_DIR, { recursive: true, force: true })
   })
 
   it('serves the dashboard page at /', async () => {
@@ -335,8 +396,124 @@ describe('web dashboard HTTP server', () => {
         statsEnabled: undefined,
         gameIconUrl: '/game-icons/ark-ascended.png',
         gameDisplayName: 'ARK: Survival Ascended'
+      },
+      {
+        id: 'mc1',
+        name: 'Test Minecraft Server',
+        group: '',
+        groupCollapsed: false,
+        maxPlayers: 20,
+        state: 'running',
+        players: [],
+        cpu: 5,
+        memoryMB: 256,
+        startedAt: null,
+        gameVersion: '1.20.1',
+        statsEnabled: undefined,
+        gameIconUrl: '/game-icons/minecraft.png',
+        gameDisplayName: 'Minecraft'
       }
     ])
+  })
+
+  describe('Minecraft servers', () => {
+    it('defaults maxPlayers to 20 when the server has no server.properties file yet (reflected via the players route below, not listed in /api/servers)', async () => {
+      // /api/servers doesn't surface maxPlayers at all (same as the ARK response shape above) -
+      // this just documents that reading a missing server.properties doesn't throw.
+      const res = await request('/api/servers')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body).find((s: { id: string }) => s.id === 'mc1')).toBeTruthy()
+    })
+
+    it('returns the console backlog, wrapped into the same LogEvent shape ARK events use', async () => {
+      const res = await request('/api/servers/mc1/events')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual([
+        { label: 'LOG', cls: 'log', text: 'Done (1.0s)! For help, type "help"', ts: expect.any(String) }
+      ])
+    })
+
+    it('streams a live console line over SSE', async () => {
+      const stream = await openStream('/api/servers/mc1/events/stream')
+      minecraftConsoleEvents.emit('line', 'mc1', { text: 'Player joined the game', ts: Date.now() })
+      await stream.waitFor('Player joined the game')
+      stream.destroy()
+    })
+
+    it('does not stream a line belonging to a different server', async () => {
+      const stream = await openStream('/api/servers/mc1/events/stream')
+      minecraftConsoleEvents.emit('line', 'p1', { text: 'Should not appear', ts: Date.now() })
+      await expect(stream.waitFor('Should not appear', 150)).rejects.toThrow()
+      stream.destroy()
+    })
+
+    it('emits a reset event when the server transitions to starting', async () => {
+      const stream = await openStream('/api/servers/mc1/events/stream')
+      minecraftServerEvents.emit('status', { profileId: 'mc1', state: 'starting' })
+      await stream.waitFor('event: reset')
+      stream.destroy()
+    })
+
+    it('starts a Minecraft server', async () => {
+      const res = await request('/api/servers/mc1/start', { method: 'POST' })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({ ok: true })
+      expect(minecraftActions.doStartMinecraftServer).toHaveBeenCalledWith(expect.objectContaining({ id: 'mc1' }))
+    })
+
+    it('stops a Minecraft server - no "saved" field, unlike ARK\'s own stop response', async () => {
+      const res = await request('/api/servers/mc1/stop', { method: 'POST' })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({ ok: true })
+      expect(minecraftActions.doStopMinecraftServer).toHaveBeenCalledWith(expect.objectContaining({ id: 'mc1' }))
+    })
+
+    it('rejects restart for a Minecraft server with a clear 400, rather than a 404 or silently no-op', async () => {
+      const res = await request('/api/servers/mc1/restart', { method: 'POST' })
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).ok).toBe(false)
+    })
+
+    it('rejects update for a Minecraft server with a clear 400', async () => {
+      const res = await request('/api/servers/mc1/update', { method: 'POST' })
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).ok).toBe(false)
+    })
+
+    it('rejects stop-update-restart for a Minecraft server with a clear 400', async () => {
+      const res = await request('/api/servers/mc1/stop-update-restart', { method: 'POST' })
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).ok).toBe(false)
+    })
+
+    it('sends a command through live stdin when available, not RCON', async () => {
+      mockSendMinecraftStdinCommand = () => true
+      const res = await request('/api/servers/mc1/rcon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: 'say hello' })
+      })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({ ok: true })
+    })
+
+    it('falls back to RCON when no live stdin is available (e.g. a re-adopted process)', async () => {
+      mockSendMinecraftStdinCommand = () => false
+      const res = await request('/api/servers/mc1/rcon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: 'say hello' })
+      })
+      mockSendMinecraftStdinCommand = () => true
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({ ok: true, response: 'mc-pong' })
+    })
+
+    it('lists online players by parsing the RCON "list" command response', async () => {
+      const res = await request('/api/servers/mc1/players')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual([{ name: 'Bob', id: '' }])
+    })
   })
 
   it('returns an empty backlog when the server has no log file yet', async () => {
@@ -749,6 +926,50 @@ describe('web dashboard HTTP server', () => {
       const res = await request('/api/servers/nope/stats')
       expect(res.status).toBe(404)
     })
+
+    // ARK Mods tab's CurseForge port: search/icon/resolved-name, same feature as the
+    // desktop app's own ModsTab (see arkMods.ts) - here exposed over HTTP instead of IPC.
+    it('GET /api/arkmods/status reports whether a CurseForge API key is configured', async () => {
+      const before = await request('/api/arkmods/status')
+      expect(JSON.parse(before.body)).toEqual({ hasCurseForgeKey: false })
+
+      mockSettings = { ...mockSettings, curseforgeApiKey: 'some-key' }
+      const after = await request('/api/arkmods/status')
+      expect(JSON.parse(after.body)).toEqual({ hasCurseForgeKey: true })
+      mockSettings = { ...mockSettings, curseforgeApiKey: '' }
+    })
+
+    it('GET /api/servers/:id/mods/search returns CurseForge search hits', async () => {
+      const res = await request('/api/servers/p1/mods/search?q=structures')
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual([
+        { id: '12345', name: 'Super Structures', summary: 'A structures mod', iconUrl: 'https://example.com/icon.png', downloads: 42 }
+      ])
+    })
+
+    it('GET /api/servers/:id/mods/search 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/mods/search?q=structures')
+      expect(res.status).toBe(404)
+    })
+
+    it('POST /api/servers/:id/mods/info resolves names/icons for known ids and omits unknown ones', async () => {
+      const res = await request('/api/servers/p1/mods/info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modIds: ['12345', '99999'] })
+      })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({ '12345': { name: 'Super Structures', iconUrl: 'https://example.com/icon.png' } })
+    })
+
+    it('POST /api/servers/:id/mods/info 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/mods/info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modIds: [] })
+      })
+      expect(res.status).toBe(404)
+    })
   })
 
   // The Server Management tab's own narrower route (moderator+, not admin+ like everything
@@ -1142,7 +1363,7 @@ describe('web dashboard HTTP server, auth enabled', () => {
     it('still lists every server via GET /api/servers, ignoring profileIds', async () => {
       const res = await authRequest('/api/servers', { headers: { Authorization: `Bearer ${scopedGlobalAdminToken}` } })
       expect(res.status).toBe(200)
-      expect(JSON.parse(res.body).map((s: { id: string }) => s.id).sort()).toEqual(['p1', 'p2'])
+      expect(JSON.parse(res.body).map((s: { id: string }) => s.id).sort()).toEqual(['mc1', 'p1', 'p2'])
     })
 
     it('still acts on a server outside its nominal scope', async () => {

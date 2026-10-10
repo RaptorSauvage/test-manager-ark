@@ -6,6 +6,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { app } from 'electron'
 import type { AppSettings, ServerProfile, ServerStatus, WebDashboardRole } from '@shared/types'
+import type { MinecraftProfile } from '@shared/minecraft'
 import {
   listProfiles,
   getProfile,
@@ -13,7 +14,8 @@ import {
   getSettings,
   saveSettings,
   listWebDashboardAccessTokens,
-  listWebDashboardApiKeys
+  listWebDashboardApiKeys,
+  listMinecraftProfiles
 } from '../store'
 import { getStatus, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
@@ -41,8 +43,61 @@ import { listMapFolders, createMapFolder, deleteMapFolder } from './mapManagemen
 import { listMaps } from './maps'
 import { listCustomMaps } from './customMaps'
 import { type GameId, getGameDefinition, listGameDefinitions } from '@shared/games'
+import {
+  getStatus as getMinecraftStatus,
+  minecraftServerEvents,
+  minecraftConsoleEvents,
+  getConsoleBacklog as getMinecraftConsoleBacklog,
+  sendStdinCommand as sendMinecraftStdinCommand
+} from './minecraftProcess'
+import { doStartMinecraftServer, doStopMinecraftServer } from './minecraftActions'
+import { sendMinecraftRconCommand, parseMinecraftPlayerList } from './minecraftRcon'
+import { readServerProperties as readMinecraftServerProperties } from './minecraftProperties'
+import { searchArkMods, getArkModsInfo } from './arkMods'
 
-const KNOWN_GAME_ICON_FILE_NAMES = new Set(listGameDefinitions().map((g) => g.iconFileName))
+// Minecraft isn't part of shared/games.ts's GameDefinition registry (that one's ARK-only by
+// design - see its own top-of-file comment) - its icon is served the same way regardless,
+// just added to the known-file-names allow-list by hand instead of coming from
+// listGameDefinitions().
+const MINECRAFT_ICON_FILE_NAME = 'minecraft.png'
+const KNOWN_GAME_ICON_FILE_NAMES = new Set([...listGameDefinitions().map((g) => g.iconFileName), MINECRAFT_ICON_FILE_NAME])
+
+/**
+ * Orders Minecraft profiles the same way sortProfilesForDisplay does for ARK ones (ungrouped
+ * first in stored order, then each group alphabetically, also in stored order) - kept as its
+ * own small copy rather than genericizing the exported ARK version, which already has its own
+ * pinned test suite/signature.
+ */
+function sortMinecraftProfilesForDisplay(profiles: MinecraftProfile[]): MinecraftProfile[] {
+  const visible = profiles.filter((p) => !p.hidden)
+  const ungrouped = visible.filter((p) => !p.group.trim())
+  const groupNames = Array.from(new Set(visible.filter((p) => p.group.trim()).map((p) => p.group.trim()))).sort()
+  const grouped = groupNames.flatMap((groupName) => visible.filter((p) => p.group.trim() === groupName))
+  return [...ungrouped, ...grouped]
+}
+
+type AnyServer = { kind: 'ark'; profile: ServerProfile } | { kind: 'minecraft'; profile: MinecraftProfile }
+
+/** Looks a server id up across both games' own profile stores - every per-server web
+ *  dashboard route that's been taught about Minecraft (see each route's own dispatch below)
+ *  uses this instead of listProfiles().find(...) alone, so a Minecraft server id resolves
+ *  too rather than always 404ing the way it did before Minecraft support existed here. */
+function findAnyServer(id: string): AnyServer | null {
+  const arkProfile = listProfiles().find((p) => p.id === id)
+  if (arkProfile) return { kind: 'ark', profile: arkProfile }
+  const minecraftProfile = listMinecraftProfiles().find((p) => p.id === id)
+  if (minecraftProfile) return { kind: 'minecraft', profile: minecraftProfile }
+  return null
+}
+
+/** Minecraft's own console (minecraftProcess.ts) is just plain lines with no JOIN/LEFT/CHAT/
+ *  etc. categorization the way ARK's own parseLogChunk produces (a real log-parsing effort of
+ *  its own, left for later) - wrapped into the same LogEvent shape the dashboard's existing
+ *  console feed/SSE client code already renders, under one generic 'LOG' category, so that
+ *  client code needs no changes to show Minecraft's raw console output too. */
+function toMinecraftLogEvent(line: { text: string; ts: number }): { label: string; cls: string; text: string; ts: string } {
+  return { label: 'LOG', cls: 'log', text: line.text, ts: new Date(line.ts).toTimeString().slice(0, 8) }
+}
 
 /** Same side effects the desktop Manager's own IPC profile-save handler applies
  *  (src/main/ipc/profiles.ts) - re-arming the backup/restart/dino-wipe schedules and the
@@ -153,7 +208,7 @@ function hasProfileAccess(auth: RequireRoleResult, profileId: string): boolean {
   return !auth.profileIds || auth.profileIds.length === 0 || auth.profileIds.includes(profileId)
 }
 
-function filterProfilesForAuth(auth: RequireRoleResult, profiles: ServerProfile[]): ServerProfile[] {
+function filterProfilesForAuth<T extends { id: string }>(auth: RequireRoleResult, profiles: T[]): T[] {
   if (auth.role === 'globalAdmin') return profiles
   if (!auth.profileIds || auth.profileIds.length === 0) return profiles
   const allowed = auth.profileIds
@@ -310,8 +365,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && path === '/api/servers') {
     const auth = await requireRole(req, res, 'readonly')
     if (!auth) return
-    const collapsedGroups = new Set(getSettings().collapsedGroups)
-    const servers = filterProfilesForAuth(auth, sortProfilesForDisplay(listProfiles())).map((profile) => {
+    const settings = getSettings()
+    const collapsedGroups = new Set(settings.collapsedGroups)
+    const arkServers = filterProfilesForAuth(auth, sortProfilesForDisplay(listProfiles())).map((profile) => {
       const status = getStatus(profile.id)
       const game = getGameDefinition(profile.game)
       return {
@@ -334,7 +390,33 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         gameDisplayName: game.displayName
       }
     })
-    sendJson(res, 200, servers)
+    const minecraftCollapsedGroups = new Set(settings.minecraftCollapsedGroups)
+    const minecraftServers = filterProfilesForAuth(auth, sortMinecraftProfilesForDisplay(listMinecraftProfiles())).map(
+      (profile) => {
+        const status = getMinecraftStatus(profile.id)
+        const maxPlayersRaw = Number(readMinecraftServerProperties(profile.installDir)['max-players'])
+        return {
+          id: profile.id,
+          name: profile.name,
+          group: profile.group.trim(),
+          groupCollapsed: minecraftCollapsedGroups.has(profile.group.trim()),
+          maxPlayers: Number.isFinite(maxPlayersRaw) && maxPlayersRaw > 0 ? maxPlayersRaw : 20,
+          state: status.state,
+          players: status.players ?? [],
+          cpu: status.cpu ?? null,
+          memoryMB: status.memoryMB ?? null,
+          startedAt: status.startedAt ?? null,
+          // The user-set target version, not a live-detected one (Minecraft servers have no
+          // SteamCMD-style installed-build-id check the way ARK's getCachedGameVersion reads) -
+          // still the most useful single "version" string to show for one of these.
+          gameVersion: profile.minecraftVersion || null,
+          statsEnabled: undefined,
+          gameIconUrl: `/game-icons/${MINECRAFT_ICON_FILE_NAME}`,
+          gameDisplayName: 'Minecraft'
+        }
+      }
+    )
+    sendJson(res, 200, [...arkServers, ...minecraftServers])
     return
   }
 
@@ -342,8 +424,16 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && eventsMatch) {
     const auth = await requireRole(req, res, 'readonly')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(eventsMatch[1]))
-    sendJson(res, 200, profile && hasProfileAccess(auth, profile.id) ? readLogBacklog(profile.installDir, getDisabledLabels()) : [])
+    const found = findAnyServer(decodeURIComponent(eventsMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 200, [])
+      return
+    }
+    if (found.kind === 'minecraft') {
+      sendJson(res, 200, getMinecraftConsoleBacklog(found.profile.id).map(toMinecraftLogEvent))
+      return
+    }
+    sendJson(res, 200, readLogBacklog(found.profile.installDir, getDisabledLabels()))
     return
   }
 
@@ -351,8 +441,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && streamMatch) {
     const auth = await requireRole(req, res, 'readonly')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(streamMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(streamMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
       res.end('Unknown server')
       return
@@ -363,11 +453,36 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       Connection: 'keep-alive'
     })
     res.write('\n')
+
+    if (found.kind === 'minecraft') {
+      // Minecraft's own console (minecraftProcess.ts) is an in-memory line buffer/event
+      // emitter, not a log file to tail - no rotation-detection or baseline-read-position
+      // concerns the way ARK's own watchLogFile needs. 'reset' still matters the same way,
+      // just hung off the server actually (re)starting rather than a log file's inode
+      // changing, since the previous session's lines shouldn't linger once a fresh one begins.
+      const profileId = found.profile.id
+      function onLine(lineProfileId: string, line: { text: string; ts: number }): void {
+        if (lineProfileId !== profileId) return
+        res.write(`data: ${JSON.stringify(toMinecraftLogEvent(line))}\n\n`)
+      }
+      function onStatus(status: { profileId: string; state: string }): void {
+        if (status.profileId !== profileId || status.state !== 'starting') return
+        res.write('event: reset\ndata: {}\n\n')
+      }
+      minecraftConsoleEvents.on('line', onLine)
+      minecraftServerEvents.on('status', onStatus)
+      req.on('close', () => {
+        minecraftConsoleEvents.off('line', onLine)
+        minecraftServerEvents.off('status', onStatus)
+      })
+      return
+    }
+
     // Captured into their own consts so the nested function declarations below (whose
     // closures TypeScript can't narrow the same way it narrows inline callbacks) don't
     // need to re-check profile for undefined on every use.
-    const profileId = profile.id
-    const installDir = profile.installDir
+    const profileId = found.profile.id
+    const installDir = found.profile.installDir
 
     let caches = createLogEventCaches()
 
@@ -514,12 +629,27 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && playersMatch) {
     const auth = await requireRole(req, res, 'readonly')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(playersMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(playersMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 200, [])
       return
     }
-    sendRconCommand(profile, 'ListPlayers').then((result) => {
+    if (found.kind === 'minecraft') {
+      // Minecraft's own `list` command has no per-player id the way ARK's ListPlayers does
+      // (see parsePlayerListWithIds) - just names, wrapped into the same {name, id} shape
+      // with id left empty so the client's existing player-list rendering (which only ever
+      // displays the name) needs no changes to show these too.
+      sendMinecraftRconCommand(found.profile.installDir, 'list').then((result) => {
+        const names = result.ok && result.response ? parseMinecraftPlayerList(result.response).players : []
+        sendJson(
+          res,
+          200,
+          names.map((name) => ({ name, id: '' }))
+        )
+      })
+      return
+    }
+    sendRconCommand(found.profile, 'ListPlayers').then((result) => {
       sendJson(res, 200, result.ok && result.response ? parsePlayerListWithIds(result.response) : [])
     })
     return
@@ -529,13 +659,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && startMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(startMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(startMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
     try {
-      doStartServer(profile)
+      if (found.kind === 'minecraft') doStartMinecraftServer(found.profile)
+      else doStartServer(found.profile)
       sendJson(res, 200, { ok: true })
     } catch (err) {
       sendJson(res, 400, { ok: false, error: (err as Error).message })
@@ -556,12 +687,21 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && stopMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(stopMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
-    const { saved } = await doStopServerConfirmSave(profile)
+    if (found.kind === 'minecraft') {
+      // No separate SaveWorld/DoExit handshake to phase a response around the way ARK's own
+      // stopServerPhased needs - Minecraft's "stop" command already saves and exits on its
+      // own (see minecraftProcess.ts's stopServer), so there's no meaningful `saved` outcome
+      // to report back the way ARK's doStopServerConfirmSave has.
+      await doStopMinecraftServer(found.profile)
+      sendJson(res, 200, { ok: true })
+      return
+    }
+    const { saved } = await doStopServerConfirmSave(found.profile)
     sendJson(res, 200, { ok: true, saved })
     return
   }
@@ -570,12 +710,16 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && restartMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(restartMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(restartMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
-    const { saved } = await doRestartServerConfirmSave(profile)
+    if (found.kind === 'minecraft') {
+      sendJson(res, 400, { ok: false, error: 'Restart is not available for Minecraft servers yet - use Stop then Start.' })
+      return
+    }
+    const { saved } = await doRestartServerConfirmSave(found.profile)
     sendJson(res, 200, { ok: true, saved })
     return
   }
@@ -584,12 +728,18 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && updateMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(updateMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(updateMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
-    doUpdateServer(profile).catch((err: Error) => console.error(`Web dashboard update failed for ${profile.name}:`, err.message))
+    if (found.kind === 'minecraft') {
+      sendJson(res, 400, { ok: false, error: 'This Manager has no auto-update mechanism for Minecraft servers.' })
+      return
+    }
+    doUpdateServer(found.profile).catch((err: Error) =>
+      console.error(`Web dashboard update failed for ${found.profile.name}:`, err.message)
+    )
     sendJson(res, 200, { ok: true })
     return
   }
@@ -598,13 +748,17 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && stopUpdateRestartMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopUpdateRestartMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(stopUpdateRestartMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
-    doStopUpdateRestart(profile).catch((err: Error) =>
-      console.error(`Web dashboard stop+update+restart failed for ${profile.name}:`, err.message)
+    if (found.kind === 'minecraft') {
+      sendJson(res, 400, { ok: false, error: 'This Manager has no auto-update mechanism for Minecraft servers.' })
+      return
+    }
+    doStopUpdateRestart(found.profile).catch((err: Error) =>
+      console.error(`Web dashboard stop+update+restart failed for ${found.profile.name}:`, err.message)
     )
     sendJson(res, 200, { ok: true })
     return
@@ -614,9 +768,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && rconMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profileId = decodeURIComponent(rconMatch[1])
-    const profile = listProfiles().find((p) => p.id === profileId)
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(rconMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
@@ -627,7 +780,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           sendJson(res, 400, { ok: false, error: 'Empty command' })
           return
         }
-        const result = await sendRconCommand(profile, command)
+        if (found.kind === 'minecraft') {
+          // Live stdin is the primary channel (same as the desktop Console tab's own command
+          // box) - RCON is only the fallback for a server re-adopted from a previous Manager
+          // session, with no live process handle to write to (see sendStdinCommand's own doc
+          // comment in minecraftProcess.ts).
+          if (sendMinecraftStdinCommand(found.profile.id, command)) {
+            sendJson(res, 200, { ok: true })
+            return
+          }
+          const result = await sendMinecraftRconCommand(found.profile.installDir, command)
+          sendJson(res, 200, result)
+          return
+        }
+        const result = await sendRconCommand(found.profile, command)
         sendJson(res, 200, result)
       })
       .catch(() => sendJson(res, 400, { ok: false, error: 'Invalid request body' }))
@@ -800,6 +966,52 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         sendJson(res, 200, { ok: true, profile: saved })
       })
       .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  // CurseForge key presence only - never the key itself - so the Mods tab's client JS can
+  // show/hide the search section the same way the desktop app's ModsTab does, without any
+  // route needing to leak the actual secret.
+  if (req.method === 'GET' && path === '/api/arkmods/status') {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    sendJson(res, 200, { hasCurseForgeKey: getSettings().curseforgeApiKey.trim().length > 0 })
+    return
+  }
+
+  const arkModsSearchMatch = path.match(/^\/api\/servers\/([^/]+)\/mods\/search$/)
+  if (req.method === 'GET' && arkModsSearchMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(arkModsSearchMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    const query = url.searchParams.get('q') ?? ''
+    const hits = await searchArkMods(query)
+    sendJson(res, 200, hits)
+    return
+  }
+
+  const arkModsInfoMatch = path.match(/^\/api\/servers\/([^/]+)\/mods\/info$/)
+  if (req.method === 'POST' && arkModsInfoMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(arkModsInfoMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then(async (body) => {
+        const modIds = typeof body === 'object' && body !== null && Array.isArray((body as { modIds?: unknown }).modIds)
+          ? ((body as { modIds: unknown[] }).modIds.filter((id): id is string => typeof id === 'string'))
+          : []
+        const info = await getArkModsInfo(modIds)
+        sendJson(res, 200, info)
+      })
+      .catch((err: Error) => sendJson(res, 400, { error: err.message }))
     return
   }
 
@@ -1269,6 +1481,15 @@ const DASHBOARD_HTML = `<!doctype html>
   .data-table tbody tr.selectable { cursor: pointer; }
   .data-table td.mod-disabled-row { color: var(--muted); }
   .playerbackup-select-col { width: 28px; }
+  .ark-mod-icon { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+  .ark-mod-name-cell { display: flex; align-items: center; gap: 8px; }
+  .ark-mod-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ark-mod-search-results { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-height: 260px; overflow-y: auto; }
+  .ark-mod-search-result { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+  .ark-mod-search-result-info { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 2px; }
+  .ark-mod-search-result-name { font-weight: 600; }
+  .ark-mod-search-result-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; }
+  .ark-mod-search-result-downloads { font-size: 0.78rem; flex-shrink: 0; }
   .log-output { flex: 1; overflow: auto; font-size: 0.8rem; font-family: Consolas, Menlo, monospace; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 0; }
   @media (max-width: 700px) {
     /* The desktop layout is a fixed-viewport "app" (body: height:100vh + overflow:hidden)
@@ -1677,16 +1898,33 @@ const DASHBOARD_HTML = `<!doctype html>
       <div id="mods-content" class="admin-tab-content">
         <p class="empty-state">
           Mod IDs, applied in this order. Enabled mods are passed via -mods= at the next start, unless Passive is
-          checked (-passivemods= instead). Dev appends -dev to the ID. Changes save immediately - restart the
-          server to apply them.
+          checked (-passivemods= instead). Dev appends -dev to the ID. Name shows each mod's real icon/name
+          resolved from CurseForge once a CurseForge API key is configured. Changes save immediately - restart
+          the server to apply them.
         </p>
+        <section id="mods-search-section" class="settings-section" style="display: none">
+          <h3>Search CurseForge</h3>
+          <p id="mods-search-nokey" class="empty-state" style="display: none">
+            Set a CurseForge API key in Settings (General) to search for mods by name here instead of typing a
+            numeric id by hand.
+          </p>
+          <div id="mods-search-ui" style="display: none">
+            <p class="empty-state">Find a mod by name and add it below - its id and name are filled in for you.</p>
+            <div class="form-actions">
+              <input id="mods-search-query" placeholder="Search ARK: Survival Ascended mods..." />
+              <button id="btn-mods-search" type="button">Search</button>
+            </div>
+            <p id="mods-search-error" class="error-message" style="display: none"></p>
+            <div id="mods-search-results" class="ark-mod-search-results"></div>
+          </div>
+        </section>
         <div class="form-actions">
           <input id="mods-new-id" placeholder="Mod ID" />
           <button id="btn-mods-add" type="button">Add</button>
         </div>
         <table id="mods-table" class="data-table">
           <thead>
-            <tr><th>Enable</th><th>Passive</th><th>Dev</th><th>Name</th><th>Mod ID</th><th></th></tr>
+            <tr><th>Enable</th><th>Passive</th><th>Dev</th><th>Mod ID</th><th>Name</th><th></th></tr>
           </thead>
           <tbody id="mods-table-body"></tbody>
         </table>
@@ -2586,6 +2824,18 @@ function initDashboard(resolvedRole) {
   var clusterConsoleServers = [];
   var clusterEs = null;
   var latestServers = [];
+  // Every admin-tab view below that's still ARK-only (Settings, Mods' CurseForge-less
+  // predecessor logic aside, Backup, Analytics, Map Management, Server Management, Update
+  // Log) checks this before loading, and shows a plain "not available" message instead of
+  // fetching/rendering data shaped for a ServerProfile against what's actually a
+  // MinecraftProfile - Console/Dashboard/Cluster Dashboard/start-stop/RCON-equivalent already
+  // work for both (see webDashboard.ts's own /api/servers and findAnyServer on the server
+  // side), everything else here is a genuinely separate, not-yet-built feature for Minecraft.
+  function isMinecraftServer(id) {
+    var s = latestServers.find(function (s) { return s.id === id; });
+    return !!s && s.gameDisplayName === 'Minecraft';
+  }
+  var MINECRAFT_VIEW_UNAVAILABLE_TEXT = 'Not available for Minecraft servers yet - only Console/start/stop currently work here.';
   // Tracks every server's last-seen state for as long as this tab stays open (not tied to
   // the console being open) - mirrors the desktop Manager's module-scope lastKnownStates
   // map, so a transition that happens while you're on a different tab still gets caught
@@ -2737,12 +2987,14 @@ function initDashboard(resolvedRole) {
 
     addAction('Start', 'ok', server.state !== 'stopped', function () { clusterServerAction(server.id, 'start'); });
     addAction('Stop', 'danger', server.state !== 'running', function () { clusterServerAction(server.id, 'stop'); });
-    addAction('Restart', 'warn', server.state !== 'running', function () { clusterServerAction(server.id, 'restart'); });
-    addAction('Update', 'info', server.state !== 'stopped', function () { clusterServerAction(server.id, 'update'); });
-    addAction('Update Restart', 'cyan', false, function () {
-      if (!confirm('Stop this server, update it via SteamCMD, then start it back up?')) return;
-      clusterServerAction(server.id, 'stop-update-restart');
-    });
+    if (server.gameDisplayName !== 'Minecraft') {
+      addAction('Restart', 'warn', server.state !== 'running', function () { clusterServerAction(server.id, 'restart'); });
+      addAction('Update', 'info', server.state !== 'stopped', function () { clusterServerAction(server.id, 'update'); });
+      addAction('Update Restart', 'cyan', false, function () {
+        if (!confirm('Stop this server, update it via SteamCMD, then start it back up?')) return;
+        clusterServerAction(server.id, 'stop-update-restart');
+      });
+    }
 
     document.body.appendChild(menu);
     contextMenuEl = menu;
@@ -3350,6 +3602,13 @@ function initDashboard(resolvedRole) {
   function loadBackupView() {
     var id = currentId;
     if (!id) {
+      backupNoServerEl.textContent = 'No server selected - choose one above.';
+      backupNoServerEl.style.display = '';
+      backupContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      backupNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       backupNoServerEl.style.display = '';
       backupContentEl.classList.remove('active');
       return;
@@ -3586,6 +3845,13 @@ function initDashboard(resolvedRole) {
   function loadAnalyticsView() {
     var id = currentId;
     if (!id) {
+      analyticsNoServerEl.textContent = 'No server selected - choose one above.';
+      analyticsNoServerEl.style.display = '';
+      analyticsContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      analyticsNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       analyticsNoServerEl.style.display = '';
       analyticsContentEl.classList.remove('active');
       return;
@@ -3643,6 +3909,13 @@ function initDashboard(resolvedRole) {
   function loadUpdateLogView() {
     var id = currentId;
     if (!id) {
+      updatelogNoServerEl.textContent = 'No server selected - choose one above.';
+      updatelogNoServerEl.style.display = '';
+      updatelogContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      updatelogNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       updatelogNoServerEl.style.display = '';
       updatelogContentEl.classList.remove('active');
       return;
@@ -3669,11 +3942,53 @@ function initDashboard(resolvedRole) {
   var btnModsAdd = document.getElementById('btn-mods-add');
   var modsTableBody = document.getElementById('mods-table-body');
   var modsErrorEl = document.getElementById('mods-error');
+  var modsSearchSectionEl = document.getElementById('mods-search-section');
+  var modsSearchNoKeyEl = document.getElementById('mods-search-nokey');
+  var modsSearchUiEl = document.getElementById('mods-search-ui');
+  var modsSearchQueryInput = document.getElementById('mods-search-query');
+  var btnModsSearch = document.getElementById('btn-mods-search');
+  var modsSearchErrorEl = document.getElementById('mods-search-error');
+  var modsSearchResultsEl = document.getElementById('mods-search-results');
   var currentMods = [];
+  // ARK: Survival Evolved's mod ids are a Steam Workshop namespace, not CurseForge - the
+  // search/icon/resolved-name additions below only ever make sense for ARK: Survival
+  // Ascended, same gating as the desktop app's own ModsTab (isEvolved there).
+  var currentModsIsEvolved = false;
+  var currentArkInfo = {};
+  var modsSearched = false;
 
   function showModsError(message) {
     modsErrorEl.textContent = message || '';
     modsErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function showModsSearchError(message) {
+    modsSearchErrorEl.textContent = message || '';
+    modsSearchErrorEl.style.display = message ? '' : 'none';
+  }
+
+  // Looks up a real name/icon for every mod id currently in the list (typed by hand, or
+  // added via search below) so the table can show it next to every row - re-fetched after
+  // every save, same as the desktop app's own background enrichment effect.
+  function refreshArkModsInfo() {
+    if (currentModsIsEvolved || currentMods.length === 0) {
+      currentArkInfo = {};
+      renderModsTable();
+      return;
+    }
+    var id = currentId;
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mods/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modIds: currentMods.map(function (m) { return m.id; }) })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (info) {
+        if (id !== currentId) return;
+        currentArkInfo = info || {};
+        renderModsTable();
+      })
+      .catch(function () { renderModsTable(); });
   }
 
   function saveMods(next) {
@@ -3689,7 +4004,8 @@ function initDashboard(resolvedRole) {
         if (!result.ok) { showModsError(result.error || 'Save failed'); return; }
         if (id !== currentId) return;
         currentMods = result.profile.mods || [];
-        renderModsTable();
+        refreshArkModsInfo();
+        renderModsSearchResults(); // re-render so just-added rows switch from "Add" to "Added"
       })
       .catch(function () { showModsError('Request failed'); });
   }
@@ -3728,22 +4044,41 @@ function initDashboard(resolvedRole) {
       row.appendChild(checkboxCell('passive'));
       row.appendChild(checkboxCell('dev'));
 
-      var nameCell = document.createElement('td');
-      var nameInput = document.createElement('input');
-      nameInput.value = mod.name || '';
-      nameInput.placeholder = 'Optional label';
-      nameInput.addEventListener('change', function () {
-        var updatedMod = Object.assign({}, mod, { name: nameInput.value || undefined });
-        var next = currentMods.slice();
-        next[index] = updatedMod;
-        saveMods(next);
-      });
-      nameCell.appendChild(nameInput);
-      row.appendChild(nameCell);
-
       var idCell = document.createElement('td');
       idCell.textContent = mod.id + (mod.dev ? '-dev' : '');
       row.appendChild(idCell);
+
+      var nameCell = document.createElement('td');
+      nameCell.className = 'ark-mod-name-cell';
+      if (currentModsIsEvolved) {
+        var nameInput = document.createElement('input');
+        nameInput.value = mod.name || '';
+        nameInput.placeholder = 'Optional label';
+        nameInput.addEventListener('change', function () {
+          var updatedMod = Object.assign({}, mod, { name: nameInput.value || undefined });
+          var next = currentMods.slice();
+          next[index] = updatedMod;
+          saveMods(next);
+        });
+        nameCell.appendChild(nameInput);
+      } else {
+        var info = currentArkInfo[mod.id];
+        if (info && info.iconUrl) {
+          var icon = document.createElement('img');
+          icon.src = info.iconUrl;
+          icon.alt = '';
+          icon.className = 'ark-mod-icon';
+          icon.addEventListener('error', function () { icon.style.display = 'none'; });
+          nameCell.appendChild(icon);
+        }
+        var resolved = (info && info.name) || mod.name;
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'ark-mod-title' + (resolved ? '' : ' muted');
+        nameSpan.title = resolved || '';
+        nameSpan.textContent = resolved || '—';
+        nameCell.appendChild(nameSpan);
+      }
+      row.appendChild(nameCell);
 
       var actionsCell = document.createElement('td');
       var removeBtn = document.createElement('button');
@@ -3760,22 +4095,131 @@ function initDashboard(resolvedRole) {
     });
   }
 
+  // Renders the CurseForge search-results list (separate from renderModsTable, which renders
+  // the server's own mod list above it) - takes no args, re-reading modsSearchResults/
+  // modsSearched state, so it can be called again after a save to flip a freshly-added
+  // result's button from "Add" to "Added" without re-searching.
+  var modsSearchResults = [];
+  function renderModsSearchResults() {
+    modsSearchResultsEl.innerHTML = '';
+    if (modsSearchResults.length === 0) {
+      var empty = document.createElement('p');
+      empty.className = 'empty-state';
+      empty.textContent = modsSearched ? 'No results.' : 'Search above to find mods to add.';
+      modsSearchResultsEl.appendChild(empty);
+      return;
+    }
+    modsSearchResults.forEach(function (r) {
+      var row = document.createElement('div');
+      row.className = 'ark-mod-search-result';
+      if (r.iconUrl) {
+        var icon = document.createElement('img');
+        icon.src = r.iconUrl;
+        icon.alt = '';
+        icon.className = 'ark-mod-icon';
+        icon.addEventListener('error', function () { icon.style.display = 'none'; });
+        row.appendChild(icon);
+      }
+      var info = document.createElement('div');
+      info.className = 'ark-mod-search-result-info';
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'ark-mod-search-result-name';
+      nameSpan.textContent = r.name;
+      var summarySpan = document.createElement('span');
+      summarySpan.className = 'empty-state ark-mod-search-result-summary';
+      summarySpan.title = r.summary || '';
+      summarySpan.textContent = r.summary || '';
+      info.appendChild(nameSpan);
+      info.appendChild(summarySpan);
+      row.appendChild(info);
+      var downloadsSpan = document.createElement('span');
+      downloadsSpan.className = 'empty-state ark-mod-search-result-downloads';
+      downloadsSpan.textContent = (r.downloads || 0).toLocaleString() + ' downloads';
+      row.appendChild(downloadsSpan);
+      var added = currentMods.some(function (m) { return m.id === r.id; });
+      var addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.disabled = added;
+      addBtn.textContent = added ? 'Added' : 'Add';
+      addBtn.addEventListener('click', function () {
+        if (currentMods.some(function (m) { return m.id === r.id; })) return;
+        saveMods(currentMods.concat([{ id: r.id, name: r.name, enabled: true, passive: false, dev: false }]));
+      });
+      row.appendChild(addBtn);
+      modsSearchResultsEl.appendChild(row);
+    });
+  }
+
+  function runModsSearch() {
+    var query = modsSearchQueryInput.value.trim();
+    if (!query || !currentId) return;
+    var id = currentId;
+    btnModsSearch.disabled = true;
+    btnModsSearch.textContent = 'Searching...';
+    showModsSearchError('');
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mods/search?q=' + encodeURIComponent(query))
+      .then(function (r) { return r.json(); })
+      .then(function (results) {
+        modsSearched = true;
+        if (id !== currentId) return;
+        modsSearchResults = results || [];
+        renderModsSearchResults();
+      })
+      .catch(function () {
+        if (id !== currentId) return;
+        showModsSearchError('Search failed');
+      })
+      .finally(function () {
+        btnModsSearch.disabled = false;
+        btnModsSearch.textContent = 'Search';
+      });
+  }
+
+  btnModsSearch.addEventListener('click', runModsSearch);
+  modsSearchQueryInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); runModsSearch(); }
+  });
+
   function loadModsView() {
     var id = currentId;
     if (!id) {
+      modsNoServerEl.textContent = 'No server selected - choose one above.';
+      modsNoServerEl.style.display = '';
+      modsContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      modsNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       modsNoServerEl.style.display = '';
       modsContentEl.classList.remove('active');
       return;
     }
     showModsError('');
+    showModsSearchError('');
     modsNoServerEl.style.display = 'none';
     modsContentEl.classList.add('active');
+    modsSearched = false;
+    modsSearchResults = [];
+    modsSearchQueryInput.value = '';
+    renderModsSearchResults();
     fetch('/api/servers/' + encodeURIComponent(id) + '/profile')
       .then(function (r) { return r.json(); })
       .then(function (profile) {
         if (id !== currentId) return;
         currentMods = profile.mods || [];
-        renderModsTable();
+        currentModsIsEvolved = profile.game === 'ark-evolved';
+        modsSearchSectionEl.style.display = currentModsIsEvolved ? 'none' : '';
+        if (!currentModsIsEvolved) {
+          fetch('/api/arkmods/status')
+            .then(function (r) { return r.json(); })
+            .then(function (result) {
+              if (id !== currentId) return;
+              var hasKey = !!(result && result.hasCurseForgeKey);
+              modsSearchNoKeyEl.style.display = hasKey ? 'none' : '';
+              modsSearchUiEl.style.display = hasKey ? '' : 'none';
+            });
+        }
+        refreshArkModsInfo();
       });
   }
 
@@ -3838,6 +4282,13 @@ function initDashboard(resolvedRole) {
   function loadMapManagementView() {
     var id = currentId;
     if (!id) {
+      mapmanagementNoServerEl.textContent = 'No server selected - choose one above.';
+      mapmanagementNoServerEl.style.display = '';
+      mapmanagementContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      mapmanagementNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       mapmanagementNoServerEl.style.display = '';
       mapmanagementContentEl.classList.remove('active');
       return;
@@ -4060,6 +4511,13 @@ function initDashboard(resolvedRole) {
   function loadServerManagementView() {
     var id = currentId;
     if (!id) {
+      smNoServerEl.textContent = 'No server selected - choose one above.';
+      smNoServerEl.style.display = '';
+      smContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      smNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       smNoServerEl.style.display = '';
       smContentEl.classList.remove('active');
       return;
@@ -4230,6 +4688,13 @@ function initDashboard(resolvedRole) {
   function loadSettingsView() {
     var id = currentId;
     if (!id) {
+      settingsNoServerEl.textContent = 'No server selected - choose one above.';
+      settingsNoServerEl.style.display = '';
+      settingsContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      settingsNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       settingsNoServerEl.style.display = '';
       settingsContentEl.classList.remove('active');
       return;
@@ -4424,10 +4889,13 @@ function initDashboard(resolvedRole) {
     lines.appendChild(uptimeLine);
 
     statusEl.appendChild(lines);
+    var isMinecraft = s.gameDisplayName === 'Minecraft';
     startBtn.disabled = s.state !== 'stopped';
     stopBtn.disabled = s.state !== 'running';
-    restartBtn.disabled = s.state !== 'running';
-    stopUpdateRestartBtn.disabled = s.state === 'updating';
+    restartBtn.disabled = isMinecraft || s.state !== 'running';
+    restartBtn.style.display = isMinecraft ? 'none' : '';
+    stopUpdateRestartBtn.disabled = isMinecraft || s.state === 'updating';
+    stopUpdateRestartBtn.style.display = isMinecraft ? 'none' : '';
   }
 
   function postServerAction(action) {

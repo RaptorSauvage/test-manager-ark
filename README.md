@@ -2881,3 +2881,75 @@ async function findProfileIdByName(name) {
   - Updated copy/paste section text in `ModsTab.tsx` to describe the new format; rewrote
     `tests/modsExport.test.ts` for the new behavior (separators, dedup, defaults, the empty-
     result error case) in place of the old JSON-round-trip/validation tests.
+
+- **The web dashboard (`src/main/lib/webDashboard.ts`) now lists, starts, stops, and remote-
+  controls Minecraft servers too, not just ARK ones - and its ARK Mods tab gained the same
+  CurseForge search/icon/resolved-name enrichment the desktop app's own `ModsTab.tsx` already
+  had (see the entries above).** Two separate requests handled together since both touch the
+  same file: "adapt the web dashboard to Minecraft servers, and to the recent ARK-side
+  novelties."
+  - **Core dispatch strategy**: rather than building a second, fully parallel Minecraft UI
+    tree in the dashboard's single-file client (which would have meant 1500+ new lines, on
+    the order of the desktop app's own separate `MinecraftServerDetail/*` React tree), every
+    route that already returns a shape close enough to be shared (`ServerStatus` ≈
+    `MinecraftServerStatus`; `RconResult`/`BackupEntry`/`BackupLogEntry` are the exact same
+    shared types both games' backend modules already use) now dispatches internally by game
+    type and returns that same shape either way - so the dashboard's existing generic
+    client-side rendering (it already carried `gameIconUrl`/`gameDisplayName` per server, to
+    tell ARK: Survival Ascended and ARK: Survival Evolved icons apart) picks up Minecraft
+    servers correctly with little to no client-side change for the core views.
+  - **What now works for a Minecraft server, same as ARK**: `GET /api/servers` lists it
+    (icon from a new `/game-icons/minecraft.png`, `minecraft.png` copied into `build/games/`
+    since it previously only existed in the renderer's own bundled Vite assets, never in the
+    `extraResources`-copied folder the dashboard and packaged app both actually read icons
+    from); Dashboard/Cluster cards and the Console view's status panel show it with zero
+    extra client code since both already rendered off the generic shape; the Console view's
+    live event stream tails Minecraft's own stdout via `minecraftConsoleEvents`/
+    `minecraftServerEvents` (every line wrapped as a generic `{label: 'LOG', cls: 'log', ...}`
+    `LogEvent`, since Minecraft's console has no ARK-style JOIN/CHAT/KILL/etc. categorization
+    to parse into); Start/Stop dispatch to `doStartMinecraftServer`/`doStopMinecraftServer`;
+    the RCON command box tries the live process's stdin first
+    (`sendStdinCommand`, same priority order the desktop Console tab's own command box and
+    `ipc/minecraft.ts` already use), falling back to real RCON
+    (`sendMinecraftRconCommand`) only for a re-adopted server with no live process handle;
+    `GET .../players` parses Minecraft's own `list` RCON response
+    (`parseMinecraftPlayerList`, already existed) into the same `{name, id}[]` shape ARK's
+    route returns.
+  - **What's explicitly not available for a Minecraft server yet, and says so rather than
+    guessing or silently no-op'ing**: `POST .../restart`, `.../update`, and
+    `.../stop-update-restart` all return `400` with a clear message (Minecraft has no restart
+    action and no auto-update mechanism in this Manager - a server jar is swapped by hand) -
+    and the Console view's Restart/Update Restart buttons, plus the Dashboard/Cluster card's
+    "⋮" action-sheet entries for them, are hidden entirely for a Minecraft server rather than
+    shown disabled. The six other admin-only tabs that only ever made sense for an ARK
+    profile's own on-disk layout - Settings, Mods, Backups, Analytics, Map Management, Server
+    Management, Update Log - each now show a plain "Not available for Minecraft servers yet -
+    only Console/start/stop currently work here" message and hide their form instead of
+    fetching a route built for a `ServerProfile` and either 404ing or rendering garbage for a
+    `MinecraftProfile`.
+  - **ARK Mods tab CurseForge port**: three new admin-gated routes mirror the arkMods.ts
+    functions the desktop app's ModsTab already called over IPC - `GET /api/arkmods/status`
+    (`{ hasCurseForgeKey }`, never the key itself, so the client can show/hide the search
+    section the same way the desktop tab does for `hasCurseForgeKey`), `GET
+    /api/servers/:id/mods/search?q=...` (`searchArkMods`), and `POST
+    /api/servers/:id/mods/info` (`{ modIds }` → `getArkModsInfo`). The Mods view's HTML
+    gained a collapsible "Search CurseForge" section (hidden entirely for an ARK: Survival
+    Evolved profile, whose mod ids are a Steam Workshop namespace with nothing CurseForge
+    could resolve) and the table's Name column now shows the resolved icon+name for ARK:
+    Survival Ascended (falling back to whatever label a mod already had, same as the desktop
+    tab) instead of staying an editable text input - which stays exactly as it was for ARK:
+    Survival Evolved. The table's Mod ID/Name column order was also swapped to match the
+    desktop tab's own recent reordering (see "ARK's Mods grid now shows Mod ID before Name"
+    above). The Mods tab, like the other five admin tabs above, shows the same "not available
+    for Minecraft servers yet" message for a Minecraft server - Minecraft's own mod browsing
+    wasn't part of this round.
+  - New tests in `tests/webDashboard.test.ts`: a `describe('Minecraft servers', ...)` block
+    (`/api/servers` listing, backlog/live-stream events incl. the `reset` event on
+    restart, start/stop dispatch, the three 400 routes, RCON stdin-then-fallback, player
+    list parsing) plus three new admin-route tests for `/api/arkmods/status` and the two
+    mods routes (mocking `../src/main/lib/arkMods` directly rather than hitting real
+    CurseForge). `npm run typecheck`, the full `npx vitest run` (863 tests), and `npm run
+    build` all pass - this wasn't visually verified in a real browser against a live
+    Minecraft server, since this environment has no display, but the server-side behavior
+    is covered by real HTTP requests against a real `http.Server` (this codebase's own
+    established testing pattern for this file, not a new one introduced here).
