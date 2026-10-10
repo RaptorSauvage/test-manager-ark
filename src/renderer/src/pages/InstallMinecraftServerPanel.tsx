@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { MinecraftInstallableType } from '@shared/minecraftInstall'
+import type { MinecraftInstallableType, MinecraftVersionOption } from '@shared/minecraftInstall'
+import { supportsLoaderVersionSelection } from '@shared/minecraftInstall'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { createDefaultMinecraftProfile } from '../lib/minecraftProfile'
 import { MINECRAFT_SERVER_TYPE_ICONS } from '../lib/minecraftServerTypeIcons'
@@ -20,6 +21,16 @@ const SERVER_TYPE_OPTIONS: Array<{ value: MinecraftInstallableType; label: strin
     value: 'spigot',
     label: 'Spigot',
     hint: 'Compiled locally from source via BuildTools (per Spigot\'s own license terms) - needs a JDK and Git on PATH, and can take several minutes. Paper is a faster, drop-in-compatible alternative most servers prefer today.'
+  },
+  {
+    value: 'spongevanilla',
+    label: 'SpongeVanilla',
+    hint: 'Standalone Sponge platform implementation - its own plugin ecosystem (SpongeAPI), no Forge required.'
+  },
+  {
+    value: 'spongeforge',
+    label: 'SpongeForge',
+    hint: 'Sponge running on top of Forge - installs a Forge server first, then adds SpongeForge as a mod. Lets SpongeAPI plugins and Forge mods run side by side.'
   }
 ]
 
@@ -41,6 +52,10 @@ export default function InstallMinecraftServerPanel({
   const [loadingVersions, setLoadingVersions] = useState(false)
   const [versionsError, setVersionsError] = useState('')
   const [minecraftVersion, setMinecraftVersion] = useState('')
+  const [loaderVersions, setLoaderVersions] = useState<MinecraftVersionOption[]>([])
+  const [loadingLoaderVersions, setLoadingLoaderVersions] = useState(false)
+  const [loaderVersionsError, setLoaderVersionsError] = useState('')
+  const [loaderVersion, setLoaderVersion] = useState('')
   const [installDir, setInstallDir] = useState('')
   const [name, setName] = useState(`Minecraft Server ${existingNameCount + 1}`)
   const [acceptEula, setAcceptEula] = useState(false)
@@ -71,6 +86,37 @@ export default function InstallMinecraftServerPanel({
     }
   }, [serverType])
 
+  // Second selector - which loader/build version, once a Minecraft version is picked. Empty
+  // for vanilla/Spigot (supportsLoaderVersionSelection), which have nothing further to choose.
+  useEffect(() => {
+    let cancelled = false
+    setLoaderVersion('')
+    if (!minecraftVersion || !supportsLoaderVersionSelection(serverType)) {
+      setLoaderVersions([])
+      setLoaderVersionsError('')
+      return
+    }
+    setLoadingLoaderVersions(true)
+    setLoaderVersionsError('')
+    window.api.minecraft.install
+      .listLoaderVersions(serverType, minecraftVersion)
+      .then((options) => {
+        if (cancelled) return
+        setLoaderVersions(options)
+        const recommended = options.find((o) => o.recommended) ?? options[0]
+        if (recommended) setLoaderVersion(recommended.id)
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setLoaderVersionsError(err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingLoaderVersions(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [serverType, minecraftVersion])
+
   async function browseInstallDir(): Promise<void> {
     const dir = await window.api.dialog.selectDirectory()
     if (dir) setInstallDir(dir)
@@ -80,6 +126,10 @@ export default function InstallMinecraftServerPanel({
     setInstallError('')
     if (!minecraftVersion) {
       setInstallError('Pick a Minecraft version first.')
+      return
+    }
+    if (supportsLoaderVersionSelection(serverType) && !loaderVersion) {
+      setInstallError('Pick a loader/build version first.')
       return
     }
     if (!installDir.trim()) {
@@ -92,7 +142,7 @@ export default function InstallMinecraftServerPanel({
     }
     setInstalling(true)
     setProgressMessage(
-      serverType === 'forge'
+      serverType === 'forge' || serverType === 'spongeforge'
         ? 'Downloading and running the Forge installer...'
         : serverType === 'spigot'
           ? 'Downloading BuildTools and compiling Spigot - this can take several minutes...'
@@ -102,6 +152,7 @@ export default function InstallMinecraftServerPanel({
       const result = await window.api.minecraft.install.run({
         serverType,
         minecraftVersion,
+        loaderVersion: supportsLoaderVersionSelection(serverType) ? loaderVersion : undefined,
         installDir,
         acceptEula
       })
@@ -109,6 +160,7 @@ export default function InstallMinecraftServerPanel({
         ...createDefaultMinecraftProfile(name || `Minecraft Server ${existingNameCount + 1}`),
         installDir: result.installDir,
         minecraftVersion: result.minecraftVersion,
+        loaderVersion: result.loaderVersion,
         serverType: result.serverType,
         launchMode: result.launchMode,
         jarFileName: result.jarFileName,
@@ -164,6 +216,24 @@ export default function InstallMinecraftServerPanel({
       </label>
       {loadingVersions && <p className="empty-state">Loading versions...</p>}
       {versionsError && <p className="error-message">{versionsError}</p>}
+      {supportsLoaderVersionSelection(serverType) && (
+        <label>
+          Loader / build version
+          <select
+            value={loaderVersion}
+            onChange={(e) => setLoaderVersion(e.target.value)}
+            disabled={installing || loadingLoaderVersions || loaderVersions.length === 0}
+          >
+            {loaderVersions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.recommended ? `★ ${o.label}` : o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {loadingLoaderVersions && <p className="empty-state">Loading loader/build versions...</p>}
+      {loaderVersionsError && <p className="error-message">{loaderVersionsError}</p>}
       <label>
         Install directory
         <div className="path-input-row">

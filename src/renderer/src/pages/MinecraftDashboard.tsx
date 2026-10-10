@@ -16,6 +16,8 @@ const SERVER_TYPE_LABELS: Record<MinecraftServerType, string> = {
   fabric: 'Fabric',
   forge: 'Forge',
   neoforge: 'NeoForge',
+  spongevanilla: 'SpongeVanilla',
+  spongeforge: 'SpongeForge',
   unknown: 'Unknown'
 }
 

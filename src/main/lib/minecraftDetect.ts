@@ -31,7 +31,13 @@ export interface DetectedLaunchable {
  * apart for a script launch at all - when `installDir` is passed, this instead checks which
  * of libraries/net/neoforged or libraries/net/minecraftforge actually exists on disk (both
  * installers always create their own, never the other's), a reliable signal the file name
- * alone doesn't carry.
+ * alone doesn't carry. Same substring trap for SpongeForge - "spongeforge" also contains
+ * "forge" - so it's checked even earlier than NeoForge. In practice this heuristic rarely
+ * matters for Sponge at all: a SpongeForge *install* (installMinecraftServerFiles) ends up
+ * launched exactly like plain Forge (the SpongeForge jar just sits in mods/, loaded by
+ * Forge's own run script) and forces serverType: 'spongeforge' itself afterward, same as
+ * Forge/NeoForge's own installers do - this only matters for "Import existing server"
+ * spotting an already-set-up one from its launch script/jar name alone.
  */
 export function detectMinecraftServerType(
   launchMode: MinecraftLaunchMode,
@@ -43,6 +49,8 @@ export function detectMinecraftServerType(
   if (name.includes('fabric')) return 'fabric'
   if (name.includes('paper')) return 'paper'
   if (name.includes('spigot') || name.includes('bukkit')) return 'spigot'
+  if (name.includes('spongeforge')) return 'spongeforge'
+  if (name.includes('spongevanilla') || name.includes('sponge')) return 'spongevanilla'
   if (name.includes('neoforge')) return 'neoforge'
   if (name.includes('forge')) return 'forge'
   if (launchMode === 'script') {

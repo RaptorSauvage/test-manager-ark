@@ -3281,3 +3281,113 @@ async function findProfileIdByName(name) {
     loader types, and confirmed the live icon preview's `src` and visibility updated correctly
     for every one of them - zero `pageerror`/console-error events. `npm run typecheck`, the
     full `npx vitest run` (now 951 tests, all passing), and `npm run build` all pass too.
+
+- **Four requests handled together since they all touch the same install/loader-version
+  machinery: a real bug fix for Paper installs, full SpongeVanilla/SpongeForge support, and a
+  two-selector Minecraft-version/loader-version picker (with a star on the recommended build)
+  replacing the old single free-text or single-combo-string pickers everywhere a Minecraft
+  server's version is chosen.**
+  - **Bug fix: `Error invoking remote method 'minecraft-install:list-versions': ... HTTP 410`
+    for Paper.** PaperMC fully sunset their v2 API (`api.papermc.io`) - every endpoint there
+    now answers 410 Gone, which is exactly what broke every Paper install/version-list call.
+    Migrated `minecraftInstallClient.ts`'s entire Paper section to PaperMC's own documented
+    replacement, the "Fill" v3 API (`https://fill.papermc.io/v3`) - a genuinely different
+    shape, not just a renamed host: versions come grouped by family, builds carry an explicit
+    `channel` (STABLE/BETA/ALPHA) instead of a bare build-number list, and each build's own
+    download entry already has a ready-to-fetch URL + sha256 (no separate "build download
+    url" endpoint needed the way v2 required). `getLatestPaperBuild` now picks the newest
+    STABLE-channel build (falling back to the newest of any channel for a very fresh Minecraft
+    version with no STABLE build yet) instead of just the highest build number, matching
+    Fill's own documented `jq` example for "latest stable build". New `getPaperBuild`/
+    `listPaperBuildOptions` support picking (and starring the recommended) a specific build,
+    for the new loader-version selector below.
+  - **SpongeVanilla and SpongeForge** (user-provided `sponge.png`, user explicitly chose both
+    variants after being told the tradeoff): added as two separate `MinecraftServerType`
+    values rather than one ambiguous "sponge" - SpongeVanilla is a standalone single-jar
+    server (installed the same one-step way as vanilla/Paper/Fabric); SpongeForge is a mod
+    that needs a real Forge server installed first, so `installSpongeForgeServer` runs the
+    normal Forge install path, then downloads the SpongeForge jar straight into the resulting
+    `mods/` folder on top of it. **This is the least-verified integration in the app, more so
+    than NeoForge originally was**: SpongePowered's own dedicated downloads API could not be
+    confirmed live at all (its Vue frontend repo is archived, and the backend it reads from
+    documents its production host only in an unconfirmed `openapi.yaml`, which didn't even
+    resolve via DNS when checked) - used their Maven repo directly instead
+    (`repo.spongepowered.org`), the same `maven-metadata.xml` approach already used for Forge/
+    NeoForge, confirmed via SpongePowered's own current GitHub README (its "Latest Builds"
+    badges link straight into that Maven repo's browser, with group id `org.spongepowered` and
+    artifact ids `spongevanilla`/`spongeforge`, version format `<mcVersion>-<build>`). What is
+    genuinely NOT confirmed: the exact published jar file name for a given version (assumed to
+    be the plain Maven default, `<artifactId>-<version>.jar`, no classifier) - if a Sponge
+    install 404s on the actual jar download (as opposed to failing to list versions), that
+    assumption is the first thing to check. SpongeForge's own required Forge version isn't
+    exposed by Sponge's Maven listing either, so `installSpongeForgeServer` installs whichever
+    Forge build is "recommended" for the same Minecraft version instead - a reasonable
+    default, not a verified-compatible pairing. Wired into every existing per-type surface:
+    `supportsMinecraftMods`, `modTargetDir` (`mods/`, same as Forge/Fabric - Sponge's plugin
+    loading follows Forge's folder convention, not Bukkit's `plugins/`), Modrinth's `sponge`
+    loader category (shared by both variants - SpongeAPI plugins are implementation-agnostic),
+    CurseForge (no real Sponge content category there, falls back to the generic Mods class
+    with no loader-type filter), the jar-name detection heuristic (`spongeforge` checked
+    before plain `forge`, since it contains "forge" as a substring - same trap NeoForge's own
+    detection fix addressed previously), and the shared `sponge.png` icon (one SpongePowered
+    logo for both variants, same dual-location `assets/games/`/`build/games/` pattern as every
+    other loader icon).
+  - **Two-selector version picker, replacing the old single picker everywhere a Minecraft
+    server's version is chosen** (user request, explicitly confirmed for both "+ Add server"
+    and Start Settings after a design-tradeoff question): a Minecraft-version `<select>` plus,
+    for every type except vanilla/Spigot (`supportsLoaderVersionSelection` in
+    `shared/minecraftInstall.ts` - those two publish exactly one artifact per Minecraft
+    version, nothing further to choose), a second loader/build-version `<select>` populated
+    once the first is picked, with a ★ next to whichever option counts as "recommended" for
+    that loader. Previously Forge/NeoForge crammed both into one flat list of
+    `"<mcVersion>-<build>"`-style combo strings - genuinely confusing to pick from, and
+    impossible to extend to a real "recommended build" star at all. New
+    `listInstallableLoaderVersions(serverType, minecraftVersion)` (`minecraftInstall.ts`)
+    joins the existing `listInstallableMinecraftVersions`, both now exposed over IPC
+    (`window.api.minecraft.install.listLoaderVersions`) and, for the web dashboard (which has
+    no IPC boundary - everything already runs in the main process), two new HTTP routes
+    (`GET /api/mc-install/versions`/`loaderversions`, admin-gated like MC Start Settings
+    itself). What actually marks a build "recommended" varies by loader, documented at each
+    call site rather than faked uniformly: **Forge** has a real, official signal - its own
+    `promotions_slim.json` (`<mcVersion>-recommended`, falling back to `<mcVersion>-latest` if
+    Forge hasn't picked one for a very fresh Minecraft version yet); **Paper** uses its Fill
+    API's own STABLE channel; **Fabric** uses its own `stable` flag; **NeoForge and Sponge**
+    have no such signal at all, so the newest build is starred instead as a best-effort
+    default, called out as exactly that (not an official recommendation) in both the code
+    comments and the picker's own behavior.
+  - **Start Settings** (`StartSettingsTab.tsx` desktop, `mcss-version`/`mcss-loaderversion`
+    web dashboard) gained a new `MinecraftProfile.loaderVersion?` field to hold the second
+    selector's pick - purely informational (same "cosmetic, corrects itself, nothing reads it"
+    status as `serverType` itself already had), optional so it's a no-op for every server that
+    predates this field. Both pickers fall back to a free-text field only for `serverType:
+    'unknown'` (not a real loader to ask an install API about at all); for every real loader
+    type, a value the server already had that isn't (or isn't yet) in the live list is kept as
+    an extra synthetic option rather than silently dropped, so an older/custom value a server
+    was already set to never just vanishes from the dropdown.
+  - **"+ Add server"** (`InstallMinecraftServerPanel.tsx`) carries the picked `loaderVersion`
+    through to `installMinecraftServerFiles`, and the resulting profile now starts with its
+    own `loaderVersion` already filled in from whatever was actually installed - `MinecraftInstallResult`
+    gained the same field for this.
+  - **Verified**: full rewrite of `tests/minecraftInstallClient.test.ts`'s Paper section for
+    the new Fill v3 shapes (including the STABLE-fallback and specific-build-fetch paths) and
+    new tests for every new function (`listPaperBuildOptions`, `listFabricLoaderOptions`,
+    `listForgeMinecraftVersions`/`listForgeLoaderOptions` including the promotions-file
+    fallback and failure path, `listNeoForgeMinecraftVersions`/`listNeoForgeLoaderOptions`,
+    the whole new Sponge client section); `tests/minecraftInstall.test.ts` rewritten for the
+    new `(minecraftVersion, loaderVersion)` parameter shape across every loader (including the
+    "resolves the recommended/newest build itself when loaderVersion is omitted" path for
+    Forge/NeoForge/SpongeVanilla) plus new SpongeVanilla/SpongeForge install tests; new
+    per-type cases added to `tests/minecraftDetect.test.ts` (the SpongeForge/"forge" substring
+    trap), `tests/minecraftMods.test.ts`, `tests/modrinthClient.test.ts`, and
+    `tests/curseforgeClient.test.ts` - 985 tests total now. A temporary headless-Chromium check
+    (deleted after use) drove the web dashboard's MC Start Settings end to end: confirmed
+    SpongeVanilla/SpongeForge appear in the Server type picker, the Minecraft-version select
+    populates live from a mocked install API and keeps the server's existing value selected,
+    the loader-version select shows up with a ★ on the mocked "recommended" option, picking
+    one actually persists `loaderVersion` through the save route, and switching to vanilla
+    correctly hides the loader-version row entirely - zero `pageerror` events. The desktop
+    React side (`InstallMinecraftServerPanel.tsx`/`StartSettingsTab.tsx`) was **not** visually
+    verified in a real renderer - same standing limitation as every other desktop-only change
+    in this project (no display to drive the actual Electron window from this sandbox) - only
+    typechecked and reasoned through against the same APIs the web dashboard check exercised
+    live. `npm run typecheck`, the full `npx vitest run`, and `npm run build` all pass.

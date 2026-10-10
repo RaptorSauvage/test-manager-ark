@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { MinecraftLaunchMode, MinecraftProfile, MinecraftServerType } from '@shared/minecraft'
+import type { MinecraftInstallableType, MinecraftVersionOption } from '@shared/minecraftInstall'
+import { supportsLoaderVersionSelection } from '@shared/minecraftInstall'
 import { MINECRAFT_SERVER_TYPE_ICONS } from '../../lib/minecraftServerTypeIcons'
 
 const SERVER_TYPE_OPTIONS: Array<{ value: MinecraftServerType; label: string }> = [
@@ -9,8 +11,19 @@ const SERVER_TYPE_OPTIONS: Array<{ value: MinecraftServerType; label: string }> 
   { value: 'fabric', label: 'Fabric' },
   { value: 'forge', label: 'Forge' },
   { value: 'neoforge', label: 'NeoForge' },
+  { value: 'spongevanilla', label: 'SpongeVanilla' },
+  { value: 'spongeforge', label: 'SpongeForge' },
   { value: 'unknown', label: 'Unknown' }
 ]
+
+/** Whether the Minecraft version/loader version pickers below can even be driven live - they
+ *  need a real, installable loader type (window.api.minecraft.install.listVersions), which
+ *  'unknown' (not a real loader at all) never has. A server with serverType 'unknown' instead
+ *  falls back to a free-text version field, same as every server did before these pickers
+ *  existed. */
+function isInstallableType(serverType: MinecraftServerType): serverType is MinecraftInstallableType {
+  return serverType !== 'unknown'
+}
 
 interface StartSettingsTabProps {
   profile: MinecraftProfile
@@ -21,6 +34,80 @@ export default function StartSettingsTab({ profile, onProfileChange }: StartSett
   const [form, setForm] = useState<MinecraftProfile>(profile)
   const [formError, setFormError] = useState('')
   const [redetecting, setRedetecting] = useState(false)
+  const [mcVersionOptions, setMcVersionOptions] = useState<MinecraftVersionOption[]>([])
+  const [loadingMcVersions, setLoadingMcVersions] = useState(false)
+  const [mcVersionsError, setMcVersionsError] = useState('')
+  const [loaderVersionOptions, setLoaderVersionOptions] = useState<MinecraftVersionOption[]>([])
+  const [loadingLoaderVersions, setLoadingLoaderVersions] = useState(false)
+  const [loaderVersionsError, setLoaderVersionsError] = useState('')
+
+  // Same two-selector system "+ Add server" uses to install a server (Minecraft version,
+  // then a loader/build version with a recommended one starred) - driven live from the same
+  // window.api.minecraft.install APIs, just to label/display an already-set-up server here
+  // rather than to install anything. 'unknown' has no real loader to ask about at all, so it
+  // keeps the plain free-text fields these pickers replaced for everything else.
+  useEffect(() => {
+    let cancelled = false
+    if (!isInstallableType(form.serverType)) {
+      setMcVersionOptions([])
+      setMcVersionsError('')
+      return
+    }
+    setLoadingMcVersions(true)
+    setMcVersionsError('')
+    window.api.minecraft.install
+      .listVersions(form.serverType)
+      .then((options) => {
+        if (!cancelled) setMcVersionOptions(options)
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setMcVersionsError(err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingMcVersions(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [form.serverType])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!isInstallableType(form.serverType) || !supportsLoaderVersionSelection(form.serverType) || !form.minecraftVersion) {
+      setLoaderVersionOptions([])
+      setLoaderVersionsError('')
+      return
+    }
+    setLoadingLoaderVersions(true)
+    setLoaderVersionsError('')
+    window.api.minecraft.install
+      .listLoaderVersions(form.serverType, form.minecraftVersion)
+      .then((options) => {
+        if (!cancelled) setLoaderVersionOptions(options)
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setLoaderVersionsError(err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingLoaderVersions(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [form.serverType, form.minecraftVersion])
+
+  // Keeps whatever this profile already has set, even if it isn't (or isn't yet) in the live
+  // list - a server set up before this picker existed, or on a version the live source has
+  // since dropped, would otherwise just silently vanish from the dropdown instead of still
+  // showing as selected.
+  const mcVersionSelectOptions =
+    form.minecraftVersion && !mcVersionOptions.some((o) => o.id === form.minecraftVersion)
+      ? [{ id: form.minecraftVersion, label: form.minecraftVersion }, ...mcVersionOptions]
+      : mcVersionOptions
+  const loaderVersionSelectOptions =
+    form.loaderVersion && !loaderVersionOptions.some((o) => o.id === form.loaderVersion)
+      ? [{ id: form.loaderVersion, label: form.loaderVersion }, ...loaderVersionOptions]
+      : loaderVersionOptions
 
   async function persist(next: MinecraftProfile): Promise<void> {
     const updated = await window.api.minecraft.profiles.save(next)
@@ -92,13 +179,55 @@ export default function StartSettingsTab({ profile, onProfileChange }: StartSett
           Cosmetic only (shown on the Dashboard card) - best-effort guessed from the jar/script name on import or
           Re-detect below. Correct it here if it guessed wrong; it never affects how the server actually launches.
         </p>
-        <label>
-          Minecraft version
-          <input value={form.minecraftVersion} onChange={(e) => update('minecraftVersion', e.target.value)} placeholder="1.20.1" />
-        </label>
+        {isInstallableType(form.serverType) ? (
+          <>
+            <label>
+              Minecraft version
+              <select
+                value={form.minecraftVersion}
+                onChange={(e) => update('minecraftVersion', e.target.value)}
+                disabled={loadingMcVersions}
+              >
+                <option value="">(not set)</option>
+                {mcVersionSelectOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {loadingMcVersions && <p className="empty-state">Loading versions...</p>}
+            {mcVersionsError && <p className="error-message">{mcVersionsError}</p>}
+            {supportsLoaderVersionSelection(form.serverType) && (
+              <label>
+                Loader / build version
+                <select
+                  value={form.loaderVersion ?? ''}
+                  onChange={(e) => update('loaderVersion', e.target.value)}
+                  disabled={loadingLoaderVersions || !form.minecraftVersion}
+                >
+                  <option value="">(not set)</option>
+                  {loaderVersionSelectOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.recommended ? `★ ${o.label}` : o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {loadingLoaderVersions && <p className="empty-state">Loading loader/build versions...</p>}
+            {loaderVersionsError && <p className="error-message">{loaderVersionsError}</p>}
+          </>
+        ) : (
+          <label>
+            Minecraft version
+            <input value={form.minecraftVersion} onChange={(e) => update('minecraftVersion', e.target.value)} placeholder="1.20.1" />
+          </label>
+        )}
         <p className="empty-state">
           Not detected automatically - set it to whatever version this server actually runs. Required by the Mods
-          tab to find compatible mods/plugins; otherwise unused.
+          tab to find compatible mods/plugins; the loader/build version itself is purely informational (nothing
+          currently reads it), unused for &quot;Unknown&quot; server type.
         </p>
         <label>
           Install directory

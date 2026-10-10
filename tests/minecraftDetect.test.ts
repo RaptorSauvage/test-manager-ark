@@ -161,4 +161,12 @@ describe('detectMinecraftServerType', () => {
       fs.rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('recognizes SpongeForge from the jar name, not misclassified as plain Forge ("spongeforge" contains "forge")', () => {
+    expect(detectMinecraftServerType('jar', 'spongeforge-1.20.1-47.2.0-9.0.0.jar', '')).toBe('spongeforge')
+  })
+
+  it('recognizes SpongeVanilla from the jar name', () => {
+    expect(detectMinecraftServerType('jar', 'spongevanilla-1.21.1-10.1.0.jar', '')).toBe('spongevanilla')
+  })
 })

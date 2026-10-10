@@ -5,6 +5,7 @@ import fabricIcon from '../assets/games/fabric.png'
 import forgeIcon from '../assets/games/forge.png'
 import neoforgeIcon from '../assets/games/neoforge.png'
 import spigotIcon from '../assets/games/spigot.jpg'
+import spongeIcon from '../assets/games/sponge.png'
 
 /**
  * Per-loader icon, shown anywhere a server's `serverType` is displayed (the Dashboard card's
@@ -15,7 +16,9 @@ import spigotIcon from '../assets/games/spigot.jpg'
  * of those call sites when that happens. `forge`'s icon reuses the same asset as the
  * CurseForge mod-source logo (`assets/mod-sources/forge.png`) rather than a second copy with
  * a different name - both are the same Forge anvil artwork, just used for two different
- * meanings (the CurseForge brand there, the Forge loader type here).
+ * meanings (the CurseForge brand there, the Forge loader type here). `spongevanilla` and
+ * `spongeforge` share one `sponge.png` - one SpongePowered logo covers both, there's no
+ * separate "vanilla" vs "forge" branding for it the way there is for actual icons.
  */
 export const MINECRAFT_SERVER_TYPE_ICONS: Partial<Record<MinecraftServerType, string>> = {
   vanilla: vanillaIcon,
@@ -23,5 +26,7 @@ export const MINECRAFT_SERVER_TYPE_ICONS: Partial<Record<MinecraftServerType, st
   fabric: fabricIcon,
   forge: forgeIcon,
   neoforge: neoforgeIcon,
-  spigot: spigotIcon
+  spigot: spigotIcon,
+  spongevanilla: spongeIcon,
+  spongeforge: spongeIcon
 }

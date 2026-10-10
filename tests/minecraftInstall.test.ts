@@ -12,11 +12,18 @@ const mockListVanillaVersions = vi.fn()
 const mockGetVanillaServerDownload = vi.fn()
 const mockListPaperVersions = vi.fn()
 const mockGetLatestPaperBuild = vi.fn()
+const mockGetPaperBuild = vi.fn()
+const mockListPaperBuildOptions = vi.fn()
 const mockListFabricGameVersions = vi.fn()
 const mockGetLatestFabricLoaderVersion = vi.fn()
 const mockGetLatestFabricInstallerVersion = vi.fn()
-const mockListForgeVersionsForMinecraft = vi.fn()
-const mockListNeoForgeVersions = vi.fn()
+const mockListFabricLoaderOptions = vi.fn()
+const mockListForgeMinecraftVersions = vi.fn()
+const mockListForgeLoaderOptions = vi.fn()
+const mockListNeoForgeMinecraftVersions = vi.fn()
+const mockListNeoForgeLoaderOptions = vi.fn()
+const mockListSpongeMinecraftVersions = vi.fn()
+const mockListSpongeLoaderOptions = vi.fn()
 
 vi.mock('../src/main/lib/minecraftInstallClient', async () => {
   const actual = await vi.importActual<typeof import('../src/main/lib/minecraftInstallClient')>(
@@ -28,11 +35,18 @@ vi.mock('../src/main/lib/minecraftInstallClient', async () => {
     getVanillaServerDownload: (url: string) => mockGetVanillaServerDownload(url),
     listPaperVersions: () => mockListPaperVersions(),
     getLatestPaperBuild: (version: string) => mockGetLatestPaperBuild(version),
+    getPaperBuild: (version: string, build: number) => mockGetPaperBuild(version, build),
+    listPaperBuildOptions: (version: string) => mockListPaperBuildOptions(version),
     listFabricGameVersions: () => mockListFabricGameVersions(),
     getLatestFabricLoaderVersion: (mcVersion: string) => mockGetLatestFabricLoaderVersion(mcVersion),
     getLatestFabricInstallerVersion: () => mockGetLatestFabricInstallerVersion(),
-    listForgeVersionsForMinecraft: (mcVersion: string) => mockListForgeVersionsForMinecraft(mcVersion),
-    listNeoForgeVersions: () => mockListNeoForgeVersions()
+    listFabricLoaderOptions: (mcVersion: string) => mockListFabricLoaderOptions(mcVersion),
+    listForgeMinecraftVersions: () => mockListForgeMinecraftVersions(),
+    listForgeLoaderOptions: (mcVersion: string) => mockListForgeLoaderOptions(mcVersion),
+    listNeoForgeMinecraftVersions: () => mockListNeoForgeMinecraftVersions(),
+    listNeoForgeLoaderOptions: (mcVersion: string) => mockListNeoForgeLoaderOptions(mcVersion),
+    listSpongeMinecraftVersions: (artifactId: string) => mockListSpongeMinecraftVersions(artifactId),
+    listSpongeLoaderOptions: (artifactId: string, mcVersion: string) => mockListSpongeLoaderOptions(artifactId, mcVersion)
   }
 })
 
@@ -71,7 +85,7 @@ vi.mock('node:child_process', () => ({
   spawnSync: (command: string) => (spawnSyncMissing.has(command) ? { error: new Error('ENOENT'), status: null } : { error: undefined, status: 0 })
 }))
 
-import { installMinecraftServerFiles, listInstallableMinecraftVersions } from '../src/main/lib/minecraftInstall'
+import { installMinecraftServerFiles, listInstallableMinecraftVersions, listInstallableLoaderVersions } from '../src/main/lib/minecraftInstall'
 
 const TEST_DIR = path.join(os.tmpdir(), `minecraft-install-test-${process.pid}`)
 
@@ -159,12 +173,18 @@ describe('installMinecraftServerFiles', () => {
     ).rejects.toThrow(/Unknown Minecraft version/)
   })
 
-  it('installs paper: downloads the build-specific jar with its own file name', async () => {
+  it('installs paper: downloads the build-specific jar with its own file name, from Fill\'s ready-made URL', async () => {
     const bytes = new TextEncoder().encode('fake-paper-bytes')
     const crypto = await import('node:crypto')
     const sha256 = crypto.createHash('sha256').update(Buffer.from(bytes)).digest('hex')
-    mockGetLatestPaperBuild.mockResolvedValue({ build: 12, fileName: 'paper-1.20.1-12.jar', sha256 })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => bytes.buffer }))
+    mockGetLatestPaperBuild.mockResolvedValue({
+      build: 12,
+      fileName: 'paper-1.20.1-12.jar',
+      sha256,
+      url: 'https://fill-data.papermc.io/paper-1.20.1-12.jar'
+    })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => bytes.buffer })
+    vi.stubGlobal('fetch', fetchMock)
 
     const result = await installMinecraftServerFiles({
       serverType: 'paper',
@@ -174,8 +194,30 @@ describe('installMinecraftServerFiles', () => {
     })
 
     expect(result.jarFileName).toBe('paper-1.20.1-12.jar')
+    expect(result.loaderVersion).toBe('12')
     expect(result.launchMode).toBe('jar')
+    expect(fetchMock).toHaveBeenCalledWith('https://fill-data.papermc.io/paper-1.20.1-12.jar')
     expect(fs.existsSync(path.join(TEST_DIR, 'paper-1.20.1-12.jar'))).toBe(true)
+  })
+
+  it('installs paper: fetches a specific build when loaderVersion is given, rather than the latest', async () => {
+    const bytes = new TextEncoder().encode('fake-paper-bytes')
+    const crypto = await import('node:crypto')
+    const sha256 = crypto.createHash('sha256').update(Buffer.from(bytes)).digest('hex')
+    mockGetPaperBuild.mockResolvedValue({ build: 10, fileName: 'paper-1.20.1-10.jar', sha256, url: 'https://fill-data.papermc.io/10.jar' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => bytes.buffer }))
+
+    const result = await installMinecraftServerFiles({
+      serverType: 'paper',
+      minecraftVersion: '1.20.1',
+      loaderVersion: '10',
+      installDir: TEST_DIR,
+      acceptEula: true
+    })
+
+    expect(mockGetPaperBuild).toHaveBeenCalledWith('1.20.1', 10)
+    expect(mockGetLatestPaperBuild).not.toHaveBeenCalled()
+    expect(result.jarFileName).toBe('paper-1.20.1-10.jar')
   })
 
   it('installs fabric: downloads the on-the-fly server jar with no checksum to verify', async () => {
@@ -198,7 +240,6 @@ describe('installMinecraftServerFiles', () => {
   })
 
   it('installs forge: downloads the installer, runs it, then detects the launchable result', async () => {
-    mockListForgeVersionsForMinecraft.mockResolvedValue(['1.20.1-47.2.0'])
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('installer-jar').buffer })
@@ -212,20 +253,45 @@ describe('installMinecraftServerFiles', () => {
 
     const result = await installMinecraftServerFiles({
       serverType: 'forge',
-      minecraftVersion: '1.20.1-47.2.0',
+      minecraftVersion: '1.20.1',
+      loaderVersion: '47.2.0',
       installDir: TEST_DIR,
       acceptEula: true
     })
 
     expect(lastSpawnCall).toEqual({ command: 'java', args: ['-jar', 'forge-installer.jar', '--installServer'] })
+    expect(mockListForgeLoaderOptions).not.toHaveBeenCalled()
     expect(result).toEqual({
       installDir: TEST_DIR,
       launchMode: 'script',
       jarFileName: '',
       scriptFileName: 'run.sh',
       minecraftVersion: '1.20.1',
+      loaderVersion: '47.2.0',
       serverType: 'forge'
     })
+  })
+
+  it('installs forge: resolves the recommended loader build itself when loaderVersion is omitted', async () => {
+    mockListForgeLoaderOptions.mockResolvedValue([
+      { id: '47.2.0', label: '47.2.0', recommended: false },
+      { id: '47.1.0', label: '47.1.0', recommended: true }
+    ])
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('installer-jar').buffer })
+    )
+    mockDetectMinecraftLaunchable.mockReturnValue({ launchMode: 'script', jarFileName: '', scriptFileName: 'run.sh', serverType: 'unknown' })
+
+    const result = await installMinecraftServerFiles({
+      serverType: 'forge',
+      minecraftVersion: '1.20.1',
+      installDir: TEST_DIR,
+      acceptEula: true
+    })
+
+    expect(mockListForgeLoaderOptions).toHaveBeenCalledWith('1.20.1')
+    expect(result.loaderVersion).toBe('47.1.0')
   })
 
   it('forge install fails clearly when the installer process exits non-zero', async () => {
@@ -236,7 +302,13 @@ describe('installMinecraftServerFiles', () => {
     )
 
     await expect(
-      installMinecraftServerFiles({ serverType: 'forge', minecraftVersion: '1.20.1-47.2.0', installDir: TEST_DIR, acceptEula: true })
+      installMinecraftServerFiles({
+        serverType: 'forge',
+        minecraftVersion: '1.20.1',
+        loaderVersion: '47.2.0',
+        installDir: TEST_DIR,
+        acceptEula: true
+      })
     ).rejects.toThrow(/exited with code 1/)
   })
 
@@ -248,7 +320,13 @@ describe('installMinecraftServerFiles', () => {
     mockDetectMinecraftLaunchable.mockReturnValue(null)
 
     await expect(
-      installMinecraftServerFiles({ serverType: 'forge', minecraftVersion: '1.20.1-47.2.0', installDir: TEST_DIR, acceptEula: true })
+      installMinecraftServerFiles({
+        serverType: 'forge',
+        minecraftVersion: '1.20.1',
+        loaderVersion: '47.2.0',
+        installDir: TEST_DIR,
+        acceptEula: true
+      })
     ).rejects.toThrow(/no launchable jar or script/)
   })
 
@@ -258,7 +336,13 @@ describe('installMinecraftServerFiles', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(
-      installMinecraftServerFiles({ serverType: 'forge', minecraftVersion: '1.20.1-47.2.0', installDir: TEST_DIR, acceptEula: true })
+      installMinecraftServerFiles({
+        serverType: 'forge',
+        minecraftVersion: '1.20.1',
+        loaderVersion: '47.2.0',
+        installDir: TEST_DIR,
+        acceptEula: true
+      })
     ).rejects.toThrow(/Java was not found/)
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -277,22 +361,43 @@ describe('installMinecraftServerFiles', () => {
 
     const result = await installMinecraftServerFiles({
       serverType: 'neoforge',
-      minecraftVersion: '21.1.72',
+      minecraftVersion: '1.21.1',
+      loaderVersion: '21.1.72',
       installDir: TEST_DIR,
       acceptEula: true
     })
 
     expect(lastSpawnCall).toEqual({ command: 'java', args: ['-jar', 'neoforge-installer.jar', '--installServer'] })
-    // minecraftVersion is the derived Minecraft version (1.21.1), not the raw NeoForge build
-    // string that was passed in as params.minecraftVersion.
+    // minecraftVersion is re-derived from the loaderVersion actually installed (1.21.1),
+    // rather than trusting whatever params.minecraftVersion the caller passed in.
     expect(result).toEqual({
       installDir: TEST_DIR,
       launchMode: 'script',
       jarFileName: '',
       scriptFileName: 'run.sh',
       minecraftVersion: '1.21.1',
+      loaderVersion: '21.1.72',
       serverType: 'neoforge'
     })
+  })
+
+  it('installs neoforge: resolves the newest loader build itself when loaderVersion is omitted', async () => {
+    mockListNeoForgeLoaderOptions.mockResolvedValue([{ id: '21.1.72', label: '21.1.72', recommended: true }])
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('installer-jar').buffer })
+    )
+    mockDetectMinecraftLaunchable.mockReturnValue({ launchMode: 'script', jarFileName: '', scriptFileName: 'run.sh', serverType: 'unknown' })
+
+    const result = await installMinecraftServerFiles({
+      serverType: 'neoforge',
+      minecraftVersion: '1.21.1',
+      installDir: TEST_DIR,
+      acceptEula: true
+    })
+
+    expect(mockListNeoForgeLoaderOptions).toHaveBeenCalledWith('1.21.1')
+    expect(result.loaderVersion).toBe('21.1.72')
   })
 
   it('neoforge install fails clearly, before downloading anything, if Java is not on PATH', async () => {
@@ -301,19 +406,109 @@ describe('installMinecraftServerFiles', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(
-      installMinecraftServerFiles({ serverType: 'neoforge', minecraftVersion: '21.1.72', installDir: TEST_DIR, acceptEula: true })
+      installMinecraftServerFiles({
+        serverType: 'neoforge',
+        minecraftVersion: '1.21.1',
+        loaderVersion: '21.1.72',
+        installDir: TEST_DIR,
+        acceptEula: true
+      })
     ).rejects.toThrow(/Java was not found/)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('neoforge install fails clearly for a version string that does not match the documented scheme', async () => {
+  it('neoforge install fails clearly for a loaderVersion string that does not match the documented scheme', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(
-      installMinecraftServerFiles({ serverType: 'neoforge', minecraftVersion: 'garbage', installDir: TEST_DIR, acceptEula: true })
+      installMinecraftServerFiles({
+        serverType: 'neoforge',
+        minecraftVersion: '1.21.1',
+        loaderVersion: 'garbage',
+        installDir: TEST_DIR,
+        acceptEula: true
+      })
     ).rejects.toThrow(/Not a recognized NeoForge version/)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('installs spongevanilla: downloads the standalone jar from the Sponge Maven repo', async () => {
+    const bytes = new TextEncoder().encode('spongevanilla-jar')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => bytes.buffer }))
+
+    const result = await installMinecraftServerFiles({
+      serverType: 'spongevanilla',
+      minecraftVersion: '1.21.1',
+      loaderVersion: '10.0.0',
+      installDir: TEST_DIR,
+      acceptEula: true
+    })
+
+    expect(result).toEqual({
+      installDir: TEST_DIR,
+      launchMode: 'jar',
+      jarFileName: 'spongevanilla.jar',
+      scriptFileName: '',
+      minecraftVersion: '1.21.1',
+      loaderVersion: '10.0.0',
+      serverType: 'spongevanilla'
+    })
+    expect(fs.existsSync(path.join(TEST_DIR, 'spongevanilla.jar'))).toBe(true)
+  })
+
+  it('installs spongevanilla: resolves the newest build itself when loaderVersion is omitted', async () => {
+    mockListSpongeLoaderOptions.mockResolvedValue([{ id: '10.1.0', label: '10.1.0', recommended: true }])
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('x').buffer })
+    )
+
+    const result = await installMinecraftServerFiles({
+      serverType: 'spongevanilla',
+      minecraftVersion: '1.21.1',
+      installDir: TEST_DIR,
+      acceptEula: true
+    })
+
+    expect(mockListSpongeLoaderOptions).toHaveBeenCalledWith('spongevanilla', '1.21.1')
+    expect(result.loaderVersion).toBe('10.1.0')
+  })
+
+  it('installs spongeforge: installs Forge first, then drops the SpongeForge jar into mods/', async () => {
+    mockListForgeLoaderOptions.mockResolvedValue([{ id: '47.2.0', label: '47.2.0', recommended: true }])
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('x').buffer })
+    )
+    mockDetectMinecraftLaunchable.mockReturnValue({
+      launchMode: 'script',
+      jarFileName: '',
+      scriptFileName: 'run.sh',
+      serverType: 'unknown'
+    })
+
+    const result = await installMinecraftServerFiles({
+      serverType: 'spongeforge',
+      minecraftVersion: '1.20.1',
+      loaderVersion: '9.0.0',
+      installDir: TEST_DIR,
+      acceptEula: true
+    })
+
+    expect(lastSpawnCall).toEqual({ command: 'java', args: ['-jar', 'forge-installer.jar', '--installServer'] })
+    // Keeps Forge's own detected launchMode/jarFileName/scriptFileName - SpongeForge is a mod
+    // Forge itself loads, it doesn't change how the server launches.
+    expect(result).toEqual({
+      installDir: TEST_DIR,
+      launchMode: 'script',
+      jarFileName: '',
+      scriptFileName: 'run.sh',
+      minecraftVersion: '1.20.1',
+      loaderVersion: '9.0.0',
+      serverType: 'spongeforge'
+    })
+    expect(fs.existsSync(path.join(TEST_DIR, 'mods', 'spongeforge-1.20.1-9.0.0.jar'))).toBe(true)
   })
 
   it('installs spigot: downloads BuildTools, runs it, and finds the produced jar', async () => {
@@ -391,16 +586,66 @@ describe('listInstallableMinecraftVersions', () => {
     expect(await listInstallableMinecraftVersions('spigot')).toEqual([{ id: '1.20.1', label: '1.20.1' }])
   })
 
-  it('dispatches neoforge to listNeoForgeVersions, labeling each with its derived Minecraft version', async () => {
-    mockListNeoForgeVersions.mockResolvedValue(['21.1.72', '20.2.86'])
-    expect(await listInstallableMinecraftVersions('neoforge')).toEqual([
-      { id: '21.1.72', label: '21.1.72 (Minecraft 1.21.1)' },
-      { id: '20.2.86', label: '20.2.86 (Minecraft 1.20.2)' }
+  it('dispatches forge to listForgeMinecraftVersions - real Minecraft versions, not combo strings', async () => {
+    mockListForgeMinecraftVersions.mockResolvedValue(['1.20.1', '1.19.4'])
+    expect(await listInstallableMinecraftVersions('forge')).toEqual([
+      { id: '1.20.1', label: '1.20.1' },
+      { id: '1.19.4', label: '1.19.4' }
     ])
   })
 
-  it('skips a neoforge version string that does not match the documented scheme instead of crashing', async () => {
-    mockListNeoForgeVersions.mockResolvedValue(['21.1.72', 'garbage'])
-    expect(await listInstallableMinecraftVersions('neoforge')).toEqual([{ id: '21.1.72', label: '21.1.72 (Minecraft 1.21.1)' }])
+  it('dispatches neoforge to listNeoForgeMinecraftVersions - derived Minecraft versions, not raw build strings', async () => {
+    mockListNeoForgeMinecraftVersions.mockResolvedValue(['1.21.1', '1.20.2'])
+    expect(await listInstallableMinecraftVersions('neoforge')).toEqual([
+      { id: '1.21.1', label: '1.21.1' },
+      { id: '1.20.2', label: '1.20.2' }
+    ])
+  })
+
+  it('dispatches spongevanilla to listSpongeMinecraftVersions with the spongevanilla artifact id', async () => {
+    mockListSpongeMinecraftVersions.mockResolvedValue(['1.21.1'])
+    expect(await listInstallableMinecraftVersions('spongevanilla')).toEqual([{ id: '1.21.1', label: '1.21.1' }])
+    expect(mockListSpongeMinecraftVersions).toHaveBeenCalledWith('spongevanilla')
+  })
+
+  it('dispatches spongeforge to listSpongeMinecraftVersions with the spongeforge artifact id', async () => {
+    mockListSpongeMinecraftVersions.mockResolvedValue(['1.20.1'])
+    expect(await listInstallableMinecraftVersions('spongeforge')).toEqual([{ id: '1.20.1', label: '1.20.1' }])
+    expect(mockListSpongeMinecraftVersions).toHaveBeenCalledWith('spongeforge')
+  })
+})
+
+describe('listInstallableLoaderVersions', () => {
+  it('returns an empty list for vanilla and spigot - nothing further to choose', async () => {
+    expect(await listInstallableLoaderVersions('vanilla', '1.20.1')).toEqual([])
+    expect(await listInstallableLoaderVersions('spigot', '1.20.1')).toEqual([])
+  })
+
+  it('dispatches paper to listPaperBuildOptions', async () => {
+    mockListPaperBuildOptions.mockResolvedValue([{ id: '12', label: 'Build 12 (stable)', recommended: true }])
+    expect(await listInstallableLoaderVersions('paper', '1.20.1')).toEqual([{ id: '12', label: 'Build 12 (stable)', recommended: true }])
+  })
+
+  it('dispatches fabric to listFabricLoaderOptions', async () => {
+    mockListFabricLoaderOptions.mockResolvedValue([{ id: '0.14.21', label: '0.14.21 (stable)', recommended: true }])
+    expect(await listInstallableLoaderVersions('fabric', '1.20.1')).toEqual([{ id: '0.14.21', label: '0.14.21 (stable)', recommended: true }])
+  })
+
+  it('dispatches forge to listForgeLoaderOptions', async () => {
+    mockListForgeLoaderOptions.mockResolvedValue([{ id: '47.2.0', label: '47.2.0', recommended: true }])
+    expect(await listInstallableLoaderVersions('forge', '1.20.1')).toEqual([{ id: '47.2.0', label: '47.2.0', recommended: true }])
+  })
+
+  it('dispatches neoforge to listNeoForgeLoaderOptions', async () => {
+    mockListNeoForgeLoaderOptions.mockResolvedValue([{ id: '21.1.72', label: '21.1.72', recommended: true }])
+    expect(await listInstallableLoaderVersions('neoforge', '1.21.1')).toEqual([{ id: '21.1.72', label: '21.1.72', recommended: true }])
+  })
+
+  it('dispatches spongevanilla/spongeforge to listSpongeLoaderOptions with the right artifact id', async () => {
+    mockListSpongeLoaderOptions.mockResolvedValue([{ id: '10.0.0', label: '10.0.0', recommended: true }])
+    await listInstallableLoaderVersions('spongevanilla', '1.21.1')
+    expect(mockListSpongeLoaderOptions).toHaveBeenCalledWith('spongevanilla', '1.21.1')
+    await listInstallableLoaderVersions('spongeforge', '1.20.1')
+    expect(mockListSpongeLoaderOptions).toHaveBeenCalledWith('spongeforge', '1.20.1')
   })
 })

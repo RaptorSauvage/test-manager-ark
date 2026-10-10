@@ -37,9 +37,20 @@ import { saveMinecraftProfile, getSettings } from '../store'
 import { logManagerEvent, newTaskId } from './managerLog'
 import { delay } from './delay'
 
-/** Forge/Fabric read mods from `mods/`; Paper/Spigot read plugins from `plugins/`. */
+/** Forge/Fabric read mods from `mods/`; Paper/Spigot read plugins from `plugins/`. Sponge
+ *  plugins load from `mods/` too, for both SpongeVanilla (standalone) and SpongeForge (its
+ *  own mod jar also sits in mods/, right next to whatever plugins get installed there) -
+ *  Sponge's own plugin-loading convention follows Forge's folder layout rather than Bukkit/
+ *  Spigot's "plugins/" one. */
 export function modTargetDir(profile: MinecraftProfile): string {
-  const sub = profile.serverType === 'forge' || profile.serverType === 'neoforge' || profile.serverType === 'fabric' ? 'mods' : 'plugins'
+  const sub =
+    profile.serverType === 'forge' ||
+    profile.serverType === 'neoforge' ||
+    profile.serverType === 'fabric' ||
+    profile.serverType === 'spongevanilla' ||
+    profile.serverType === 'spongeforge'
+      ? 'mods'
+      : 'plugins'
   return path.join(profile.installDir, sub)
 }
 

@@ -10,16 +10,23 @@ import {
   getVanillaServerDownload,
   listPaperVersions,
   getLatestPaperBuild,
-  paperDownloadUrl,
+  getPaperBuild,
+  listPaperBuildOptions,
   listFabricGameVersions,
   getLatestFabricLoaderVersion,
   getLatestFabricInstallerVersion,
+  listFabricLoaderOptions,
   fabricServerJarUrl,
-  listForgeVersionsForMinecraft,
+  listForgeMinecraftVersions,
   forgeInstallerUrl,
-  listNeoForgeVersions,
+  listForgeLoaderOptions,
+  listNeoForgeMinecraftVersions,
   neoForgeInstallerUrl,
   neoForgeVersionToMinecraftVersion,
+  listNeoForgeLoaderOptions,
+  listSpongeMinecraftVersions,
+  listSpongeLoaderOptions,
+  spongeDownloadUrl,
   SPIGOT_BUILDTOOLS_URL
 } from './minecraftInstallClient'
 
@@ -29,77 +36,48 @@ import {
  * "Import existing server" is for) - one function per loader, dispatched by
  * installMinecraftServerFiles below. See minecraftInstallClient.ts's own top-of-file comment
  * for the caveat that none of this could be verified against the real APIs from this sandbox.
+ *
+ * Two-selector model: the Install dialog (and Start Settings) show a Minecraft version picker
+ * plus, for every type except vanilla/Spigot (see shared/minecraftInstall.ts's
+ * supportsLoaderVersionSelection), a second loader/build-version picker - listed by
+ * listInstallableMinecraftVersions and listInstallableLoaderVersions respectively, the latter
+ * depending on the former's pick. This replaced an earlier single-selector design where
+ * Forge/NeoForge showed one flat list of "<mcVersion>-<build>"-style combo strings.
  */
 
 export async function listInstallableMinecraftVersions(
   serverType: MinecraftInstallParams['serverType']
 ): Promise<MinecraftVersionOption[]> {
-  if (serverType === 'vanilla' || serverType === 'paper') {
-    const versions = serverType === 'vanilla' ? (await listVanillaVersions()).map((v) => v.id) : await listPaperVersions()
-    return versions.map((id) => ({ id, label: id }))
+  if (serverType === 'vanilla' || serverType === 'spigot') {
+    // Spigot's BuildTools can target any Mojang-published version in principle, but only ones
+    // it actually has mappings for reliably succeed - Vanilla's own release list is the
+    // closest available proxy for "a version that plausibly works", same list vanilla itself
+    // offers.
+    return (await listVanillaVersions()).map((v) => ({ id: v.id, label: v.id }))
   }
-  if (serverType === 'fabric') {
-    const versions = await listFabricGameVersions()
-    return versions.map((id) => ({ id, label: id }))
-  }
-  if (serverType === 'spigot') {
-    // BuildTools can target any Mojang-published version in principle, but only ones it
-    // actually has mappings for reliably succeed - Vanilla's own release list is the closest
-    // available proxy for "a version that plausibly works", same list vanilla itself offers.
-    const versions = await listVanillaVersions()
-    return versions.map((v) => ({ id: v.id, label: v.id }))
-  }
-  if (serverType === 'neoforge') {
-    // NeoForge's own version string doesn't carry the Minecraft version in it the way Forge's
-    // combo strings do (see minecraftInstallClient.ts) - the label spells out the derived
-    // Minecraft version alongside the raw build (the `id` sent back to installMinecraftServerFiles)
-    // so the picker reads as "this build, for this Minecraft version" rather than a bare,
-    // meaningless-looking number. A build whose version string doesn't match NeoForge's own
-    // documented scheme is skipped rather than shown with a broken label.
-    const versions = await listNeoForgeVersions()
-    const options: MinecraftVersionOption[] = []
-    for (const id of versions) {
-      try {
-        options.push({ id, label: `${id} (Minecraft ${neoForgeVersionToMinecraftVersion(id)})` })
-      } catch {
-        // Skip - see doc comment above.
-      }
-    }
-    return options
-  }
-  // forge: list every mcVersion-forgeVersion combo on Forge's own maven across every version,
-  // then present the combined string as the selectable "version" - Forge itself doesn't offer
-  // "latest build for mcVersion" as a separate pick, it's all one flat list.
-  const combos = await listAllForgeCombos()
-  return combos.map((id) => ({ id, label: id }))
+  if (serverType === 'paper') return (await listPaperVersions()).map((id) => ({ id, label: id }))
+  if (serverType === 'fabric') return (await listFabricGameVersions()).map((id) => ({ id, label: id }))
+  if (serverType === 'forge') return (await listForgeMinecraftVersions()).map((id) => ({ id, label: id }))
+  if (serverType === 'neoforge') return (await listNeoForgeMinecraftVersions()).map((id) => ({ id, label: id }))
+  // spongevanilla / spongeforge
+  const artifactId = serverType === 'spongevanilla' ? 'spongevanilla' : 'spongeforge'
+  return (await listSpongeMinecraftVersions(artifactId)).map((id) => ({ id, label: id }))
 }
 
-/** Forge's maven-metadata.xml lists every published mcVersion-forgeVersion combo flatly, with
- *  no per-mcVersion grouping endpoint - listForgeVersionsForMinecraft needs an mcVersion to
- *  filter by, so this walks the small set of Minecraft versions Forge has ever targeted by
- *  asking Vanilla's own release list and checking each one, skipping any with no Forge builds
- *  at all. Kept simple rather than parsing the metadata file's version list order into actual
- *  Minecraft versions (Forge's own combo strings aren't reliably splittable without knowing
- *  the Minecraft version first - that's exactly why this asks per-version instead). */
-async function listAllForgeCombos(): Promise<string[]> {
-  const mcVersions = (await listVanillaVersions()).map((v) => v.id)
-  const combos: string[] = []
-  for (const mcVersion of mcVersions.slice(0, 20)) {
-    const forVersion = await listForgeVersionsForMinecraft(mcVersion).catch(() => [])
-    combos.push(...forVersion)
-    // Stop once a few versions' worth have been found - Forge support starts a couple of
-    // versions behind the very latest release most of the time, and walking the entire
-    // multi-hundred-version Vanilla history just to list Forge builds would be needlessly
-    // slow for a dropdown the user only needs the last handful of versions in anyway.
-    if (combos.length >= 20) break
-  }
-  return combos
-}
-
-function splitForgeCombo(combo: string): { mcVersion: string; forgeVersion: string } {
-  const dash = combo.indexOf('-')
-  if (dash === -1) throw new Error(`Not a valid Forge version ("<minecraft>-<forge>" expected): ${combo}`)
-  return { mcVersion: combo.slice(0, dash), forgeVersion: combo.slice(dash + 1) }
+/** Loader/build-version options for the second selector, once a Minecraft version has been
+ *  picked in the first - empty for vanilla/Spigot (see supportsLoaderVersionSelection), which
+ *  have nothing further to choose. */
+export async function listInstallableLoaderVersions(
+  serverType: MinecraftInstallParams['serverType'],
+  minecraftVersion: string
+): Promise<MinecraftVersionOption[]> {
+  if (serverType === 'vanilla' || serverType === 'spigot') return []
+  if (serverType === 'paper') return listPaperBuildOptions(minecraftVersion)
+  if (serverType === 'fabric') return listFabricLoaderOptions(minecraftVersion)
+  if (serverType === 'forge') return listForgeLoaderOptions(minecraftVersion)
+  if (serverType === 'neoforge') return listNeoForgeLoaderOptions(minecraftVersion)
+  const artifactId = serverType === 'spongevanilla' ? 'spongevanilla' : 'spongeforge'
+  return listSpongeLoaderOptions(artifactId, minecraftVersion)
 }
 
 async function downloadToFile(url: string, destPath: string, expectedHash?: { algorithm: string; hex: string }): Promise<void> {
@@ -157,31 +135,62 @@ async function installVanillaServer(installDir: string, minecraftVersion: string
   return { installDir, launchMode: 'jar', jarFileName: 'server.jar', scriptFileName: '', minecraftVersion, serverType: 'vanilla' }
 }
 
-async function installPaperServer(installDir: string, minecraftVersion: string): Promise<MinecraftInstallResult> {
-  const { build, fileName, sha256 } = await getLatestPaperBuild(minecraftVersion)
-  await downloadToFile(paperDownloadUrl(minecraftVersion, build, fileName), path.join(installDir, fileName), {
-    algorithm: 'sha256',
-    hex: sha256
-  })
-  return { installDir, launchMode: 'jar', jarFileName: fileName, scriptFileName: '', minecraftVersion, serverType: 'paper' }
+async function installPaperServer(installDir: string, minecraftVersion: string, loaderVersion?: string): Promise<MinecraftInstallResult> {
+  const { build, fileName, sha256, url } = loaderVersion
+    ? await getPaperBuild(minecraftVersion, Number(loaderVersion))
+    : await getLatestPaperBuild(minecraftVersion)
+  await downloadToFile(url, path.join(installDir, fileName), { algorithm: 'sha256', hex: sha256 })
+  return {
+    installDir,
+    launchMode: 'jar',
+    jarFileName: fileName,
+    scriptFileName: '',
+    minecraftVersion,
+    loaderVersion: String(build),
+    serverType: 'paper'
+  }
 }
 
-async function installFabricServer(installDir: string, minecraftVersion: string): Promise<MinecraftInstallResult> {
-  const loaderVersion = await getLatestFabricLoaderVersion(minecraftVersion)
+async function installFabricServer(installDir: string, minecraftVersion: string, loaderVersion?: string): Promise<MinecraftInstallResult> {
+  const resolvedLoaderVersion = loaderVersion || (await getLatestFabricLoaderVersion(minecraftVersion))
   const installerVersion = await getLatestFabricInstallerVersion()
   const jarFileName = 'fabric-server-launch.jar'
   // Fabric's meta server builds this jar per-request rather than publishing a fixed file with
   // a checksum - nothing to verify it against, unlike vanilla/Paper above.
-  await downloadToFile(fabricServerJarUrl(minecraftVersion, loaderVersion, installerVersion), path.join(installDir, jarFileName))
-  return { installDir, launchMode: 'jar', jarFileName, scriptFileName: '', minecraftVersion, serverType: 'fabric' }
+  await downloadToFile(
+    fabricServerJarUrl(minecraftVersion, resolvedLoaderVersion, installerVersion),
+    path.join(installDir, jarFileName)
+  )
+  return {
+    installDir,
+    launchMode: 'jar',
+    jarFileName,
+    scriptFileName: '',
+    minecraftVersion,
+    loaderVersion: resolvedLoaderVersion,
+    serverType: 'fabric'
+  }
 }
 
-async function installForgeServer(installDir: string, versionCombo: string, taskId: string): Promise<MinecraftInstallResult> {
-  const { mcVersion, forgeVersion } = splitForgeCombo(versionCombo)
+async function resolveForgeVersion(minecraftVersion: string, loaderVersion?: string): Promise<string> {
+  if (loaderVersion) return loaderVersion
+  const options = await listForgeLoaderOptions(minecraftVersion)
+  const picked = options.find((o) => o.recommended) ?? options[0]
+  if (!picked) throw new Error(`No Forge builds found for Minecraft ${minecraftVersion}.`)
+  return picked.id
+}
+
+async function installForgeServer(
+  installDir: string,
+  minecraftVersion: string,
+  loaderVersion: string | undefined,
+  taskId: string
+): Promise<MinecraftInstallResult> {
+  const forgeVersion = await resolveForgeVersion(minecraftVersion, loaderVersion)
   requireExecutableOnPath('java', 'Java')
   const installerPath = path.join(installDir, 'forge-installer.jar')
-  await downloadToFile(forgeInstallerUrl(mcVersion, forgeVersion), installerPath)
-  logManagerEvent(taskId, `Install Minecraft server (Forge ${versionCombo})`, 'Running the Forge installer...')
+  await downloadToFile(forgeInstallerUrl(minecraftVersion, forgeVersion), installerPath)
+  logManagerEvent(taskId, `Install Minecraft server (Forge ${minecraftVersion}-${forgeVersion})`, 'Running the Forge installer...')
   await runProcess('java', ['-jar', 'forge-installer.jar', '--installServer'], installDir, taskId, 'Forge install')
   const detected = detectMinecraftLaunchable(installDir)
   if (!detected) {
@@ -189,11 +198,26 @@ async function installForgeServer(installDir: string, versionCombo: string, task
   }
   // serverType is forced to 'forge' regardless of what detectMinecraftLaunchable's generic
   // jar-name heuristic guessed - this install path is definitely Forge, no need to guess.
-  return { ...detected, installDir, minecraftVersion: mcVersion, serverType: 'forge' }
+  return { ...detected, installDir, minecraftVersion, loaderVersion: forgeVersion, serverType: 'forge' }
 }
 
-async function installNeoForgeServer(installDir: string, neoForgeVersion: string, taskId: string): Promise<MinecraftInstallResult> {
-  const minecraftVersion = neoForgeVersionToMinecraftVersion(neoForgeVersion)
+async function installNeoForgeServer(
+  installDir: string,
+  minecraftVersion: string,
+  loaderVersion: string | undefined,
+  taskId: string
+): Promise<MinecraftInstallResult> {
+  let neoForgeVersion = loaderVersion
+  if (!neoForgeVersion) {
+    const options = await listNeoForgeLoaderOptions(minecraftVersion)
+    const picked = options.find((o) => o.recommended) ?? options[0]
+    if (!picked) throw new Error(`No NeoForge builds found for Minecraft ${minecraftVersion}.`)
+    neoForgeVersion = picked.id
+  }
+  // Validated up front, before any network/installer work - same fail-fast behavior as every
+  // other check in this function, rather than discovering a malformed loaderVersion only
+  // after downloading and running the installer.
+  const derivedMinecraftVersion = neoForgeVersionToMinecraftVersion(neoForgeVersion)
   requireExecutableOnPath('java', 'Java')
   const installerPath = path.join(installDir, 'neoforge-installer.jar')
   await downloadToFile(neoForgeInstallerUrl(neoForgeVersion), installerPath)
@@ -205,7 +229,68 @@ async function installNeoForgeServer(installDir: string, neoForgeVersion: string
   }
   // serverType is forced to 'neoforge' regardless of what detectMinecraftLaunchable's generic
   // heuristic guessed - this install path is definitely NeoForge, no need to guess.
-  return { ...detected, installDir, minecraftVersion, serverType: 'neoforge' }
+  return {
+    ...detected,
+    installDir,
+    minecraftVersion: derivedMinecraftVersion,
+    loaderVersion: neoForgeVersion,
+    serverType: 'neoforge'
+  }
+}
+
+/** SpongeVanilla ships as a complete, standalone server jar (same "one downloadable jar,
+ *  nothing to run" shape as vanilla/Paper/Fabric) - see minecraftInstallClient.ts's own Sponge
+ *  section for the real caveats around this (unverified download API, assumed file name). */
+async function installSpongeVanillaServer(
+  installDir: string,
+  minecraftVersion: string,
+  loaderVersion?: string
+): Promise<MinecraftInstallResult> {
+  const buildVersion = loaderVersion || (await resolveNewestSpongeBuild('spongevanilla', minecraftVersion))
+  const jarFileName = 'spongevanilla.jar'
+  await downloadToFile(spongeDownloadUrl('spongevanilla', minecraftVersion, buildVersion), path.join(installDir, jarFileName))
+  return {
+    installDir,
+    launchMode: 'jar',
+    jarFileName,
+    scriptFileName: '',
+    minecraftVersion,
+    loaderVersion: buildVersion,
+    serverType: 'spongevanilla'
+  }
+}
+
+/** SpongeForge is a mod, not a standalone server - it needs a real Forge server installed
+ *  first and then drops its own jar into mods/ on top of it. Which exact Forge build it
+ *  needs isn't exposed by Sponge's Maven listing at all (see minecraftInstallClient.ts's own
+ *  Sponge section) - this installs whichever Forge build is "recommended" for the same
+ *  Minecraft version instead, a reasonable default but not a verified-compatible pairing. */
+async function installSpongeForgeServer(
+  installDir: string,
+  minecraftVersion: string,
+  loaderVersion: string | undefined,
+  taskId: string
+): Promise<MinecraftInstallResult> {
+  const forgeResult = await installForgeServer(installDir, minecraftVersion, undefined, taskId)
+  const buildVersion = loaderVersion || (await resolveNewestSpongeBuild('spongeforge', minecraftVersion))
+  logManagerEvent(taskId, `Install Minecraft server (SpongeForge ${minecraftVersion}-${buildVersion})`, 'Downloading SpongeForge...')
+  const modsDir = path.join(installDir, 'mods')
+  await downloadToFile(
+    spongeDownloadUrl('spongeforge', minecraftVersion, buildVersion),
+    path.join(modsDir, `spongeforge-${minecraftVersion}-${buildVersion}.jar`)
+  )
+  // Keeps whatever Forge already detected (launchMode/jarFileName/scriptFileName) - SpongeForge
+  // doesn't change how the server launches, it's a mod Forge itself loads at startup.
+  // loaderVersion is overridden to the SpongeForge build actually installed (what the second
+  // selector picked), not the underlying Forge build installForgeServer resolved for itself.
+  return { ...forgeResult, loaderVersion: buildVersion, serverType: 'spongeforge' }
+}
+
+async function resolveNewestSpongeBuild(artifactId: 'spongevanilla' | 'spongeforge', minecraftVersion: string): Promise<string> {
+  const options = await listSpongeLoaderOptions(artifactId, minecraftVersion)
+  const picked = options.find((o) => o.recommended) ?? options[0]
+  if (!picked) throw new Error(`No ${artifactId === 'spongevanilla' ? 'SpongeVanilla' : 'SpongeForge'} builds found for Minecraft ${minecraftVersion}.`)
+  return picked.id
 }
 
 async function installSpigotServer(installDir: string, minecraftVersion: string, taskId: string): Promise<MinecraftInstallResult> {
@@ -242,10 +327,18 @@ export async function installMinecraftServerFiles(params: MinecraftInstallParams
   try {
     let result: MinecraftInstallResult
     if (params.serverType === 'vanilla') result = await installVanillaServer(params.installDir, params.minecraftVersion)
-    else if (params.serverType === 'paper') result = await installPaperServer(params.installDir, params.minecraftVersion)
-    else if (params.serverType === 'fabric') result = await installFabricServer(params.installDir, params.minecraftVersion)
-    else if (params.serverType === 'forge') result = await installForgeServer(params.installDir, params.minecraftVersion, taskId)
-    else if (params.serverType === 'neoforge') result = await installNeoForgeServer(params.installDir, params.minecraftVersion, taskId)
+    else if (params.serverType === 'paper')
+      result = await installPaperServer(params.installDir, params.minecraftVersion, params.loaderVersion)
+    else if (params.serverType === 'fabric')
+      result = await installFabricServer(params.installDir, params.minecraftVersion, params.loaderVersion)
+    else if (params.serverType === 'forge')
+      result = await installForgeServer(params.installDir, params.minecraftVersion, params.loaderVersion, taskId)
+    else if (params.serverType === 'neoforge')
+      result = await installNeoForgeServer(params.installDir, params.minecraftVersion, params.loaderVersion, taskId)
+    else if (params.serverType === 'spongevanilla')
+      result = await installSpongeVanillaServer(params.installDir, params.minecraftVersion, params.loaderVersion)
+    else if (params.serverType === 'spongeforge')
+      result = await installSpongeForgeServer(params.installDir, params.minecraftVersion, params.loaderVersion, taskId)
     else result = await installSpigotServer(params.installDir, params.minecraftVersion, taskId)
 
     writeEula(params.installDir)

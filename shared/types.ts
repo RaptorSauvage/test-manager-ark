@@ -609,6 +609,7 @@ export const IPC = {
   minecraftModsOpenFolder: 'minecraft-mods:open-folder',
 
   minecraftInstallListVersions: 'minecraft-install:list-versions',
+  minecraftInstallListLoaderVersions: 'minecraft-install:list-loader-versions',
   minecraftInstallRun: 'minecraft-install:run'
 } as const
 
@@ -995,6 +996,10 @@ export interface Api {
      *  serverType, same "caller saves" pattern as profiles.importFromInstall. */
     install: {
       listVersions: (serverType: MinecraftInstallableType) => Promise<MinecraftVersionOption[]>
+      /** Loader/build-version options for the second selector, once a Minecraft version has
+       *  been picked in the first - empty for vanilla/Spigot (see
+       *  supportsLoaderVersionSelection in shared/minecraftInstall.ts). */
+      listLoaderVersions: (serverType: MinecraftInstallableType, minecraftVersion: string) => Promise<MinecraftVersionOption[]>
       run: (params: MinecraftInstallParams) => Promise<MinecraftInstallResult>
     }
   }

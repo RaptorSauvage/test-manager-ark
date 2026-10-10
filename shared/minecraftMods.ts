@@ -28,7 +28,9 @@ export function supportsMinecraftMods(serverType: MinecraftServerType): boolean 
     serverType === 'neoforge' ||
     serverType === 'fabric' ||
     serverType === 'paper' ||
-    serverType === 'spigot'
+    serverType === 'spigot' ||
+    serverType === 'spongevanilla' ||
+    serverType === 'spongeforge'
   )
 }
 

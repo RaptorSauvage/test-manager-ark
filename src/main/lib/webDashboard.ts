@@ -59,6 +59,8 @@ import {
   upsertServerPropertiesKeys as upsertMinecraftServerPropertiesKeys
 } from './minecraftProperties'
 import { searchArkMods, getArkModsInfo } from './arkMods'
+import { listInstallableMinecraftVersions, listInstallableLoaderVersions } from './minecraftInstall'
+import type { MinecraftInstallableType } from '@shared/minecraftInstall'
 import {
   createMinecraftBackup,
   listMinecraftBackups,
@@ -1068,6 +1070,47 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   // admin+ only (same tier as ARK's Settings/Mods); Server Settings, Backup, and Server
   // Management are moderator+ (Backup's restore/delete still admin+, matching ARK's own
   // backups/restore and backups/delete routes above).
+
+  // Feeds MC Start Settings' own Minecraft-version/loader-version pickers - same
+  // window.api.minecraft.install.listVersions/listLoaderVersions functions the desktop app's
+  // Install dialog and Start Settings tab call directly over IPC (both run in the main
+  // process already, no IPC boundary there); the web dashboard needs these as plain HTTP
+  // routes instead. Not server-scoped (no /api/servers/:id prefix) - the picker only needs a
+  // serverType (and, for the second one, a minecraftVersion), not which server is selected.
+  const mcInstallVersionsMatch = path === '/api/mc-install/versions'
+  if (req.method === 'GET' && mcInstallVersionsMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const serverType = url.searchParams.get('serverType') as MinecraftInstallableType | null
+    if (!serverType) {
+      sendJson(res, 400, { error: 'serverType is required' })
+      return
+    }
+    try {
+      sendJson(res, 200, await listInstallableMinecraftVersions(serverType))
+    } catch (err) {
+      sendJson(res, 502, { error: (err as Error).message })
+    }
+    return
+  }
+
+  const mcInstallLoaderVersionsMatch = path === '/api/mc-install/loaderversions'
+  if (req.method === 'GET' && mcInstallLoaderVersionsMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const serverType = url.searchParams.get('serverType') as MinecraftInstallableType | null
+    const minecraftVersion = url.searchParams.get('minecraftVersion')
+    if (!serverType || !minecraftVersion) {
+      sendJson(res, 400, { error: 'serverType and minecraftVersion are required' })
+      return
+    }
+    try {
+      sendJson(res, 200, await listInstallableLoaderVersions(serverType, minecraftVersion))
+    } catch (err) {
+      sendJson(res, 502, { error: (err as Error).message })
+    }
+    return
+  }
 
   const mcStartSettingsMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-startsettings$/)
   if (req.method === 'GET' && mcStartSettingsMatch) {
@@ -2470,6 +2513,8 @@ const DASHBOARD_HTML = `<!doctype html>
                 <option value="fabric">Fabric</option>
                 <option value="forge">Forge</option>
                 <option value="neoforge">NeoForge</option>
+                <option value="spongevanilla">SpongeVanilla</option>
+                <option value="spongeforge">SpongeForge</option>
                 <option value="unknown">Unknown</option>
               </select>
               <img id="mcss-servertype-icon" class="server-type-icon-large" alt="" style="display: none" />
@@ -2477,9 +2522,17 @@ const DASHBOARD_HTML = `<!doctype html>
           </label>
           <label>
             Minecraft version
-            <input id="mcss-version" placeholder="1.20.1" />
+            <select id="mcss-version"></select>
           </label>
-          <p class="empty-state">Required by the Mods tab to find compatible mods/plugins; otherwise unused.</p>
+          <p id="mcss-version-loading" class="empty-state" style="display: none">Loading versions...</p>
+          <p id="mcss-version-error" class="error-message" style="display: none"></p>
+          <label id="mcss-loaderversion-row">
+            Loader / build version
+            <select id="mcss-loaderversion"></select>
+          </label>
+          <p id="mcss-loaderversion-loading" class="empty-state" style="display: none">Loading loader/build versions...</p>
+          <p id="mcss-loaderversion-error" class="error-message" style="display: none"></p>
+          <p class="empty-state">Required by the Mods tab to find compatible mods/plugins; the loader/build version is purely informational.</p>
           <label>
             Install directory
             <input id="mcss-installdir" placeholder="C:\Minecraft\Server" />
@@ -4709,7 +4762,9 @@ function initDashboard(resolvedRole) {
     fabric: '/game-icons/fabric.png',
     forge: '/game-icons/forge.png',
     neoforge: '/game-icons/neoforge.png',
-    spigot: '/game-icons/spigot.jpg'
+    spigot: '/game-icons/spigot.jpg',
+    spongevanilla: '/game-icons/sponge.png',
+    spongeforge: '/game-icons/sponge.png'
   };
   function updateMcssServerTypeIcon() {
     var url = MC_SERVER_TYPE_ICON_URLS[mcssServerType.value];
@@ -4718,6 +4773,89 @@ function initDashboard(resolvedRole) {
   }
   mcssServerType.addEventListener('change', updateMcssServerTypeIcon);
   var mcssVersion = document.getElementById('mcss-version');
+  var mcssVersionLoadingEl = document.getElementById('mcss-version-loading');
+  var mcssVersionErrorEl = document.getElementById('mcss-version-error');
+  var mcssLoaderVersionRowEl = document.getElementById('mcss-loaderversion-row');
+  var mcssLoaderVersion = document.getElementById('mcss-loaderversion');
+  var mcssLoaderVersionLoadingEl = document.getElementById('mcss-loaderversion-loading');
+  var mcssLoaderVersionErrorEl = document.getElementById('mcss-loaderversion-error');
+  // Vanilla/Spigot publish exactly one artifact per Minecraft version - no separate loader/
+  // build version to additionally choose, same reasoning as supportsLoaderVersionSelection in
+  // shared/minecraftInstall.ts (duplicated here rather than imported - this client script has
+  // no module imports at all, see its own top-of-file comment).
+  function mcssSupportsLoaderVersion(serverType) {
+    return serverType !== 'vanilla' && serverType !== 'spigot';
+  }
+  /** Clears and repopulates a version select from a list of {id, label, recommended}
+   *  options, keeping whatever selectedValue already was even if it isn't (or isn't yet) in
+   *  the live list - a server set up before these pickers existed, or on a version the live
+   *  source has since dropped, would otherwise just silently lose its own value. */
+  function populateMcVersionSelect(selectEl, options, selectedValue, starRecommended) {
+    selectEl.innerHTML = '';
+    var blankOpt = document.createElement('option');
+    blankOpt.value = '';
+    blankOpt.textContent = '(not set)';
+    selectEl.appendChild(blankOpt);
+    var hasSelected = !selectedValue;
+    options.forEach(function (o) {
+      var opt = document.createElement('option');
+      opt.value = o.id;
+      opt.textContent = (starRecommended && o.recommended) ? ('★ ' + o.label) : o.label;
+      selectEl.appendChild(opt);
+      if (o.id === selectedValue) hasSelected = true;
+    });
+    if (selectedValue && !hasSelected) {
+      var customOpt = document.createElement('option');
+      customOpt.value = selectedValue;
+      customOpt.textContent = selectedValue;
+      selectEl.insertBefore(customOpt, blankOpt.nextSibling);
+    }
+    selectEl.value = selectedValue || '';
+  }
+  function loadMcssLoaderVersionOptions() {
+    var serverType = mcssServerType.value;
+    var mcVersion = mcssVersion.value;
+    var selected = mcStartSettingsProfile ? (mcStartSettingsProfile.loaderVersion || '') : '';
+    if (!mcssSupportsLoaderVersion(serverType) || !mcVersion) {
+      mcssLoaderVersionRowEl.style.display = 'none';
+      mcssLoaderVersion.innerHTML = '';
+      mcssLoaderVersionLoadingEl.style.display = 'none';
+      mcssLoaderVersionErrorEl.style.display = 'none';
+      return;
+    }
+    mcssLoaderVersionRowEl.style.display = '';
+    mcssLoaderVersionErrorEl.style.display = 'none';
+    mcssLoaderVersionLoadingEl.style.display = '';
+    fetch('/api/mc-install/loaderversions?serverType=' + encodeURIComponent(serverType) + '&minecraftVersion=' + encodeURIComponent(mcVersion))
+      .then(function (r) { return r.json(); })
+      .then(function (options) {
+        mcssLoaderVersionLoadingEl.style.display = 'none';
+        populateMcVersionSelect(mcssLoaderVersion, options, selected, true);
+      })
+      .catch(function () {
+        mcssLoaderVersionLoadingEl.style.display = 'none';
+        mcssLoaderVersionErrorEl.textContent = 'Failed to load loader/build versions';
+        mcssLoaderVersionErrorEl.style.display = '';
+      });
+  }
+  function loadMcssVersionOptions() {
+    var serverType = mcssServerType.value;
+    var selected = mcStartSettingsProfile ? mcStartSettingsProfile.minecraftVersion : '';
+    mcssVersionErrorEl.style.display = 'none';
+    mcssVersionLoadingEl.style.display = '';
+    fetch('/api/mc-install/versions?serverType=' + encodeURIComponent(serverType))
+      .then(function (r) { return r.json(); })
+      .then(function (options) {
+        mcssVersionLoadingEl.style.display = 'none';
+        populateMcVersionSelect(mcssVersion, options, selected, false);
+        loadMcssLoaderVersionOptions();
+      })
+      .catch(function () {
+        mcssVersionLoadingEl.style.display = 'none';
+        mcssVersionErrorEl.textContent = 'Failed to load versions';
+        mcssVersionErrorEl.style.display = '';
+      });
+  }
   var mcssInstallDir = document.getElementById('mcss-installdir');
   var mcssLaunchMode = document.getElementById('mcss-launchmode');
   var mcssJarFileName = document.getElementById('mcss-jarfilename');
@@ -4762,7 +4900,7 @@ function initDashboard(resolvedRole) {
     mcssName.value = p.name;
     mcssServerType.value = p.serverType;
     updateMcssServerTypeIcon();
-    mcssVersion.value = p.minecraftVersion;
+    loadMcssVersionOptions();
     mcssInstallDir.value = p.installDir;
     mcssLaunchMode.value = p.launchMode;
     mcssJarFileName.value = p.jarFileName;
@@ -4797,8 +4935,15 @@ function initDashboard(resolvedRole) {
   }
 
   mcssName.addEventListener('change', function () { saveMcStartSettingsField('name', mcssName.value); });
-  mcssServerType.addEventListener('change', function () { saveMcStartSettingsField('serverType', mcssServerType.value); });
-  mcssVersion.addEventListener('change', function () { saveMcStartSettingsField('minecraftVersion', mcssVersion.value); });
+  mcssServerType.addEventListener('change', function () {
+    saveMcStartSettingsField('serverType', mcssServerType.value);
+    loadMcssVersionOptions();
+  });
+  mcssVersion.addEventListener('change', function () {
+    saveMcStartSettingsField('minecraftVersion', mcssVersion.value);
+    loadMcssLoaderVersionOptions();
+  });
+  mcssLoaderVersion.addEventListener('change', function () { saveMcStartSettingsField('loaderVersion', mcssLoaderVersion.value); });
   mcssInstallDir.addEventListener('change', function () { saveMcStartSettingsField('installDir', mcssInstallDir.value); });
   mcssLaunchMode.addEventListener('change', function () {
     saveMcStartSettingsField('launchMode', mcssLaunchMode.value);

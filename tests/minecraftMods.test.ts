@@ -157,6 +157,11 @@ describe('minecraftMods', () => {
     expect(modTargetDir(profile)).toBe(path.join(tmpDir, 'mods'))
   })
 
+  it('uses the mods/ folder for SpongeVanilla and SpongeForge too', () => {
+    expect(modTargetDir(makeProfile({ serverType: 'spongevanilla' }, tmpDir))).toBe(path.join(tmpDir, 'mods'))
+    expect(modTargetDir(makeProfile({ serverType: 'spongeforge' }, tmpDir))).toBe(path.join(tmpDir, 'mods'))
+  })
+
   it('rejects when no version is compatible with this server', async () => {
     mockGetModrinthProjectVersions.mockResolvedValue([])
     const profile = makeProfile({}, tmpDir)

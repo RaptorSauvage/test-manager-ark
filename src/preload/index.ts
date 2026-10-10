@@ -271,6 +271,8 @@ const api: Api = {
     },
     install: {
       listVersions: (serverType: MinecraftInstallableType) => ipcRenderer.invoke(IPC.minecraftInstallListVersions, serverType),
+      listLoaderVersions: (serverType: MinecraftInstallableType, minecraftVersion: string) =>
+        ipcRenderer.invoke(IPC.minecraftInstallListLoaderVersions, serverType, minecraftVersion),
       run: (params: MinecraftInstallParams) => ipcRenderer.invoke(IPC.minecraftInstallRun, params)
     }
   }

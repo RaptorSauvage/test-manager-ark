@@ -35,7 +35,10 @@ const BUKKIT_PLUGINS_CLASS_ID = 4471
 
 /** CurseForge's own numeric "mod loader type" enum, used to filter /mods/search and
  *  /mods/{id}/files by loader. There's no meaningful value for Paper/Spigot (plugins aren't
- *  filtered by loader on CurseForge) - omit the param entirely for those. */
+ *  filtered by loader on CurseForge) - omit the param entirely for those. Sponge has no
+ *  CurseForge loader-type value either (there's no real Sponge content category there at
+ *  all - plugins for it are almost always published on Modrinth/Ore instead), same "omit the
+ *  param" treatment. */
 function modLoaderTypeFor(serverType: MinecraftServerType): number | undefined {
   switch (serverType) {
     case 'forge':
@@ -49,6 +52,9 @@ function modLoaderTypeFor(serverType: MinecraftServerType): number | undefined {
   }
 }
 
+/** Sponge has no dedicated CurseForge class the way Paper/Spigot do (BUKKIT_PLUGINS_CLASS_ID)
+ *  - falls back to the generic Mods class, same as Forge/Fabric/NeoForge, even though real
+ *  Sponge content there is sparse to nonexistent in practice. */
 function classIdFor(serverType: MinecraftServerType): number {
   return serverType === 'paper' || serverType === 'spigot' ? BUKKIT_PLUGINS_CLASS_ID : MODS_CLASS_ID
 }

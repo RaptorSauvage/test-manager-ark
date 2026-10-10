@@ -96,6 +96,12 @@ export function loaderCategoriesFor(serverType: MinecraftServerType): string[] {
     case 'paper':
     case 'spigot':
       return ['paper', 'spigot', 'bukkit']
+    case 'spongevanilla':
+    case 'spongeforge':
+      // Modrinth's own 'sponge' category isn't split by SpongeVanilla vs SpongeForge -
+      // SpongeAPI plugins are implementation-agnostic, so a plugin tagged 'sponge' runs on
+      // either.
+      return ['sponge']
     default:
       return []
   }

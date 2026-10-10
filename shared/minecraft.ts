@@ -32,7 +32,16 @@ export type MinecraftLaunchMode = 'jar' | 'script'
  *  behavior. Detected from the jar/script file name (minecraftDetect.ts's
  *  detectMinecraftServerType) since none of these ship any other cheap, reliable signal to
  *  read instead. */
-export type MinecraftServerType = 'vanilla' | 'paper' | 'spigot' | 'fabric' | 'forge' | 'neoforge' | 'unknown'
+export type MinecraftServerType =
+  | 'vanilla'
+  | 'paper'
+  | 'spigot'
+  | 'fabric'
+  | 'forge'
+  | 'neoforge'
+  | 'spongevanilla'
+  | 'spongeforge'
+  | 'unknown'
 
 export interface MinecraftProfile {
   id: string
@@ -50,6 +59,17 @@ export interface MinecraftProfile {
    *  Modrinth/CurseForge (minecraftMods.ts) - an empty value just means "unknown", and the
    *  Mods tab asks for it before letting the user search. */
   minecraftVersion: string
+  /** Which loader/build version this server actually runs, e.g. a Forge/NeoForge/Sponge
+   *  build number or a Paper build - set by the user (Start Settings tab) from the same
+   *  loader-version picker "+ Add server" uses to install one, when the loader type has one
+   *  at all (see supportsLoaderVersionSelection in shared/minecraftInstall.ts). Purely
+   *  informational, same "cosmetic, corrects itself, never affects anything else" status as
+   *  serverType itself - nothing currently reads this to filter mods or anything else, it
+   *  exists so Start Settings can show the same two-selector picker "+ Add server" does
+   *  rather than a free-text field with no structure at all. Optional since it predates this
+   *  field and most servers (vanilla/Spigot, or one imported before this existed) never set
+   *  it. */
+  loaderVersion?: string
   launchMode: MinecraftLaunchMode
   /** File name (not a full path), relative to installDir. Used when launchMode is 'jar'. */
   jarFileName: string

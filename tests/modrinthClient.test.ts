@@ -24,6 +24,11 @@ describe('loaderCategoriesFor', () => {
     expect(loaderCategoriesFor('spigot')).toEqual(['paper', 'spigot', 'bukkit'])
   })
 
+  it('maps spongevanilla and spongeforge to the same implementation-agnostic sponge category', () => {
+    expect(loaderCategoriesFor('spongevanilla')).toEqual(['sponge'])
+    expect(loaderCategoriesFor('spongeforge')).toEqual(['sponge'])
+  })
+
   it('returns no categories for vanilla/unknown - no mod ecosystem to filter by', () => {
     expect(loaderCategoriesFor('vanilla')).toEqual([])
     expect(loaderCategoriesFor('unknown')).toEqual([])

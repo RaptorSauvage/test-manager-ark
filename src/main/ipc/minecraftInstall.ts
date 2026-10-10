@@ -1,11 +1,19 @@
 import { ipcMain } from 'electron'
 import { IPC } from '@shared/types'
 import type { MinecraftInstallableType, MinecraftInstallParams } from '@shared/minecraftInstall'
-import { listInstallableMinecraftVersions, installMinecraftServerFiles } from '../lib/minecraftInstall'
+import {
+  listInstallableMinecraftVersions,
+  listInstallableLoaderVersions,
+  installMinecraftServerFiles
+} from '../lib/minecraftInstall'
 
 export function registerMinecraftInstallHandlers(): void {
   ipcMain.handle(IPC.minecraftInstallListVersions, (_event, serverType: MinecraftInstallableType) =>
     listInstallableMinecraftVersions(serverType)
+  )
+
+  ipcMain.handle(IPC.minecraftInstallListLoaderVersions, (_event, serverType: MinecraftInstallableType, minecraftVersion: string) =>
+    listInstallableLoaderVersions(serverType, minecraftVersion)
   )
 
   ipcMain.handle(IPC.minecraftInstallRun, (_event, params: MinecraftInstallParams) => installMinecraftServerFiles(params))
