@@ -3202,3 +3202,47 @@ async function findProfileIdByName(name) {
     Start Settings picker and the Mods browse header, and confirmed it disappears again live
     (no page reload) when switching the type dropdown to a type with no icon - zero
     `pageerror` events. `npm run typecheck` and `npm run build` both pass too.
+
+- **The web dashboard now has the same ARK/Minecraft game switcher as the desktop Manager, and
+  its Minecraft tabs only ever show up once that switcher is on Minecraft** (user request, from
+  a screenshot of the desktop app's own sidebar icon-button pair): "make the MC tabs show only
+  for MC servers, and separate MC from ARK the way the Manager does." Previously both games'
+  entire nav button lists sat in the sidebar at once, with only each server picker filtered by
+  game - there was no actual mode switch, just two parallel sets of always-visible buttons.
+  - **Markup**: the sidebar's ARK nav buttons are now wrapped in `<div id="nav-group-ark">` and
+    the Minecraft ones in `<div id="nav-group-minecraft">` (both `class="nav-group"`), with a
+    new `<div id="game-switch">` - two icon buttons (`#game-switch-ark`/`#game-switch-minecraft`,
+    reusing the existing `/game-icons/ark-evolved.png` and `/game-icons/minecraft.png` routes) -
+    placed above both groups, directly mirroring `App.tsx`'s own `GameSwitch` component and its
+    `.app-sidebar-game-switch` styling (same active-state border/background treatment, copied
+    into the dashboard's embedded CSS rather than reinvented).
+  - **Client JS**: a new `gameMode` variable (`'ark' | 'minecraft'`, defaults to `'ark'`) and
+    `selectGameMode(mode)` function toggles each switch button's `.active` class, shows/hides
+    the two `.nav-group` divs via `style.display`, and jumps to that game's own default view
+    (`cluster` for ARK, `mcdashboard` for Minecraft) - the same one-mode-at-a-time behavior as
+    the desktop app's `gameMode === 'minecraft'` branch in `App.tsx`, just toggling visibility
+    instead of swapping out a whole React tree. The page now calls `selectGameMode('ark')` on
+    load instead of calling `applyActiveView()` directly (redundant once `selectGameMode`
+    already calls `selectView`, which calls `applyActiveView` itself).
+  - **Keeping Console reachable**: Console is a genuinely shared view (one implementation, one
+    SSE stream, used by both games) and its own nav button lives in the ARK group - which
+    disappears once Minecraft mode hides that whole group. Rather than duplicating the Console
+    view or filtering its shared server dropdown by game (both considered and rejected as scope
+    beyond what was asked), the Minecraft nav group simply gained its own second button
+    (`#nav-mc-console`, first item in the group) pointing at the exact same `view-console`
+    section, so Console stays one click away in either mode.
+  - **Deliberately left alone**: the individual Minecraft nav buttons still don't get ARK's
+    per-view contextual hide/show (`SERVER_SCOPED_VIEWS`/`updateServerScopedNavVisibility`) -
+    that's an existing, separate design decision from the round that first split Minecraft out
+    of ARK, reaffirmed rather than changed here. Role-based hiding (`canAdmin`/`canOperate`
+    toggling individual MC button visibility) composes fine underneath the new group-level
+    `display:none`, since nested `display:none` hides regardless of a child's own display value.
+  - **Verified**: a temporary headless-Chromium check (same harness as prior rounds, deleted
+    after use) loaded the dashboard, confirmed the ARK group is visible and the Minecraft group
+    hidden by default with the ARK switch button marked active, clicked the Minecraft switch
+    button and confirmed the groups swapped and its button became active, clicked the new MC
+    Console button and confirmed the shared Console view actually opened, then switched back to
+    ARK and confirmed the groups swapped back correctly - zero `pageerror`/console-error events
+    throughout. `npm run typecheck`, the full `npx vitest run` (946 tests, all passing,
+    including the existing `tests/webDashboard.test.ts` suite unaffected by the markup
+    restructure), and `npm run build` all pass too.

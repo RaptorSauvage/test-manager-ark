@@ -1631,6 +1631,16 @@ const DASHBOARD_HTML = `<!doctype html>
   #token-gate-error { color: var(--danger); font-size: 0.85rem; min-height: 1.1em; }
   #sidebar { width: 190px; flex-shrink: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 16px 10px; gap: 4px; overflow-y: auto; }
   #sidebar h1 { font-size: 0.95rem; margin: 0 6px 12px; }
+  /* The ARK/Minecraft switch - its own small group at the top of the sidebar, visually
+     separate (a divider below it) from whatever page nav follows, since it toggles which
+     entire .nav-group is shown rather than navigating within one - same component and same
+     styling as the desktop Manager's own GameSwitch (src/renderer/src/App.tsx). */
+  .app-sidebar-game-switch { display: flex; gap: 4px; padding: 0 6px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .app-sidebar-game-switch button { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; border: 1px solid var(--border); border-radius: 6px; padding: 6px; background: transparent; }
+  .app-sidebar-game-switch button img { width: 28px; height: 28px; object-fit: contain; opacity: 0.55; }
+  .app-sidebar-game-switch button.active { border-color: var(--accent); background: rgba(79, 140, 255, 0.15); color: var(--text); }
+  .app-sidebar-game-switch button.active img { opacity: 1; }
+  .nav-group { display: flex; flex-direction: column; gap: 4px; }
   .nav-btn { text-align: left; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 9px 10px; font-size: 0.88rem; }
   .nav-btn:hover { border-color: var(--border); }
   .nav-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -1864,6 +1874,8 @@ const DASHBOARD_HTML = `<!doctype html>
     body { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; }
     #sidebar { width: auto; flex-direction: row; border-right: none; border-bottom: 1px solid var(--border); padding: 8px 10px; overflow-x: auto; }
     #sidebar h1 { display: none; }
+    .app-sidebar-game-switch { flex-shrink: 0; padding: 0 8px 0 0; margin-bottom: 0; border-bottom: none; border-right: 1px solid var(--border); }
+    .nav-group { flex-direction: row; }
     .nav-btn { flex-shrink: 0; }
     .nav-logout { margin-top: 0; margin-left: auto; }
     #main-area { overflow: visible; }
@@ -1922,24 +1934,37 @@ const DASHBOARD_HTML = `<!doctype html>
 </div>
 <nav id="sidebar">
   <h1>Bober Manager</h1>
-  <button id="nav-dashboard" class="nav-btn" type="button">Dashboard</button>
-  <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
-  <hr class="nav-sep" />
-  <button id="nav-console" class="nav-btn" type="button">Console</button>
-  <button id="nav-analytics" class="nav-btn" type="button">Analytics</button>
-  <button id="nav-settings" class="nav-btn" type="button">Settings</button>
-  <button id="nav-mods" class="nav-btn" type="button">Mods</button>
-  <button id="nav-backup" class="nav-btn" type="button">Backup</button>
-  <button id="nav-mapmanagement" class="nav-btn" type="button">Map Management</button>
-  <button id="nav-servermanagement" class="nav-btn" type="button">Server Management</button>
-  <button id="nav-updatelog" class="nav-btn" type="button">Update Log</button>
-  <hr class="nav-sep" />
-  <button id="nav-mcdashboard" class="nav-btn" type="button">Minecraft Servers</button>
-  <button id="nav-mc-startsettings" class="nav-btn" type="button">MC Start Settings</button>
-  <button id="nav-mc-serversettings" class="nav-btn" type="button">MC Server Settings</button>
-  <button id="nav-mc-mods" class="nav-btn" type="button">MC Mods</button>
-  <button id="nav-mc-backup" class="nav-btn" type="button">MC Backup</button>
-  <button id="nav-mc-management" class="nav-btn" type="button">MC Server Management</button>
+  <div id="game-switch" class="app-sidebar-game-switch">
+    <button id="game-switch-ark" type="button" title="ARK: Survival Evolved / Ascended">
+      <img src="/game-icons/ark-evolved.png" alt="ARK" />
+    </button>
+    <button id="game-switch-minecraft" type="button" title="Minecraft">
+      <img src="/game-icons/minecraft.png" alt="Minecraft" />
+    </button>
+  </div>
+  <div id="nav-group-ark" class="nav-group">
+    <button id="nav-dashboard" class="nav-btn" type="button">Dashboard</button>
+    <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
+    <hr class="nav-sep" />
+    <button id="nav-console" class="nav-btn" type="button">Console</button>
+    <button id="nav-analytics" class="nav-btn" type="button">Analytics</button>
+    <button id="nav-settings" class="nav-btn" type="button">Settings</button>
+    <button id="nav-mods" class="nav-btn" type="button">Mods</button>
+    <button id="nav-backup" class="nav-btn" type="button">Backup</button>
+    <button id="nav-mapmanagement" class="nav-btn" type="button">Map Management</button>
+    <button id="nav-servermanagement" class="nav-btn" type="button">Server Management</button>
+    <button id="nav-updatelog" class="nav-btn" type="button">Update Log</button>
+  </div>
+  <div id="nav-group-minecraft" class="nav-group">
+    <button id="nav-mcdashboard" class="nav-btn" type="button">Minecraft Servers</button>
+    <hr class="nav-sep" />
+    <button id="nav-mc-console" class="nav-btn" type="button">Console</button>
+    <button id="nav-mc-startsettings" class="nav-btn" type="button">MC Start Settings</button>
+    <button id="nav-mc-serversettings" class="nav-btn" type="button">MC Server Settings</button>
+    <button id="nav-mc-mods" class="nav-btn" type="button">MC Mods</button>
+    <button id="nav-mc-backup" class="nav-btn" type="button">MC Backup</button>
+    <button id="nav-mc-management" class="nav-btn" type="button">MC Server Management</button>
+  </div>
 </nav>
 <div id="main-area">
   <section id="view-dashboard" class="view">
@@ -2886,6 +2911,30 @@ function initDashboard(resolvedRole) {
     applySideColCollapsed();
   });
 
+  // The ARK/Minecraft switch - its own small icon-button pair at the top of the sidebar,
+  // toggling which entire .nav-group (and which game's servers show up anywhere else on the
+  // page) is active, same component/behavior as the desktop Manager's own GameSwitch
+  // (src/renderer/src/App.tsx) rather than mixing both games' nav into one combined list.
+  var gameSwitchArkBtn = document.getElementById('game-switch-ark');
+  var gameSwitchMinecraftBtn = document.getElementById('game-switch-minecraft');
+  var navGroupArkEl = document.getElementById('nav-group-ark');
+  var navGroupMinecraftEl = document.getElementById('nav-group-minecraft');
+  var gameMode = 'ark';
+  function selectGameMode(mode) {
+    gameMode = mode;
+    gameSwitchArkBtn.classList.toggle('active', mode === 'ark');
+    gameSwitchMinecraftBtn.classList.toggle('active', mode === 'minecraft');
+    navGroupArkEl.style.display = mode === 'ark' ? '' : 'none';
+    navGroupMinecraftEl.style.display = mode === 'minecraft' ? '' : 'none';
+    // Always lands on that mode's own "home" view - there's no view that makes sense to stay
+    // on across a mode switch (an ARK-shaped view's content would be left showing under the
+    // Minecraft nav, or vice versa), same as the desktop Manager always remounting onto that
+    // mode's own Dashboard when GameSwitch changes.
+    selectView(mode === 'ark' ? 'cluster' : 'mcdashboard');
+  }
+  gameSwitchArkBtn.addEventListener('click', function () { selectGameMode('ark'); });
+  gameSwitchMinecraftBtn.addEventListener('click', function () { selectGameMode('minecraft'); });
+
   var navDashboardBtn = document.getElementById('nav-dashboard');
   var navClusterBtn = document.getElementById('nav-cluster');
   var navConsoleBtn = document.getElementById('nav-console');
@@ -2897,6 +2946,12 @@ function initDashboard(resolvedRole) {
   var navServerManagementBtn = document.getElementById('nav-servermanagement');
   var navUpdateLogBtn = document.getElementById('nav-updatelog');
   var navMcDashboardBtn = document.getElementById('nav-mcdashboard');
+  // Reuses the exact same shared Console view (SSE stream/RCON/player list) ARK's own
+  // "Console" button already points at - rather than a second implementation, since it
+  // already dispatches correctly by game server-side (see findAnyServer). Only its own nav
+  // button lives in the Minecraft group, so it stays reachable while gameMode hides the ARK
+  // one.
+  var navMcConsoleBtn = document.getElementById('nav-mc-console');
   var navMcStartSettingsBtn = document.getElementById('nav-mc-startsettings');
   var navMcServerSettingsBtn = document.getElementById('nav-mc-serversettings');
   var navMcModsBtn = document.getElementById('nav-mc-mods');
@@ -2981,16 +3036,18 @@ function initDashboard(resolvedRole) {
   var adminNavBtns = [navSettingsBtn, navModsBtn, navMapManagementBtn, navUpdateLogBtn];
   var moderatorNavBtns = [navServerManagementBtn];
 
-  // Minecraft section - separate from ARK's own servers/tabs entirely (its own always-visible
-  // sidebar group, its own server pickers further down), mirroring the desktop Manager's
-  // completely separate "Minecraft Servers" page rather than mixing Minecraft profiles into
-  // ARK's Dashboard/Cluster Dashboard or its per-server tab dropdown. Unlike the ARK per-
-  // server tabs above, these stay visible regardless of activeView - there's no Dashboard-vs-
-  // per-server-tab distinction to make here, "Minecraft Servers" IS this section's own
-  // Dashboard-equivalent. Role tiers: MC Start Settings and MC Mods are admin+ (same tier as
-  // ARK's Settings/Mods); MC Server Settings/MC Backup/MC Server Management are moderator+
-  // (per the role's own definition) - "Minecraft Servers" itself has no tier, same as Cluster
-  // Dashboard.
+  // Minecraft section - separate from ARK's own servers/tabs entirely (its own nav group, its
+  // own server pickers further down), mirroring the desktop Manager's completely separate
+  // "Minecraft Servers" page rather than mixing Minecraft profiles into ARK's Dashboard/
+  // Cluster Dashboard or its per-server tab dropdown. The whole group's visibility is gated by
+  // gameMode (see selectGameMode) rather than activeView - unlike the ARK per-server tabs
+  // below, every button here stays visible across the whole Minecraft section regardless of
+  // which view is open within it, there's no Dashboard-vs-per-server-tab distinction to make
+  // the way SERVER_SCOPED_VIEWS makes for ARK. Role tiers: MC Start Settings and MC Mods are
+  // admin+ (same tier as ARK's Settings/Mods); MC Server Settings/MC Backup/MC Server
+  // Management are moderator+ (per the role's own definition) - "Minecraft Servers" and
+  // Console (shared with ARK's own Console button - see navMcConsoleBtn) have no tier, same as
+  // Cluster Dashboard.
   if (role && !canAdmin) {
     navMcStartSettingsBtn.style.display = 'none';
     navMcModsBtn.style.display = 'none';
@@ -3062,6 +3119,7 @@ function initDashboard(resolvedRole) {
     navServerManagementBtn.classList.toggle('active', activeView === 'servermanagement');
     navUpdateLogBtn.classList.toggle('active', activeView === 'updatelog');
     navMcDashboardBtn.classList.toggle('active', activeView === 'mcdashboard');
+    navMcConsoleBtn.classList.toggle('active', activeView === 'console');
     navMcStartSettingsBtn.classList.toggle('active', activeView === 'mc-startsettings');
     navMcServerSettingsBtn.classList.toggle('active', activeView === 'mc-serversettings');
     navMcModsBtn.classList.toggle('active', activeView === 'mc-mods');
@@ -3114,6 +3172,7 @@ function initDashboard(resolvedRole) {
   navServerManagementBtn.addEventListener('click', function () { selectView('servermanagement'); });
   navUpdateLogBtn.addEventListener('click', function () { selectView('updatelog'); });
   navMcDashboardBtn.addEventListener('click', function () { selectView('mcdashboard'); });
+  navMcConsoleBtn.addEventListener('click', function () { selectView('console'); });
   navMcStartSettingsBtn.addEventListener('click', function () { selectView('mc-startsettings'); });
   navMcServerSettingsBtn.addEventListener('click', function () { selectView('mc-serversettings'); });
   navMcModsBtn.addEventListener('click', function () { selectView('mc-mods'); });
@@ -6684,7 +6743,10 @@ function initDashboard(resolvedRole) {
   // into the Backup view) touches has been declared above - calling it any earlier throws
   // on the not-yet-assigned backup-view elements and aborts the rest of this script,
   // including loadServers() below, leaving the page stuck on "no server selected" forever.
-  applyActiveView();
+  // selectGameMode('ark') also applies the initial sidebar state (which .nav-group shows)
+  // and, via selectView inside it, the initial activeView/applyActiveView() call - ARK is
+  // the default landing mode, same as the desktop Manager's own GameSwitch defaulting to it.
+  selectGameMode('ark');
   loadServers();
   loadLabelSettings();
   setInterval(loadServers, 5000);
