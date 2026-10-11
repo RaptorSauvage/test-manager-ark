@@ -143,7 +143,8 @@ const api: Api = {
   },
   discordBot: {
     status: () => ipcRenderer.invoke(IPC.discordBotStatus),
-    restart: () => ipcRenderer.invoke(IPC.discordBotRestart)
+    restart: () => ipcRenderer.invoke(IPC.discordBotRestart),
+    stop: () => ipcRenderer.invoke(IPC.discordBotStop)
   },
   system: {
     openProfilesFolder: () => ipcRenderer.invoke(IPC.appOpenProfilesFolder),

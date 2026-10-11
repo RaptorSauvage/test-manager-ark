@@ -462,6 +462,26 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                         onClick={() => void window.api.discordBot.restart().then(setDiscordBotStatus)}
                       >
                         Restart bot
+                      </button>{' '}
+                      {discordBotStatus.running && (
+                        <button
+                          type="button"
+                          onClick={() => void window.api.discordBot.stop().then(setDiscordBotStatus)}
+                        >
+                          Stop bot
+                        </button>
+                      )}
+                    </p>
+                  )}
+                  {!settings.discordBotEnabled && discordBotStatus.running && (
+                    <p className="empty-state">
+                      Bot process still running from before this checkbox was turned off - save to actually stop it,
+                      or stop it right away:{' '}
+                      <button
+                        type="button"
+                        onClick={() => void window.api.discordBot.stop().then(setDiscordBotStatus)}
+                      >
+                        Stop bot
                       </button>
                     </p>
                   )}

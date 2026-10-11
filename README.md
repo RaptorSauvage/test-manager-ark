@@ -3789,3 +3789,29 @@ async function findProfileIdByName(name) {
     user's own exact Settings (their Host value wasn't shared) - if `webDashboardHost` was
     actually left at the default `127.0.0.1` the whole time, this fix doesn't explain their
     specific case and the search continues from there.
+
+- **Found why none of the three fixes above actually changed anything for the user despite
+  repeated pulls/rebuilds/restarts: `npm run dev` never rebuilds the bot bundle at all.**
+  Only `npm run build` ran `scripts/build-bot.mjs`; `"dev": "electron-vite dev"` only
+  rebuilds `src/main`/`src/preload`/the renderer. Anyone iterating via `npm run dev` (as
+  opposed to a full `npm run build` + launching the packaged app) had `out/bot/index.js`
+  permanently frozen at whichever `npm run build` last touched it, however many times they
+  edited `src/bot/`, pulled, or restarted the Manager - explaining the identical "fetch
+  failed"/AWS-BOM log lines surviving three separate fix attempts untouched.
+  - **Fix**: `"dev": "node scripts/build-bot.mjs && electron-vite dev"` - rebuilds the bot
+    bundle once up front every time `npm run dev` starts. It still won't live-reload on a
+    further `src/bot/` edit while that same `dev` session keeps running (esbuild's script
+    runs standalone, outside electron-vite's own watch pipeline) - restart `npm run dev`
+    itself to pick up a bot-side change, same restart-to-reload expectation as any other
+    main-process edit already has by convention here.
+  - **Verified**: ran `npm run dev` with `out/bot/` deleted first and confirmed
+    `out/bot/index.js` is rebuilt before `electron-vite dev` itself starts. `npm run
+    typecheck`, the full `npx vitest run` (1064 tests), and `npm run build` all still pass.
+- **Added a "Stop bot" button** next to "Restart bot" in the Discord Bot Settings tab (user
+  request) - stops the running process immediately without touching the Enabled checkbox,
+  for a quick "turn it off right now" independent of Settings' own save-to-apply flow. The
+  next Settings save (or a Manager restart) still respawns it if that checkbox is still
+  checked - this is a one-shot stop, not a persisted "stay disabled" state; also offered
+  when the checkbox was just unchecked but not yet saved, so a stale running process from
+  before that doesn't require a save just to stop it. New `discordBotStop` IPC channel
+  wrapping the already-existing `stopDiscordBot()`.

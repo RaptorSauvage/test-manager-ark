@@ -583,6 +583,7 @@ export const IPC = {
 
   discordBotStatus: 'discord-bot:status',
   discordBotRestart: 'discord-bot:restart',
+  discordBotStop: 'discord-bot:stop',
 
   appOpenProfilesFolder: 'app:open-profiles-folder',
   appOpenDataDirFolder: 'app:open-data-dir-folder',
@@ -890,6 +891,9 @@ export interface Api {
     /** Re-applies the current settings - picks up a config change without needing to
      *  re-save Settings, and recovers after a crash shown in the Manager Log. */
     restart: () => Promise<{ running: boolean; error: string | null }>
+    /** Stops the bot process immediately without touching the Enabled checkbox - the next
+     *  Settings save (or Manager restart) respawns it if that checkbox is still on. */
+    stop: () => Promise<{ running: boolean; error: string | null }>
   }
   system: {
     openProfilesFolder: () => Promise<void>
