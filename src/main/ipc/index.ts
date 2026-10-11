@@ -24,6 +24,7 @@ import { registerMinecraftHandlers } from './minecraft'
 import { registerMinecraftBackupHandlers } from './minecraftBackup'
 import { registerMinecraftModsHandlers } from './minecraftMods'
 import { registerMinecraftInstallHandlers } from './minecraftInstall'
+import { registerDiscordBotHandlers } from './discordBot'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers(mainWindow.webContents)
@@ -36,6 +37,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerSettingsHandlers()
   registerWebDashboardAccessTokensHandlers()
   registerWebDashboardApiKeysHandlers()
+  registerDiscordBotHandlers()
   registerSteamcmdInstallHandlers(mainWindow)
   registerMapsHandlers()
   registerCustomMapsHandlers()

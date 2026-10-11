@@ -24,7 +24,28 @@ export default function SteamCmdView({ onBack }: SteamCmdViewProps): JSX.Element
     collapsedGroups: [],
     minecraftGroupOrder: [],
     minecraftCollapsedGroups: [],
-    curseforgeApiKey: ''
+    curseforgeApiKey: '',
+    discordBotEnabled: false,
+    discordBotToken: '',
+    discordBotDevGuildId: '',
+    discordBotStatusChannelId: '',
+    discordBotRefreshSeconds: 60,
+    discordBotStatusEmbedTitle: '🦖 Statut ARK: Survival Ascended',
+    discordBotStatusEmbedDescription: '',
+    discordBotStatusEmbedColor: '9B59B6',
+    discordBotArkCheckEnabled: true,
+    discordBotMcStatusChannelId: '',
+    discordBotMcRefreshSeconds: 60,
+    discordBotMcStatusEmbedTitle: '⛏️ Statut Minecraft',
+    discordBotMcStatusEmbedDescription: '',
+    discordBotMcStatusEmbedColor: '9B59B6',
+    discordBotMcCheckEnabled: true,
+    discordBotMaintenanceWhitelistIds: [],
+    discordBotManagerWhitelistIds: [],
+    discordBotCurseforgeModuleEnabled: true,
+    discordBotCurseforgeDefaultModIds: [],
+    discordBotCurseforgeCheckIntervalMinutes: 10,
+    discordBotApiKeyId: ''
   })
   const [status, setStatus] = useState('')
   const [managedPath, setManagedPath] = useState<string | null>(null)

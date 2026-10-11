@@ -19,6 +19,7 @@ import {
   getMinecraftRunningStartedAt
 } from './store'
 import { applyWebDashboardSettings } from './lib/webDashboard'
+import { applyDiscordBotSettings } from './lib/discordBot'
 import { applyBackupSchedule, registerBackupScheduleWatcher } from './lib/schedule'
 import { applyScheduledRestart, applyScheduledDinoWipe } from './lib/scheduledActions'
 import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
@@ -118,6 +119,7 @@ app.whenReady().then(() => {
 
   registerPlayerBackupWatch()
   applyWebDashboardSettings(getSettings())
+  void applyDiscordBotSettings(getSettings())
   applyLaunchOnStartup(getSettings())
   startUpdateCheckPolling()
 

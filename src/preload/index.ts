@@ -141,6 +141,10 @@ const api: Api = {
       ipcRenderer.invoke(IPC.webDashboardApiKeysUpdate, id, updates),
     delete: (id: string) => ipcRenderer.invoke(IPC.webDashboardApiKeysDelete, id)
   },
+  discordBot: {
+    status: () => ipcRenderer.invoke(IPC.discordBotStatus),
+    restart: () => ipcRenderer.invoke(IPC.discordBotRestart)
+  },
   system: {
     openProfilesFolder: () => ipcRenderer.invoke(IPC.appOpenProfilesFolder),
     openDataDirFolder: () => ipcRenderer.invoke(IPC.appOpenDataDirFolder),

@@ -3589,3 +3589,103 @@ async function findProfileIdByName(name) {
     confirm on a machine with real internet access that Sponge plugin search now returns
     genuine Sponge-platform plugins (mixed in among Bukkit/Spigot/Paper results under the
     same class, since CurseForge itself doesn't separate them further).
+
+- **Discord bot integration: the standalone Python "Bober" status bot is now a native part
+  of the Manager**, ported to TypeScript rather than kept as a separate hand-run Python
+  project with its own venv/`.env` (user request - "intègre entièrement" after discussing
+  the tradeoffs). Full French user-facing strings preserved throughout (every embed, every
+  slash command reply) - this was a mechanical port, not a rewrite "in the spirit of".
+  - **Architecture: a genuinely separate OS process, not code living inside the Manager's
+    own main process** - decided after discussing the tradeoff explicitly with the user. A
+    bug in ~3000 lines of Discord-API logic (a bad embed, a Discord API hiccup, a rogue
+    slash command handler) can now never take down server management/monitoring/the web
+    dashboard, and the reverse also holds - the bot process can keep running and even
+    report "Manager unreachable" on Discord if the Manager itself crashes, instead of just
+    going silent. The cost: the bot talks to the Manager purely over its own existing local
+    Web Dashboard HTTP API rather than calling internal functions directly - judged well
+    worth it for the isolation.
+  - **The real simplification this unlocked**: the standalone bot had to open its own RCON
+    sockets and re-implement Minecraft's Server List Ping protocol, because it had no
+    relationship with the Manager by default. Since this version is *spawned by* the
+    Manager, it doesn't need any of that - `GET /api/servers` (the same route the browser
+    dashboard already polls) gives it the full live ARK+Minecraft server list, state,
+    players and version in one call, and `POST /api/servers/:id/rcon` (the same route the
+    desktop Console tab's command box already uses) covers `/rcon`, `/rconall`,
+    `/dinowipe`, `/saveworld` and `/adminchat` - all just different text commands through
+    that one existing endpoint. No RCON library, no Minecraft ping protocol, and critically
+    **no more manual per-server config** - the old bot needed `ARK_SERVER_N_NAME/IP/
+    RCON_PORT/RCON_PASSWORD/MAP/MAX_PLAYERS` typed into `.env` for every single server; this
+    version needs none of that, it just asks the Manager.
+  - **No manual API key copy-pasting either**: the old bot needed a Web Dashboard API key
+    created by hand in Settings and pasted into `.env`. This version auto-provisions one
+    internally (`src/main/lib/discordBot.ts`'s `ensureApiKey`, reusing the exact same
+    `generateApiKeyId`/`generateApiKeySecret`/`hashPassword`/`buildApiKey`/
+    `saveWebDashboardApiKey` functions Settings' own "create API key" button calls) labeled
+    "Discord Bot (interne)" in that same key list, minted fresh (old one revoked) every time
+    the bot (re)starts - a stored `secretHash` can't be turned back into the plaintext key
+    the bot needs to send, so reusing one across restarts isn't possible anyway, and these
+    keys are never shown to the user beyond that label. When Settings' "Require access
+    token" is off, no key is sent at all (matching the Web Dashboard API's own no-auth-by-
+    default posture). The CurseForge module also reuses the Mods tab's existing
+    `curseforgeApiKey` setting rather than asking for a second key just for this.
+  - **Build pipeline**: `src/bot/` is a separate TypeScript module tree, bundled by
+    **esbuild** (`scripts/build-bot.mjs` → `out/bot/index.js`) rather than folded into
+    electron-vite's own Rollup-based main build - discord.js has internal circular
+    `require()`s (`Base` ↔ `Channel` ↔ `GuildChannel` ↔ `util`) that Rollup's commonjs
+    plugin reorders into a broken init sequence (`TypeError: Class extends value undefined`,
+    confirmed by actually trying it), which esbuild doesn't hit since it preserves real
+    `require()` semantics. `zlib-sync`/`bufferutil`/`utf-8-validate` (optional native
+    speedups `@discordjs/ws` tries behind its own try/catch) are marked external on both
+    the esbuild and - briefly, before the esbuild switch - Rollup side, since they're never
+    actually installed here. The Manager's main process spawns the bundle via Node's
+    `child_process.fork()` with `ELECTRON_RUN_AS_NODE=1` (Electron's documented pattern for
+    a plain-Node helper process) - verified end to end with a real `fork()` call under
+    Electron's own binary, not just a typecheck.
+  - **Supervisor** (`src/main/lib/discordBot.ts`): `applyDiscordBotSettings` (called on every
+    Settings save, same unconditional-reapply pattern `applyWebDashboardSettings` already
+    uses, and once at Manager startup) starts/stops the bot to match
+    `discordBotEnabled`+a non-empty token. Config is written to a JSON file in the Manager's
+    data dir and passed as the child's first argv (not an env var or an IPC message - the
+    bot can always re-read its own current config on a restart without depending on timing
+    with the parent). stdout/stderr are piped into the existing Manager Log
+    (`logManagerEvent`/`newTaskId`, tagged "Bot Discord") rather than a new log sink. The
+    bot process is deliberately **not** killed when the Manager quits - same "survives the
+    Manager closing" philosophy already applied to game server processes, and the one thing
+    that makes "report Manager unreachable" above actually possible.
+  - **Ported 1:1** (new `src/bot/` files): `managerApiClient.ts` (the HTTP client described
+    above, tolerating the Manager's self-signed cert via `undici`'s `Agent` when Settings'
+    HTTPS mode is on), `statusEmbeds.ts`/`externalStatus.ts` (EOS/AWS/Cloudflare/Xbox Live/
+    Minecraft Auth checks, verbatim), `curseforge.ts`/`curseforgeCheck.ts` (the HTML→Discord-
+    Markdown changelog converter, changelog splitting, the periodic update-check loop),
+    `maintenanceState.ts`/`schedule.ts` (in-memory only, not persisted - matches the
+    standalone bot's own documented behavior, not a regression), and every slash command
+    (`src/bot/commands/`): `/status`, `/statusserveur`, `/statusmc`, `/maintenance` (on/off/
+    all), `/maintenancemc` (on/off/all), `/botmaintenance`, `/check` (on/off), `/schedule`
+    (dinowipe/list/cancel), `/dinowipe`, `/saveworld`, `/adminchat`, `/adminchatall`,
+    `/rcon`, `/rconall`, `/start`, `/stop`, `/restart`, `/update`, `/updaterestart`,
+    `/setchannel`, `/addmod`, `/removemod`, `/listmods`, `/testmod` - same whitelists
+    (`MAINTENANCE_WHITELIST`/`MANAGER_WHITELIST`, now Settings fields instead of `.env`
+    lists), same autocomplete behavior (now sourced from the live `/api/servers` list
+    instead of a static one), same per-server maintenance/check-disabled overrides on the
+    status lines.
+  - **Settings UI**: a new "Discord Bot" tab in the desktop Settings screen (token, dev
+    guild id, both clusters' channel/refresh/embed/check settings, the two whitelists as
+    comma-separated id fields, CurseForge module toggle/default mods/check interval, plus a
+    live running/error status line and a "Restart bot" button) - shares the existing
+    Settings form/save button rather than a separate dialog.
+  - **Verified**: 50 new tests across `tests/discordBot*.test.ts` - the CurseForge HTML→
+    Markdown converter and changelog splitter against known input/output pairs, the status-
+    embed line-building logic for every server state (running/maintenance/each Manager
+    state/check-disabled-filtered-out) and both clusters, the Manager API client's 401/403/
+    network-error handling and request shapes (mocked `fetch`), the server-list cache's ARK/
+    Minecraft split and name lookup, maintenance-state get/set, and the main-process
+    supervisor's config-building and API-key-provisioning logic (mocked `electron`/store/
+    `child_process.fork`) - including that a stale previous API key is actually revoked, not
+    just replaced. `npm run typecheck`, the full `npx vitest run` (1050 tests), and `npm run
+    build` all pass; the bundled `out/bot/index.js` was run standalone and via a real
+    `fork()` + `ELECTRON_RUN_AS_NODE` call (both fail cleanly on `discord.com` DNS resolution
+    in this network-sandboxed environment - no Discord token/live gateway connection could
+    be tested here). **Not verified**: an actual Discord server receiving real slash
+    commands, embeds rendering correctly in a real Discord client, or the full start/stop/
+    RCON round trip against a real running ARK/Minecraft server - please run this against a
+    real bot token and real servers before relying on it.

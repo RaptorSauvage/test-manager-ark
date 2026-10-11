@@ -309,6 +309,45 @@ export interface AppSettings {
    *  there is a plain API key - paste it here. Empty means CurseForge search is skipped
    *  entirely (Modrinth results alone), not an error. */
   curseforgeApiKey: string
+
+  /** Whether the Discord bot integration (src/bot/) is spawned alongside the Manager - see
+   *  src/main/lib/discordBot.ts. Off by default: it needs a real Discord bot token before
+   *  there's anything useful for it to do. */
+  discordBotEnabled: boolean
+  discordBotToken: string
+  /** Optional - syncs slash commands instantly to this one Discord server instead of
+   *  waiting for the ~1h global sync (useful while testing). */
+  discordBotDevGuildId: string
+  discordBotStatusChannelId: string
+  discordBotRefreshSeconds: number
+  discordBotStatusEmbedTitle: string
+  discordBotStatusEmbedDescription: string
+  discordBotStatusEmbedColor: string
+  discordBotArkCheckEnabled: boolean
+  discordBotMcStatusChannelId: string
+  discordBotMcRefreshSeconds: number
+  discordBotMcStatusEmbedTitle: string
+  discordBotMcStatusEmbedDescription: string
+  discordBotMcStatusEmbedColor: string
+  discordBotMcCheckEnabled: boolean
+  /** Discord user ids (decimal strings - snowflakes exceed Number's safe integer range)
+   *  allowed to use every admin command (/maintenance, /dinowipe, /saveworld, /adminchat,
+   *  /rcon, /schedule, /check, /botmaintenance, /setchannel, /addmod, /removemod). Empty
+   *  means nobody can - the bot logs a warning on startup in that case. */
+  discordBotMaintenanceWhitelistIds: string[]
+  /** Separate, smaller whitelist for /start /stop /restart /update /updaterestart only -
+   *  anyone already in discordBotMaintenanceWhitelistIds also has access automatically. */
+  discordBotManagerWhitelistIds: string[]
+  /** The bot's own CurseForge mod-update-notification module - independent of the Mods tab's
+   *  curseforgeApiKey above, but reuses that same key rather than asking for a second one. */
+  discordBotCurseforgeModuleEnabled: boolean
+  discordBotCurseforgeDefaultModIds: string[]
+  discordBotCurseforgeCheckIntervalMinutes: number
+  /** Id of the Web Dashboard API key auto-provisioned for the bot's own use (see
+   *  discordBot.ts) - only meaningful when webDashboardAuthEnabled is also on. Empty means
+   *  none has been provisioned yet (or auth is off, so none is needed). Internal bookkeeping,
+   *  never shown as an editable field in Settings. */
+  discordBotApiKeyId: string
 }
 
 /** Four tiers, highest to lowest: `globalAdmin` (everything, every server, regardless of any
@@ -541,6 +580,9 @@ export const IPC = {
   webDashboardApiKeysCreate: 'web-dashboard-api-keys:create',
   webDashboardApiKeysUpdate: 'web-dashboard-api-keys:update',
   webDashboardApiKeysDelete: 'web-dashboard-api-keys:delete',
+
+  discordBotStatus: 'discord-bot:status',
+  discordBotRestart: 'discord-bot:restart',
 
   appOpenProfilesFolder: 'app:open-profiles-folder',
   appOpenDataDirFolder: 'app:open-data-dir-folder',
@@ -842,6 +884,12 @@ export interface Api {
      *  the key's own secret. */
     update: (id: string, updates: { label?: string; role?: WebDashboardRole }) => Promise<WebDashboardApiKeySummary[]>
     delete: (id: string) => Promise<WebDashboardApiKeySummary[]>
+  }
+  discordBot: {
+    status: () => Promise<{ running: boolean; error: string | null }>
+    /** Re-applies the current settings - picks up a config change without needing to
+     *  re-save Settings, and recovers after a crash shown in the Manager Log. */
+    restart: () => Promise<{ running: boolean; error: string | null }>
   }
   system: {
     openProfilesFolder: () => Promise<void>
