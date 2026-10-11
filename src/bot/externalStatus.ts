@@ -31,7 +31,19 @@ async function fetchJsonWithTimeout(url: string): Promise<unknown> {
   const response = await fetchWithTimeout(url)
   const text = await response.text()
   const jsonStart = text.search(/[[{]/)
-  return JSON.parse(jsonStart === -1 ? text : text.slice(jsonStart))
+  const candidate = jsonStart === -1 ? text : text.slice(jsonStart)
+  try {
+    return JSON.parse(candidate)
+  } catch (err) {
+    // A terminal/console encoding mismatch mangled the raw text into unreadable mojibake
+    // twice already while diagnosing this exact kind of failure (confirmed from real user
+    // logs) - re-thrown with a `JSON.stringify`-escaped preview (unambiguous regardless of
+    // console encoding) and the literal Unicode code points of the first 20 characters, so
+    // the next occurrence is diagnosable from the log alone instead of guessing again.
+    const preview = JSON.stringify(candidate.slice(0, 80))
+    const codePoints = [...candidate.slice(0, 20)].map((ch) => ch.codePointAt(0)).join(',')
+    throw new Error(`${(err as Error).message} | aperçu exact: ${preview} | codes des 20 premiers caractères: ${codePoints}`)
+  }
 }
 
 // ---------------------------------------------------------------------------

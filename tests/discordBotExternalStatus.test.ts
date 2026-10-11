@@ -7,6 +7,7 @@ import {
   queryXboxStatus,
   queryMinecraftAuthStatus
 } from '../src/bot/externalStatus'
+import { log } from '../src/bot/logging'
 
 function fakeTextResponse(text: string): Response {
   return { text: async () => text, read: async () => undefined } as unknown as Response
@@ -53,6 +54,22 @@ describe('queryAwsStatus', () => {
     const [line, severity] = await queryAwsStatus()
     expect(line).toContain('indisponible')
     expect(severity).toBe(1)
+  })
+
+  it('logs an unambiguous, console-encoding-proof diagnostic (exact preview + code points) on a parse failure', async () => {
+    // Regression guard for this exact saga: a terminal's own encoding mangled the raw text
+    // into unreadable mojibake twice while diagnosing a real AWS parse failure - asserting
+    // on the literal numeric code point (65533 = U+FFFD) sidesteps that entirely, unlike
+    // asserting on the character itself which this very test file's own source encoding
+    // could just as easily get mangled on.
+    const warnSpy = vi.spyOn(log, 'warn')
+    vi.stubGlobal('fetch', vi.fn(async () => fakeTextResponse('��notjson')))
+    await queryAwsStatus()
+    const message = warnSpy.mock.calls[0][0] as string
+    expect(message).toContain('aperçu exact:')
+    expect(message).toContain('codes des 20 premiers caractères:')
+    expect(message).toContain('65533')
+    warnSpy.mockRestore()
   })
 })
 

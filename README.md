@@ -3843,3 +3843,27 @@ async function findProfileIdByName(name) {
   fix was confirmed working immediately (the "injoignable" warning disappeared from the
   user's own logs) - the AWS BOM issue surviving that same pull is what led to this round's
   fix above actually being a real, previously-masked second bug, not a repeat of the first.
+
+- **The bracket-search fix above wasn't the end of it either: AWS's response fails to parse
+  for a *third*, different reason past the leading junk** - after the fix above landed, the
+  user's log showed the mangled leading characters finally gone (`fetchJsonWithTimeout` is
+  working), but a new parse error further into the text, right around where the real JSON
+  content starts. Diagnosing this exactly from the log alone has hit the same wall twice
+  now: Windows console encoding mangles non-ASCII bytes into unreadable mojibake
+  (`´┐¢`-style garbage) before they ever reach the pasted log, so two different real
+  problems have now been misread as "the same BOM issue" from the log text alone.
+  - **Fix** (`src/bot/externalStatus.ts`): `fetchJsonWithTimeout` now catches its own
+    `JSON.parse` failure and re-throws with a `JSON.stringify`-escaped preview of the
+    exact text it tried to parse (safe regardless of console encoding, since
+    `JSON.stringify` always escapes non-printable/non-ASCII characters to `\uXXXX`) plus
+    the literal Unicode code points of its first 20 characters as plain numbers - something
+    no console encoding mismatch can mangle. The next occurrence will log the actual bytes
+    unambiguously instead of needing yet another round of guessing from mangled terminal
+    output.
+  - **Verified**: new test in `tests/discordBotExternalStatus.test.ts` asserts on the
+    literal code point number (`65533`, i.e. `�`) rather than the character itself -
+    deliberately, since asserting on the raw character would have the exact same source-
+    encoding fragility this fix exists to route around. `npm run typecheck`, the full `npx
+    vitest run` (1067 tests), and `npm run build` all pass. Still not root-caused: the next
+    real log line is needed to actually fix whatever this third issue turns out to be -
+    this round only guarantees that log line will be legible.
