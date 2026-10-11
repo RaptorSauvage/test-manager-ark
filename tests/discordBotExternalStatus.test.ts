@@ -9,8 +9,27 @@ import {
 } from '../src/bot/externalStatus'
 import { log } from '../src/bot/logging'
 
+function toArrayBuffer(buffer: Buffer): ArrayBuffer {
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
+}
+
+/** A response whose body is really UTF-8-encoded bytes (the normal case, and what every
+ *  test before this file's UTF-16LE rewrite used a plain JS string literal to approximate -
+ *  going through a real TextEncoder here instead is a more faithful test of the actual byte
+ *  decoding path in `readResponseText`). */
 function fakeTextResponse(text: string): Response {
-  return { text: async () => text, read: async () => undefined } as unknown as Response
+  return { arrayBuffer: async () => toArrayBuffer(Buffer.from(text, 'utf-8')) } as unknown as Response
+}
+
+/** A response whose body is really UTF-16LE-encoded bytes, with or without a BOM - this is
+ *  the actual shape a real AWS Health response turned out to have (confirmed from a user's
+ *  own diagnostic log showing a 0x00 byte after every ASCII character), which no amount of
+ *  guessing about leading BOM characters on an already-UTF-8-decoded string could ever have
+ *  caught - the previous two fix attempts were chasing symptoms of this real cause. */
+function fakeUtf16LeResponse(text: string, withBom: boolean): Response {
+  const body = Buffer.from(text, 'utf16le')
+  const bytes = withBom ? Buffer.concat([Buffer.from([0xff, 0xfe]), body]) : body
+  return { arrayBuffer: async () => toArrayBuffer(bytes) } as unknown as Response
 }
 
 afterEach(() => {
@@ -18,14 +37,29 @@ afterEach(() => {
 })
 
 describe('queryAwsStatus', () => {
-  it('parses a response even when it starts with a UTF-8 BOM - confirmed against the real endpoint', async () => {
+  it('parses a genuinely UTF-16LE-encoded response with a BOM', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => fakeUtf16LeResponse('[]', true)))
+    const [line, severity] = await queryAwsStatus()
+    expect(line).toContain('Opérationnel')
+    expect(severity).toBe(0)
+  })
+
+  it('parses a genuinely UTF-16LE-encoded response with no BOM at all - the exact shape confirmed from a real AWS response', async () => {
+    const events = [{ region_name: 'eu-west-1' }]
+    vi.stubGlobal('fetch', vi.fn(async () => fakeUtf16LeResponse(JSON.stringify(events), false)))
+    const [line, severity] = await queryAwsStatus()
+    expect(line).toContain('1 incident')
+    expect(line).toContain('eu-west-1')
+  })
+
+  it('parses a response even when it starts with a UTF-8 BOM', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeTextResponse('﻿[]')))
     const [line, severity] = await queryAwsStatus()
     expect(line).toContain('Opérationnel')
     expect(severity).toBe(0)
   })
 
-  it('parses a response with *two* leading BOM-like characters - a real capture showed this, and stripping only one still broke JSON.parse', async () => {
+  it('parses a response with *two* leading UTF-8 BOMs in a row - the first real capture of this bug showed this shape', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeTextResponse('﻿﻿[]')))
     const [line, severity] = await queryAwsStatus()
     expect(line).toContain('Opérationnel')
@@ -58,10 +92,10 @@ describe('queryAwsStatus', () => {
 
   it('logs an unambiguous, console-encoding-proof diagnostic (exact preview + code points) on a parse failure', async () => {
     // Regression guard for this exact saga: a terminal's own encoding mangled the raw text
-    // into unreadable mojibake twice while diagnosing a real AWS parse failure - asserting
-    // on the literal numeric code point (65533 = U+FFFD) sidesteps that entirely, unlike
-    // asserting on the character itself which this very test file's own source encoding
-    // could just as easily get mangled on.
+    // into unreadable mojibake more than once while diagnosing a real AWS parse failure -
+    // asserting on the literal numeric code point (65533 = U+FFFD) sidesteps that entirely,
+    // unlike asserting on the character itself which this very test file's own source
+    // encoding could just as easily get mangled on.
     const warnSpy = vi.spyOn(log, 'warn')
     vi.stubGlobal('fetch', vi.fn(async () => fakeTextResponse('��notjson')))
     await queryAwsStatus()
@@ -98,6 +132,13 @@ describe('queryOfficialNetworkStatus', () => {
     const [line, severity] = await queryOfficialNetworkStatus()
     expect(line).toContain('Hors ligne')
     expect(severity).toBe(2)
+  })
+
+  it('also works against a genuinely UTF-16LE-encoded response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => fakeUtf16LeResponse('<html>text > Online (v92.28) <text</html>', false)))
+    const [line, severity] = await queryOfficialNetworkStatus()
+    expect(line).toContain('En ligne')
+    expect(severity).toBe(0)
   })
 })
 

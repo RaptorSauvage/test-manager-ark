@@ -3867,3 +3867,30 @@ async function findProfileIdByName(name) {
     vitest run` (1067 tests), and `npm run build` all pass. Still not root-caused: the next
     real log line is needed to actually fix whatever this third issue turns out to be -
     this round only guarantees that log line will be legible.
+
+- **The actual root cause of the entire AWS saga, finally found via the diagnostic above:
+  the real response is UTF-16LE-encoded, not UTF-8.** The user's next log line showed the
+  code points `91,0,123,0,34,0,100,0,...` - `[`, NUL, `{`, NUL, `"`, NUL, `d`, NUL... a
+  `0x00` byte after every single ASCII character, the unmistakable signature of ASCII-range
+  text encoded as UTF-16LE. `fetch`'s `response.text()` always decodes as UTF-8 with no way
+  to override it, and the endpoint declares no charset to reveal otherwise - every earlier
+  "BOM" theory in this saga was real evidence of the *same* underlying misdecoding, just
+  misread as a narrower leading-prefix issue because a console encoding mismatch (separately
+  confirmed) kept mangling the raw bytes before they ever reached a readable log line.
+  - **Fix** (`src/bot/externalStatus.ts`): new `readResponseText(response)` reads the raw
+    bytes via `response.arrayBuffer()` and picks the correct decoder itself - a real UTF-16LE/
+    UTF-16BE/UTF-8 BOM first, then falls back to detecting *unmarked* UTF-16LE by the same
+    "every other byte is zero" shape confirmed above (the real AWS response has no BOM at
+    all). Used everywhere this file reads a response body as text - not just the JSON checks
+    (EOS/AWS/Cloudflare), but also the plain-text ones (Official Network ASA, Xbox Live) that
+    could have silently matched nothing against a misdecoded body the exact same way, just
+    without an exception to surface it. `fetchJsonWithTimeout`'s bracket-search and
+    diagnostic-logging from the last two rounds stay in place as a defensive second layer -
+    harmless, and correct decoding should make them unnecessary in practice now.
+  - **Verified**: rewrote `tests/discordBotExternalStatus.test.ts`'s fake-response helper to
+    go through real byte encoding/decoding (`Buffer`-based) instead of plain JS string
+    literals standing in for "already decoded" text, a more faithful test of the actual code
+    path - plus new cases for genuinely UTF-16LE-encoded responses, with and without a BOM
+    (the no-BOM case is the exact shape confirmed from the real AWS response), for both
+    `queryAwsStatus` and `queryOfficialNetworkStatus`. 14 tests in that file now, 1070 total.
+    `npm run typecheck`, the full `npx vitest run`, and `npm run build` all pass.

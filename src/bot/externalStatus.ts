@@ -16,30 +16,49 @@ async function fetchWithTimeout(url: string): Promise<Response> {
   }
 }
 
-/** Same as `fetchWithTimeout`, but parses the body as JSON itself after discarding
- *  whatever junk precedes the actual JSON - confirmed in practice against the real AWS
- *  Health endpoint, which serves some. `response.json()` calls `JSON.parse` directly on
- *  the raw text and doesn't tolerate any of it, so a prefixed response fails with
- *  "Unexpected token" every single time, not as a transient network issue. A first attempt
- *  here only stripped a single leading UTF-8 BOM character - too narrow: a real capture
- *  showed *two* BOM-like characters in a row, still breaking `JSON.parse` after stripping
- *  only one. Instead of guessing how many (or what exactly) precedes it, this finds the
- *  first `[` or `{` in the text and parses from there - correct no matter what junk comes
- *  before it, since every response this function is used for is always a JSON array or
- *  object at the top level. */
+/** `response.text()` always decodes the body as UTF-8, regardless of what the server
+ *  actually sent and with no way to override it - a real AWS Health response turned out to
+ *  be UTF-16LE (confirmed from a user's own diagnostic log: a `0x00` byte after every
+ *  ASCII character, the unmistakable signature of ASCII-range text encoded as UTF-16LE),
+ *  with no `Content-Type` charset to reveal this ahead of time. Two earlier fix attempts
+ *  here mistook the resulting mojibake for a stray leading BOM, because a console/terminal
+ *  encoding mismatch mangled the raw evidence into something that *looked* like a small
+ *  prefix issue rather than the whole body being misread. Reads the raw bytes directly and
+ *  picks the right decoder instead of trusting `fetch`'s UTF-8-only default - checks for a
+ *  real UTF-16/UTF-8 BOM first, then falls back to detecting unmarked UTF-16LE by the same
+ *  "every other byte is zero" shape confirmed above. */
+async function readResponseText(response: Response): Promise<string> {
+  const buffer = await response.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder('utf-16le').decode(buffer.slice(2))
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder('utf-16be').decode(buffer.slice(2))
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder('utf-8').decode(buffer.slice(3))
+  }
+  if (bytes.length >= 8 && bytes[1] === 0 && bytes[3] === 0 && bytes[5] === 0 && bytes[7] === 0) {
+    return new TextDecoder('utf-16le').decode(buffer)
+  }
+  return new TextDecoder('utf-8').decode(buffer)
+}
+
+/** Same as `readResponseText`, but parses the result as JSON itself after discarding
+ *  whatever junk still precedes the actual JSON (defensive - correct decoding above should
+ *  make this a no-op in practice, but costs nothing to keep as a second layer). */
 async function fetchJsonWithTimeout(url: string): Promise<unknown> {
   const response = await fetchWithTimeout(url)
-  const text = await response.text()
+  const text = await readResponseText(response)
   const jsonStart = text.search(/[[{]/)
   const candidate = jsonStart === -1 ? text : text.slice(jsonStart)
   try {
     return JSON.parse(candidate)
   } catch (err) {
-    // A terminal/console encoding mismatch mangled the raw text into unreadable mojibake
-    // twice already while diagnosing this exact kind of failure (confirmed from real user
-    // logs) - re-thrown with a `JSON.stringify`-escaped preview (unambiguous regardless of
-    // console encoding) and the literal Unicode code points of the first 20 characters, so
-    // the next occurrence is diagnosable from the log alone instead of guessing again.
+    // Re-thrown with a `JSON.stringify`-escaped preview (unambiguous regardless of console
+    // encoding) and the literal Unicode code points of the first 20 characters, so a parse
+    // failure that somehow still happens is diagnosable from the log alone.
     const preview = JSON.stringify(candidate.slice(0, 80))
     const codePoints = [...candidate.slice(0, 20)].map((ch) => ch.codePointAt(0)).join(',')
     throw new Error(`${(err as Error).message} | aperçu exact: ${preview} | codes des 20 premiers caractères: ${codePoints}`)
@@ -90,7 +109,7 @@ const ASA_OFFICIAL_STATUS_RE = />\s*([^<>]+?)\s*\(v([\d.]+)\)\s*</
 export async function queryOfficialNetworkStatus(): Promise<[string, number]> {
   try {
     const response = await fetchWithTimeout(ASA_OFFICIAL_STATUS_URL)
-    const text = await response.text()
+    const text = await readResponseText(response)
     const match = ASA_OFFICIAL_STATUS_RE.exec(text)
     if (!match) return ['⚪  **Official Network ASA** - Statut inconnu', 1]
 
@@ -148,7 +167,7 @@ const XBOX_ISSUE_KEYWORDS = ['impacted', 'outage', 'limited', 'investigating']
 export async function queryXboxStatus(): Promise<[string, number]> {
   try {
     const response = await fetchWithTimeout(XBOX_STATUS_URL)
-    const textLower = (await response.text()).toLowerCase()
+    const textLower = (await readResponseText(response)).toLowerCase()
     if (XBOX_ISSUE_KEYWORDS.some((kw) => textLower.includes(kw))) {
       return ['🟠  **Xbox Live** - Incident(s) en cours', 1]
     }
