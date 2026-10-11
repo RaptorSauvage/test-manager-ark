@@ -38,6 +38,8 @@ function makeConfig(overrides: Partial<DiscordBotConfig> = {}): DiscordBotConfig
     mcCheckEnabled: true,
     maintenanceWhitelistIds: [],
     managerWhitelistIds: [],
+    groupOrder: [],
+    minecraftGroupOrder: [],
     curseforge: { apiKey: '', moduleEnabled: true, defaultModIds: [], checkIntervalMinutes: 10 },
     ...overrides
   }
@@ -140,14 +142,26 @@ describe('buildStatusEmbed', () => {
     expect(fieldNames).toContain('📡 Cluster')
   })
 
-  it('preserves the order groups already arrive in rather than alphabetizing them', () => {
+  it('alphabetizes groups by default regardless of the order servers arrive in', () => {
     const servers = [
       makeServer({ id: 'a', name: 'Dev PTR', group: 'Testing' }),
       makeServer({ id: 'b', name: 'Island', group: 'Cluster' })
     ]
     const embed = buildStatusEmbed(servers, [], makeConfig()).data
     const fieldNames = embed.fields?.map((f) => f.name) ?? []
-    expect(fieldNames).toEqual(['🖥️ Système', '📡 Testing', '📡 Cluster'])
+    expect(fieldNames).toEqual(['🖥️ Système', '📡 Cluster', '📡 Testing'])
+  })
+
+  it("respects the Manager's configured groupOrder instead of alphabetizing", () => {
+    const servers = [
+      makeServer({ id: 'a', name: 'Dev PTR', group: 'PTR' }),
+      makeServer({ id: 'b', name: 'Dev Test', group: 'Testing' }),
+      makeServer({ id: 'c', name: 'Island', group: 'Cluster' })
+    ]
+    const embed = buildStatusEmbed(servers, [], makeConfig({ groupOrder: ['Testing', 'PTR'] })).data
+    const fieldNames = embed.fields?.map((f) => f.name) ?? []
+    // Explicitly-ordered groups first in that order, then any other group appended alphabetically.
+    expect(fieldNames).toEqual(['🖥️ Système', '📡 Testing', '📡 PTR', '📡 Cluster'])
   })
 })
 
@@ -174,5 +188,15 @@ describe('buildMinecraftStatusEmbed', () => {
     const embed = buildMinecraftStatusEmbed(servers, [], makeConfig()).data
     const fieldNames = embed.fields?.map((f) => f.name) ?? []
     expect(fieldNames).toEqual(['🖥️ Système', '⛏️ Cluster', '⛏️ Testing'])
+  })
+
+  it("respects minecraftGroupOrder instead of alphabetizing", () => {
+    const servers = [
+      makeServer({ id: 'a', name: 'Dev MC', group: 'Testing', gameDisplayName: 'Minecraft', serverType: 'paper' }),
+      makeServer({ id: 'b', name: 'Survie', group: 'Cluster', gameDisplayName: 'Minecraft', serverType: 'paper' })
+    ]
+    const embed = buildMinecraftStatusEmbed(servers, [], makeConfig({ minecraftGroupOrder: ['Testing'] })).data
+    const fieldNames = embed.fields?.map((f) => f.name) ?? []
+    expect(fieldNames).toEqual(['🖥️ Système', '⛏️ Testing', '⛏️ Cluster'])
   })
 })

@@ -49,6 +49,8 @@ function makeConfig(): DiscordBotConfig {
     mcCheckEnabled: true,
     maintenanceWhitelistIds: [],
     managerWhitelistIds: [],
+    groupOrder: [],
+    minecraftGroupOrder: [],
     curseforge: { apiKey: '', moduleEnabled: true, defaultModIds: [], checkIntervalMinutes: 10 }
   }
 }

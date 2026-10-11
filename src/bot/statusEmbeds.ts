@@ -47,14 +47,25 @@ function serverLine(server: ManagerServerInfo, maintenance: MaintenanceEntry | u
   return `${icon}  **${server.name}** - ${label}`
 }
 
+/** Orders group names the same way the desktop Dashboard does (see Dashboard.tsx's own
+ *  `groupNames` computation): explicitly-ordered names first, in `groupOrder`'s order, then
+ *  every other group appended alphabetically. `/api/servers` itself sorts groups
+ *  alphabetically (see `sortProfilesForDisplay`), so this re-sort is what actually applies the
+ *  Manager's configured order rather than assuming the API already did. */
+function orderGroupNames(groupNames: string[], groupOrder: string[]): string[] {
+  return [
+    ...groupOrder.filter((name) => groupNames.includes(name)),
+    ...groupNames.filter((name) => !groupOrder.includes(name)).sort((a, b) => a.localeCompare(b))
+  ]
+}
+
 /** Groups servers by the Manager's own `group` field (the same grouping already shown on
  *  the desktop Dashboard/Cluster Dashboard - e.g. a "Testing" group kept apart from the
- *  main "Cluster" one), preserving the order servers already arrive in (which `/api/servers`
- *  already returns pre-sorted by group) rather than re-sorting - so same-group servers stay
- *  contiguous and groups appear in the same order they do in the Manager itself, with no
- *  separate "group order" setting to fetch just for this. An empty group name (a profile
- *  with no group set) falls back to the "Cluster" label, matching the Manager's own default. */
-function groupServersByGroup(servers: ManagerServerInfo[]): Map<string, ManagerServerInfo[]> {
+ *  main "Cluster" one), ordered per `groupOrder` (falling back to alphabetical for any group
+ *  not listed in it) so the embed matches whatever order the user set on the Dashboard. An
+ *  empty group name (a profile with no group set) falls back to the "Cluster" label, matching
+ *  the Manager's own default. */
+function groupServersByGroup(servers: ManagerServerInfo[], groupOrder: string[]): Map<string, ManagerServerInfo[]> {
   const groups = new Map<string, ManagerServerInfo[]>()
   for (const server of servers) {
     const key = server.group.trim() || 'Cluster'
@@ -62,7 +73,11 @@ function groupServersByGroup(servers: ManagerServerInfo[]): Map<string, ManagerS
     if (existing) existing.push(server)
     else groups.set(key, [server])
   }
-  return groups
+  const ordered = new Map<string, ManagerServerInfo[]>()
+  for (const name of orderGroupNames([...groups.keys()], groupOrder)) {
+    ordered.set(name, groups.get(name)!)
+  }
+  return ordered
 }
 
 export function playersFieldValue(names: string[]): string {
@@ -103,7 +118,7 @@ export function buildStatusEmbed(
   }
   const clusterStatusLine = `${clusterIcon}  **Status Cluster** - ${clusterLabel}`
 
-  const groups = groupServersByGroup(visible)
+  const groups = groupServersByGroup(visible, config.groupOrder)
   const groupFields =
     groups.size > 0
       ? [...groups.entries()].map(([groupName, groupServers]) => ({
@@ -147,7 +162,7 @@ export function buildMinecraftStatusEmbed(
     return `🔴  **${s.name}** - Hors ligne`
   }
 
-  const groups = groupServersByGroup(visible)
+  const groups = groupServersByGroup(visible, config.minecraftGroupOrder)
   const groupFields =
     groups.size > 0
       ? [...groups.entries()].map(([groupName, groupServers]) => ({

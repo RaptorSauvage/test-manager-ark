@@ -3921,3 +3921,36 @@ async function findProfileIdByName(name) {
     existing tests (which only ever used a single implicit group) still pass unchanged -
     1074 tests total. `npm run typecheck`, the full `npx vitest run`, and `npm run build`
     all pass.
+
+- **Fixed: Discord status embed group fields didn't respect the Manager's own configured
+  group order** (user report, with a screenshot showing "Cluster, PTR, Testing" instead of
+  the expected "Testing" before "PTR") - the previous entry above assumed `/api/servers`
+  "already returns them pre-sorted by group" via `sortProfilesForDisplay`; that assumption
+  was wrong. Reading `sortProfilesForDisplay` (and `sortMinecraftProfilesForDisplay`) in
+  `src/main/lib/webDashboard.ts` showed they sort group names **alphabetically**
+  (`groupNames.sort()`), not by `settings.groupOrder`/`minecraftGroupOrder` - that's exactly
+  why "PTR" sorted before "Testing". The desktop Dashboard never relies on that API-level
+  order for its own display either: `Dashboard.tsx`/`MinecraftDashboard.tsx` each re-derive
+  their own `groupNames` client-side from `settings.groupOrder`/`minecraftGroupOrder`
+  (explicitly-ordered names first, then any other group appended alphabetically) - the same
+  logic the bot needed, just never wired up for it.
+  - **`shared/discordBot.ts`**: `DiscordBotConfig` gained `groupOrder: string[]` and
+    `minecraftGroupOrder: string[]`, mirroring `AppSettings`'s own fields of the same name.
+  - **`src/main/lib/discordBot.ts`**: `buildConfig` now passes `settings.groupOrder` and
+    `settings.minecraftGroupOrder` straight through into the bot's config file.
+  - **`src/bot/statusEmbeds.ts`**: new `orderGroupNames(groupNames, groupOrder)` applies the
+    exact same ordering as the desktop Dashboard (explicitly-ordered names first in that
+    order, everything else appended alphabetically); `groupServersByGroup` now takes a
+    `groupOrder` argument and returns its `Map` built in that resolved order instead of
+    insertion order. `buildStatusEmbed` passes `config.groupOrder`, `buildMinecraftStatusEmbed`
+    passes `config.minecraftGroupOrder`. The stale doc comment claiming `/api/servers`
+    "already returns them pre-sorted by group" was corrected.
+  - **Verified**: updated the now-incorrect "preserves the order groups already arrive in"
+    test to reflect the real default (alphabetical, since `groupOrder` is empty unless set)
+    and added two new tests - one confirming an explicit `groupOrder` of `['Testing', 'PTR']`
+    produces `Testing, PTR, Cluster` (the user's exact reported scenario) for the ARK embed,
+    and one confirming `minecraftGroupOrder` works the same way for the Minecraft embed.
+    1076 tests total, all passing. `npm run typecheck`, the full `npx vitest run`, and
+    `npm run build` all pass. **Not yet verified**: the user hasn't confirmed against their
+    live bot yet - needs a `git pull` + rebuild + bot restart on their end, same as every
+    other round.

@@ -49,6 +49,13 @@ export interface DiscordBotConfig {
   maintenanceWhitelistIds: string[]
   managerWhitelistIds: string[]
 
+  /** Mirrors `AppSettings.groupOrder`/`minecraftGroupOrder` - the same group display order the
+   *  desktop Dashboard lets the user drag-and-drop, so the status embed's group fields appear
+   *  in that order too instead of alphabetically. A group not listed here is appended after
+   *  every explicitly-ordered one, alphabetically among its peers. */
+  groupOrder: string[]
+  minecraftGroupOrder: string[]
+
   curseforge: DiscordBotCurseForgeConfig
 }
 

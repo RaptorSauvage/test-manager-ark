@@ -21,6 +21,8 @@ function makeConfig(overrides: Partial<DiscordBotConfig> = {}): DiscordBotConfig
     mcCheckEnabled: true,
     maintenanceWhitelistIds: [],
     managerWhitelistIds: [],
+    groupOrder: [],
+    minecraftGroupOrder: [],
     curseforge: { apiKey: '', moduleEnabled: true, defaultModIds: [], checkIntervalMinutes: 10 },
     ...overrides
   }

@@ -98,6 +98,8 @@ async function buildConfig(settings: AppSettings): Promise<DiscordBotConfig> {
     mcCheckEnabled: settings.discordBotMcCheckEnabled,
     maintenanceWhitelistIds: settings.discordBotMaintenanceWhitelistIds,
     managerWhitelistIds: settings.discordBotManagerWhitelistIds,
+    groupOrder: settings.groupOrder,
+    minecraftGroupOrder: settings.minecraftGroupOrder,
     curseforge: {
       // Reuses the Mods tab's own CurseForge key (Settings > curseforgeApiKey) instead of
       // asking for a second one just for this module.
