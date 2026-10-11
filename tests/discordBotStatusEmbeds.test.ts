@@ -112,6 +112,43 @@ describe('buildStatusEmbed', () => {
     const cluster = embed.fields?.[1].value ?? ''
     expect(cluster).toContain('🔵  **Island** - Mise à jour en cours')
   })
+
+  it("shows each Manager group as its own field, named after the group, instead of one combined Cluster field", () => {
+    const servers = [
+      makeServer({ id: 'a', name: 'Island', group: 'Cluster' }),
+      makeServer({ id: 'b', name: 'Center', group: 'Cluster' }),
+      makeServer({ id: 'c', name: 'Dev PTR', group: 'Testing', state: 'stopped' })
+    ]
+    const embed = buildStatusEmbed(servers, [], makeConfig()).data
+    const fieldNames = embed.fields?.map((f) => f.name) ?? []
+    expect(fieldNames).toEqual(['🖥️ Système', '📡 Cluster', '📡 Testing'])
+
+    const clusterField = embed.fields?.find((f) => f.name === '📡 Cluster')?.value ?? ''
+    expect(clusterField).toContain('Island')
+    expect(clusterField).toContain('Center')
+    expect(clusterField).not.toContain('Dev PTR')
+
+    const testingField = embed.fields?.find((f) => f.name === '📡 Testing')?.value ?? ''
+    expect(testingField).toContain('Dev PTR')
+    expect(testingField).not.toContain('Island')
+  })
+
+  it('falls back to a "Cluster" field name for a server with no group set', () => {
+    const server = makeServer({ group: '' })
+    const embed = buildStatusEmbed([server], [], makeConfig()).data
+    const fieldNames = embed.fields?.map((f) => f.name) ?? []
+    expect(fieldNames).toContain('📡 Cluster')
+  })
+
+  it('preserves the order groups already arrive in rather than alphabetizing them', () => {
+    const servers = [
+      makeServer({ id: 'a', name: 'Dev PTR', group: 'Testing' }),
+      makeServer({ id: 'b', name: 'Island', group: 'Cluster' })
+    ]
+    const embed = buildStatusEmbed(servers, [], makeConfig()).data
+    const fieldNames = embed.fields?.map((f) => f.name) ?? []
+    expect(fieldNames).toEqual(['🖥️ Système', '📡 Testing', '📡 Cluster'])
+  })
 })
 
 describe('buildMinecraftStatusEmbed', () => {
@@ -127,5 +164,15 @@ describe('buildMinecraftStatusEmbed', () => {
     const embed = buildMinecraftStatusEmbed([server], [], makeConfig()).data
     const list = embed.fields?.[1].value ?? ''
     expect(list).toContain('🔴  **Island** - Hors ligne')
+  })
+
+  it('also groups Minecraft servers into their own Manager group fields', () => {
+    const servers = [
+      makeServer({ id: 'a', name: 'Survie', group: 'Cluster', gameDisplayName: 'Minecraft', serverType: 'paper' }),
+      makeServer({ id: 'b', name: 'Dev MC', group: 'Testing', gameDisplayName: 'Minecraft', serverType: 'paper', state: 'stopped' })
+    ]
+    const embed = buildMinecraftStatusEmbed(servers, [], makeConfig()).data
+    const fieldNames = embed.fields?.map((f) => f.name) ?? []
+    expect(fieldNames).toEqual(['🖥️ Système', '⛏️ Cluster', '⛏️ Testing'])
   })
 })

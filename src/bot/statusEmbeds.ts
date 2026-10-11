@@ -47,6 +47,24 @@ function serverLine(server: ManagerServerInfo, maintenance: MaintenanceEntry | u
   return `${icon}  **${server.name}** - ${label}`
 }
 
+/** Groups servers by the Manager's own `group` field (the same grouping already shown on
+ *  the desktop Dashboard/Cluster Dashboard - e.g. a "Testing" group kept apart from the
+ *  main "Cluster" one), preserving the order servers already arrive in (which `/api/servers`
+ *  already returns pre-sorted by group) rather than re-sorting - so same-group servers stay
+ *  contiguous and groups appear in the same order they do in the Manager itself, with no
+ *  separate "group order" setting to fetch just for this. An empty group name (a profile
+ *  with no group set) falls back to the "Cluster" label, matching the Manager's own default. */
+function groupServersByGroup(servers: ManagerServerInfo[]): Map<string, ManagerServerInfo[]> {
+  const groups = new Map<string, ManagerServerInfo[]>()
+  for (const server of servers) {
+    const key = server.group.trim() || 'Cluster'
+    const existing = groups.get(key)
+    if (existing) existing.push(server)
+    else groups.set(key, [server])
+  }
+  return groups
+}
+
 export function playersFieldValue(names: string[]): string {
   if (names.length === 0) return 'Aucun joueur connecté'
   const shown = names.slice(0, 30)
@@ -84,7 +102,16 @@ export function buildStatusEmbed(
     clusterLabel = `Hors ligne${statusSuffix}`
   }
   const clusterStatusLine = `${clusterIcon}  **Status Cluster** - ${clusterLabel}`
-  const clusterLines = visible.map((s) => serverLine(s, getArkMaintenance(s.id)))
+
+  const groups = groupServersByGroup(visible)
+  const groupFields =
+    groups.size > 0
+      ? [...groups.entries()].map(([groupName, groupServers]) => ({
+          name: `📡 ${groupName}`,
+          value: groupServers.map((s) => serverLine(s, getArkMaintenance(s.id))).join('\n'),
+          inline: false
+        }))
+      : [{ name: '📡 Cluster', value: 'Aucun serveur configuré', inline: false }]
 
   const embed = new EmbedBuilder()
     .setTitle(config.statusEmbedTitle)
@@ -92,7 +119,7 @@ export function buildStatusEmbed(
     .setTimestamp()
     .addFields(
       { name: '🖥️ Système', value: [clusterStatusLine, ...systemExtraLines].join('\n'), inline: false },
-      { name: '📡 Cluster', value: clusterLines.join('\n') || 'Aucun serveur configuré', inline: false }
+      ...groupFields
     )
     .setFooter({ text: `${onlineCount}/${visible.length} serveur(s) en ligne · ${totalPlayers} joueur(s) au total` })
 
@@ -113,12 +140,22 @@ export function buildMinecraftStatusEmbed(
     0
   )
 
-  const lines = visible.map((s) => {
+  const mcServerLine = (s: ManagerServerInfo): string => {
     const maintenance = getMcMaintenance(s.id)
     if (maintenance) return `🔧  **${s.name}** - ${maintenanceLabel(maintenance)}`
     if (s.state === 'running') return `🟢  **${s.name}** - ${playerCountLabel(s)}`
     return `🔴  **${s.name}** - Hors ligne`
-  })
+  }
+
+  const groups = groupServersByGroup(visible)
+  const groupFields =
+    groups.size > 0
+      ? [...groups.entries()].map(([groupName, groupServers]) => ({
+          name: `⛏️ ${groupName}`,
+          value: groupServers.map(mcServerLine).join('\n'),
+          inline: false
+        }))
+      : [{ name: '⛏️ Liste des serveurs', value: 'Aucun serveur configuré', inline: false }]
 
   const footerParts = [`${onlineCount}/${visible.length} serveur(s) en ligne`, `${totalPlayers} joueur(s) au total`]
   if (maintenanceCount > 0) footerParts.push(`${maintenanceCount} en maintenance`)
@@ -127,10 +164,7 @@ export function buildMinecraftStatusEmbed(
     .setTitle(config.mcStatusEmbedTitle)
     .setColor(parseHexColor(config.mcStatusEmbedColor))
     .setTimestamp()
-    .addFields(
-      { name: '🖥️ Système', value: systemLines.join('\n'), inline: false },
-      { name: '⛏️ Liste des serveurs', value: lines.join('\n') || 'Aucun serveur configuré', inline: false }
-    )
+    .addFields({ name: '🖥️ Système', value: systemLines.join('\n'), inline: false }, ...groupFields)
     .setFooter({ text: footerParts.join(' · ') })
 
   if (config.mcStatusEmbedDescription) embed.setDescription(config.mcStatusEmbedDescription)

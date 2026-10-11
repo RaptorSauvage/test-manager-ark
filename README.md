@@ -3894,3 +3894,30 @@ async function findProfileIdByName(name) {
     (the no-BOM case is the exact shape confirmed from the real AWS response), for both
     `queryAwsStatus` and `queryOfficialNetworkStatus`. 14 tests in that file now, 1070 total.
     `npm run typecheck`, the full `npx vitest run`, and `npm run build` all pass.
+
+- **Discord status embeds now show each Manager group as its own field, instead of lumping
+  every server into one combined "Cluster" field** (user request, confirmed working against
+  their own 13-server cluster right after the whole connectivity saga above finally
+  resolved) - mirrors the desktop Dashboard/Cluster Dashboard, which already visually
+  separates a "Testing" group (or any other) from the main one.
+  - **`src/bot/statusEmbeds.ts`**: new `groupServersByGroup` groups the visible server list
+    by the Manager's own `group` field (already part of `ManagerServerInfo`, sourced
+    straight from `/api/servers`), preserving the order servers already arrive in rather
+    than re-sorting - `/api/servers` already returns them pre-sorted by group
+    (`sortProfilesForDisplay`), so a simple order-preserving group-by keeps both the
+    within-group order and the group order itself correct with no separate "group order"
+    setting to fetch just for this. An empty/unset group name falls back to the "Cluster"
+    label, matching the Manager's own default. `buildStatusEmbed` now emits one `📡
+    <group name>` field per group instead of a single hardcoded `📡 Cluster` field (the
+    aggregate "Status Cluster" line in the Système field is unchanged - still computed
+    across every visible server regardless of group); `buildMinecraftStatusEmbed` got the
+    same treatment with `⛏️ <group name>` fields, for consistency with the ARK side (the
+    Minecraft Dashboard already supports its own groups too, via `minecraftGroupOrder`/
+    `minecraftCollapsedGroups`, so the same gap would have surfaced there next).
+  - **Verified**: 4 new tests in `tests/discordBotStatusEmbeds.test.ts` - multiple groups
+    render as separate, correctly-named fields with the right servers in each, a server
+    with no group set still falls back to a "Cluster" field, group order is preserved
+    rather than alphabetized, and the same grouping works for the Minecraft embed. All
+    existing tests (which only ever used a single implicit group) still pass unchanged -
+    1074 tests total. `npm run typecheck`, the full `npx vitest run`, and `npm run build`
+    all pass.
