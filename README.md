@@ -3689,3 +3689,25 @@ async function findProfileIdByName(name) {
     commands, embeds rendering correctly in a real Discord client, or the full start/stop/
     RCON round trip against a real running ARK/Minecraft server - please run this against a
     real bot token and real servers before relying on it.
+
+- **Follow-up to the Discord bot integration above: `/check off` is now persistent** (user
+  request, closing a gap flagged right after the integration landed). The standalone bot
+  had both a static, persistent `DISABLED_SERVERS` list in `.env` *and* a separate, non-
+  persistent `/check on/off` toggle layered on top of it - the port above only carried over
+  the non-persistent toggle, so a bot restart silently un-excluded every server `/check off`
+  had hidden. Rather than reintroducing a second, static config list, the toggle itself now
+  persists - one mechanism instead of two.
+  - **Fix** (`src/bot/maintenanceState.ts`): new `initMaintenanceState(stateDir)`, called
+    once at startup (`src/bot/index.ts`, right after `loadConfig()`), loads the disabled-
+    server id set from `disabled_servers.json` in the bot's own state dir - same file-based
+    persistence style already used by the CurseForge module's two JSON files, same
+    tolerate-a-missing-or-malformed-file-without-crashing behavior. `setCheckDisabled` now
+    writes the updated set back to that file on every call. Every other maintenance flag
+    (ARK/Minecraft maintenance, the bot's own maintenance mode) stays deliberately in-memory
+    only, unchanged - this fix is scoped to `/check` alone, not a general persistence pass.
+  - **Verified**: three new tests in `tests/discordBotMaintenanceState.test.ts` - a
+    simulated restart (`initMaintenanceState` called again against the same state dir)
+    correctly reloads what was persisted rather than starting empty, a fresh/empty state
+    dir starts with nothing disabled, and a malformed `disabled_servers.json` is ignored
+    (logged, not thrown) rather than crashing the bot on startup. `npm run typecheck`, the
+    full `npx vitest run` (1053 tests), and `npm run build` all pass.

@@ -1,9 +1,13 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   allArkMaintenanceIds,
   allMcMaintenanceIds,
   getArkMaintenance,
   getMcMaintenance,
+  initMaintenanceState,
   isBotMaintenanceMode,
   isCheckDisabled,
   setArkMaintenance,
@@ -57,5 +61,38 @@ describe('maintenanceState', () => {
     expect(isBotMaintenanceMode()).toBe(true)
     setBotMaintenanceMode(false)
     expect(isBotMaintenanceMode()).toBe(false)
+  })
+})
+
+describe('disabled-servers persistence', () => {
+  it('survives a simulated bot restart (initMaintenanceState reloads from disk)', () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'discord-bot-maintenance-test-'))
+    initMaintenanceState(stateDir)
+
+    setCheckDisabled('server-x', true)
+    expect(isCheckDisabled('server-x')).toBe(true)
+    expect(fs.existsSync(path.join(stateDir, 'disabled_servers.json'))).toBe(true)
+
+    // Simulates a bot restart: a fresh process would call initMaintenanceState again,
+    // which must reload what was persisted rather than starting from an empty set.
+    initMaintenanceState(stateDir)
+    expect(isCheckDisabled('server-x')).toBe(true)
+
+    setCheckDisabled('server-x', false)
+    initMaintenanceState(stateDir)
+    expect(isCheckDisabled('server-x')).toBe(false)
+  })
+
+  it('starts with an empty set when there is nothing on disk yet', () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'discord-bot-maintenance-test-'))
+    initMaintenanceState(stateDir)
+    expect(isCheckDisabled('anything')).toBe(false)
+  })
+
+  it('ignores a malformed state file instead of crashing', () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'discord-bot-maintenance-test-'))
+    fs.writeFileSync(path.join(stateDir, 'disabled_servers.json'), '{not valid json', 'utf-8')
+    expect(() => initMaintenanceState(stateDir)).not.toThrow()
+    expect(isCheckDisabled('anything')).toBe(false)
   })
 })
