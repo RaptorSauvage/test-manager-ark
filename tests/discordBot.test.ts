@@ -151,6 +151,26 @@ describe('startDiscordBot', () => {
     expect(mockSaveSettings).toHaveBeenCalledWith(expect.objectContaining({ discordBotApiKeyId: expect.any(String) }))
   })
 
+  it('connects via the configured dashboard host, not a hardcoded 127.0.0.1, when it is a specific LAN IP', async () => {
+    // Node's http(s) server only binds to the exact host given - a real report showed the
+    // bot getting ECONNREFUSED against a hardcoded 127.0.0.1 when the dashboard was
+    // actually bound to a specific LAN IP (chosen to expose it to other devices).
+    currentSettings = makeSettings({ webDashboardHost: '192.168.1.50' })
+    await startDiscordBot(currentSettings)
+    const config = readWrittenConfig()
+    expect(config.managerApiUrl).toBe('http://192.168.1.50:8090')
+  })
+
+  it('falls back to 127.0.0.1 for an empty or wildcard (0.0.0.0) host', async () => {
+    currentSettings = makeSettings({ webDashboardHost: '' })
+    await startDiscordBot(currentSettings)
+    expect(readWrittenConfig().managerApiUrl).toBe('http://127.0.0.1:8090')
+
+    currentSettings = makeSettings({ webDashboardHost: '0.0.0.0' })
+    await startDiscordBot(currentSettings)
+    expect(readWrittenConfig().managerApiUrl).toBe('http://127.0.0.1:8090')
+  })
+
   it('reuses the global CurseForge API key setting instead of asking for a second one', async () => {
     currentSettings = makeSettings({ curseforgeApiKey: 'shared-key' })
     await startDiscordBot(currentSettings)

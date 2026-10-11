@@ -60,6 +60,20 @@ async function ensureApiKey(settings: AppSettings): Promise<{ secret: string | u
   return { secret: buildApiKey(id, secret), settings: saveSettings({ ...settings, discordBotApiKeyId: id }) }
 }
 
+/** Node's `http(s).Server.listen(port, host)` only binds to the exact `host` given - unlike
+ *  a browser, there's no automatic fallback to the loopback address. '127.0.0.1' (the
+ *  default) and '0.0.0.0' (every interface, wildcard - includes loopback) both still accept
+ *  a 127.0.0.1 connection, but a specific LAN IP (chosen to expose the dashboard to other
+ *  devices) binds *only* that interface - a real report showed the bot's hardcoded
+ *  127.0.0.1 getting ECONNREFUSED in exactly this case, even with the dashboard genuinely
+ *  running. Connecting to the configured host directly is always correct (a machine can
+ *  always reach its own LAN IP), so there's no real reason to special-case 127.0.0.1 here
+ *  at all beyond covering an empty/unset value. */
+function managerApiHost(settings: AppSettings): string {
+  const configured = settings.webDashboardHost.trim()
+  return configured && configured !== '0.0.0.0' ? configured : '127.0.0.1'
+}
+
 async function buildConfig(settings: AppSettings): Promise<DiscordBotConfig> {
   const { secret } = await ensureApiKey(settings)
   const protocol = settings.webDashboardAuthEnabled ? 'https' : 'http'
@@ -67,9 +81,7 @@ async function buildConfig(settings: AppSettings): Promise<DiscordBotConfig> {
     discordToken: settings.discordBotToken,
     stateDir: getStateDir(),
     devGuildId: settings.discordBotDevGuildId || undefined,
-    // Always 127.0.0.1 - the bot only ever runs on the same machine as the Manager that
-    // spawned it, regardless of which host interface Settings has the dashboard bound to.
-    managerApiUrl: settings.webDashboardEnabled ? `${protocol}://127.0.0.1:${settings.webDashboardPort}` : '',
+    managerApiUrl: settings.webDashboardEnabled ? `${protocol}://${managerApiHost(settings)}:${settings.webDashboardPort}` : '',
     managerApiKey: secret,
     managerApiTimeoutMs: 10_000,
     statusChannelId: settings.discordBotStatusChannelId || undefined,

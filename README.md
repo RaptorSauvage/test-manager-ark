@@ -3765,3 +3765,27 @@ async function findProfileIdByName(name) {
     `tests/discordBotManagerApiClient.test.ts` confirms `err.cause`'s message is now
     surfaced. `npm run typecheck`, the full `npx vitest run` (1062 tests), and `npm run
     build` all pass.
+
+- **Found the actual root cause of the "ARK Server Manager injoignable" reports above:
+  the bot's Manager API URL hardcoded `127.0.0.1`, ignoring Settings' own Web Dashboard
+  Host field entirely.** Node's `http(s).Server.listen(port, host)` only binds to the
+  exact host given - `'127.0.0.1'` (default) and `'0.0.0.0'` (every interface, wildcard)
+  both still accept a `127.0.0.1` connection, but a specific LAN IP (a real, supported
+  choice in that same Settings tab, for exposing the dashboard to other devices) binds
+  *only* that interface. With that configured, the dashboard was genuinely running and
+  reachable from a browser, while the bot's hardcoded `127.0.0.1` got `ECONNREFUSED` every
+  single cycle - exactly the symptom reported (confirmed enabled, on the right port,
+  `/check` and everything else still empty).
+  - **Fix** (`src/main/lib/discordBot.ts`): new `managerApiHost(settings)` uses the
+    configured `webDashboardHost` directly whenever it's a specific address, falling back
+    to `127.0.0.1` only for an empty value or the `0.0.0.0` wildcard - connecting to a
+    machine's own LAN IP from itself always works, so there's no real reason to special-
+    case `127.0.0.1` beyond those two cases. Replaces the previous unconditional
+    `127.0.0.1`.
+  - **Verified**: two new tests in `tests/discordBot.test.ts` - a specific LAN-IP host
+    produces that exact `managerApiUrl`, and both an empty host and the `0.0.0.0` wildcard
+    still fall back to `127.0.0.1`. `npm run typecheck`, the full `npx vitest run` (1064
+    tests), and `npm run build` all pass. Still not independently confirmed against the
+    user's own exact Settings (their Host value wasn't shared) - if `webDashboardHost` was
+    actually left at the default `127.0.0.1` the whole time, this fix doesn't explain their
+    specific case and the search continues from there.
