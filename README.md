@@ -3734,3 +3734,34 @@ async function findProfileIdByName(name) {
     the existing `refreshServerCache`/`autocompleteServerNames` unit coverage - please
     confirm in Discord that `serveur:` now suggests servers immediately after a fresh bot
     start, with no status channel configured and no `/status` run first.
+
+- **Two real bugs found from the user's own first real run of the bot** (live logs against
+  a real Discord bot token and a real Manager - the first actual runtime signal this
+  integration has had, everything before this was typecheck/build/mocked-fetch only).
+  - **AWS Health check always failed to parse**: `Impossible de récupérer le statut AWS :
+    Unexpected token '�'...`, every single cycle. The real
+    `health.aws.amazon.com/public/currentevents` endpoint serves its JSON with a leading
+    UTF-8 BOM (`﻿`) - `response.json()` calls `JSON.parse` on the raw text without
+    stripping it, so parsing failed deterministically, not as a flaky network hiccup. Fixed
+    (`src/bot/externalStatus.ts`) with a `fetchJsonWithTimeout` helper that reads the body
+    as text and strips a leading BOM before `JSON.parse`, now used by the EOS, AWS and
+    Cloudflare checks (the three that parse JSON - Xbox/Official Network/Minecraft Auth only
+    ever read raw text, unaffected). New `tests/discordBotExternalStatus.test.ts` (8 tests,
+    first real coverage for this file) locks in the BOM-prefixed case for all three, plus
+    the AWS Middle-East-filtering logic and the official-network "Offline" keyword
+    matching - none of `externalStatus.ts` had test coverage before, since this bug is
+    exactly the kind unit tests against *mocked* fetch responses can't catch on their own
+    (nothing I wrote would have thought to prepend a BOM) - this one only surfaced from an
+    actual run against the real endpoint.
+  - **"ARK Server Manager injoignable (fetch failed)" gave no way to diagnose why**: undici's
+    `fetch` wraps every connection-level failure (refused, DNS, TLS...) in a generic
+    `TypeError: fetch failed`, with the actually useful reason (e.g. `connect ECONNREFUSED
+    127.0.0.1:8090`) sitting on `err.cause`, which `managerApiClient.ts` was dropping -
+    every real failure logged identically regardless of cause. Now included in the error
+    message. This doesn't fix the user's underlying "can't reach the Manager" symptom by
+    itself (still being tracked down - likely the Web Dashboard not actually enabled/running
+    at the configured port, or a mismatched port) but the next occurrence will say exactly
+    why instead of just "fetch failed". New test in
+    `tests/discordBotManagerApiClient.test.ts` confirms `err.cause`'s message is now
+    surfaced. `npm run typecheck`, the full `npx vitest run` (1062 tests), and `npm run
+    build` all pass.

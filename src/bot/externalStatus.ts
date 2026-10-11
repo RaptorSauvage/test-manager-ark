@@ -16,6 +16,17 @@ async function fetchWithTimeout(url: string): Promise<Response> {
   }
 }
 
+/** Same as `fetchWithTimeout`, but parses the body as JSON itself after stripping a leading
+ *  UTF-8 BOM (`﻿`) - confirmed in practice against the real AWS Health endpoint, which
+ *  serves one. `response.json()` calls `JSON.parse` directly on the raw text and doesn't
+ *  strip it, so a BOM-prefixed response fails with "Unexpected token" every single time
+ *  rather than only occasionally - not a transient network issue. */
+async function fetchJsonWithTimeout(url: string): Promise<unknown> {
+  const response = await fetchWithTimeout(url)
+  const text = await response.text()
+  return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)
+}
+
 // ---------------------------------------------------------------------------
 // Epic Online Services (dont dépend ARK: Survival Ascended)
 // ---------------------------------------------------------------------------
@@ -32,8 +43,7 @@ const EOS_STATUS_LABELS: Record<string, { icon: string; label: string }> = {
 
 export async function queryEosStatus(): Promise<[string, number]> {
   try {
-    const response = await fetchWithTimeout(EOS_STATUS_URL)
-    const data = (await response.json()) as { components?: { id?: string; status?: string }[] }
+    const data = (await fetchJsonWithTimeout(EOS_STATUS_URL)) as { components?: { id?: string; status?: string }[] }
     const component = (data.components ?? []).find((c) => c.id === EOS_COMPONENT_ID)
     if (!component) return ['⚪  **Epic Online Services** - Statut inconnu', 1]
 
@@ -86,8 +96,7 @@ const MIDDLE_EAST_KEYWORDS = ['middle east', 'bahrain', 'uae', 'me-south-1', 'me
 
 export async function queryAwsStatus(): Promise<[string, number]> {
   try {
-    const response = await fetchWithTimeout(AWS_STATUS_URL)
-    const events = (await response.json()) as unknown
+    const events = (await fetchJsonWithTimeout(AWS_STATUS_URL)) as unknown
     if (!Array.isArray(events)) return ['⚪  **Amazon Web Services** - Statut inconnu', 1]
 
     // La région Moyen-Orient a des coupures fréquentes et peu pertinentes pour ce bot, on
@@ -158,8 +167,7 @@ function isWorkersAiIncident(incident: CloudflareIncident): boolean {
 
 export async function queryCloudflareStatus(): Promise<[string, number]> {
   try {
-    const response = await fetchWithTimeout(CLOUDFLARE_STATUS_URL)
-    const data = (await response.json()) as { incidents?: CloudflareIncident[] }
+    const data = (await fetchJsonWithTimeout(CLOUDFLARE_STATUS_URL)) as { incidents?: CloudflareIncident[] }
     const incidents = (data.incidents ?? []).filter((inc) => !isWorkersAiIncident(inc))
 
     if (incidents.length === 0) return ['🟢  **Cloudflare** - Opérationnel', 0]

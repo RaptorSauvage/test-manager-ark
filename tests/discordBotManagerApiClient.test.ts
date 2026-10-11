@@ -69,6 +69,21 @@ describe('managerApiPost', () => {
   it('rejects with a clear message when managerApiUrl is empty', async () => {
     await expect(managerApiPost(makeConfig({ managerApiUrl: '' }), '/api/servers/1/start')).rejects.toThrow(ManagerApiError)
   })
+
+  it('surfaces the underlying network error (err.cause), not just the generic "fetch failed"', async () => {
+    // undici's fetch wraps every connection-level failure in a bare `TypeError: fetch
+    // failed` with the real reason only on `.cause` - a real report showed this logging
+    // nothing but "fetch failed" with no way to tell ECONNREFUSED apart from a cert error.
+    const networkError = new TypeError('fetch failed')
+    ;(networkError as { cause?: unknown }).cause = new Error('connect ECONNREFUSED 127.0.0.1:8090')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw networkError
+      })
+    )
+    await expect(managerApiPost(makeConfig(), '/api/servers/1/start')).rejects.toThrow(/ECONNREFUSED 127\.0\.0\.1:8090/)
+  })
 })
 
 describe('fetchManagerServers', () => {

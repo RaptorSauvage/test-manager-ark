@@ -65,7 +65,15 @@ async function managerApiRequest(config: DiscordBotConfig, method: string, path:
     if ((err as Error).name === 'AbortError') {
       throw new ManagerApiError('ARK Server Manager : délai d\'attente dépassé')
     }
-    throw new ManagerApiError(`ARK Server Manager injoignable (${(err as Error).message})`)
+    // undici's fetch wraps every network-level failure (connection refused, DNS, TLS...) in
+    // a generic "TypeError: fetch failed" - the actually useful reason (e.g. "connect
+    // ECONNREFUSED 127.0.0.1:8090") lives on `err.cause`, not `err.message`, and was
+    // silently dropped here before, making every real failure look identical in the logs.
+    const cause = (err as { cause?: unknown }).cause
+    const causeMessage = cause instanceof Error ? cause.message : cause ? String(cause) : null
+    throw new ManagerApiError(
+      `ARK Server Manager injoignable (${(err as Error).message}${causeMessage ? ` : ${causeMessage}` : ''})`
+    )
   } finally {
     clearTimeout(timeout)
   }
