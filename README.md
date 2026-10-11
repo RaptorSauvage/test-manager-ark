@@ -3711,3 +3711,26 @@ async function findProfileIdByName(name) {
     dir starts with nothing disabled, and a malformed `disabled_servers.json` is ignored
     (logged, not thrown) rather than crashing the bot on startup. `npm run typecheck`, the
     full `npx vitest run` (1053 tests), and `npm run build` all pass.
+
+- **Real bug, found by the user: autocomplete on every `serveur:` option showed nothing**
+  (e.g. typing `/check on serveur:`). Every slash command's autocomplete handler read from
+  `serverCache.ts`'s in-memory cache but never refreshed it itself - that cache is only
+  populated by `/status`/`/statusmc` actually being run, or by the auto-refreshed embed
+  loop (which only exists at all when a status channel is configured). A bot that had just
+  started, with no status channel set and nobody having run `/status` yet, had a
+  permanently empty cache - every autocomplete dropdown across every command stayed empty
+  until one of those happened to run once.
+  - **Fix**: every `autocomplete` handler (`src/bot/commands/*.ts`, 11 call sites across
+    `statusCommands.ts`, `maintenanceCommands.ts`, `scheduleCommands.ts`, `adminCommands.ts`,
+    `managerCommands.ts`) now calls `refreshServerCache(config)` itself before building
+    suggestions, the same one-call, localhost-only round trip `/status` already does -
+    comfortably inside Discord's ~3s autocomplete response budget. `execute` handlers were
+    unaffected (they already refreshed the cache themselves); this was purely an
+    autocomplete-specific gap, caught because every one of them had quietly skipped the
+    `config` parameter their own type signature already offered.
+  - `npm run typecheck`, the full `npx vitest run` (1053 tests), and `npm run build` all
+    pass. Autocomplete itself can't be exercised by the existing test suite (it needs a real
+    Discord interaction), so this is typechecked/built but not independently tested beyond
+    the existing `refreshServerCache`/`autocompleteServerNames` unit coverage - please
+    confirm in Discord that `serveur:` now suggests servers immediately after a fresh bot
+    start, with no status channel configured and no `/status` run first.

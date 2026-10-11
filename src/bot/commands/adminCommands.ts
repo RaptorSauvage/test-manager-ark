@@ -31,7 +31,8 @@ const dinowipeCommand: SlashCommand = {
       await interaction.followUp(`❌ Échec de **DestroyWildDinos** sur **${target.name}** : ${result.error}`)
     }
   },
-  async autocomplete(interaction) {
+  async autocomplete(interaction, { config }) {
+    await refreshServerCache(config)
     const current = interaction.options.getFocused()
     await interaction.respond(await autocompleteServerNames(current, arkServers()))
   }
@@ -62,7 +63,8 @@ const saveworldCommand: SlashCommand = {
       await interaction.followUp(`❌ Échec de **SaveWorld** sur **${target.name}** : ${result.error}`)
     }
   },
-  async autocomplete(interaction) {
+  async autocomplete(interaction, { config }) {
+    await refreshServerCache(config)
     const current = interaction.options.getFocused()
     await interaction.respond(await autocompleteServerNames(current, arkServers()))
   }
@@ -96,7 +98,8 @@ const adminchatCommand: SlashCommand = {
       await interaction.followUp(`❌ Échec de l'envoi sur **${target.name}** : ${result.error}`)
     }
   },
-  async autocomplete(interaction) {
+  async autocomplete(interaction, { config }) {
+    await refreshServerCache(config)
     const current = interaction.options.getFocused()
     await interaction.respond(await autocompleteServerNames(current, arkServers()))
   }
@@ -157,7 +160,8 @@ const rconCommand: SlashCommand = {
       await interaction.followUp(`❌ Échec sur **${target.name}** : ${result.error}`)
     }
   },
-  async autocomplete(interaction) {
+  async autocomplete(interaction, { config }) {
+    await refreshServerCache(config)
     const current = interaction.options.getFocused()
     await interaction.respond(await autocompleteServerNames(current, arkServers()))
   }

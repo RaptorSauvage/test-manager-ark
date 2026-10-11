@@ -53,7 +53,8 @@ const statusServeurCommand: SlashCommand = {
     const embed = buildServerDetailEmbed(target, getArkMaintenance(target.id), isCheckDisabled(target.id))
     await interaction.followUp({ embeds: [embed] })
   },
-  async autocomplete(interaction) {
+  async autocomplete(interaction, { config }) {
+    await refreshServerCache(config)
     const current = interaction.options.getFocused()
     await interaction.respond(await autocompleteServerNames(current, arkServers()))
   }

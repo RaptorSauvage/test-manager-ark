@@ -94,7 +94,8 @@ const scheduleCommand: SlashCommand = {
     const hourLabel = `${String(removed.hour).padStart(2, '0')}:${String(removed.minute).padStart(2, '0')}`
     await interaction.reply(`🗑️ Planification \`${id}\` annulée (${removed.serverName} à ${hourLabel}).`)
   },
-  async autocomplete(interaction) {
+  async autocomplete(interaction, { config }) {
+    await refreshServerCache(config)
     const current = interaction.options.getFocused()
     await interaction.respond(await autocompleteServerNames(current, arkServers()))
   }

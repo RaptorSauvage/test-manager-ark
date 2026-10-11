@@ -47,7 +47,8 @@ function makeManagerActionCommand(
         throw err
       }
     },
-    async autocomplete(interaction) {
+    async autocomplete(interaction, { config }) {
+      await refreshServerCache(config)
       const current = interaction.options.getFocused()
       await interaction.respond(await autocompleteServerNames(current, [...arkServers(), ...minecraftServers()]))
     }
@@ -89,7 +90,8 @@ const updateCommand: SlashCommand = {
       throw err
     }
   },
-  async autocomplete(interaction) {
+  async autocomplete(interaction, { config }) {
+    await refreshServerCache(config)
     const current = interaction.options.getFocused()
     await interaction.respond(await autocompleteServerNames(current, [...arkServers(), ...minecraftServers()]))
   }
@@ -123,7 +125,8 @@ const updateRestartCommand: SlashCommand = {
       throw err
     }
   },
-  async autocomplete(interaction) {
+  async autocomplete(interaction, { config }) {
+    await refreshServerCache(config)
     const current = interaction.options.getFocused()
     await interaction.respond(await autocompleteServerNames(current, [...arkServers(), ...minecraftServers()]))
   }

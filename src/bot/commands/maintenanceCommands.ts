@@ -108,7 +108,8 @@ const maintenanceCommand: SlashCommand = {
     }
     await refreshStatusMessage(client, config)
   },
-  async autocomplete(interaction) {
+  async autocomplete(interaction, { config }) {
+    await refreshServerCache(config)
     const current = interaction.options.getFocused()
     await interaction.respond(await autocompleteServerNames(current, arkServers()))
   }
@@ -206,7 +207,8 @@ const maintenanceMcCommand: SlashCommand = {
     }
     await refreshMinecraftStatusMessage(client, config)
   },
-  async autocomplete(interaction) {
+  async autocomplete(interaction, { config }) {
+    await refreshServerCache(config)
     const current = interaction.options.getFocused()
     await interaction.respond(await autocompleteServerNames(current, minecraftServers()))
   }
@@ -297,7 +299,8 @@ const checkCommand: SlashCommand = {
     await refreshStatusMessage(client, config)
     await refreshMinecraftStatusMessage(client, config)
   },
-  async autocomplete(interaction) {
+  async autocomplete(interaction, { config }) {
+    await refreshServerCache(config)
     const current = interaction.options.getFocused()
     await interaction.respond(await autocompleteServerNames(current, [...arkServers(), ...minecraftServers()]))
   }
