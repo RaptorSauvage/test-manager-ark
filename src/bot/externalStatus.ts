@@ -16,15 +16,22 @@ async function fetchWithTimeout(url: string): Promise<Response> {
   }
 }
 
-/** Same as `fetchWithTimeout`, but parses the body as JSON itself after stripping a leading
- *  UTF-8 BOM (`﻿`) - confirmed in practice against the real AWS Health endpoint, which
- *  serves one. `response.json()` calls `JSON.parse` directly on the raw text and doesn't
- *  strip it, so a BOM-prefixed response fails with "Unexpected token" every single time
- *  rather than only occasionally - not a transient network issue. */
+/** Same as `fetchWithTimeout`, but parses the body as JSON itself after discarding
+ *  whatever junk precedes the actual JSON - confirmed in practice against the real AWS
+ *  Health endpoint, which serves some. `response.json()` calls `JSON.parse` directly on
+ *  the raw text and doesn't tolerate any of it, so a prefixed response fails with
+ *  "Unexpected token" every single time, not as a transient network issue. A first attempt
+ *  here only stripped a single leading UTF-8 BOM character - too narrow: a real capture
+ *  showed *two* BOM-like characters in a row, still breaking `JSON.parse` after stripping
+ *  only one. Instead of guessing how many (or what exactly) precedes it, this finds the
+ *  first `[` or `{` in the text and parses from there - correct no matter what junk comes
+ *  before it, since every response this function is used for is always a JSON array or
+ *  object at the top level. */
 async function fetchJsonWithTimeout(url: string): Promise<unknown> {
   const response = await fetchWithTimeout(url)
   const text = await response.text()
-  return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)
+  const jsonStart = text.search(/[[{]/)
+  return JSON.parse(jsonStart === -1 ? text : text.slice(jsonStart))
 }
 
 // ---------------------------------------------------------------------------

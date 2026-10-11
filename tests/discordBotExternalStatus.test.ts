@@ -24,6 +24,20 @@ describe('queryAwsStatus', () => {
     expect(severity).toBe(0)
   })
 
+  it('parses a response with *two* leading BOM-like characters - a real capture showed this, and stripping only one still broke JSON.parse', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => fakeTextResponse('﻿﻿[]')))
+    const [line, severity] = await queryAwsStatus()
+    expect(line).toContain('Opérationnel')
+    expect(severity).toBe(0)
+  })
+
+  it('parses a response prefixed with arbitrary junk, not just a BOM', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => fakeTextResponse('��some garbage[]')))
+    const [line, severity] = await queryAwsStatus()
+    expect(line).toContain('Opérationnel')
+    expect(severity).toBe(0)
+  })
+
   it('reports incidents outside the Middle East, ignoring the noisy region', async () => {
     const events = [{ region_name: 'eu-west-1' }, { region_name: 'me-south-1' }]
     vi.stubGlobal('fetch', vi.fn(async () => fakeTextResponse(JSON.stringify(events))))

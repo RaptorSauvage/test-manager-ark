@@ -3815,3 +3815,31 @@ async function findProfileIdByName(name) {
   when the checkbox was just unchecked but not yet saved, so a stale running process from
   before that doesn't require a save just to stop it. New `discordBotStop` IPC channel
   wrapping the already-existing `stopDiscordBot()`.
+
+- **The AWS BOM fix above wasn't enough - the real response has more than one leading BOM-
+  like character.** After the Manager-host fix landed, the user's logs showed "ARK Server
+  Manager injoignable" finally gone, but the exact same AWS JSON parse error survived
+  unchanged - stripping a single leading `﻿` wasn't enough, because a real capture of
+  the response showed *two* in a row (the log's mangled `´┐¢´┐¢` - two repeated garbled
+  sequences - was the actual clue, missed the first time). Rather than keep guessing exactly
+  how many BOM characters (or what else) precedes the real JSON, `fetchJsonWithTimeout`
+  (`src/bot/externalStatus.ts`) now finds the first `[` or `{` anywhere in the response text
+  and parses from there, discarding everything before it unconditionally - correct no
+  matter what junk precedes it or how much of it there is, since every endpoint this helper
+  is used for always returns a JSON array or object at the top level.
+  - **Verified**: two new tests in `tests/discordBotExternalStatus.test.ts` - two leading
+    BOM characters in a row, and a response prefixed with arbitrary non-BOM junk text
+    (neither of which the previous single-character strip would have handled). `npm run
+    typecheck`, the full `npx vitest run` (1066 tests), and `npm run build` all pass.
+- **Root-caused why three straight fix attempts kept showing identically unchanged log
+  lines, independent of the `npm run dev` bundling gap found earlier**: the user had been
+  stuck on an unrelated, several-messages-long `git pull`/merge-conflict/stash tangle in
+  their own local checkout the entire time (conflict markers repeatedly reappearing in
+  `package.json`/`package-lock.json` from a stale `git stash` entry predating this whole
+  integration) - every rebuild in between was still running pre-fix code because the pull
+  that would have brought each fix in kept failing. Once that was cleared up (dropping the
+  stale stash, whose only contents were exactly the already-reconciled `package.json`/
+  `package-lock.json`, and completing the pending merge commit), the Manager-connectivity
+  fix was confirmed working immediately (the "injoignable" warning disappeared from the
+  user's own logs) - the AWS BOM issue surviving that same pull is what led to this round's
+  fix above actually being a real, previously-masked second bug, not a repeat of the first.
