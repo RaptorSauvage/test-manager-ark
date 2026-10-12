@@ -14,6 +14,7 @@ export default function SteamCmdView({ onBack }: SteamCmdViewProps): JSX.Element
     webDashboardHost: '127.0.0.1',
     webDashboardDisabledLabels: [],
     launchOnStartup: false,
+    closeToTrayEnabled: false,
     webDashboardAuthEnabled: false,
     serverAutoStartStaggerSeconds: 10,
     iniLockEnabled: true,

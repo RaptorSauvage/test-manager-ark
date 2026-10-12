@@ -248,6 +248,12 @@ export interface AppSettings {
   /** Whether the Manager registers itself to launch automatically when you log into
    *  Windows (or the equivalent on macOS/Linux), via Electron's own login-item API. */
   launchOnStartup: boolean
+  /** When true, clicking the window's close button hides it to a system tray icon instead
+   *  of quitting the app - every managed server keeps running either way (they're tracked
+   *  independently of the window), but this also keeps the Discord bot and web dashboard
+   *  alive in the background. Quitting for real is only ever done from the tray icon's own
+   *  "Quit" menu item. Defaults to false - closing the window quits the app, as before. */
+  closeToTrayEnabled: boolean
   /** When true, the web dashboard requires a valid access token (see
    *  WebDashboardAccessToken) and switches to HTTPS with a self-signed certificate - meant
    *  for exposing it outside the LAN. When false (default), it behaves exactly as before:

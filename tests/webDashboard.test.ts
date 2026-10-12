@@ -24,6 +24,7 @@ let mockSettings = {
   webDashboardHost: '127.0.0.1',
   webDashboardDisabledLabels: [] as string[],
   launchOnStartup: false,
+  closeToTrayEnabled: false,
   webDashboardAuthEnabled: false,
   collapsedGroups: [] as string[],
   minecraftCollapsedGroups: [] as string[],

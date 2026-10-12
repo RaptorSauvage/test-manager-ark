@@ -3954,3 +3954,41 @@ async function findProfileIdByName(name) {
     `npm run build` all pass. **Not yet verified**: the user hasn't confirmed against their
     live bot yet - needs a `git pull` + rebuild + bot restart on their end, same as every
     other round.
+
+- **Added: "Keep running in the background when the window is closed" (close-to-tray)**
+  (user request) - closing the window no longer has to quit the app; it can now hide to a
+  system tray icon instead, so every managed server, the web dashboard, and the Discord bot
+  all keep running in the background. Off by default - closing the window still quits the
+  app exactly as before unless the user opts in.
+  - **`shared/types.ts`**: new `AppSettings.closeToTrayEnabled: boolean`.
+  - **`src/main/store.ts`**: default `false` added in both `getSettings()`'s merge-defaults
+    object and the `electron-store` schema's own defaults, same pattern as every other
+    settings field.
+  - **`src/main/index.ts`**: a module-level `isQuitting` flag, set from `app.on('before-quit', ...)`
+    (which always fires before Electron tries to close any window, so it's already correct
+    by the time a window's own `close` handler runs - no race between "real quit" and "just
+    closing the window"). The main window's `close` handler now checks
+    `!isQuitting && getSettings().closeToTrayEnabled` (read fresh on every close, not cached,
+    so toggling the setting takes effect on the very next close without a restart) - if both
+    hold, `event.preventDefault()` and `mainWindow.hide()` instead of letting it actually
+    close. A `Tray` (reusing the same `iconPath` as the window's own icon) is created once,
+    with a context menu offering "Ouvrir Bober Server Manager" (show + focus the window) and
+    "Quitter" (`app.quit()` - the only way to actually exit while this setting is on);
+    left-clicking the tray icon also shows/focuses the window, matching the Windows
+    convention. `window-all-closed`'s existing quit-on-close behavior is untouched and still
+    applies exactly as before whenever the setting is off.
+  - **`src/renderer/src/pages/DataSettingsView.tsx`**: new checkbox in the "Startup & Safety"
+    section of Settings > General, right under "Start Manager when you log into Windows",
+    with an explanation of what stays running and how to actually quit (the tray menu).
+  - **`src/renderer/src/pages/SteamCmdView.tsx`**, **`tests/webDashboard.test.ts`**,
+    **`tests/discordBot.test.ts`**: added the new field (defaulting to `false`) to every
+    other full `AppSettings` literal in the codebase, so TypeScript keeps enforcing that
+    none of them silently drift out of sync with the real shape.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged -
+    this feature has no isolated unit to test, since it's pure Electron window/tray
+    wiring), and `npm run build` all pass. **Not yet verified**: no automated test covers
+    actual tray behavior (Electron's `Tray`/`BrowserWindow` aren't something `vitest` can
+    exercise headlessly) - needs the user to confirm in the real app that closing the
+    window with the setting on hides it to the tray instead of quitting, that the tray
+    icon's "Ouvrir" reopens the window, and that "Quitter" actually exits (including
+    stopping the Discord bot/web dashboard along with the rest of the process).

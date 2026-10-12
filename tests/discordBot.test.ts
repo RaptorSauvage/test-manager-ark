@@ -55,6 +55,7 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     webDashboardHost: '127.0.0.1',
     webDashboardDisabledLabels: [],
     launchOnStartup: false,
+    closeToTrayEnabled: false,
     webDashboardAuthEnabled: false,
     serverAutoStartStaggerSeconds: 10,
     iniLockEnabled: true,

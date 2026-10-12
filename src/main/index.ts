@@ -5,7 +5,7 @@
 // for as long as the backup's zipping takes.
 process.env.UV_THREADPOOL_SIZE = '8'
 
-import { app, BrowserWindow, Menu, shell } from 'electron'
+import { app, BrowserWindow, Menu, Tray, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
 import {
@@ -60,6 +60,40 @@ const iconPath = app.isPackaged
   ? join(process.resourcesPath, 'icon.png')
   : join(__dirname, '../../build/icon.png')
 
+// Set once quit was actually requested (tray "Quit", OS shutdown, etc.) - 'before-quit'
+// always fires before Electron tries to close any window, so by the time the window's own
+// 'close' handler below runs, this already reflects whether it's a real quit or just the
+// user clicking the window's close button. Without it, "close to tray" would have no way
+// to tell the two apart and could never actually quit at all.
+let isQuitting = false
+app.on('before-quit', () => {
+  isQuitting = true
+})
+
+let tray: Tray | null = null
+
+function createTray(mainWindow: BrowserWindow): void {
+  tray = new Tray(iconPath)
+  tray.setToolTip('Bober Server Manager')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: 'Ouvrir Bober Server Manager',
+        click: () => {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+      },
+      { type: 'separator' },
+      { label: 'Quitter', click: () => app.quit() }
+    ])
+  )
+  tray.on('click', () => {
+    mainWindow.show()
+    mainWindow.focus()
+  })
+}
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -78,6 +112,20 @@ function createWindow(): void {
     void shell.openExternal(details.url)
     return { action: 'deny' }
   })
+
+  // "Close to tray" (Settings > Startup & Safety) - checked fresh on every close instead of
+  // once at startup, so toggling the setting while the app is running takes effect on the
+  // very next close rather than needing a restart. Every managed server tracks its own
+  // process independently of this window (see serverProcess.ts), so hiding instead of
+  // quitting doesn't touch them - only the window itself, plus whatever's riding along in
+  // this same process (the web dashboard, the Discord bot's supervisor).
+  mainWindow.on('close', (event) => {
+    if (isQuitting || !getSettings().closeToTrayEnabled) return
+    event.preventDefault()
+    mainWindow.hide()
+  })
+
+  if (!tray) createTray(mainWindow)
 
   registerIpcHandlers(mainWindow)
 

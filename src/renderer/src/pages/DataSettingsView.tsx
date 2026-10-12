@@ -48,6 +48,7 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     webDashboardHost: '127.0.0.1',
     webDashboardDisabledLabels: [],
     launchOnStartup: false,
+    closeToTrayEnabled: false,
     webDashboardAuthEnabled: false,
     serverAutoStartStaggerSeconds: 10,
     iniLockEnabled: true,
@@ -237,6 +238,20 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                     />
                     Start Manager when you log into Windows
                   </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.closeToTrayEnabled}
+                      onChange={(e) => setSettings({ ...settings, closeToTrayEnabled: e.target.checked })}
+                    />
+                    Keep running in the background when the window is closed
+                  </label>
+                  <p className="empty-state">
+                    With this on, closing the window hides it to a system tray icon instead of quitting - every
+                    managed server, the web dashboard, and the Discord bot all keep running. Click the tray icon to
+                    reopen the window, or use its right-click menu&apos;s <strong>Quit</strong> to actually exit the
+                    app.
+                  </p>
                   <label>
                     Minimum delay between servers starting (seconds)
                     <input
