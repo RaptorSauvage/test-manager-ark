@@ -120,6 +120,7 @@ function createWindow(): void {
   // quitting doesn't touch them - only the window itself, plus whatever's riding along in
   // this same process (the web dashboard, the Discord bot's supervisor).
   mainWindow.on('close', (event) => {
+    console.log('[DIAG] close event - isQuitting:', isQuitting, 'closeToTrayEnabled:', getSettings().closeToTrayEnabled)
     if (isQuitting || !getSettings().closeToTrayEnabled) return
     event.preventDefault()
     mainWindow.hide()
