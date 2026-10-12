@@ -114,6 +114,15 @@ function createWindow(): void {
 
   mainWindow.once('ready-to-show', () => mainWindow.show())
 
+  // TEMPORARY diagnostic for the rename/delete freeze report - the app removes Electron's
+  // default application menu below (Menu.setApplicationMenu(null)), which is also what
+  // normally wires up the F12/Ctrl+Shift+I DevTools shortcut, so there was no way to see the
+  // renderer's own console (where the [DIAG] logs in SettingsTab.tsx/Dashboard.tsx/
+  // ProfileManagementView.tsx print) without this. Detached so it stays usable even if the
+  // main window itself ends up stuck. Remove alongside the other [DIAG] instrumentation once
+  // the freeze is found.
+  if (!app.isPackaged) mainWindow.webContents.openDevTools({ mode: 'detach' })
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     void shell.openExternal(details.url)
     return { action: 'deny' }
