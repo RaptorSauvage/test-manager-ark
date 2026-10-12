@@ -6,9 +6,15 @@ import { IPC } from '@shared/types'
  *  afterward, but every text field silently stops accepting keystrokes until it's
  *  explicitly refocused. Called after every dialog below resolves, regardless of outcome,
  *  as a low-risk belt-and-suspenders fix alongside confirmAction()'s own refocus (which
- *  covers window.confirm(), a real native dialog too, that this file doesn't touch). */
+ *  covers window.confirm(), a real native dialog too, that this file doesn't touch).
+ *  mainWindow.focus() alone only gives the window itself OS-level focus - the embedded page
+ *  can still report document.hasFocus() === false afterward (confirmed live via DevTools),
+ *  which is the actual reason typing silently does nothing; webContents.focus() is what
+ *  actually restores it, same fix as system.ts's appFocusWindow. */
 function refocus(mainWindow: BrowserWindow): void {
-  if (!mainWindow.isDestroyed()) mainWindow.focus()
+  if (mainWindow.isDestroyed()) return
+  mainWindow.focus()
+  mainWindow.webContents.focus()
 }
 
 export function registerDialogHandlers(mainWindow: BrowserWindow): void {

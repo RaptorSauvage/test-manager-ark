@@ -34,8 +34,14 @@ export function registerSystemHandlers(mainWindow: BrowserWindow): void {
   // examples. When that happens, every text field afterward still looks normal (not
   // disabled, still visually focusable) but silently stops accepting keystrokes until the
   // window is explicitly refocused - confirmAction() (src/renderer/src/lib/confirmAction.ts)
-  // calls this right after every confirm() as a workaround.
+  // calls this right after every confirm() as a workaround. mainWindow.focus() alone only
+  // gives OS-level focus to the window itself; a real repro (document.hasFocus() checked
+  // live in DevTools right after a delete confirm) showed that's not the same as the
+  // embedded page actually having DOCUMENT focus - clicking directly into a field fixed it
+  // every time, which is exactly what webContents.focus() does, so both are needed together.
   ipcMain.handle(IPC.appFocusWindow, () => {
-    if (!mainWindow.isDestroyed()) mainWindow.focus()
+    if (mainWindow.isDestroyed()) return
+    mainWindow.focus()
+    mainWindow.webContents.focus()
   })
 }
