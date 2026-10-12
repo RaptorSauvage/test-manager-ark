@@ -188,12 +188,12 @@ export default function App(): JSX.Element {
           </button>
           <button
             type="button"
-            className={mainPage === 'managerLog' ? 'active' : ''}
+            className={`app-sidebar-log${mainPage === 'managerLog' ? ' active' : ''}`}
             onClick={() => setMainPage('managerLog')}
           >
             Log
           </button>
-          <button type="button" className="app-sidebar-settings" onClick={() => setShowDataSettings(true)}>
+          <button type="button" onClick={() => setShowDataSettings(true)}>
             Settings
           </button>
         </nav>
@@ -255,12 +255,12 @@ export default function App(): JSX.Element {
         </button>
         <button
           type="button"
-          className={mainPage === 'managerLog' ? 'active' : ''}
+          className={`app-sidebar-log${mainPage === 'managerLog' ? ' active' : ''}`}
           onClick={() => setMainPage('managerLog')}
         >
           Log
         </button>
-        <button type="button" className="app-sidebar-settings" onClick={() => setShowDataSettings(true)}>
+        <button type="button" onClick={() => setShowDataSettings(true)}>
           Settings
         </button>
       </nav>

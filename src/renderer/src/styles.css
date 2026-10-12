@@ -256,12 +256,15 @@ label.checkbox {
   opacity: 1;
 }
 
-/* Pinned to the bottom of the sidebar (regardless of how many nav buttons come before it,
-   ARK's or Minecraft's) via the sidebar's own flex-column layout, so Settings stays in the
-   same spot in both modes instead of scrolling along with the rest of the nav. */
-.app-sidebar-settings {
+/* Pins Log+Settings together as a group at the bottom of the sidebar (regardless of how many
+   nav buttons come before it, ARK's or Minecraft's) via the sidebar's own flex-column layout -
+   the margin goes on Log (the first of the two) so the pair stays adjacent to each other,
+   separated from the rest of the nav by the gap/border instead of each button pushing
+   independently to its own edge. */
+.app-sidebar-log {
   margin-top: auto;
   border-top: 1px solid var(--border);
+  padding-top: 2px;
 }
 
 .app-content {

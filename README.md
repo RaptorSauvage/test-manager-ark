@@ -4110,3 +4110,22 @@ async function findProfileIdByName(name) {
     all pass. **Not yet verified**: needs the user to confirm in a real browser that the MC
     nav tabs now stay hidden on "Minecraft Servers" and reappear once a server's Console (or
     one of its own tabs) is open, and that the token gate no longer overflows on a phone.
+
+- **Grouped the desktop Log/Settings sidebar buttons together at the bottom, instead of Log
+  sitting up with the main nav and only Settings pinned to the bottom edge** (user request,
+  right after the previous "move Settings/Log into a shared sidebar" round). The earlier fix
+  had Settings alone carrying `margin-top: auto`, which does push it to the very bottom, but
+  left Log up with Dashboard/Cluster Dashboard/Minecraft Servers - visually separated from
+  Settings by whatever empty space the sidebar had, rather than sitting directly above it as
+  a pair.
+  - **`src/renderer/src/styles.css`**: renamed `.app-sidebar-settings` to `.app-sidebar-log`
+    and moved the `margin-top: auto`/`border-top` from Settings onto Log instead - the first
+    item of a bottom-pinned pair carries the auto-margin, so Log gets pushed down and
+    Settings (last in the DOM, no special margin needed) just follows immediately after it.
+  - **`src/renderer/src/App.tsx`**: moved the class from the Settings `<button>` to the Log
+    `<button>` in both the ARK and Minecraft sidebars (merging it with the existing
+    conditional `active` class via a template string, since Log already needed one).
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged),
+    and `npm run build` all pass. **Not yet verified**: needs the user to confirm Log now
+    sits directly above Settings, both grouped at the sidebar's bottom, in both game modes.
+    one of its own tabs) is open, and that the token gate no longer overflows on a phone.
