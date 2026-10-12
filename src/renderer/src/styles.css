@@ -256,6 +256,14 @@ label.checkbox {
   opacity: 1;
 }
 
+/* Pinned to the bottom of the sidebar (regardless of how many nav buttons come before it,
+   ARK's or Minecraft's) via the sidebar's own flex-column layout, so Settings stays in the
+   same spot in both modes instead of scrolling along with the rest of the nav. */
+.app-sidebar-settings {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+}
+
 .app-content {
   flex: 1;
   min-width: 0;

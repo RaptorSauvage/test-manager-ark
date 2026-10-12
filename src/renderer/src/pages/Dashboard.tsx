@@ -13,7 +13,6 @@ interface DashboardProps {
   onProfilesChange: (profiles: ServerProfile[]) => void
   onOpenProfile: (id: string, tab?: TabKey) => void
   onOpenSteamCmd: () => void
-  onOpenDataSettings: () => void
   onOpenProfileManagement: () => void
 }
 
@@ -22,7 +21,6 @@ export default function Dashboard({
   onProfilesChange,
   onOpenProfile,
   onOpenSteamCmd,
-  onOpenDataSettings,
   onOpenProfileManagement
 }: DashboardProps): JSX.Element {
   const statuses = useServerStatuses(profiles.map((p) => p.id))
@@ -393,7 +391,6 @@ export default function Dashboard({
         <h1>Bober Server Manager</h1>
         <div className="dashboard-header-actions">
           <button onClick={onOpenSteamCmd}>SteamCMD</button>
-          <button onClick={onOpenDataSettings}>Settings</button>
           <button onClick={onOpenProfileManagement}>Profile Management</button>
           <button onClick={() => void handleImport()} disabled={importing}>
             {importing ? 'Scanning...' : 'Import existing server'}

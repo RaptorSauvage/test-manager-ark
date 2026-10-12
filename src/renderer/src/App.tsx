@@ -142,6 +142,27 @@ export default function App(): JSX.Element {
     setMinecraftInitialTab(tab)
   }
 
+  // Checked before the ARK/Minecraft split below - these are top-level screens reachable
+  // from either game mode (most importantly Settings, which used to live only in the ARK
+  // Dashboard's own header and so was unreachable while in Minecraft mode entirely).
+  if (showSteamCmd) {
+    return <SteamCmdView onBack={() => setShowSteamCmd(false)} />
+  }
+
+  if (showDataSettings) {
+    return <DataSettingsView onBack={() => setShowDataSettings(false)} />
+  }
+
+  if (showProfileManagement) {
+    return (
+      <ProfileManagementView
+        profiles={profiles}
+        onProfilesChange={handleProfilesChange}
+        onBack={() => setShowProfileManagement(false)}
+      />
+    )
+  }
+
   if (gameMode === 'minecraft') {
     if (minecraftSelected) {
       return (
@@ -158,33 +179,36 @@ export default function App(): JSX.Element {
       <div className="app-shell">
         <nav className="app-sidebar">
           <GameSwitch mode={gameMode} onChange={setGameMode} />
+          <button
+            type="button"
+            className={mainPage !== 'managerLog' ? 'active' : ''}
+            onClick={() => setMainPage('dashboard')}
+          >
+            Minecraft Servers
+          </button>
+          <button
+            type="button"
+            className={mainPage === 'managerLog' ? 'active' : ''}
+            onClick={() => setMainPage('managerLog')}
+          >
+            Log
+          </button>
+          <button type="button" className="app-sidebar-settings" onClick={() => setShowDataSettings(true)}>
+            Settings
+          </button>
         </nav>
         <div className="app-content">
-          <MinecraftDashboard
-            profiles={minecraftProfiles}
-            onProfilesChange={handleMinecraftProfilesChange}
-            onOpenProfile={handleOpenMinecraftProfile}
-          />
+          {mainPage === 'managerLog' ? (
+            <ManagerLogView />
+          ) : (
+            <MinecraftDashboard
+              profiles={minecraftProfiles}
+              onProfilesChange={handleMinecraftProfilesChange}
+              onOpenProfile={handleOpenMinecraftProfile}
+            />
+          )}
         </div>
       </div>
-    )
-  }
-
-  if (showSteamCmd) {
-    return <SteamCmdView onBack={() => setShowSteamCmd(false)} />
-  }
-
-  if (showDataSettings) {
-    return <DataSettingsView onBack={() => setShowDataSettings(false)} />
-  }
-
-  if (showProfileManagement) {
-    return (
-      <ProfileManagementView
-        profiles={profiles}
-        onProfilesChange={handleProfilesChange}
-        onBack={() => setShowProfileManagement(false)}
-      />
     )
   }
 
@@ -236,6 +260,9 @@ export default function App(): JSX.Element {
         >
           Log
         </button>
+        <button type="button" className="app-sidebar-settings" onClick={() => setShowDataSettings(true)}>
+          Settings
+        </button>
       </nav>
       <div className="app-content">
         {mainPage === 'clusterData' ? (
@@ -248,7 +275,6 @@ export default function App(): JSX.Element {
             onProfilesChange={handleProfilesChange}
             onOpenProfile={handleOpenProfile}
             onOpenSteamCmd={() => setShowSteamCmd(true)}
-            onOpenDataSettings={() => setShowDataSettings(true)}
             onOpenProfileManagement={() => setShowProfileManagement(true)}
           />
         )}

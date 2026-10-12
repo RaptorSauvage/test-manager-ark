@@ -4042,3 +4042,32 @@ async function findProfileIdByName(name) {
     no automated test can drive real OS-level window focus), and `npm run build` all pass.
     The user confirmed live, after pulling this exact fix, that deleting a server no longer
     leaves any field unresponsive ("c'est fix !").
+
+- **Moved Settings (and Log) into a sidebar shared by both game modes, instead of being
+  reachable only from ARK's own Dashboard header** (user request, right after confirming the
+  focus fix above - turned out to be why "close to tray" looked broken too: it couldn't be
+  reached/enabled at all while in Minecraft mode). Before this, `App.tsx`'s render short-
+  circuited into a completely separate Minecraft branch (just `GameSwitch`, nothing else) and
+  reached `showSteamCmd`/`showDataSettings`/`showProfileManagement` only afterward - which
+  meant those checks, and the Settings/Log buttons that set them, never ran at all while
+  `gameMode === 'minecraft'`.
+  - **`src/renderer/src/App.tsx`**: moved the `showSteamCmd`/`showDataSettings`/
+    `showProfileManagement` checks to the very top of the render, before the
+    `gameMode === 'minecraft'` branch, so they work as top-level screens reachable from
+    either mode (SteamCMD and Profile Management stay ARK-only in practice, since nothing in
+    Minecraft mode links to them, but Settings now does from both). Added a
+    `.app-sidebar-settings` button (pinned to the sidebar's bottom via CSS `margin-top:
+    auto`) to both the ARK and Minecraft sidebars. Minecraft's sidebar also gained a
+    "Minecraft Servers"/"Log" pair mirroring ARK's own Dashboard/Log buttons (both toggle
+    the same shared `mainPage` state, swapping `MinecraftDashboard` for `ManagerLogView` in
+    the content area) - the Manager Log is global, not per-game, so there was no reason it
+    should only be visible from ARK mode either.
+  - **`src/renderer/src/pages/Dashboard.tsx`**: removed the now-redundant `onOpenDataSettings`
+    prop and its "Settings" header button (moved, not duplicated) - SteamCMD and Profile
+    Management stay as ARK Dashboard header buttons, unchanged.
+  - **`src/renderer/src/styles.css`**: new `.app-sidebar-settings` rule.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged - no
+    existing test touched `Dashboard`'s removed prop or `App.tsx`'s render order), and
+    `npm run build` all pass. **Not yet verified**: needs the user to confirm Settings and
+    Log are both reachable from Minecraft mode now, and that ARK mode still looks/behaves
+    identically (Settings moved from the Dashboard header into the sidebar).
