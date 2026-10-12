@@ -9,9 +9,7 @@ import { applyIniLockSetting } from '../lib/iniLock'
 export function registerSettingsHandlers(): void {
   ipcMain.handle(IPC.settingsGet, () => getSettings())
   ipcMain.handle(IPC.settingsSave, async (_event, settings: AppSettings) => {
-    console.log('[DIAG] settingsSave received closeToTrayEnabled:', settings.closeToTrayEnabled)
     const saved = saveSettings(settings)
-    console.log('[DIAG] settingsSave persisted closeToTrayEnabled:', saved.closeToTrayEnabled, '- readback:', getSettings().closeToTrayEnabled)
     applyWebDashboardSettings(saved)
     await applyDiscordBotSettings(saved)
     applyLaunchOnStartup(saved)

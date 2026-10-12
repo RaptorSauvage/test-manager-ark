@@ -4128,4 +4128,23 @@ async function findProfileIdByName(name) {
   - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged),
     and `npm run build` all pass. **Not yet verified**: needs the user to confirm Log now
     sits directly above Settings, both grouped at the sidebar's bottom, in both game modes.
+
+- **Confirmed: "close to tray" (the earlier Settings > Startup & Safety feature) works** -
+  the user reported it still quitting the app entirely instead of hiding to the tray even
+  after enabling it and confirmed Settings was now reachable (the previous round's fix).
+  Added temporary `[DIAG]` logging at both ends of the round trip (what the Settings save
+  IPC handler receives/persists/reads back, and what the window's own `close` handler sees
+  for `isQuitting`/`closeToTrayEnabled`) to find where the value was getting lost between
+  Save and the next close. First confirmed real: a close right after toggling+saving showed
+  `closeToTrayEnabled: false` at close time despite having just been saved `true`. Asked the
+  user to redo the exact sequence in one continuous session (toggle → Save → close, no
+  navigating elsewhere in between) with a fresh `git reset --hard` + full reinstall/rebuild -
+  it then worked. No code change happened between the failing and passing attempts (only the
+  diagnostic logging), so the earlier failure was most likely a stale build/store from the
+  git sync issues earlier in this session (the repeated stray-merge-commit problem) rather
+  than an actual bug in the close-to-tray logic itself - removed the logging now that it's
+  confirmed working.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged),
+    and `npm run build` all pass. The user confirmed live ("c'est fix") that closing the
+    window now hides it to the tray as intended.
     one of its own tabs) is open, and that the token gate no longer overflows on a phone.
