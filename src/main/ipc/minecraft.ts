@@ -37,16 +37,25 @@ export function registerMinecraftHandlers(webContents: WebContents): void {
   ipcMain.handle(IPC.minecraftProfilesList, () => listMinecraftProfiles())
 
   ipcMain.handle(IPC.minecraftProfilesSave, (_event, profile: MinecraftProfile) => {
+    console.log(`[DIAG] minecraftProfilesSave: start (${profile.id})`)
     const profiles = saveMinecraftProfile(profile)
+    console.log('[DIAG] minecraftProfilesSave: saveMinecraftProfile done')
     applyMinecraftScheduledRestart(profile)
+    console.log('[DIAG] minecraftProfilesSave: applyMinecraftScheduledRestart done')
     applyMinecraftBackupSchedule(profile)
+    console.log('[DIAG] minecraftProfilesSave: applyMinecraftBackupSchedule done')
     return profiles
   })
 
   ipcMain.handle(IPC.minecraftProfilesDelete, (_event, id: string) => {
+    console.log(`[DIAG] minecraftProfilesDelete: start (${id})`)
     clearMinecraftScheduledRestart(id)
+    console.log('[DIAG] minecraftProfilesDelete: clearMinecraftScheduledRestart done')
     clearMinecraftBackupSchedule(id)
-    return deleteMinecraftProfile(id)
+    console.log('[DIAG] minecraftProfilesDelete: clearMinecraftBackupSchedule done')
+    const result = deleteMinecraftProfile(id)
+    console.log('[DIAG] minecraftProfilesDelete: deleteMinecraftProfile done')
+    return result
   })
 
   // Deliberately does NOT save - the caller (the Settings tab, opened right after) lets the

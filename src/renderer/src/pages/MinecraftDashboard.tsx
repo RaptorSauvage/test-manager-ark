@@ -166,7 +166,9 @@ export default function MinecraftDashboard({
 
   async function handleDelete(id: string): Promise<void> {
     if (!confirmAction('Delete this server profile? This does not delete any files on disk.')) return
+    console.log(`[DIAG] MC handleDelete: calling minecraft.profiles.delete(${id})`)
     const updated = await window.api.minecraft.profiles.delete(id)
+    console.log('[DIAG] MC handleDelete: minecraft.profiles.delete resolved')
     onProfilesChange(updated)
   }
 
