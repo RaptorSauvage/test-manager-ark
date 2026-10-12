@@ -1978,6 +1978,11 @@ const DASHBOARD_HTML = `<!doctype html>
     .admin-tab-content, .settings-form { overflow-y: visible; }
     .settings-grid2 { grid-template-columns: 1fr; }
     .data-table { font-size: 0.78rem; }
+    /* A fixed 320px form plus its own 28px padding on each side needs 376px to fit without
+       overflow - wider than several real phones (iPhone SE/older/budget Android are 320-
+       360px), which would otherwise force horizontal scrolling on the very first screen a
+       mobile viewer with "Require access token" on ever sees. */
+    #token-gate form { width: auto; max-width: 320px; padding: 20px; }
   }
 </style>
 </head>
@@ -3149,25 +3154,16 @@ function initDashboard(resolvedRole) {
   // Minecraft section - separate from ARK's own servers/tabs entirely (its own nav group, its
   // own server pickers further down), mirroring the desktop Manager's completely separate
   // "Minecraft Servers" page rather than mixing Minecraft profiles into ARK's Dashboard/
-  // Cluster Dashboard or its per-server tab dropdown. The whole group's visibility is gated by
-  // gameMode (see selectGameMode) rather than activeView - unlike the ARK per-server tabs
-  // below, every button here stays visible across the whole Minecraft section regardless of
-  // which view is open within it, there's no Dashboard-vs-per-server-tab distinction to make
-  // the way SERVER_SCOPED_VIEWS makes for ARK. Role tiers: MC Start Settings and MC Mods are
-  // admin+ (same tier as ARK's Settings/Mods); MC Server Settings/MC Backup/MC Server
-  // Management are moderator+ (per the role's own definition) - "Minecraft Servers" and
-  // Console (shared with ARK's own Console button - see navMcConsoleBtn) have no tier, same as
-  // Cluster Dashboard.
-  if (role && !canAdmin) {
-    navMcStartSettingsBtn.style.display = 'none';
-    navMcModsBtn.style.display = 'none';
-    navMcPluginsBtn.style.display = 'none';
-  }
-  if (role && !canOperate) {
-    navMcServerSettingsBtn.style.display = 'none';
-    navMcBackupBtn.style.display = 'none';
-    navMcManagementBtn.style.display = 'none';
-  }
+  // Cluster Dashboard or its per-server tab dropdown. Role tiers: MC Start Settings and MC
+  // Mods are admin+ (same tier as ARK's Settings/Mods); MC Server Settings/MC Backup/MC
+  // Server Management are moderator+ (per the role's own definition) - "Minecraft Servers"
+  // and Console (shared with ARK's own Console button - see navMcConsoleBtn) have no tier,
+  // same as Cluster Dashboard. Role gating itself happens in
+  // updateServerScopedNavVisibility() below, alongside the same per-server-view visibility
+  // ARK's own tabs get - a one-time hide here would never un-hide for a sufficient role once
+  // a view change later recomputed things.
+  var mcAdminNavBtns = [navMcStartSettingsBtn, navMcModsBtn, navMcPluginsBtn];
+  var mcModeratorNavBtns = [navMcServerSettingsBtn, navMcBackupBtn, navMcManagementBtn];
 
   // The eight per-server tabs (Console/Analytics/Backup/the admin-only/moderator+ ones) only
   // belong in the sidebar while you're actually looking at one of them - on Dashboard or
@@ -3176,11 +3172,12 @@ function initDashboard(resolvedRole) {
   // SERVER_SCOPED_VIEWS, rather than a one-time reveal that used to stick around for the
   // rest of the page's session even after navigating back to an overview tab.
   var SERVER_SCOPED_VIEWS = ['console', 'analytics', 'backup', 'settings', 'mods', 'mapmanagement', 'servermanagement', 'updatelog'];
-  // Minecraft's own per-server tabs - checked only by loadServers' "selected server vanished"
-  // fallback above, so losing the selection while on one of these falls back to "Minecraft
-  // Servers" instead of ARK's "Cluster Dashboard". Unlike SERVER_SCOPED_VIEWS, this list
-  // doesn't drive nav-button visibility - the Minecraft nav section stays always-visible (see
-  // its own comment above, near adminNavBtns/moderatorNavBtns).
+  // Minecraft's own per-server tabs - same "only while looking at one of them" treatment as
+  // SERVER_SCOPED_VIEWS above (added after a user report that the whole Minecraft nav group
+  // showed these even from the "Minecraft Servers" overview, with no server selected at all -
+  // unlike every ARK per-server tab, which already hid itself the same way). 'console' isn't
+  // repeated here since it's shared with ARK's own entry in SERVER_SCOPED_VIEWS; navMcConsoleBtn
+  // just mirrors navConsoleBtn's own visibility below instead of needing a separate check.
   var MC_SERVER_SCOPED_VIEWS = ['mc-startsettings', 'mc-serversettings', 'mc-mods', 'mc-plugins', 'mc-backup', 'mc-management'];
   function updateServerScopedNavVisibility() {
     var show = SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1;
@@ -3189,6 +3186,11 @@ function initDashboard(resolvedRole) {
     navBackupBtn.style.display = show && role !== 'readonly' ? '' : 'none';
     adminNavBtns.forEach(function (btn) { btn.style.display = show && (!role || canAdmin) ? '' : 'none'; });
     moderatorNavBtns.forEach(function (btn) { btn.style.display = show && (!role || canOperate) ? '' : 'none'; });
+
+    var showMc = activeView === 'console' || MC_SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1;
+    navMcConsoleBtn.style.display = showMc ? '' : 'none';
+    mcAdminNavBtns.forEach(function (btn) { btn.style.display = showMc && (!role || canAdmin) ? '' : 'none'; });
+    mcModeratorNavBtns.forEach(function (btn) { btn.style.display = showMc && (!role || canOperate) ? '' : 'none'; });
   }
   if (role && !canOperate) {
     startBtn.style.display = 'none';

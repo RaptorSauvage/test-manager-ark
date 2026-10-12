@@ -4071,3 +4071,42 @@ async function findProfileIdByName(name) {
     `npm run build` all pass. **Not yet verified**: needs the user to confirm Settings and
     Log are both reachable from Minecraft mode now, and that ARK mode still looks/behaves
     identically (Settings moved from the Dashboard header into the sidebar).
+
+- **Web Dashboard: hid Minecraft's per-server nav tabs until an actual MC server is
+  selected, matching ARK's own tabs** (user screenshot showing Console/MC Start Settings/MC
+  Server Settings/MC Mods/MC Plugins/MC Backup/MC Server Management all visible at once from
+  the plain "Minecraft Servers" overview, with nothing selected). This was a deliberate,
+  explicitly-documented design choice when the Minecraft section was first built (the whole
+  `nav-group-minecraft` was gated only by game mode, not by `activeView` the way ARK's own
+  `SERVER_SCOPED_VIEWS` already gates its per-server tabs) - revisited now that it's visibly
+  inconsistent with ARK's own behavior.
+  - **`src/main/lib/webDashboard.ts`**: `updateServerScopedNavVisibility()` (recomputed on
+    every nav click, same as ARK's own tabs already were) now also shows/hides
+    `navMcConsoleBtn` and the new `mcAdminNavBtns`/`mcModeratorNavBtns` arrays based on
+    whether `activeView` is `'console'` or in `MC_SERVER_SCOPED_VIEWS` - replacing the old
+    one-time `if (role && !canAdmin) { ... }` hides (which, being one-time, could never
+    re-show a button once hidden - now folded into the same per-view/per-role check ARK's
+    tabs use). The underlying per-server views were already architecturally ready for this:
+    each one (`loadMcStartSettingsView()` etc.) already has its own server picker and a
+    "No Minecraft server selected" placeholder, and `selectServer()`/`currentId` were
+    already shared across both games - the nav buttons just weren't deferring to any of
+    that.
+  - **Mobile**: also found and fixed a real (if narrow) gap while reviewing the dashboard's
+    existing `@media (max-width: 700px)` block for this - `#token-gate` (the access-token
+    login screen, the very first thing a mobile viewer with "Require access token" on would
+    see) had a fixed `width: 320px` form plus 28px padding per side, needing 376px to avoid
+    overflowing - wider than several real phones (iPhone SE and older/budget Android are
+    320-360px). Now `width: auto; max-width: 320px; padding: 20px` on mobile. The rest of
+    the dashboard, including every MC view above, turned out to already inherit solid mobile
+    behavior for free - they're all built from the same generic classes
+    (`.settings-form`/`.settings-grid2`/`.form-actions`/`.data-table`/`.admin-tab-content`/
+    `.content-row`/`.server-picker`/etc.) the existing mobile breakpoint already covers, and
+    the action-sheet/context-menu popups were already clamped to the viewport. No sweeping
+    rewrite needed - the groundwork was already there, just not applied to the Minecraft
+    nav tabs or the token gate.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged -
+    this is plain client-side JS/CSS embedded in a template string with no dedicated test
+    harness, same as the rest of `webDashboard.ts`'s browser-side code), and `npm run build`
+    all pass. **Not yet verified**: needs the user to confirm in a real browser that the MC
+    nav tabs now stay hidden on "Minecraft Servers" and reappear once a server's Console (or
+    one of its own tabs) is open, and that the token gate no longer overflows on a phone.
