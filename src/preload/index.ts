@@ -13,6 +13,9 @@ import {
   type RconResult,
   type ManagerLogEntry
 } from '@shared/types'
+import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine, MinecraftPropertiesData } from '@shared/minecraft'
+import type { MinecraftModSource, MinecraftModEcosystem } from '@shared/minecraftMods'
+import type { MinecraftInstallableType, MinecraftInstallParams } from '@shared/minecraftInstall'
 
 const api: Api = {
   profiles: {
@@ -53,11 +56,17 @@ const api: Api = {
       return () => ipcRenderer.removeListener(IPC.serverStatusChanged, listener)
     },
     getInstalledBuildId: (profileId: string) => ipcRenderer.invoke(IPC.serverGetInstalledBuildId, profileId),
-    getGameVersion: (profileId: string) => ipcRenderer.invoke(IPC.serverGetGameVersion, profileId)
+    getGameVersion: (profileId: string) => ipcRenderer.invoke(IPC.serverGetGameVersion, profileId),
+    previewLaunchCommand: (profile: ServerProfile) => ipcRenderer.invoke(IPC.serverPreviewLaunchCommand, profile)
   },
   mods: {
     save: (profileId: string, mods: ServerMod[]) => ipcRenderer.invoke(IPC.modsSave, profileId, mods),
-    parseText: (text: string) => ipcRenderer.invoke(IPC.modsParseText, text)
+    parseText: (text: string) => ipcRenderer.invoke(IPC.modsParseText, text),
+    reconcileFromIni: (profileId: string) => ipcRenderer.invoke(IPC.modsReconcileFromIni, profileId)
+  },
+  arkMods: {
+    search: (query: string) => ipcRenderer.invoke(IPC.arkModsSearch, query),
+    info: (modIds: string[]) => ipcRenderer.invoke(IPC.arkModsInfo, modIds)
   },
   backup: {
     create: (profileId: string) => ipcRenderer.invoke(IPC.backupCreate, profileId),
@@ -99,10 +108,10 @@ const api: Api = {
       return () => ipcRenderer.removeListener(IPC.steamcmdUpdateLogChanged, listener)
     },
     addFirewallRule: (steamCmdPath: string) => ipcRenderer.invoke(IPC.steamcmdAddFirewallRule, steamCmdPath),
-    getLatestBuildId: () => ipcRenderer.invoke(IPC.steamcmdLatestBuildId)
+    getLatestBuildId: (game) => ipcRenderer.invoke(IPC.steamcmdLatestBuildId, game)
   },
   maps: {
-    list: () => ipcRenderer.invoke(IPC.mapsList)
+    list: (game) => ipcRenderer.invoke(IPC.mapsList, game)
   },
   customMaps: {
     list: () => ipcRenderer.invoke(IPC.customMapsList)
@@ -132,12 +141,18 @@ const api: Api = {
       ipcRenderer.invoke(IPC.webDashboardApiKeysUpdate, id, updates),
     delete: (id: string) => ipcRenderer.invoke(IPC.webDashboardApiKeysDelete, id)
   },
+  discordBot: {
+    status: () => ipcRenderer.invoke(IPC.discordBotStatus),
+    restart: () => ipcRenderer.invoke(IPC.discordBotRestart),
+    stop: () => ipcRenderer.invoke(IPC.discordBotStop)
+  },
   system: {
     openProfilesFolder: () => ipcRenderer.invoke(IPC.appOpenProfilesFolder),
     openDataDirFolder: () => ipcRenderer.invoke(IPC.appOpenDataDirFolder),
     openServerConfigFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenConfigFolder, profileId),
     openServerSavedArksFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSavedArksFolder, profileId),
-    openServerSaveGamesFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSaveGamesFolder, profileId)
+    openServerSaveGamesFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSaveGamesFolder, profileId),
+    focusWindow: () => ipcRenderer.invoke(IPC.appFocusWindow)
   },
   mapManagement: {
     list: (profileId: string) => ipcRenderer.invoke(IPC.mapManagementList, profileId),
@@ -184,6 +199,88 @@ const api: Api = {
       ipcRenderer.invoke(IPC.statsHistoryGetForGroup, profileIds, sinceMs, maxPoints),
     getForGroups: (groupProfileIds: Record<string, string[]>, sinceMs: number | null, maxPoints?: number) =>
       ipcRenderer.invoke(IPC.statsHistoryGetForGroups, groupProfileIds, sinceMs, maxPoints)
+  },
+  minecraft: {
+    profiles: {
+      list: () => ipcRenderer.invoke(IPC.minecraftProfilesList),
+      save: (profile: MinecraftProfile) => ipcRenderer.invoke(IPC.minecraftProfilesSave, profile),
+      delete: (id: string) => ipcRenderer.invoke(IPC.minecraftProfilesDelete, id),
+      importFromInstall: (installDir: string) => ipcRenderer.invoke(IPC.minecraftProfilesImport, installDir),
+      onChanged: (callback: (profiles: MinecraftProfile[]) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, profiles: MinecraftProfile[]): void => callback(profiles)
+        ipcRenderer.on(IPC.minecraftProfilesChanged, listener)
+        return () => ipcRenderer.removeListener(IPC.minecraftProfilesChanged, listener)
+      }
+    },
+    detectLaunchable: (installDir: string) => ipcRenderer.invoke(IPC.minecraftDetectLaunchable, installDir),
+    openServerFolder: (profileId: string) => ipcRenderer.invoke(IPC.minecraftOpenServerFolder, profileId),
+    server: {
+      start: (profileId: string) => ipcRenderer.invoke(IPC.minecraftServerStart, profileId),
+      stop: (profileId: string) => ipcRenderer.invoke(IPC.minecraftServerStop, profileId),
+      kill: (profileId: string) => ipcRenderer.invoke(IPC.minecraftServerKill, profileId),
+      getStatus: (profileId: string) => ipcRenderer.invoke(IPC.minecraftServerStatus, profileId),
+      onStatusChanged: (callback: (status: MinecraftServerStatus) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, status: MinecraftServerStatus): void => callback(status)
+        ipcRenderer.on(IPC.minecraftServerStatusChanged, listener)
+        return () => ipcRenderer.removeListener(IPC.minecraftServerStatusChanged, listener)
+      },
+      sendCommand: (profileId: string, command: string): Promise<RconResult> =>
+        ipcRenderer.invoke(IPC.minecraftServerSendCommand, profileId, command)
+    },
+    console: {
+      getBacklog: (profileId: string) => ipcRenderer.invoke(IPC.minecraftConsoleBacklog, profileId),
+      onLine: (callback: (profileId: string, line: MinecraftConsoleLine) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, profileId: string, line: MinecraftConsoleLine): void =>
+          callback(profileId, line)
+        ipcRenderer.on(IPC.minecraftConsoleLine, listener)
+        return () => ipcRenderer.removeListener(IPC.minecraftConsoleLine, listener)
+      }
+    },
+    properties: {
+      get: (profileId: string) => ipcRenderer.invoke(IPC.minecraftPropertiesGet, profileId),
+      save: (profileId: string, updates: MinecraftPropertiesData) =>
+        ipcRenderer.invoke(IPC.minecraftPropertiesSave, profileId, updates)
+    },
+    backup: {
+      create: (profileId: string) => ipcRenderer.invoke(IPC.minecraftBackupCreate, profileId),
+      list: (profileId: string) => ipcRenderer.invoke(IPC.minecraftBackupList, profileId),
+      delete: (filePath: string) => ipcRenderer.invoke(IPC.minecraftBackupDelete, filePath),
+      restore: (profileId: string, filePath: string) => ipcRenderer.invoke(IPC.minecraftBackupRestore, profileId, filePath),
+      openFolder: (profileId: string) => ipcRenderer.invoke(IPC.minecraftBackupOpenFolder, profileId),
+      onCreated: (callback: (profileId: string) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, profileId: string): void => callback(profileId)
+        ipcRenderer.on(IPC.minecraftBackupCreated, listener)
+        return () => ipcRenderer.removeListener(IPC.minecraftBackupCreated, listener)
+      },
+      getScheduleStatus: (profileId: string) => ipcRenderer.invoke(IPC.minecraftBackupScheduleStatus, profileId),
+      getLog: (profileId: string) => ipcRenderer.invoke(IPC.minecraftBackupLogGet, profileId),
+      onLogChanged: (callback: (profileId: string, entry: BackupLogEntry) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, profileId: string, entry: BackupLogEntry): void =>
+          callback(profileId, entry)
+        ipcRenderer.on(IPC.minecraftBackupLogChanged, listener)
+        return () => ipcRenderer.removeListener(IPC.minecraftBackupLogChanged, listener)
+      }
+    },
+    mods: {
+      search: (profileId: string, query: string, ecosystem: MinecraftModEcosystem) =>
+        ipcRenderer.invoke(IPC.minecraftModsSearch, profileId, query, ecosystem),
+      install: (profileId: string, source: MinecraftModSource, projectId: string, ecosystem: MinecraftModEcosystem) =>
+        ipcRenderer.invoke(IPC.minecraftModsInstall, profileId, source, projectId, ecosystem),
+      remove: (profileId: string, projectId: string) => ipcRenderer.invoke(IPC.minecraftModsRemove, profileId, projectId),
+      setEnabled: (profileId: string, projectId: string, enabled: boolean) =>
+        ipcRenderer.invoke(IPC.minecraftModsSetEnabled, profileId, projectId, enabled),
+      checkUpdates: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsCheckUpdates, profileId),
+      update: (profileId: string, source: MinecraftModSource, projectId: string) =>
+        ipcRenderer.invoke(IPC.minecraftModsUpdate, profileId, source, projectId),
+      scan: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsScan, profileId),
+      openFolder: (profileId: string) => ipcRenderer.invoke(IPC.minecraftModsOpenFolder, profileId)
+    },
+    install: {
+      listVersions: (serverType: MinecraftInstallableType) => ipcRenderer.invoke(IPC.minecraftInstallListVersions, serverType),
+      listLoaderVersions: (serverType: MinecraftInstallableType, minecraftVersion: string) =>
+        ipcRenderer.invoke(IPC.minecraftInstallListLoaderVersions, serverType, minecraftVersion),
+      run: (params: MinecraftInstallParams) => ipcRenderer.invoke(IPC.minecraftInstallRun, params)
+    }
   }
 }
 

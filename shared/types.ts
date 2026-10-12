@@ -2,9 +2,24 @@
 // React renderer. Keeping a single source of truth here avoids the two sides
 // of the IPC boundary drifting apart.
 
+import type { GameId } from './games'
+import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine, MinecraftPropertiesData } from './minecraft'
+import type {
+  MinecraftModSource,
+  MinecraftModSearchResult,
+  MinecraftModInstallResult,
+  MinecraftModUpdateCheckResult,
+  MinecraftModScanResult,
+  MinecraftModEcosystem
+} from './minecraftMods'
+import type { MinecraftInstallableType, MinecraftInstallParams, MinecraftInstallResult, MinecraftVersionOption } from './minecraftInstall'
+
 export interface ServerProfile {
   id: string
   name: string
+  /** Which game this profile launches (see shared/games.ts). Defaults to 'ark-ascended' for
+   *  every profile saved before multi-game support existed. */
+  game: GameId
   /** Root install directory, containing ShooterGame/Binaries/... */
   installDir: string
   /** Whether the SteamCMD update/install below targets a beta branch instead of the
@@ -21,7 +36,12 @@ export interface ServerProfile {
   moddedMapId: string
   gamePort: number
   rconPort: number
-  /** Crossplay setting passed as -ServerPlatform=<value> */
+  /** Separate query port some games need (ARK: Survival Evolved's -QueryPort=<n>) - unused
+   *  for a game whose GameDefinition.usesQueryPort is false (ARK: Survival Ascended merged
+   *  it into gamePort). Always present so every profile has a stable shape either way. */
+  queryPort: number
+  /** Crossplay setting passed as -ServerPlatform=<value> (ARK: Survival Ascended only - see
+   *  buildLaunchArgs). */
   serverPlatform: 'PC' | 'ALL'
   /** Passed as -WinLiveMaxPlayers=<n> */
   maxPlayers: number
@@ -43,9 +63,13 @@ export interface ServerProfile {
   /** How many of the snapshots above to keep per player before pruning the oldest */
   playerProfileBackupMaxPerPlayer: number
   /**
-   * Mods, in load order. Only enabled mods are passed via the server's
-   * `-mods=` launch flag (ARK:SA does not use Steam Workshop or
-   * GameUserSettings.ini for mods - the launch flag is the only mechanism).
+   * Mods, in load order. For ARK: Survival Ascended, only enabled mods are passed via the
+   * server's `-mods=`/`-passivemods=` launch flags (it does not use GameUserSettings.ini for
+   * mods at all - the launch flags are the only mechanism). ARK: Survival Evolved has no
+   * command-line mechanism for mods and doesn't support passive/dev mods either - only
+   * enabled mods are instead written to GameUserSettings.ini's `ActiveMods=` and Game.ini's
+   * `[ModInstaller]` block (see gameConfigWrite.ts), which is the only thing that actually
+   * makes a Mods tab change apply the next time it starts.
    */
   mods: ServerMod[]
   /** Whether the cluster options below are actually applied at launch */
@@ -70,6 +94,15 @@ export interface ServerProfile {
   noSound: boolean
   /** Passed as -DestroyTamesOverLevel=<value> when non-empty */
   maxDinoLevel: string
+  /** Join/connect password (distinct from the RCON/admin one above), passed as
+   *  ServerPassword=<value> inline in the map's ?-string. A mandatory argument for ARK:
+   *  Survival Evolved (always emitted, even blank meaning no password) - not currently
+   *  emitted for ARK: Survival Ascended. */
+  serverPassword: string
+  /** ARK: Survival Evolved only - passed as -automanagedmods when true, telling the server to
+   *  download/update its own workshop mods (from ActiveMods=, see ServerMod below) instead of
+   *  relying on them being pre-installed. Unused by ARK: Survival Ascended. */
+  autoManageMods: boolean
   /** Free-form extra launch arguments appended to the command line */
   extraArgs: string
   /**
@@ -152,11 +185,43 @@ export interface ServerMod {
   /** User-supplied label, purely cosmetic - not looked up automatically. */
   name?: string
   enabled: boolean
-  /** When true, the id is passed via -passivemods= instead of -mods=. */
+  /** ARK: Survival Ascended only - when true, the id is passed via -passivemods= instead of
+   *  -mods=. ARK: Survival Evolved has no such concept; ignored for it. */
   passive: boolean
-  /** When true, the id is passed as "<id>-dev" so ARK loads the mod's in-development build. */
+  /** ARK: Survival Ascended only - when true, the id is passed as "<id>-dev" so ARK loads the
+   *  mod's in-development build. ARK: Survival Evolved has no such concept; ignored for it. */
   dev: boolean
 }
+
+/** One CurseForge search hit for ARK: Survival Ascended's own Mods tab - Ascended's mods are
+ *  CurseForge project ids referenced directly (no file download through this app the way
+ *  Minecraft mods get, see arkMods.ts's own doc comment), so this is deliberately a much
+ *  thinner shape than MinecraftModSearchResult: nothing here is used to pick a version/loader-
+ *  compatible file, it's purely "what is this id called and what does it look like" so Add can
+ *  prefill ServerMod.id/name from a real search hit instead of the user typing a bare numeric
+ *  id in by hand. ARK: Survival Evolved isn't covered at all - its own mod ids are Steam
+ *  Workshop ids, a completely different namespace CurseForge knows nothing about. */
+export interface ArkModSearchResult {
+  id: string
+  name: string
+  summary: string
+  iconUrl?: string
+  downloads: number
+}
+
+/** Just enough to show next to a mod id already in the table - looked up by id for every
+ *  ServerMod in an ARK: Survival Ascended profile's list, same "enrich what's already there"
+ *  idea as ArkModSearchResult but for ids that didn't come from a search (typed by hand, or
+ *  added before this feature existed). Keyed by ServerMod.id in ArkModInfoMap below. */
+export interface ArkModInfo {
+  name: string
+  iconUrl?: string
+}
+
+/** CurseForge mod ids this app doesn't recognize (not every id is necessarily a real,
+ *  still-published CurseForge project) are simply absent from the map - callers fall back to
+ *  the bare id, same as before this feature existed. */
+export type ArkModInfoMap = Record<string, ArkModInfo>
 
 export type ServerRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'restarting' | 'updating' | 'error'
 
@@ -183,14 +248,28 @@ export interface AppSettings {
   /** Whether the Manager registers itself to launch automatically when you log into
    *  Windows (or the equivalent on macOS/Linux), via Electron's own login-item API. */
   launchOnStartup: boolean
+  /** When true, clicking the window's close button hides it to a system tray icon instead
+   *  of quitting the app - every managed server keeps running either way (they're tracked
+   *  independently of the window), but this also keeps the Discord bot and web dashboard
+   *  alive in the background. Quitting for real is only ever done from the tray icon's own
+   *  "Quit" menu item. Defaults to false - closing the window quits the app, as before. */
+  closeToTrayEnabled: boolean
   /** When true, the web dashboard requires a valid access token (see
    *  WebDashboardAccessToken) and switches to HTTPS with a self-signed certificate - meant
    *  for exposing it outside the LAN. When false (default), it behaves exactly as before:
    *  no auth, plain HTTP. */
   webDashboardAuthEnabled: boolean
-  /** Delay, in seconds, between two servers auto-starting at Manager launch (see
-   *  ServerProfile.startOnManagerLaunch). Only affects profiles that opt in - the first one
-   *  starts immediately, each subsequent one waits this long after the previous one. */
+  /** Minimum delay, in seconds, between any two ARK servers actually spawning their OS
+   *  process - enforced globally by serverProcess.ts's own spawn queue (reserveSpawnSlot),
+   *  not just for ServerProfile.startOnManagerLaunch's own staggering (which still paces
+   *  its own calls on top of this). Covers every path that can start several servers close
+   *  together: Manager-launch auto-start, a manual Start/Restart click, the Dashboard's bulk
+   *  Start All/Restart All, a scheduled restart, and a crash-watch/zombie-detection
+   *  auto-restart. ARK's own world-loading is heavy enough (often single-threaded) that
+   *  several spawning in the same instant can starve each other out badly enough that some
+   *  never finish loading at all - a real report showed restarting several servers manually
+   *  resulting in only 1-2 of them actually coming back up. The first spawn in a batch is
+   *  never delayed; only one requested while another is still within this window is. */
   serverAutoStartStaggerSeconds: number
   /** When true (default), a server's GameUserSettings.ini/Game.ini are set read-only while
    *  it's running (see src/main/lib/iniLock.ts) - a deterrent against editing a running
@@ -207,6 +286,74 @@ export interface AppSettings {
    *  a long-running Manager's stats file (and the read/parse cost of ever touching it) from
    *  growing indefinitely just because nothing has hit the byte budget yet. Default 24. */
   statsHistoryMaxAgeHours: number
+  /** When true (default), a running server's own console window is left visible (Windows
+   *  only - both games allocate one the moment their exe is spawned, regardless of any
+   *  launch flag). Unchecking spawns it with Node's `windowsHide` instead, since there's no
+   *  way to resize its font from here and no ARK launch flag suppresses the window itself. */
+  showServerConsoleWindow: boolean
+  /** Manager-wide display order for server groups (ServerProfile.group values) on the
+   *  Dashboard. A group name not listed here falls back to alphabetical order, appended
+   *  after every explicitly-ordered one - so a brand new group shows up without needing to
+   *  be added here first. */
+  groupOrder: string[]
+  /** Group names currently collapsed on the Dashboard. A collapsed group's servers are also
+   *  left out of the Cluster Dashboard and the Web Dashboard's own Dashboard tab, not just
+   *  visually minimized on the Manager's own Dashboard. */
+  collapsedGroups: string[]
+  /** Same as groupOrder, but for the Minecraft Dashboard's own groups (MinecraftProfile.group
+   *  values) - kept separate rather than sharing groupOrder, since an ARK group and a
+   *  Minecraft group happening to share a name shouldn't share a display order. */
+  minecraftGroupOrder: string[]
+  /** Same as collapsedGroups, but for the Minecraft Dashboard - there's no Cluster Dashboard/
+   *  Web Dashboard aggregate view for Minecraft yet, so this only affects the Minecraft
+   *  Dashboard's own display. */
+  minecraftCollapsedGroups: string[]
+  /** CurseForge Core API key, needed for the Mods tab to also search/install from CurseForge
+   *  (Modrinth needs no key at all). Get one free at https://console.curseforge.com/ - sign in
+   *  with a CurseForge/Overwolf account, "API Keys" in the left sidebar, "Generate new API
+   *  key", give it any name, agree to the terms (for non-commercial use), and the key shown
+   *  there is a plain API key - paste it here. Empty means CurseForge search is skipped
+   *  entirely (Modrinth results alone), not an error. */
+  curseforgeApiKey: string
+
+  /** Whether the Discord bot integration (src/bot/) is spawned alongside the Manager - see
+   *  src/main/lib/discordBot.ts. Off by default: it needs a real Discord bot token before
+   *  there's anything useful for it to do. */
+  discordBotEnabled: boolean
+  discordBotToken: string
+  /** Optional - syncs slash commands instantly to this one Discord server instead of
+   *  waiting for the ~1h global sync (useful while testing). */
+  discordBotDevGuildId: string
+  discordBotStatusChannelId: string
+  discordBotRefreshSeconds: number
+  discordBotStatusEmbedTitle: string
+  discordBotStatusEmbedDescription: string
+  discordBotStatusEmbedColor: string
+  discordBotArkCheckEnabled: boolean
+  discordBotMcStatusChannelId: string
+  discordBotMcRefreshSeconds: number
+  discordBotMcStatusEmbedTitle: string
+  discordBotMcStatusEmbedDescription: string
+  discordBotMcStatusEmbedColor: string
+  discordBotMcCheckEnabled: boolean
+  /** Discord user ids (decimal strings - snowflakes exceed Number's safe integer range)
+   *  allowed to use every admin command (/maintenance, /dinowipe, /saveworld, /adminchat,
+   *  /rcon, /schedule, /check, /botmaintenance, /setchannel, /addmod, /removemod). Empty
+   *  means nobody can - the bot logs a warning on startup in that case. */
+  discordBotMaintenanceWhitelistIds: string[]
+  /** Separate, smaller whitelist for /start /stop /restart /update /updaterestart only -
+   *  anyone already in discordBotMaintenanceWhitelistIds also has access automatically. */
+  discordBotManagerWhitelistIds: string[]
+  /** The bot's own CurseForge mod-update-notification module - independent of the Mods tab's
+   *  curseforgeApiKey above, but reuses that same key rather than asking for a second one. */
+  discordBotCurseforgeModuleEnabled: boolean
+  discordBotCurseforgeDefaultModIds: string[]
+  discordBotCurseforgeCheckIntervalMinutes: number
+  /** Id of the Web Dashboard API key auto-provisioned for the bot's own use (see
+   *  discordBot.ts) - only meaningful when webDashboardAuthEnabled is also on. Empty means
+   *  none has been provisioned yet (or auth is off, so none is needed). Internal bookkeeping,
+   *  never shown as an editable field in Settings. */
+  discordBotApiKeyId: string
 }
 
 /** Four tiers, highest to lowest: `globalAdmin` (everything, every server, regardless of any
@@ -389,9 +536,13 @@ export const IPC = {
   serverStatusChanged: 'server:status-changed',
   serverGetInstalledBuildId: 'server:get-installed-build-id',
   serverGetGameVersion: 'server:get-game-version',
+  serverPreviewLaunchCommand: 'server:preview-launch-command',
 
   modsSave: 'mods:save',
   modsParseText: 'mods:parse-text',
+  modsReconcileFromIni: 'mods:reconcile-from-ini',
+  arkModsSearch: 'ark-mods:search',
+  arkModsInfo: 'ark-mods:info',
 
   backupCreate: 'backup:create',
   backupList: 'backup:list',
@@ -436,8 +587,13 @@ export const IPC = {
   webDashboardApiKeysUpdate: 'web-dashboard-api-keys:update',
   webDashboardApiKeysDelete: 'web-dashboard-api-keys:delete',
 
+  discordBotStatus: 'discord-bot:status',
+  discordBotRestart: 'discord-bot:restart',
+  discordBotStop: 'discord-bot:stop',
+
   appOpenProfilesFolder: 'app:open-profiles-folder',
   appOpenDataDirFolder: 'app:open-data-dir-folder',
+  appFocusWindow: 'app:focus-window',
   serverOpenConfigFolder: 'server:open-config-folder',
   serverOpenSavedArksFolder: 'server:open-savedarks-folder',
   serverOpenSaveGamesFolder: 'server:open-savegames-folder',
@@ -463,7 +619,48 @@ export const IPC = {
 
   statsHistoryGet: 'stats-history:get',
   statsHistoryGetForGroup: 'stats-history:get-for-group',
-  statsHistoryGetForGroups: 'stats-history:get-for-groups'
+  statsHistoryGetForGroups: 'stats-history:get-for-groups',
+
+  minecraftProfilesList: 'minecraft-profiles:list',
+  minecraftProfilesSave: 'minecraft-profiles:save',
+  minecraftProfilesDelete: 'minecraft-profiles:delete',
+  minecraftProfilesImport: 'minecraft-profiles:import',
+  minecraftProfilesChanged: 'minecraft-profiles:changed',
+  minecraftDetectLaunchable: 'minecraft:detect-launchable',
+  minecraftOpenServerFolder: 'minecraft:open-server-folder',
+  minecraftServerStart: 'minecraft-server:start',
+  minecraftServerStop: 'minecraft-server:stop',
+  minecraftServerKill: 'minecraft-server:kill',
+  minecraftServerStatus: 'minecraft-server:status',
+  minecraftServerStatusChanged: 'minecraft-server:status-changed',
+  minecraftServerSendCommand: 'minecraft-server:send-command',
+  minecraftConsoleBacklog: 'minecraft-console:backlog',
+  minecraftConsoleLine: 'minecraft-console:line',
+  minecraftPropertiesGet: 'minecraft-properties:get',
+  minecraftPropertiesSave: 'minecraft-properties:save',
+
+  minecraftBackupCreate: 'minecraft-backup:create',
+  minecraftBackupList: 'minecraft-backup:list',
+  minecraftBackupRestore: 'minecraft-backup:restore',
+  minecraftBackupDelete: 'minecraft-backup:delete',
+  minecraftBackupOpenFolder: 'minecraft-backup:open-folder',
+  minecraftBackupCreated: 'minecraft-backup:created',
+  minecraftBackupScheduleStatus: 'minecraft-backup:schedule-status',
+  minecraftBackupLogGet: 'minecraft-backup:log-get',
+  minecraftBackupLogChanged: 'minecraft-backup:log-changed',
+
+  minecraftModsSearch: 'minecraft-mods:search',
+  minecraftModsInstall: 'minecraft-mods:install',
+  minecraftModsRemove: 'minecraft-mods:remove',
+  minecraftModsSetEnabled: 'minecraft-mods:set-enabled',
+  minecraftModsCheckUpdates: 'minecraft-mods:check-updates',
+  minecraftModsUpdate: 'minecraft-mods:update',
+  minecraftModsScan: 'minecraft-mods:scan',
+  minecraftModsOpenFolder: 'minecraft-mods:open-folder',
+
+  minecraftInstallListVersions: 'minecraft-install:list-versions',
+  minecraftInstallListLoaderVersions: 'minecraft-install:list-loader-versions',
+  minecraftInstallRun: 'minecraft-install:run'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -594,6 +791,10 @@ export interface Api {
      *  console window title - Windows-only, and null until the server is running and that
      *  title has actually been set (a few seconds into startup). */
     getGameVersion: (profileId: string) => Promise<string | null>
+    /** Computes the executable path and exact launch argument list for `profile` without
+     *  starting it - what startServer would actually run, for a debug/preview display. Takes
+     *  the profile directly (not a saved profileId) so it reflects unsaved edits too. */
+    previewLaunchCommand: (profile: ServerProfile) => Promise<{ executable: string; args: string[] }>
   }
   mods: {
     save: (profileId: string, mods: ServerMod[]) => Promise<ServerProfile>
@@ -602,6 +803,24 @@ export interface Api {
      *  reached from pasted text instead of a file. Throws with a readable message on
      *  malformed input rather than silently dropping bad entries. */
     parseText: (text: string) => Promise<ServerMod[]>
+    /** ARK: Survival Evolved only - reads GameUserSettings.ini's ActiveMods= and adds any mod
+     *  id found there that isn't already in the profile's mods list yet, as a new enabled
+     *  entry (never removes or disables an existing one - additive only, so a mod the
+     *  Manager already knows about but currently has disabled, which is why it's correctly
+     *  absent from ActiveMods=, is never touched). A no-op, returning the profile unchanged,
+     *  for ARK: Survival Ascended or when there's nothing new to add. */
+    reconcileFromIni: (profileId: string) => Promise<ServerProfile>
+  }
+  arkMods: {
+    /** Searches CurseForge for ARK: Survival Ascended mods by name - empty results (not an
+     *  error) when no CurseForge API key is configured, same "best effort" shape as the
+     *  Minecraft Mods tab's own search. ARK: Survival Evolved isn't supported - don't call
+     *  this for an Evolved profile. */
+    search: (query: string) => Promise<ArkModSearchResult[]>
+    /** Batch look-up, keyed by id, for every id actually present on CurseForge - used to show
+     *  a real name/icon next to mod ids already in a profile's list (typed by hand, or added
+     *  before this feature existed), not just ones added via search above. */
+    info: (modIds: string[]) => Promise<ArkModInfoMap>
   }
   backup: {
     create: (profileId: string) => Promise<BackupEntry>
@@ -629,10 +848,10 @@ export interface Api {
     getUpdateLog: (profileId: string) => Promise<string | null>
     onUpdateLogChanged: (callback: (profileId: string) => void) => () => void
     addFirewallRule: (steamCmdPath: string) => Promise<void>
-    getLatestBuildId: () => Promise<LatestBuildIdCache>
+    getLatestBuildId: (game: GameId) => Promise<LatestBuildIdCache>
   }
   maps: {
-    list: () => Promise<MapDefinition[]>
+    list: (game: GameId) => Promise<MapDefinition[]>
   }
   customMaps: {
     list: () => Promise<MapDefinition[]>
@@ -673,12 +892,26 @@ export interface Api {
     update: (id: string, updates: { label?: string; role?: WebDashboardRole }) => Promise<WebDashboardApiKeySummary[]>
     delete: (id: string) => Promise<WebDashboardApiKeySummary[]>
   }
+  discordBot: {
+    status: () => Promise<{ running: boolean; error: string | null }>
+    /** Re-applies the current settings - picks up a config change without needing to
+     *  re-save Settings, and recovers after a crash shown in the Manager Log. */
+    restart: () => Promise<{ running: boolean; error: string | null }>
+    /** Stops the bot process immediately without touching the Enabled checkbox - the next
+     *  Settings save (or Manager restart) respawns it if that checkbox is still on. */
+    stop: () => Promise<{ running: boolean; error: string | null }>
+  }
   system: {
     openProfilesFolder: () => Promise<void>
     openDataDirFolder: () => Promise<void>
     openServerConfigFolder: (profileId: string) => Promise<void>
     openServerSavedArksFolder: (profileId: string) => Promise<void>
     openServerSaveGamesFolder: (profileId: string) => Promise<void>
+    /** Explicitly re-focuses the main window - a workaround for Electron/Windows sometimes
+     *  not returning OS-level keyboard focus to the renderer after a native modal closes
+     *  (window.confirm() is one; the file/folder pickers in dialog.ts already call this on
+     *  the main-process side directly). See confirmAction() in the renderer. */
+    focusWindow: () => Promise<void>
   }
   mapManagement: {
     list: (profileId: string) => Promise<MapFolderEntry[]>
@@ -721,5 +954,116 @@ export interface Api {
       sinceMs: number | null,
       maxPoints?: number
     ) => Promise<Record<string, StatSample[]>>
+  }
+  minecraft: {
+    profiles: {
+      list: () => Promise<MinecraftProfile[]>
+      save: (profile: MinecraftProfile) => Promise<MinecraftProfile[]>
+      delete: (id: string) => Promise<MinecraftProfile[]>
+      /** Points at an existing, already-set-up Minecraft server folder and returns a
+       *  best-effort profile detected from it (see minecraftDetect.ts) - not yet saved,
+       *  the same "review before it's real" pattern as ServerProfile's own import. */
+      importFromInstall: (installDir: string) => Promise<MinecraftProfile>
+      onChanged: (callback: (profiles: MinecraftProfile[]) => void) => () => void
+    }
+    /** Re-detects the launchable jar/script (and server type guess) in installDir - used by
+     *  the Settings tab's "Re-detect" button after the user changes files on disk outside
+     *  the Manager. */
+    detectLaunchable: (installDir: string) => Promise<{
+      launchMode: MinecraftProfile['launchMode']
+      jarFileName: string
+      scriptFileName: string
+      serverType: MinecraftProfile['serverType']
+    } | null>
+    /** Opens the server's own install directory (jar/script, world, mods/plugins,
+     *  server.properties) in the OS file explorer. */
+    openServerFolder: (profileId: string) => Promise<void>
+    server: {
+      start: (profileId: string) => Promise<MinecraftServerStatus>
+      stop: (profileId: string) => Promise<MinecraftServerStatus>
+      kill: (profileId: string) => Promise<MinecraftServerStatus>
+      getStatus: (profileId: string) => Promise<MinecraftServerStatus>
+      onStatusChanged: (callback: (status: MinecraftServerStatus) => void) => () => void
+      /** Writes straight to the running process's stdin, falling back to RCON (if enabled)
+       *  when there's no live stdin - a server re-adopted from a previous Manager session
+       *  (see adoptPersistedMinecraftProcesses) has none. Never rejects, the result's
+       *  `ok`/`error` says whether it actually succeeded. */
+      sendCommand: (profileId: string, command: string) => Promise<RconResult>
+    }
+    console: {
+      getBacklog: (profileId: string) => Promise<MinecraftConsoleLine[]>
+      onLine: (callback: (profileId: string, line: MinecraftConsoleLine) => void) => () => void
+    }
+    /** The Server Settings tab's editor for server.properties itself - separate from the
+     *  `profiles` CRUD above, since these fields live in a file MinecraftProfile
+     *  deliberately doesn't duplicate (see minecraftProperties.ts). */
+    properties: {
+      get: (profileId: string) => Promise<MinecraftPropertiesData>
+      /** Merges `updates` into server.properties (existing lines' values are replaced in
+       *  place, a key with no existing line is appended) and returns the file's full,
+       *  freshly-read contents afterward. */
+      save: (profileId: string, updates: MinecraftPropertiesData) => Promise<MinecraftPropertiesData>
+    }
+    /** World backups - same shape as the top-level `backup` API, but zips the world's
+     *  dimension folders (see minecraftBackup.ts's worldDirs) instead of ARK's SavedArks. */
+    backup: {
+      create: (profileId: string) => Promise<BackupEntry>
+      list: (profileId: string) => Promise<BackupEntry[]>
+      delete: (filePath: string) => Promise<void>
+      restore: (profileId: string, filePath: string) => Promise<void>
+      openFolder: (profileId: string) => Promise<void>
+      onCreated: (callback: (profileId: string) => void) => () => void
+      getScheduleStatus: (profileId: string) => Promise<BackupScheduleStatus>
+      getLog: (profileId: string) => Promise<BackupLogEntry[]>
+      onLogChanged: (callback: (profileId: string, entry: BackupLogEntry) => void) => () => void
+    }
+    /** Mod/plugin browsing and installation (Modrinth and CurseForge - see
+     *  shared/minecraftMods.ts; CurseForge results/installs only happen once
+     *  AppSettings.curseforgeApiKey is set). `profile.installedMods` is the source of truth
+     *  for what's installed; every call here returns the updated profile so the caller can
+     *  just pass it to onProfileChange instead of re-fetching the whole profile list. */
+    mods: {
+      /** Searches Modrinth, plus CurseForge too if an API key is configured - results from
+       *  both are merged and sorted by downloads, each tagged with its own `source`.
+       *  `ecosystem` picks which of the server's own Mods/Plugins tabs this search is for -
+       *  see minecraftServerSupportsEcosystem in shared/minecraftMods.ts; rejected if this
+       *  server type doesn't actually have that ecosystem. */
+      search: (profileId: string, query: string, ecosystem: MinecraftModEcosystem) => Promise<MinecraftModSearchResult[]>
+      install: (
+        profileId: string,
+        source: MinecraftModSource,
+        projectId: string,
+        ecosystem: MinecraftModEcosystem
+      ) => Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }>
+      remove: (profileId: string, projectId: string) => Promise<MinecraftProfile>
+      setEnabled: (profileId: string, projectId: string, enabled: boolean) => Promise<MinecraftProfile>
+      checkUpdates: (profileId: string) => Promise<MinecraftModUpdateCheckResult[]>
+      update: (
+        profileId: string,
+        source: MinecraftModSource,
+        projectId: string
+      ) => Promise<{ profile: MinecraftProfile; result: MinecraftModInstallResult }>
+      /** Recognizes mods/plugins already sitting in the folder that weren't installed
+       *  through this tab - see minecraftMods.ts's scanForInstalledMods. */
+      scan: (profileId: string) => Promise<{ profile: MinecraftProfile; result: MinecraftModScanResult }>
+      /** Opens the mods/plugins folder (mods/ or plugins/, depending on server type) in the
+       *  OS file explorer. */
+      openFolder: (profileId: string) => Promise<void>
+    }
+    /** Fetches/builds the right server files for a brand-new server (vanilla/Paper/Fabric
+     *  download a prebuilt jar; Forge downloads and runs its own installer; Spigot downloads
+     *  and runs BuildTools, which compiles it locally per Spigot's own license terms) - the
+     *  "+ Add server" flow's alternative to "Import existing server" for a folder that has
+     *  nothing in it yet. Doesn't create or save a MinecraftProfile itself; the caller does
+     *  that with the returned launchMode/jarFileName/scriptFileName/minecraftVersion/
+     *  serverType, same "caller saves" pattern as profiles.importFromInstall. */
+    install: {
+      listVersions: (serverType: MinecraftInstallableType) => Promise<MinecraftVersionOption[]>
+      /** Loader/build-version options for the second selector, once a Minecraft version has
+       *  been picked in the first - empty for vanilla/Spigot (see
+       *  supportsLoaderVersionSelection in shared/minecraftInstall.ts). */
+      listLoaderVersions: (serverType: MinecraftInstallableType, minecraftVersion: string) => Promise<MinecraftVersionOption[]>
+      run: (params: MinecraftInstallParams) => Promise<MinecraftInstallResult>
+    }
   }
 }

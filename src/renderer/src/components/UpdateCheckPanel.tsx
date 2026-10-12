@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
 import type { LatestBuildIdCache } from '@shared/types'
+import { type GameId, getGameDefinition } from '@shared/games'
 
 interface UpdateCheckPanelProps {
   /** Profiles to compare against the latest known build id - every profile for the
-   *  dashboard-wide panel, or just the one for a server's Analytics tab. */
+   *  dashboard-wide panel, or just the one for a server's Analytics tab. All must belong to
+   *  the same `game`, since that's what the cached "latest" build id is scoped to. */
   profileIds: string[]
+  /** Which game's SteamCMD build id to check against - every profile in `profileIds` must
+   *  belong to this game. */
+  game: GameId
   /** When true, renders just the status line - no section wrapper, header, or explanatory
    *  paragraph - for embedding inline within another section's own group instead of as its
    *  own standalone panel. */
@@ -14,7 +19,7 @@ interface UpdateCheckPanelProps {
 /** Same visual embed as OfficialServerStatusPanel (official-status-panel/-header/-line
  *  classes), for the "New update" check - polls the cached latest SteamCMD build id and
  *  compares it against each given profile's own installed build id. */
-export default function UpdateCheckPanel({ profileIds, compact = false }: UpdateCheckPanelProps): JSX.Element {
+export default function UpdateCheckPanel({ profileIds, game, compact = false }: UpdateCheckPanelProps): JSX.Element {
   const [latest, setLatest] = useState<LatestBuildIdCache | null>(null)
   const [installedBuildIds, setInstalledBuildIds] = useState<Array<string | null>>([])
   const profileIdsKey = profileIds.join(',')
@@ -22,7 +27,7 @@ export default function UpdateCheckPanel({ profileIds, compact = false }: Update
   useEffect(() => {
     let cancelled = false
     function refresh(): void {
-      window.api.steamcmd.getLatestBuildId().then((cache) => {
+      window.api.steamcmd.getLatestBuildId(game).then((cache) => {
         if (!cancelled) setLatest(cache)
       })
     }
@@ -32,7 +37,7 @@ export default function UpdateCheckPanel({ profileIds, compact = false }: Update
       cancelled = true
       clearInterval(interval)
     }
-  }, [])
+  }, [game])
 
   useEffect(() => {
     let cancelled = false
@@ -71,8 +76,8 @@ export default function UpdateCheckPanel({ profileIds, compact = false }: Update
         <h3>New update</h3>
       </div>
       <p className="empty-state">
-        Checked against SteamCMD&apos;s public branch build id for the ARK: Survival Ascended Dedicated Server,
-        every 30 minutes.
+        Checked against SteamCMD&apos;s public branch build id for {getGameDefinition(game).displayName}&apos;s
+        Dedicated Server, every 30 minutes.
       </p>
       {statusLine}
     </section>

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildLaunchArgs } from '../src/main/lib/serverProcess'
+import path from 'node:path'
+import { platform } from 'node:process'
+import { buildLaunchArgs, getExecutablePath } from '../src/main/lib/serverProcess'
 import type { ServerProfile } from '../shared/types'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
@@ -12,6 +14,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     moddedMapId: '',
     gamePort: 7777,
     rconPort: 27020,
+    queryPort: 27015,
     serverPlatform: 'PC',
     maxPlayers: 70,
     backupDir: '',
@@ -30,7 +33,10 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     rconTribeLog: false,
     forceRespawnDinos: false,
     noSound: false,
+    game: 'ark-ascended',
     maxDinoLevel: '',
+    serverPassword: '',
+    autoManageMods: false,
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',
@@ -120,6 +126,20 @@ describe('buildLaunchArgs', () => {
   it('appends extraArgs at the end', () => {
     const args = buildLaunchArgs(makeProfile({ extraArgs: '-NoBattlEye -SomeFlag=test' }))
     expect(args).toEqual(expect.arrayContaining(['-NoBattlEye', '-SomeFlag=test']))
+  })
+
+  it('drops an extraArgs flag that exactly duplicates one already emitted natively', () => {
+    // A real report: a profile's Extra launch arguments still had -servergamelog left over
+    // from before the Manager added it natively for ARK: Survival Evolved, so it appeared on
+    // the command line twice.
+    const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', extraArgs: '-nosound -servergamelog' }))
+    expect(args.filter((a) => a === '-servergamelog')).toHaveLength(1)
+    expect(args.filter((a) => a === '-nosound')).toHaveLength(1)
+  })
+
+  it('keeps two different extraArgs flags that are not duplicates of anything', () => {
+    const args = buildLaunchArgs(makeProfile({ extraArgs: '-FlagA -FlagB' }))
+    expect(args).toEqual(expect.arrayContaining(['-FlagA', '-FlagB']))
   })
 
   it('omits every cluster flag when clusterEnabled is false, even with fields filled in', () => {
@@ -235,5 +255,164 @@ describe('buildLaunchArgs', () => {
   it('passes -MapModID= when moddedMapEnabled is true and moddedMapId is set', () => {
     const args = buildLaunchArgs(makeProfile({ moddedMapEnabled: true, moddedMapId: '123456' }))
     expect(args).toContain('-MapModID=123456')
+  })
+
+  describe('getExecutablePath', () => {
+    it('resolves the right executable name per game, on this platform', () => {
+      const ascendedPath = getExecutablePath(makeProfile({ game: 'ark-ascended', installDir: '/tmp/ark' }))
+      const evolvedPath = getExecutablePath(makeProfile({ game: 'ark-evolved', installDir: '/tmp/ark' }))
+      const ascendedExe = platform === 'win32' ? 'ArkAscendedServer.exe' : 'ArkAscendedServer'
+      const evolvedExe = platform === 'win32' ? 'ShooterGameServer.exe' : 'ShooterGameServer'
+      expect(ascendedPath).toBe(path.join('/tmp/ark', 'ShooterGame', 'Binaries', platform === 'win32' ? 'Win64' : 'Linux', ascendedExe))
+      expect(evolvedPath).toBe(path.join('/tmp/ark', 'ShooterGame', 'Binaries', platform === 'win32' ? 'Win64' : 'Linux', evolvedExe))
+      expect(ascendedPath).not.toBe(evolvedPath)
+    })
+  })
+
+  describe('ark-evolved specific behavior', () => {
+    it('adds QueryPort= to the ?-string, distinct from Port=', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', gamePort: 7777, queryPort: 27015 }))
+      expect(args[0]).toContain('Port=7777?QueryPort=27015?RCONPort=')
+    })
+
+    it('matches the exact ?-string param order and flag order of a real, working launch line', () => {
+      // A previous version that reordered these (e.g. RCONEnabled= before RCONPort=, or
+      // -servergamelog right after the map string instead of after -NoBattlEye/
+      // -ForceRespawnDinos) reproducibly caused a blocking "Plugin 'RuntimeMeshComponent'
+      // failed to load" dialog on launch - this pins the exact confirmed-working shape so a
+      // future refactor can't silently reintroduce that. -log was added after -servergamelog
+      // later (see buildLaunchArgs) - -servergamelog's own position is the one that's
+      // order-sensitive, not -log's.
+      const args = buildLaunchArgs(
+        makeProfile({
+          game: 'ark-evolved',
+          map: 'Gen2',
+          gamePort: 8004,
+          queryPort: 8102,
+          rconPort: 8202,
+          maxPlayers: 10,
+          serverPassword: 'bober',
+          disableBattlEye: true,
+          forceRespawnDinos: true,
+          rconTribeLog: true
+        }),
+        'bober'
+      )
+      expect(args[0]).toBe(
+        'Gen2?Port=8004?QueryPort=8102?RCONPort=8202?RCONEnabled=True?MaxPlayers=10' +
+          '?ServerAdminPassword=bober?ServerPassword=bober'
+      )
+      expect(args.slice(1)).toEqual([
+        '-NoBattlEye',
+        '-ForceRespawnDinos',
+        '-servergamelog',
+        '-log',
+        '-servergamelogincludetribelogs',
+        '-ServerRCONOutputTribeLogs'
+      ])
+    })
+
+    it('never omits QueryPort= for ark-ascended, which merges it into Port=', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-ascended', gamePort: 7777, queryPort: 27015 }))
+      expect(args[0]).not.toContain('QueryPort=')
+    })
+
+    it('omits ?listen, confirmed absent from a real working ark-evolved launch line', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved' }))
+      expect(args[0]).not.toMatch(/\?listen(\?|$)/)
+    })
+
+    it('still passes ?listen for ark-ascended', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-ascended' }))
+      expect(args[0]).toMatch(/\?listen(\?|$)/)
+    })
+
+    it('omits -server (ARK: Survival Ascended-only), but adds both -servergamelog and -log', () => {
+      // -log alone (without -servergamelog) is what ARK: Survival Ascended passes; ARK:
+      // Survival Evolved needs both - -servergamelog for the dated tribe-log files, -log for
+      // the engine's own ShooterGame.log the Manager's Console/version-detection actually
+      // read (a real report showed both staying empty without it).
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved' }))
+      expect(args).not.toContain('-server')
+      expect(args).toContain('-servergamelog')
+      expect(args).toContain('-log')
+    })
+
+    it('still passes -server -log for ark-ascended, without -servergamelog', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-ascended' }))
+      expect(args).toContain('-server')
+      expect(args).toContain('-log')
+      expect(args).not.toContain('-servergamelog')
+    })
+
+    it('passes MaxPlayers= inline in the ?-string instead of -WinLiveMaxPlayers=', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', maxPlayers: 10 }))
+      expect(args[0]).toContain('MaxPlayers=10')
+      expect(args.some((a) => a.startsWith('-WinLiveMaxPlayers='))).toBe(false)
+    })
+
+    it('passes ServerPassword= inline in the ?-string, a mandatory arg', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', serverPassword: 'bober' }))
+      expect(args[0]).toContain('ServerPassword=bober')
+    })
+
+    it('still emits ServerPassword= blank rather than omitting it, since it is mandatory', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', serverPassword: '' }))
+      expect(args[0]).toContain('ServerPassword=')
+    })
+
+    it('never adds ServerPassword= for ark-ascended', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-ascended', serverPassword: 'bober' }))
+      expect(args[0]).not.toContain('ServerPassword=')
+    })
+
+    it('never adds SessionName= for either game - GameUserSettings.ini covers it instead', () => {
+      const evolvedArgs = buildLaunchArgs(makeProfile({ game: 'ark-evolved' }))
+      const ascendedArgs = buildLaunchArgs(makeProfile({ game: 'ark-ascended' }))
+      expect(evolvedArgs[0]).not.toContain('SessionName=')
+      expect(ascendedArgs[0]).not.toContain('SessionName=')
+    })
+
+    it('still passes -WinLiveMaxPlayers= for ark-ascended, without MaxPlayers= inline', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-ascended', maxPlayers: 42 }))
+      expect(args).toContain('-WinLiveMaxPlayers=42')
+      expect(args[0]).not.toContain('MaxPlayers=42')
+    })
+
+    it('omits -ServerPlatform=, unconfirmed for ark-evolved', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', serverPlatform: 'ALL' }))
+      expect(args.some((a) => a.startsWith('-ServerPlatform='))).toBe(false)
+    })
+
+    it('omits -DestroyTamesOverLevel=, unconfirmed for ark-evolved, even when maxDinoLevel is set', () => {
+      const args = buildLaunchArgs(makeProfile({ game: 'ark-evolved', maxDinoLevel: '150' }))
+      expect(args.some((a) => a.startsWith('-DestroyTamesOverLevel='))).toBe(false)
+    })
+
+    it('never emits -mods=/-passivemods= for ark-evolved, confirmed to have no such mechanism at all', () => {
+      const args = buildLaunchArgs(
+        makeProfile({
+          game: 'ark-evolved',
+          mods: [
+            { id: '111', enabled: true, passive: false, dev: false },
+            { id: '222', enabled: true, passive: true, dev: true }
+          ]
+        })
+      )
+      expect(args.some((a) => a.startsWith('-mods='))).toBe(false)
+      expect(args.some((a) => a.startsWith('-passivemods='))).toBe(false)
+    })
+
+    it('passes -automanagedmods only when autoManageMods is true, ark-evolved only', () => {
+      expect(buildLaunchArgs(makeProfile({ game: 'ark-evolved', autoManageMods: false }))).not.toContain(
+        '-automanagedmods'
+      )
+      expect(buildLaunchArgs(makeProfile({ game: 'ark-evolved', autoManageMods: true }))).toContain(
+        '-automanagedmods'
+      )
+      expect(buildLaunchArgs(makeProfile({ game: 'ark-ascended', autoManageMods: true }))).not.toContain(
+        '-automanagedmods'
+      )
+    })
   })
 })

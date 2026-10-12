@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { ServerMod } from '@shared/types'
 import { resolveConfigDir, readIniFile } from './config'
+import { type GameId, getGameDefinition, listGameDefinitions } from '@shared/games'
 
 export interface DetectedProfileFields {
   suggestedName: string
@@ -9,17 +10,25 @@ export interface DetectedProfileFields {
   mods: ServerMod[]
   gamePort?: number
   rconPort?: number
+  queryPort?: number
 }
 
-function executableCandidates(installDir: string): string[] {
-  return [
-    path.join(installDir, 'ShooterGame', 'Binaries', 'Win64', 'ArkAscendedServer.exe'),
-    path.join(installDir, 'ShooterGame', 'Binaries', 'Linux', 'ArkAscendedServer')
-  ]
+function executableCandidates(installDir: string, game: GameId): string[] {
+  const def = getGameDefinition(game)
+  return [path.join(installDir, ...def.executableWin.split('/')), path.join(installDir, ...def.executableLinux.split('/'))]
 }
 
-export function isValidArkInstall(installDir: string): boolean {
-  return executableCandidates(installDir).some((candidate) => fs.existsSync(candidate))
+export function isValidArkInstall(installDir: string, game: GameId): boolean {
+  return executableCandidates(installDir, game).some((candidate) => fs.existsSync(candidate))
+}
+
+/** Tries every known game's executable candidates against `installDir` in turn, returning
+ *  the first one that matches - used by "Import existing server" so the user doesn't have
+ *  to say up front which game they're pointing it at. Returns null if none match (not a
+ *  recognized install of any supported game). */
+export function detectGameFromInstall(installDir: string): GameId | null {
+  const match = listGameDefinitions().find((def) => isValidArkInstall(installDir, def.id))
+  return match?.id ?? null
 }
 
 /** Best-effort: the map is whichever subfolder exists under SavedArks (usually just one). */
@@ -61,7 +70,8 @@ export function detectProfileFields(installDir: string): DetectedProfileFields {
     map: detectMap(installDir),
     mods,
     gamePort: parsePort(serverSettings.Port),
-    rconPort: parsePort(serverSettings.RCONPort)
+    rconPort: parsePort(serverSettings.RCONPort),
+    queryPort: parsePort(serverSettings.QueryPort)
   }
 }
 

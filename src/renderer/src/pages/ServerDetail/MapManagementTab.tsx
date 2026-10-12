@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { MapFolderEntry, ServerProfile } from '@shared/types'
+import { confirmAction } from '../../lib/confirmAction'
 
 interface MapManagementTabProps {
   profile: ServerProfile
@@ -61,7 +62,7 @@ export default function MapManagementTab({ profile }: MapManagementTabProps): JS
 
   async function handleDelete(): Promise<void> {
     if (!selected) return
-    if (!confirm(`Delete the "${selected}" map folder and everything in it?`)) return
+    if (!confirmAction(`Delete the "${selected}" map folder and everything in it?`)) return
     setError('')
     try {
       await window.api.mapManagement.delete(profile.id, selected)

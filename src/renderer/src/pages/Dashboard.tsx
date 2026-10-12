@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
-import type { MapDefinition, ServerProfile, ServerRunState } from '@shared/types'
+import type { AppSettings, MapDefinition, ServerProfile, ServerRunState } from '@shared/types'
+import { getGameDefinition, listGameDefinitions } from '@shared/games'
 import { useServerStatuses } from '../lib/useServerStatuses'
 import { createDefaultProfile } from '../lib/profile'
 import type { TabKey } from './ServerDetail'
 import OfficialServerStatusPanel from '../components/OfficialServerStatusPanel'
+import { GAME_ICONS } from '../lib/gameIcons'
+import { confirmAction } from '../lib/confirmAction'
 
 interface DashboardProps {
   profiles: ServerProfile[]
   onProfilesChange: (profiles: ServerProfile[]) => void
   onOpenProfile: (id: string, tab?: TabKey) => void
   onOpenSteamCmd: () => void
-  onOpenDataSettings: () => void
   onOpenProfileManagement: () => void
 }
 
@@ -19,27 +21,70 @@ export default function Dashboard({
   onProfilesChange,
   onOpenProfile,
   onOpenSteamCmd,
-  onOpenDataSettings,
   onOpenProfileManagement
 }: DashboardProps): JSX.Element {
   const statuses = useServerStatuses(profiles.map((p) => p.id))
   const visibleProfiles = profiles.filter((p) => !p.hidden)
   const hiddenProfiles = profiles.filter((p) => p.hidden)
   const ungroupedProfiles = visibleProfiles.filter((p) => !p.group.trim())
-  const groupNames = Array.from(new Set(visibleProfiles.filter((p) => p.group.trim()).map((p) => p.group.trim()))).sort(
-    (a, b) => a.localeCompare(b)
-  )
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
   const [dragId, setDragId] = useState<string | null>(null)
+  const [dragGroupName, setDragGroupName] = useState<string | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [installedById, setInstalledById] = useState<Record<string, boolean>>({})
   const [gameVersionById, setGameVersionById] = useState<Record<string, string | null>>({})
   const [maps, setMaps] = useState<MapDefinition[]>([])
+  const [settings, setSettings] = useState<AppSettings | null>(null)
 
   useEffect(() => {
-    window.api.maps.list().then(setMaps)
+    window.api.settings.get().then(setSettings)
+  }, [])
+
+  async function persistSettings(next: AppSettings): Promise<void> {
+    setSettings(next)
+    await window.api.settings.save(next)
+  }
+
+  // Explicitly-ordered names first (in that order), then any group not mentioned yet -
+  // a brand new group name just appears at the end, alphabetically among its peers, rather
+  // than needing to be added to the order first.
+  const groupNamesRaw = Array.from(new Set(visibleProfiles.filter((p) => p.group.trim()).map((p) => p.group.trim())))
+  const groupOrder = settings?.groupOrder ?? []
+  const groupNames = [
+    ...groupOrder.filter((name) => groupNamesRaw.includes(name)),
+    ...groupNamesRaw.filter((name) => !groupOrder.includes(name)).sort((a, b) => a.localeCompare(b))
+  ]
+  const collapsedGroups = settings?.collapsedGroups ?? []
+
+  function setGroupCollapsed(name: string, collapsed: boolean): void {
+    if (!settings) return
+    const next = new Set(settings.collapsedGroups)
+    if (collapsed) next.add(name)
+    else next.delete(name)
+    void persistSettings({ ...settings, collapsedGroups: Array.from(next) })
+  }
+
+  async function handleGroupDrop(targetName: string): Promise<void> {
+    const sourceName = dragGroupName
+    setDragGroupName(null)
+    if (!settings || !sourceName || sourceName === targetName) return
+    const reordered = groupNames.slice()
+    const fromIndex = reordered.indexOf(sourceName)
+    const toIndex = reordered.indexOf(targetName)
+    if (fromIndex === -1 || toIndex === -1) return
+    reordered.splice(toIndex, 0, reordered.splice(fromIndex, 1)[0])
+    await persistSettings({ ...settings, groupOrder: reordered })
+  }
+
+  useEffect(() => {
+    // Merged across every known game, not just the profiles currently on this dashboard - map
+    // ids don't collide between games (ARK: Survival Ascended's carry a _WP suffix ARK:
+    // Survival Evolved's don't), so one combined lookup covers every card correctly.
+    void Promise.all(listGameDefinitions().map((g) => window.api.maps.list(g.id))).then((lists) =>
+      setMaps(lists.flat())
+    )
   }, [])
 
   function mapDisplayName(mapId: string): string {
@@ -121,7 +166,7 @@ export default function Dashboard({
   }
 
   async function handleDelete(id: string): Promise<void> {
-    if (!confirm('Delete this server profile? This does not delete any files on disk.')) return
+    if (!confirmAction('Delete this server profile? This does not delete any files on disk.')) return
     const updated = await window.api.profiles.delete(id)
     onProfilesChange(updated)
   }
@@ -145,7 +190,7 @@ export default function Dashboard({
   }
 
   async function handleKill(profile: ServerProfile): Promise<void> {
-    if (!confirm(`Force-kill "${profile.name}" without saving? Progress since the last save will be lost.`)) return
+    if (!confirmAction(`Force-kill "${profile.name}" without saving? Progress since the last save will be lost.`)) return
     await runAction(profile, () => window.api.server.kill(profile.id))
   }
 
@@ -219,6 +264,12 @@ export default function Dashboard({
           >
             ⠿
           </span>
+          <img
+            src={GAME_ICONS[getGameDefinition(profile.game).iconFileName]}
+            alt=""
+            title={getGameDefinition(profile.game).displayName}
+            className="server-card-game-icon"
+          />
           <h2>{profile.name}</h2>
           <span className={`badge badge-${state}`}>{state}</span>
         </div>
@@ -340,7 +391,6 @@ export default function Dashboard({
         <h1>Bober Server Manager</h1>
         <div className="dashboard-header-actions">
           <button onClick={onOpenSteamCmd}>SteamCMD</button>
-          <button onClick={onOpenDataSettings}>Settings</button>
           <button onClick={onOpenProfileManagement}>Profile Management</button>
           <button onClick={() => void handleImport()} disabled={importing}>
             {importing ? 'Scanning...' : 'Import existing server'}
@@ -396,8 +446,30 @@ export default function Dashboard({
           <div className="server-grid">{ungroupedProfiles.map(renderCard)}</div>
 
           {groupNames.map((groupName) => (
-            <details className="server-group" key={groupName} open>
-              <summary>{groupName}</summary>
+            <details
+              className={`server-group${dragGroupName === groupName ? ' dragging' : ''}`}
+              key={groupName}
+              open={!collapsedGroups.includes(groupName)}
+              onToggle={(e) => setGroupCollapsed(groupName, !(e.currentTarget as HTMLDetailsElement).open)}
+            >
+              <summary
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => void handleGroupDrop(groupName)}
+              >
+                <span
+                  className="drag-handle"
+                  draggable
+                  onDragStart={(e) => {
+                    e.stopPropagation()
+                    setDragGroupName(groupName)
+                  }}
+                  onDragEnd={() => setDragGroupName(null)}
+                  title="Drag to reorder groups"
+                >
+                  ⠿
+                </span>
+                {groupName}
+              </summary>
               <div className="server-grid">
                 {visibleProfiles.filter((p) => p.group.trim() === groupName).map(renderCard)}
               </div>

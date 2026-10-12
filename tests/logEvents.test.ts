@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from 'vitest'
+import { describe, expect, it, afterEach, vi } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -7,6 +7,7 @@ import {
   parseLogLine,
   parseLogChunk,
   readLogBacklog,
+  readFileTail,
   PLAYER_NAME_OPEN,
   PLAYER_NAME_CLOSE
 } from '../src/main/lib/logEvents'
@@ -51,6 +52,39 @@ describe('parseLogLine', () => {
       text: `${hl('LeRaptorSauvage')} left the server`,
       ts: '21:25:35'
     })
+  })
+
+  it('parses an ARK: Survival Evolved join line (no [UniqueNetId:...] bracket, Steam ID + TribeID in parens instead)', () => {
+    const line = '[2026.09.28-15.36.54:263][595]LeRaptorSauvage joined this ARK! (76561198295665547) (TribeID: 1832986073)'
+    expect(parseLogLine(line, createLogEventCaches())).toEqual({
+      label: 'JOIN',
+      cls: 'join',
+      text: `${hl('LeRaptorSauvage')} joined the server (ID: 76561198295665547)`,
+      ts: '15:36:54'
+    })
+  })
+
+  it('parses an ARK: Survival Evolved join line with no tribe yet (TribeID part absent)', () => {
+    const line = '[2026.09.28-15.36.54:263][595]LeRaptorSauvage joined this ARK! (76561198295665547)'
+    expect(parseLogLine(line, createLogEventCaches())?.label).toBe('JOIN')
+  })
+
+  it('parses an ARK: Survival Evolved leave line the same way', () => {
+    const line = '[2026.09.28-15.41.06:527][ 64]LeRaptorSauvage left this ARK! (76561198295665547) (TribeID: 1832986073)'
+    expect(parseLogLine(line, createLogEventCaches())).toEqual({
+      label: 'LEFT',
+      cls: 'leave',
+      text: `${hl('LeRaptorSauvage')} left the server`,
+      ts: '15:41:06'
+    })
+  })
+
+  it('drops the complementary bare "<Player> joined/left this ARK!" line ARK: Survival Evolved also writes, to avoid a duplicate', () => {
+    // The same real log carries this line (inner-timestamped, no Steam ID) right alongside
+    // the one above for the same event - only the Steam-ID-bearing one should produce an
+    // event, the same "avoid the duplicate" pattern as "Frozen by ID" below.
+    const line = '[2026.09.28-15.36.54:263][595]2026.09.28_15.36.54: LeRaptorSauvage joined this ARK!'
+    expect(parseLogLine(line, createLogEventCaches())).toBeNull()
   })
 
   it('parses in-game chat', () => {
@@ -151,6 +185,19 @@ describe('parseLogLine', () => {
       text: 'LeRaptorSauvage was killed by a Rex!',
       ts: '21:31:00'
     })
+  })
+
+  it('parses a real ARK: Survival Evolved tribe-log kill line (RichColor-wrapped, tribe/day prefix)', () => {
+    const line =
+      '[2026.09.28-15.38.50:567][ 63]2026.09.28_15.38.50: Tribe Wax, ID 1832986073: Day 5854, 03:53:54: ' +
+      '<RichColor Color="1, 0, 0, 1">Your M GA0 - Lvl 269 (Deinonychus) was killed by LeGigaRaptor - Lvl 205 (Wax)!</>)'
+    expect(parseLogLine(line, createLogEventCaches())?.label).toBe('KILL')
+  })
+
+  it('parses the plain global-log echo of the same ARK: Survival Evolved kill, with the killer Steam ID', () => {
+    const line =
+      '[2026.09.28-15.41.06:513][ 63]2026.09.28_15.41.06: M GA0 - Lvl 269 (Deinonychus) () was killed by LeGigaRaptor - Lvl 205 (Wax)! [KillerSID: 335390772]'
+    expect(parseLogLine(line, createLogEventCaches())?.label).toBe('KILL')
   })
 
   it('parses save start/complete lines', () => {
@@ -260,5 +307,44 @@ describe('readLogBacklog', () => {
       '[2026.07.27-21.25.23:191][991]2026.07.27_21.25.23: LeRaptorSauvage [UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] joined this ARK!'
     )
     expect(readLogBacklog(testDir)).toHaveLength(1)
+  })
+
+  it('returns an empty backlog instead of throwing when the disk read itself fails', () => {
+    // readFileTail (used by readLogBacklog, and reused by clusterLogArchive.ts for its own
+    // archive file) is called from the desktop Console tab, the Web Dashboard's own console,
+    // and the Cluster Data group console - a real report on Windows showed a disk-level read
+    // failure crashing an IPC/HTTP handler that read through here.
+    fs.mkdirSync(logDir, { recursive: true })
+    fs.writeFileSync(logPath, 'some content')
+    const spy = vi.spyOn(fs, 'statSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(readLogBacklog(testDir)).toEqual([])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+})
+
+describe('readFileTail', () => {
+  const testDir = path.join(os.tmpdir(), `read-file-tail-test-${process.pid}`)
+  const filePath = path.join(testDir, 'some.log')
+
+  afterEach(() => {
+    fs.rmSync(testDir, { recursive: true, force: true })
+  })
+
+  it('never throws when the disk read itself fails', () => {
+    fs.mkdirSync(testDir, { recursive: true })
+    fs.writeFileSync(filePath, 'some content')
+    const spy = vi.spyOn(fs, 'openSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(readFileTail(filePath, 1000)).toBe('')
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

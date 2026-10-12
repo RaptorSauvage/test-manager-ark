@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ServerProfile } from '@shared/types'
+import type { MinecraftProfile } from '@shared/minecraft'
 import Dashboard from './pages/Dashboard'
 import ClusterDataView from './pages/ClusterDataView'
 import GroupConsoleView from './pages/GroupConsoleView'
@@ -8,10 +9,43 @@ import ServerDetail, { type TabKey } from './pages/ServerDetail'
 import SteamCmdView from './pages/SteamCmdView'
 import DataSettingsView from './pages/DataSettingsView'
 import ProfileManagementView from './pages/ProfileManagementView'
+import MinecraftDashboard from './pages/MinecraftDashboard'
+import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftServerDetail'
+import { GAME_ICONS } from './lib/gameIcons'
+import minecraftIcon from './assets/games/minecraft.png'
 
 type MainPage = 'dashboard' | 'clusterData' | 'managerLog'
+type GameMode = 'ark' | 'minecraft'
+
+/** The ARK/Minecraft switch - its own small group at the top of the sidebar, visually
+ *  separate (a divider below it) from whatever page nav follows, since it toggles the
+ *  entire app's mode rather than navigating within it. */
+function GameSwitch({ mode, onChange }: { mode: GameMode; onChange: (mode: GameMode) => void }): JSX.Element {
+  return (
+    <div className="app-sidebar-game-switch">
+      <button
+        type="button"
+        className={mode === 'ark' ? 'active' : ''}
+        onClick={() => onChange('ark')}
+        title="ARK: Survival Evolved / Ascended"
+      >
+        <img src={GAME_ICONS['ark-evolved.png']} alt="ARK" />
+      </button>
+      <button
+        type="button"
+        className={mode === 'minecraft' ? 'active' : ''}
+        onClick={() => onChange('minecraft')}
+        title="Minecraft"
+      >
+        <img src={minecraftIcon} alt="Minecraft" />
+      </button>
+    </div>
+  )
+}
 
 export default function App(): JSX.Element {
+  const [gameMode, setGameMode] = useState<GameMode>('ark')
+
   const [profiles, setProfiles] = useState<ServerProfile[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [initialTab, setInitialTab] = useState<TabKey | undefined>(undefined)
@@ -24,10 +58,31 @@ export default function App(): JSX.Element {
   )
   const [loaded, setLoaded] = useState(false)
 
+  const [minecraftProfiles, setMinecraftProfiles] = useState<MinecraftProfile[]>([])
+  const [minecraftSelectedId, setMinecraftSelectedId] = useState<string | null>(null)
+  const [minecraftInitialTab, setMinecraftInitialTab] = useState<MinecraftTabKey | undefined>(undefined)
+  const [minecraftLoaded, setMinecraftLoaded] = useState(false)
+
   useEffect(() => {
     window.api.profiles.list().then((list) => {
       setProfiles(list)
       setLoaded(true)
+    })
+  }, [])
+
+  useEffect(() => {
+    window.api.minecraft.profiles.list().then((list) => {
+      setMinecraftProfiles(list)
+      setMinecraftLoaded(true)
+    })
+  }, [])
+
+  // Same reasoning as the ARK profiles.onChanged effect below - keeps this window's
+  // Minecraft profile list live if it's ever changed from outside it.
+  useEffect(() => {
+    return window.api.minecraft.profiles.onChanged((updated) => {
+      setMinecraftProfiles(updated)
+      setMinecraftSelectedId((prev) => (prev && !updated.some((p) => p.id === prev) ? null : prev))
     })
   }, [])
 
@@ -44,11 +99,12 @@ export default function App(): JSX.Element {
     })
   }, [])
 
-  if (!loaded) {
+  if (!loaded || !minecraftLoaded) {
     return <div className="loading">Loading...</div>
   }
 
   const selected = profiles.find((p) => p.id === selectedId) ?? null
+  const minecraftSelected = minecraftProfiles.find((p) => p.id === minecraftSelectedId) ?? null
 
   function handleProfilesChange(updated: ServerProfile[]): void {
     setProfiles(updated)
@@ -70,6 +126,25 @@ export default function App(): JSX.Element {
     setGroupConsoleTarget({ groupName, profileIds: groupProfiles.map((p) => p.id) })
   }
 
+  function handleMinecraftProfilesChange(updated: MinecraftProfile[]): void {
+    setMinecraftProfiles(updated)
+    if (minecraftSelectedId && !updated.find((p) => p.id === minecraftSelectedId)) {
+      setMinecraftSelectedId(null)
+    }
+  }
+
+  function handleMinecraftProfileChange(updated: MinecraftProfile): void {
+    setMinecraftProfiles((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+  }
+
+  function handleOpenMinecraftProfile(id: string, tab?: MinecraftTabKey): void {
+    setMinecraftSelectedId(id)
+    setMinecraftInitialTab(tab)
+  }
+
+  // Checked before the ARK/Minecraft split below - these are top-level screens reachable
+  // from either game mode (most importantly Settings, which used to live only in the ARK
+  // Dashboard's own header and so was unreachable while in Minecraft mode entirely).
   if (showSteamCmd) {
     return <SteamCmdView onBack={() => setShowSteamCmd(false)} />
   }
@@ -85,6 +160,55 @@ export default function App(): JSX.Element {
         onProfilesChange={handleProfilesChange}
         onBack={() => setShowProfileManagement(false)}
       />
+    )
+  }
+
+  if (gameMode === 'minecraft') {
+    if (minecraftSelected) {
+      return (
+        <MinecraftServerDetail
+          profile={minecraftSelected}
+          initialTab={minecraftInitialTab}
+          onBack={() => setMinecraftSelectedId(null)}
+          onProfileChange={handleMinecraftProfileChange}
+        />
+      )
+    }
+
+    return (
+      <div className="app-shell">
+        <nav className="app-sidebar">
+          <GameSwitch mode={gameMode} onChange={setGameMode} />
+          <button
+            type="button"
+            className={mainPage !== 'managerLog' ? 'active' : ''}
+            onClick={() => setMainPage('dashboard')}
+          >
+            Minecraft Servers
+          </button>
+          <button
+            type="button"
+            className={`app-sidebar-log${mainPage === 'managerLog' ? ' active' : ''}`}
+            onClick={() => setMainPage('managerLog')}
+          >
+            Log
+          </button>
+          <button type="button" onClick={() => setShowDataSettings(true)}>
+            Settings
+          </button>
+        </nav>
+        <div className="app-content">
+          {mainPage === 'managerLog' ? (
+            <ManagerLogView />
+          ) : (
+            <MinecraftDashboard
+              profiles={minecraftProfiles}
+              onProfilesChange={handleMinecraftProfilesChange}
+              onOpenProfile={handleOpenMinecraftProfile}
+            />
+          )}
+        </div>
+      </div>
     )
   }
 
@@ -114,6 +238,7 @@ export default function App(): JSX.Element {
   return (
     <div className="app-shell">
       <nav className="app-sidebar">
+        <GameSwitch mode={gameMode} onChange={setGameMode} />
         <button
           type="button"
           className={mainPage === 'dashboard' ? 'active' : ''}
@@ -130,10 +255,13 @@ export default function App(): JSX.Element {
         </button>
         <button
           type="button"
-          className={mainPage === 'managerLog' ? 'active' : ''}
+          className={`app-sidebar-log${mainPage === 'managerLog' ? ' active' : ''}`}
           onClick={() => setMainPage('managerLog')}
         >
           Log
+        </button>
+        <button type="button" onClick={() => setShowDataSettings(true)}>
+          Settings
         </button>
       </nav>
       <div className="app-content">
@@ -147,7 +275,6 @@ export default function App(): JSX.Element {
             onProfilesChange={handleProfilesChange}
             onOpenProfile={handleOpenProfile}
             onOpenSteamCmd={() => setShowSteamCmd(true)}
-            onOpenDataSettings={() => setShowDataSettings(true)}
             onOpenProfileManagement={() => setShowProfileManagement(true)}
           />
         )}

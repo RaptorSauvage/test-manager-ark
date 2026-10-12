@@ -1375,6 +1375,28 @@ async function findProfileIdByName(name) {
 }
 ```
 
+- **Manager-wide: worked around a field that silently stops accepting keystrokes after a
+  confirm dialog, not disabled-looking, just unresponsive.** Reported as intermittent and
+  not tied to any one field - "I can type into it once, then never again, all over the
+  app." The lead: `window.confirm()` in Electron isn't an in-page dialog, it's a real native
+  OS one, and Electron/Windows sometimes fails to hand OS-level keyboard focus back to the
+  main window once it closes - the window looks completely normal afterward (nothing
+  disabled), but no text field anywhere accepts keystrokes until it's explicitly refocused
+  (e.g. alt-tabbing away and back). Every `confirm(...)` call in the app (delete/force-kill
+  prompts - Dashboard, Minecraft Dashboard, Backups, Player Backups, Map Management, access
+  tokens, API keys) now goes through a new `confirmAction()` helper
+  (`src/renderer/src/lib/confirmAction.ts`) that calls a new `system:focus-window` IPC
+  handler (`ipc/system.ts`) right after, explicitly re-focusing the main window. The
+  existing file/folder pickers (`dialog.ts`) - also real native dialogs - got the same
+  `mainWindow.focus()` call added directly on the main-process side. This is the most
+  likely cause given the symptoms (unresponsive but not disabled, happens after a
+  destructive-action prompt, affects arbitrary fields afterward rather than one specific
+  one) and the fix is safe either way (an explicit refocus is a no-op if focus was never
+  actually lost) - but it's a strong lead based on the reported symptoms, not something
+  confirmed by reproducing it directly, since this environment has no display to test
+  Electron's actual window-focus behavior in. Please confirm whether this actually resolves
+  it after updating.
+
 ## Notes / limitations
 
 - Tested with `npm run typecheck`, `npm run build`, and `npm test` in this environment,
@@ -1409,3 +1431,2726 @@ async function findProfileIdByName(name) {
   large) `app_info_print` dump right before the section this reads. Fixed by switching to
   `close` (which Node guarantees fires only once all stdio data has arrived), matching the
   same fix already applied to the real update/download path in `steamcmd.ts`.
+- **Multi-game support**, being built incrementally on the `multi-game-support` branch.
+  Every server profile carries a `game` field (`shared/games.ts`'s registry) - `'ark-ascended'`
+  for every profile saved before this existed (backfilled automatically, and persisted to
+  disk the first time any profile list is read after updating - `store.ts`'s
+  `migrateProfilesToDiskOnce`, same one-time-flag pattern as the role migration below - so
+  `config.json` reflects it after simply opening the app once, no manual edit needed).
+  **ARK: Survival Evolved is now a second, real, launchable game** alongside ARK: Survival
+  Ascended (Palworld remains planned, listed for visibility only in Settings' **Games**
+  section but not yet creatable; Minecraft is real too now, but as its own separate
+  top-level menu rather than a third entry in this picker - see **Minecraft support**
+  below for why):
+  - The Settings tab's **Server** section has a **Game** picker; switching it clears the Map
+    field (the two games' map ids don't match, e.g. `TheIsland_WP` vs `TheIsland`) and
+    refetches that game's own map list.
+  - "Import existing server" auto-detects which game an install directory belongs to from
+    its executable (`ArkAscendedServer.exe`/`ShooterGameServer.exe` on Windows, no extension
+    on Linux) - no need to say up front which one it is.
+  - ARK: Survival Evolved's dedicated server installs/updates via SteamCMD app id `376030`
+    (ARK: Survival Ascended's `2430930`) into its own `appmanifest_376030.acf`, so the two
+    can coexist. Its map list defaults to the classic un-suffixed names (`TheIsland`,
+    `TheCenter`, `ScorchedEarth_P`, `Ragnarok`, `Aberration_P`, `Extinction`, `Valguero_P`,
+    `CrystalIsles`, `Genesis`, `Gen2`, `LostIsland`, `Fjordur`) and is stored separately
+    (`maps-ark-evolved.json`, next to the existing `maps.json` which stays ARK: Survival
+    Ascended's and untouched).
+  - ARK: Survival Evolved needs a `QueryPort` distinct from the game port (ARK: Survival
+    Ascended merged the two) - the Settings tab shows a **Query port** field only for a game
+    that needs it (`GameDefinition.usesQueryPort`).
+  - ARK: Survival Evolved's launch line differs from ARK: Survival Ascended's in a few more
+    ways, confirmed against a real, working `ShooterGameServer.exe` command line (not just
+    docs): it omits `?listen` and `-server -log` entirely, adds `-servergamelog` instead (the
+    flag that actually makes it write `ShooterGame.log`, which `startServer`'s
+    startup-complete-marker watch depends on), and passes `MaxPlayers=` inline in the
+    `?`-string rather than `-WinLiveMaxPlayers=` (an ARK: Survival Ascended/crossplay-only
+    flag). ARK: Survival Ascended's launch line is unchanged.
+  - A new **Server Password** profile field (the join/connect password, distinct from the RCON
+    admin password) is shown in the Settings tab and always passed as `ServerPassword=` inline
+    in the `?`-string for ARK: Survival Evolved - a mandatory argument there per a real working
+    command line, so it's always emitted (even blank, which just means no join password). Not
+    emitted, and the field stays hidden, for ARK: Survival Ascended. A profile migrated from
+    before this field existed backfills it to blank.
+    - A **Session Name** field/`SessionName=` argument was added alongside this at first, then
+      removed again: `GameUserSettings.ini`'s `SessionSettings.SessionName` already covers the
+      in-game display name for both games, so the launch-arg duplicate for ARK: Survival
+      Evolved was unnecessary. `migrateProfile` drops a stray `sessionName` from any profile
+      that still has one on disk from that brief window.
+  - ARK: Survival Evolved's launch line's exact **argument order** matters, confirmed the hard
+    way: an earlier version reused ARK: Survival Ascended's ordering (`RCONEnabled=` right
+    after `QueryPort=`, `-servergamelog` right after the map string) and that reproducibly
+    caused a blocking `Plugin 'RuntimeMeshComponent' failed to load` dialog on launch - since
+    the Manager starts the process detached with no visible window, nothing was there to
+    dismiss it and the server hung forever. `buildLaunchArgs` now builds ARK: Survival
+    Evolved's `?`-string (`Port=`, `QueryPort=`, `RCONPort=`, `RCONEnabled=`, `MaxPlayers=`,
+    `ServerAdminPassword=`, `ServerPassword=` - `SessionName=` was here too at first, since
+    removed, see above) and flag order (`-NoBattlEye`,
+    `-ForceRespawnDinos`, `-servergamelog`, `-servergamelogincludetribelogs`,
+    `-ServerRCONOutputTribeLogs`) to match a real, confirmed-working command line exactly,
+    pinned by a dedicated test. Why order affects a native plugin load isn't obvious, but the
+    fix is empirically confirmed. ARK: Survival Ascended's order is unchanged.
+  - A handful of ARK: Survival Ascended launch flags have **unconfirmed** ARK: Survival
+    Evolved support and are simply never emitted for it, rather than guessed at: crossplay
+    (`-ServerPlatform=` - the Settings tab hides that field for ARK: Survival Evolved too),
+    `-DestroyTamesOverLevel=` (Max Dino Level, also hidden), and passive/dev mods
+    (`-passivemods=`/the `-dev` suffix - a passive-flagged mod on an ARK: Survival Evolved
+    profile loads as a normal active mod instead of being silently dropped). These were
+    confirmed against public documentation (Steam community discussions, LinuxGSM's ARK:SE
+    docs, community wikis - the ARK wiki itself was unreachable from the environment this
+    was built in), not a real running ARK: Survival Evolved install - worth double-checking
+    against one before relying on it for a production server.
+  - The "New update" check (SteamCMD `app_info_print` polling) and every server card's game
+    icon (desktop Dashboard grid and the Web Dashboard's own cards, served from a new
+    `GET /game-icons/<fileName>` route with the same ETag/no-cache pattern as `/favicon.png`)
+    are both correctly scoped per game now instead of assuming ARK: Survival Ascended.
+  - The Settings tab has a new **Debug** section showing the exact executable path and launch
+    argument list `Start` would run right now, including unsaved edits above (a new
+    `server:preview-launch-command` IPC call runs `getExecutablePath`/`buildLaunchArgs` against
+    the live form state, debounced 300ms) - a **Copy** button copies the full command line.
+    Added directly off the back of the `RuntimeMeshComponent` argument-order issue above, so a
+    similarly obscure launch failure can be diagnosed by comparing this against a known-working
+    command line instead of guessing blind.
+  - `buildLaunchArgs` now drops an exact-duplicate flag rather than emitting it twice, found via
+    that same Debug box on a real profile whose **Extra launch arguments** field still had
+    `-servergamelog`/`-nosound` typed in manually from before the Manager started adding them
+    natively for ARK: Survival Evolved - the leftover text and the native flag were both firing,
+    putting `-servergamelog` on the command line twice. Only exact duplicates are dropped (first
+    occurrence kept), so this is a no-op for a profile whose `extraArgs` doesn't overlap with
+    anything the Manager already emits. It doesn't fix a *missing* `ServerAdminPassword=` on the
+    command line, though - that's read straight from `GameUserSettings.ini` (`readAdminPassword`,
+    same for both games, by design - see `config.ts`), so a server whose ini doesn't have one set
+    yet (e.g. a first launch of a fresh install, before the ini has even been created) launches
+    without it. `rcon.ts` already surfaces that case with a clear
+    "No ServerAdminPassword set in this server's GameUserSettings.ini" error when a
+    Manager-driven RCON command (Stop/Restart/etc.) is attempted against it.
+  - `startServer` now spawns with `cwd` set to the executable's own directory (`Win64`/`Linux`)
+    rather than the install root three folders up. Every community-standard ARK launch script
+    `cd`s into that folder before running the exe (a manually confirmed working launch was run
+    from inside its own `Win64` folder, cmd's prompt showing as much), so this keeps the
+    Manager's spawn matching that exactly instead of leaving the working directory as one more
+    unverified difference from a known-working reference. Applies to both games.
+  - **ARK: Survival Evolved now launches through a temporary `.bat` file, run via
+    `cmd.exe /d /c <path>`, instead of a direct `spawn()` of the exe** - every established ARK:
+    Survival Evolved server manager launches this way, per further research into how they do
+    it. The `.bat` (regenerated fresh on every start, at a stable per-profile path under the OS
+    temp dir - `writeLaunchBatchFile` in `serverProcess.ts`) contains just a `cd /d` into the
+    executable's own directory followed by the exact, unquoted command line, matching a
+    confirmed-working launch byte-for-byte - this is what a person typing the command directly
+    at a `cmd` prompt actually gets, and sidesteps needing Node's own Windows argument quoting
+    (which wraps a space-containing argument like `SessionName=<value with spaces>` in double
+    quotes - correct for a well-behaved argv parser, but plausibly mishandled by ARK: Survival
+    Evolved's much older, less rigorous command-line parsing) to line up with what it expects.
+    ARK: Survival Ascended is unaffected - still a direct `spawn()`, still with
+    `windowsVerbatimArguments: true` (a harmless no-op there, since its arguments never contain
+    a bare space) kept for parity.
+    - The tricky part: this makes `cmd.exe`, not `ShooterGameServer.exe`, the process Node
+      actually spawned - `child.pid` is cmd.exe's own pid, which would misreport CPU/RAM as
+      cmd.exe's near-zero usage and, if killed directly, could orphan the real game process
+      instead of stopping it (Windows doesn't kill a process's children when the process itself
+      is killed). `watchForBatchPidHandoff` polls (every 2s, the same `findListeningPid`
+      netstat-based technique `handleUnexpectedExit`'s hand-off already used) for whichever
+      process actually holds the RCON port, and once found, re-points this profile's tracked
+      pid at it and nulls out the stored process handle - the exact same re-attach shape
+      `handleUnexpectedExit` uses for its own hand-off case - so `killServer`/the force-kill
+      fallback end up targeting the real pid directly instead of the cmd.exe wrapper. Until that
+      first poll succeeds, CPU/RAM monitoring is simply unavailable (`pidTracked` stays false)
+      rather than showing cmd.exe's misleading numbers. `child.on('exit')` still correctly
+      signals a real stop either way, since `cmd /c` waits for its child before exiting itself.
+    - **Confirmed working end-to-end against a real Windows ARK: Survival Evolved install**:
+      launches, is connectable in-game, and the pid hand-off below eventually completes so
+      CPU/RAM monitoring comes online.
+    - `watchForBatchPidHandoff` logs its progress to the **Manager Log**, under an
+      `ARK: Survival Evolved pid handoff` task: the wrapper pid it started from, what
+      `findListeningPid` returned on each of its first 10 attempts (~20s - capped so a
+      persistently-failing hand-off can't flood the log for as long as the server stays up),
+      and the real pid once found. A real ARK: Survival Evolved world can take well past 20s
+      to open its RCON port (30-90s+ isn't unusual) - the hand-off itself never gives up
+      (keeps retrying every 2s indefinitely), and past that initial 20s window the log gets a
+      periodic reminder every ~30s that it's still looking, rather than either going silent
+      (which looked exactly like it had given up, in a real report where it just needed more
+      time) or framing anything as a final failure (it never is one).
+  - The game-version display (Analytics tab, read from `ShooterGame.log`'s `ARK Version:
+    X.Y` line) needed no ARK: Survival Evolved-specific work at all - confirmed against a
+    real ARK: Survival Evolved log line (`[2026.09.28-13.19.58:026][  0]ARK Version:
+    358.24`), the exact same regex already matched it.
+  - A new **Auto Manage Mod** checkbox (Settings tab, Extra Settings, right before Dashboard
+    group - ARK: Survival Evolved only) passes `-automanagedmods`, telling the server to
+    download/update its own workshop mods itself instead of relying on them being
+    pre-installed.
+  - **ARK: Survival Evolved has no command-line mechanism for mods at all - confirmed, not
+    just unconfirmed support as before.** It has neither passive mods nor a `-dev` suffix
+    either, so the desktop Mods tab hides both columns for it. Its mods are instead written,
+    only when a mods edit is actually the thing being saved (the dedicated Mods tab save, and
+    the Web Dashboard's Mods tab, which posts `{mods: ...}` to the same profile-save route),
+    to:
+    - `GameUserSettings.ini`'s `[ServerSettings]` → `ActiveMods=<id>,<id>,...` (comma-separated,
+      enabled mods only, in order)
+    - `Game.ini`'s `[ModInstaller]` → one `ModIDS=<id>` line per enabled mod
+    - `gameConfigWrite.ts`'s `syncAseModsToIni` does this surgically - editing only the lines
+      that belong to those exact keys, not parsing+re-stringifying the whole file with the
+      `ini` package (which would reorder/reformat every other section, comment and key the
+      user has in a file they hand-edit themselves) - and creates the
+      `Config/WindowsServer` folder tree if it doesn't exist yet (a profile whose install has
+      never been started once). This is the first thing in the app that writes to either
+      file - previously strictly read-only, since ARK: Survival Ascended's mods are
+      launch-flag only and never needed it.
+    - **Fixed a clobbering bug found via live testing before it ever shipped**: `syncAseModsToIni`
+      was originally wired into every generic profile save (`profiles:save`, profile import, the
+      Web Dashboard's own generic profile-save route) rather than just the dedicated mods-save
+      paths. That meant saving any unrelated field - even the very first save of a brand-new
+      profile - rewrote `ActiveMods=`/`[ModInstaller]` from `profile.mods`, silently overwriting
+      real pre-existing ini content. Fixed by removing the call from every generic save path and
+      keeping it only where a mods edit is actually the save in question; the Web Dashboard's
+      shared `/api/servers/:id/profile` route now only syncs when the posted body actually has a
+      `mods` key.
+  - The desktop Mods tab now also **reads mods back out of the ini**: opening it for an ARK:
+    Survival Evolved profile calls `reconcileAseModsFromIni`, which picks up any mod id already
+    present in `ActiveMods=` that the Manager doesn't know about yet (added by hand-editing the
+    ini, or from before the profile was ever opened here) and adds it as a new enabled entry.
+    Additive only - it never removes or disables an existing entry, since a disabled mod is
+    *correctly* absent from `ActiveMods=`, not a state to "fix". Wired via a new
+    `mods:reconcile-from-ini` IPC call (`ipc/mods.ts`); not yet exposed on the Web Dashboard's
+    Mods tab.
+  - **Not yet done**: the Web Dashboard's own Settings tab (editing a profile from a
+    browser) doesn't expose the Game/Query port fields, the new Server Password/Auto Manage
+    Mod fields, or a game-aware map list the way the desktop Settings tab now does - it still
+    assumes ARK: Survival Ascended for those. Its own Mods tab also still shows the
+    passive/dev toggles and the `-mods=`/`-passivemods=` wording for an ARK: Survival Evolved
+    profile (the desktop one now hides/rewords all of that) - inert rather than incorrect,
+    since nothing reads them for it, but not hidden yet - and it has no equivalent of the
+    reconcile-from-ini pickup either.
+
+- **Minecraft support (MVP)**, built as a deliberately separate system from the ARK side of
+  the app rather than a third `GameDefinition` entry - `MinecraftProfile`
+  (`shared/minecraft.ts`) is its own type, its own `electron-store` collection
+  (`minecraftProfiles`), its own IPC namespace (`ipc/minecraft.ts`, `window.api.minecraft.*`),
+  and its own top-level menu - an **ARK / MC** switch group at the top of the sidebar,
+  separated from the Dashboard/Cluster Dashboard/Log page nav below it by a divider (it
+  toggles the whole app's mode, not a page within one - see `GameSwitch` in `App.tsx`).
+  ARK: Survival Evolved and ARK: Survival Ascended share
+  enough (engine lineage, launch style, RCON, log format) that unifying them into one
+  `ServerProfile` shape made sense; Minecraft shares almost none of that - no SteamCMD, no
+  fixed executable name, no `?param=` launch line, a completely different config/log format -
+  so forcing it into `ServerProfile` would have meant either polluting it with fields that
+  mean nothing for ARK, or a discriminated union touching every one of its consumers.
+  - **Import, not install-from-scratch.** The whole point of this feature (per how it was
+    scoped) is pointing the Manager at a Minecraft server folder someone already set up
+    themselves, the same way MCSS does it - not driving a fresh install. "Import existing
+    server" opens a folder picker; `isValidMinecraftInstall`/`detectMinecraftProfile`
+    (`minecraftDetect.ts`) accept it if `server.properties`, `eula.txt`, a jar, or a launch
+    script is found directly in its root (not recursively - avoids picking up an unrelated
+    jar from a `mods`/`plugins`/`libraries` folder), then build a best-effort profile that's
+    saved right away and opens straight into its Settings tab for review/correction - same
+    "detect, save, review" flow as ARK's own import, and every Settings field auto-saves on
+    change so a correction overwrites the initial guess immediately. "+ Add server" skips
+    detection entirely for a from-scratch/manual entry.
+  - **Dual launch mode - the Forge problem.** Vanilla/Fabric/Paper/Spigot are all a single
+    directly-runnable jar, so `launchMode: 'jar'` has the Manager build
+    `java -Xms.. -Xmx.. <extra JVM args> -jar <jar> <extra program args>` itself. Modern Forge
+    (1.17+) ships no such jar at all - just a generated launch script plus argfiles/a
+    `libraries/` folder - so `launchMode: 'script'` instead just executes an existing
+    `run.bat`/`run.sh`/`start.bat`/`start.sh` as-is (via `cmd.exe /d /c` on Windows, same
+    launch shape as ARK: Survival Evolved's own `.bat` launch - see `writeLaunchBatchFile` in
+    `serverProcess.ts`), letting it handle its own classpath/JVM args. This also works as a
+    general escape hatch for any other custom start script. `detectMinecraftLaunchable`
+    prefers a script over a jar when both exist, since a script's presence is the strongest
+    signal of "this needs Forge-style handling."
+  - **server.properties is read live, never duplicated.** `MinecraftProfile` deliberately does
+    not store its own copy of the server port, RCON port/password/enabled, motd, or max
+    players - `minecraftProperties.ts` reads `server.properties` fresh on every call instead
+    (a small hand-written parser, not the `ini` package - Java's flat `key=value` properties
+    format has no `[Section]` headers and treats `#`/`!` as comments, not `;`). Same "the user
+    manages this file themselves" philosophy as ARK's own `GameUserSettings.ini` handling -
+    toggling `enable-rcon` or changing `rcon.password` while the server's running takes effect
+    on the Manager's very next RCON attempt, with nothing to keep in sync.
+  - **stdin is the primary command channel, RCON is secondary.** Unlike ARK's dedicated server
+    (which doesn't read stdin at all on Windows, forcing RCON/log-file-only control),
+    Minecraft/Java server processes support piped stdio reliably - `minecraftProcess.ts` spawns
+    with `stdio: 'pipe'` and the Console tab's command box, and the graceful `stop` shutdown,
+    both write straight to the running process's stdin. This works whether or not RCON is even
+    enabled in `server.properties`. `minecraftRcon.ts`'s `sendMinecraftRconCommand` (same
+    ECONNRESET-safe `rcon-client` connection pattern as ARK's `rcon.ts`) is used only for the
+    player-list poll (`list`, parsed by `parseMinecraftPlayerList`) that feeds the Console tab
+    and Dashboard cards' CPU/RAM/player stats, when RCON happens to be enabled.
+  - **Live console, not a tailed log file.** Since stdio piping works reliably here (unlike
+    ARK), the Console tab reads the process's own piped stdout/stderr directly rather than
+    tailing `logs/latest.log` the way ARK's `ShooterGame.log` is tailed - simpler, and it also
+    means a script-launched (Forge) server's output is captured too, without needing to know
+    Forge's own log file layout. Kept as an in-memory ring buffer (500 lines) per server,
+    intentionally not written to disk (see MVP scope cuts below).
+  - **Graceful stop, not a phased save/exit handshake.** Minecraft's own `stop` command already
+    saves the world, kicks players, and exits entirely on its own, so `stopServer` just writes
+    it to stdin and waits (30s grace period, then force-kills) - there's no ARK-style
+    `SaveWorld`-confirm-then-`DoExit` handshake to phase, since there's nothing to confirm
+    separately.
+  - **Script-mode pid tracking, and memory actually taking effect in script mode** (both
+    fixed after a real report: CPU/RAM shown not matching the actual server, and memory
+    fields not being editable at all).
+    - On Windows, `launchMode: 'script'` spawns via `cmd.exe /d /c <script>`, and cmd.exe
+      spawns java as a *child* process rather than replacing itself the way a POSIX shell's
+      `exec` would - so the pid Node hands back is cmd.exe's own wrapper pid, not java's.
+      Reading CPU/RAM off that pid showed cmd.exe's own near-zero usage instead of the real
+      server's - exactly the mismatch reported. Fixed with the same technique (and same
+      root cause) as ARK: Survival Evolved's own `.bat` launch:
+      `watchForScriptPidHandoff` in `minecraftProcess.ts` polls (via the already-existing
+      `findListeningPid` from `serverProcess.ts`) for whichever pid is actually holding the
+      server's own port (`getMinecraftServerPort`) once it starts listening, and switches
+      tracking to it. Until that handoff completes, CPU/RAM are left blank rather than
+      shown wrong (`isPidTracked` gates `minecraftMonitor.ts`'s stats read); force-kill and
+      the stop-timeout fallback now also target this tracked pid rather than the wrapper, so
+      killing a script-launched server actually kills java instead of orphaning it running
+      in the background.
+    - The Settings tab used to disable the memory/extra-JVM-args fields entirely whenever
+      `launchMode` was `'script'`, reasoning "the script already encodes its own memory
+      args" - true for a fully custom script, but wrong for the common case: modern Forge's
+      own generated `run.bat`/`run.sh` reads a `user_jvm_args.txt` argfile for exactly
+      `-Xms`/`-Xmx`/extra JVM args (the official mechanism, not a workaround). The fields
+      are no longer disabled; `startServer` now calls `writeUserJvmArgs`
+      (`minecraftProperties.ts`) to (over)write that file with the profile's current values
+      before every script-mode start, so editing memory in Settings takes effect on Forge's
+      own generated script. Harmless no-op for an older Forge version or a fully custom
+      script that doesn't happen to read that file.
+  - **Explicitly cut from this first pass** (all real, deliberate scope cuts, not oversights -
+    the infrastructure that made each of these work for ARK is straightforward to point at
+    Minecraft later): no backups, no crash-watch/zombie detection, no persisted CPU/RAM/player
+    history (only shown live while the Manager is open), no Web Dashboard integration.
+    Scheduled restart and cross-restart re-adoption, both cut here originally, were added in
+    a follow-up pass - see the next bullet.
+
+- **Minecraft follow-up: server type on the card, re-adoption across a Manager restart,
+  tab rework (Start Settings / Server Settings / Server Management).** Four asks from a real
+  report, after using the MVP above for a bit.
+  - **Server type shown on the Dashboard card**, replacing the previous jar/script file name
+    display. `detectMinecraftServerType` (`minecraftDetect.ts`) is a pure, best-effort guess
+    from the jar/script's own file name - it looks for `fabric`/`paper`/`spigot`/`bukkit`/
+    `forge` as substrings, falls back to `forge` for any other launchMode `'script'` name
+    (the actual reason that mode exists - see the MVP bullet above), and `vanilla` otherwise.
+    Purely cosmetic (`MinecraftProfile.serverType`, a new field) - never affects how the
+    server actually launches - and has a manual override dropdown in Start Settings for when
+    the guess is wrong, right next to a description saying so.
+  - **Re-adopts a still-running server across a Manager restart**, closing the MVP's own gap.
+    Same shape as ARK's `adoptPersistedProcesses`: `startServer` now also persists its pid/
+    start time (`store.ts`'s new `minecraftRunningPids`/`minecraftRunningStartedAt`, same
+    write-resilience wrapper as ARK's own), and `adoptPersistedMinecraftProcesses`
+    (`minecraftProcess.ts`, called from `main/index.ts` at boot) re-attaches to any pid still
+    alive. An adopted server has no live `ChildProcess` handle (`RunningMinecraftServer.process`
+    is now nullable) - so no piped stdout for the Console tab and no stdin to send commands
+    to. `sendStdinCommand`/`stopServer`'s graceful stop and the IPC send-command handler all
+    fall back to RCON (if enabled) for one of these; the Console tab shows a plain note
+    instead of a silently-empty feed (`MinecraftServerStatus.consoleAvailable`). Force-kill
+    and the stop-timeout fallback already went through a tracked pid rather than the child
+    handle (see the script-mode pid-tracking fix above), so they needed no further change
+    beyond `waitForExitOrKill`/`killServer` also finalizing the entry's bookkeeping manually
+    for a null `process` (a live one already does this via its own `child.on('exit')`).
+  - **Scheduled restart**, a new **Server Management** tab - `minecraftScheduledActions.ts`
+    is the restart half only of ARK's own `scheduledActions.ts` (no SteamCMD-equivalent
+    update step to schedule around, and no dino-wipe equivalent), reusing the exact same
+    day-of-week + time cron mechanism (`shared/scheduleTime.ts`'s `buildDayOfWeekCron`,
+    `node-cron`) and the renderer's existing `ScheduleDaysPicker` component unchanged. New
+    `MinecraftProfile` fields: `scheduledRestartEnabled`/`Time`/`Days`/`StartAfter` (the last
+    one, unchecked, turns it into a plain scheduled shutdown with no restart).
+    `startOnManagerLaunch` moved here too from Start Settings, matching ARK's own tab layout.
+  - **Server Settings, a new tab that edits server.properties itself** - the "Settings" tab
+    is renamed **Start Settings** (it only ever covered how the Manager launches the process:
+    jar/script, memory, ...) to make room for it. `upsertServerPropertiesKeys`
+    (`minecraftProperties.ts`) is a line-based, non-destructive write: each key's existing
+    `key=value` line has just its value replaced, a key with no existing line is appended,
+    and everything else in the file (comments, ordering, a plugin's own custom key) is left
+    untouched - never a full rewrite from parsed data, which would have silently dropped all
+    of that. The tab itself mirrors MCSS's own property editor layout (Gameplay/Appearance/
+    World/Networking/Miscellaneous sections, booleans as checkboxes) via two new IPC calls
+    (`minecraft.properties.get`/`save`, `ipc/minecraft.ts`) - Minecraft only re-reads this
+    file at its own startup, so an edit here takes effect on the server's next start, not
+    live, same as editing it by hand always did.
+
+- **Minecraft follow-up 2: layout fix, address on the card, fuller console, chat mode, icon switch.**
+  - **Fixed the Server Settings tab's broken layout** (a real report, with a screenshot
+    showing a large blank area and the sections not lining up). Root cause: the intro
+    paragraph ("You are editing server.properties...") was a direct child of the flex-wrap
+    row (`.server-settings-tab`) with no width rule of its own, so the browser sized it by
+    its *unwrapped, single-line* intrinsic width - a very wide phantom flex item that pushed
+    every section after it onto its own row with a large gap. The same row-wrap layout is
+    shared with Server Management's `.schedule-section` row, so the CSS fix (an explicit
+    `flex: 1 1 100%` for any stray `.empty-state`/`.error-message` text directly in either
+    row, matching the rule that already existed just for `.error-message`) was applied to
+    both, defensively.
+  - **Dashboard card shows player count and a clickable IP:Port**, next to the existing
+    server type - the port is read once per profile via the new `minecraft.properties.get`
+    call (server-port from server.properties), the host is the machine's own first
+    non-internal local network IP (`webDashboard.getLocalIps()`, already used elsewhere -
+    reused rather than duplicated). Click copies `<ip>:<port>` to the clipboard (a brief
+    "Copied!" replaces the text), meant for handing straight to a friend to connect with -
+    `localhost` wouldn't work for anyone but the host machine, which is why this doesn't
+    just show that instead.
+  - **Console tab now fills the available window height** instead of leaving a large empty
+    area below a fixed `60vh` box, regardless of window size.
+  - **Chat mode** - a new checkbox next to Auto-scroll; while checked, whatever's typed into
+    the command box is sent as `say <text>` (a broadcast chat message) instead of being sent
+    as a raw server command, so the same box doubles as a way to talk to players without
+    typing `say ` by hand every time.
+  - **ARK/MC sidebar switch now uses icons instead of text** - the existing ARK: Survival
+    Evolved game icon (already bundled for the Dashboard's own per-card game icon) for ARK,
+    and a new bundled Minecraft icon (`assets/games/minecraft.png`) for MC - dimmed when not
+    the active mode, full opacity when active, same "muted until active" language as the
+    rest of the sidebar.
+
+- **Minecraft follow-up 3: fixed a real crash (blank window) on Server Management, card
+  reorder, trimmed descriptions.**
+  - **Fixed a genuine crash**, reported as the whole Manager window going completely
+    blank the instant Server Management was opened. Root cause: `serverType` and every
+    `scheduledRestart*` field were added to `MinecraftProfile` in later passes, and unlike
+    ARK's `ServerProfile` (which backfills newly-added fields on every read via
+    `migrateProfile`, called from `listProfiles()`), nothing did the equivalent for
+    Minecraft profiles - so a profile saved before those fields existed genuinely has
+    `scheduledRestartDays: undefined` at runtime, despite the stored type claiming
+    otherwise. `ScheduleDaysPicker` calls `.includes()` directly on that prop with no
+    guard, so opening the tab threw an uncaught exception during render, and with no error
+    boundary anywhere in the app, React just unmounts the entire tree - a blank window is
+    exactly what an uncaught render error looks like here. Fixed with a new
+    `migrateMinecraftProfile` (`minecraftProfileMigration.ts`), mirroring ARK's own
+    `migrateProfile` exactly, wired into `listMinecraftProfiles()` in `store.ts`.
+  - **Dashboard card: players moved next to CPU, Address moved to its own line below
+    everything.** The 2-column info grid is now CPU/Players (when running) then Type/RAM,
+    instead of Type/Address/Players/CPU/RAM all interleaved in one grid - Address sits on
+    its own full-width line underneath the grid instead.
+  - **Trimmed two descriptions down to just the parameter name/a one-line hint**: the
+    Console tab's "Chat mode" checkbox no longer has a `(sends as /say)` parenthetical next
+    to its label, and Server Settings' Online Mode hint was cut from a long paragraph
+    (cracked servers, minecraft.net downtime, ...) down to one line.
+
+- **Dashboard groups: reorderable, collapse persists, minimized groups skip the aggregate views.**
+  - Groups on the Dashboard can now be dragged to reorder (same `⠿` drag-handle pattern as
+    server cards), persisted manager-wide as `AppSettings.groupOrder`. A group not yet in that
+    list falls back to alphabetical order, appended after every explicitly-ordered one, so a
+    brand new group name just appears without needing to be added to the order first.
+  - Collapsing/expanding a group (the native `<details>` triangle) now persists too
+    (`AppSettings.collapsedGroups`) - previously the `open` attribute was hardcoded, so any
+    re-render (a status tick, a new profile) silently re-expanded a group the user had just
+    collapsed.
+  - A collapsed group's servers are also left out of the Cluster Dashboard
+    (`ClusterDataView.tsx`) and both of the Web Dashboard's own aggregate views (its
+    "Dashboard" card-grid tab and its own "Cluster Dashboard" tab) - not just visually
+    minimized on the Manager's own Dashboard. The server itself stays fully manageable
+    everywhere else (still listed in every Web Dashboard server picker, still reachable by
+    its own direct Console/Settings/etc.) - only the aggregate summary views skip it. The Web
+    Dashboard's `/api/servers` response carries a new `groupCollapsed` boolean per server for
+    this, computed server-side from the same `AppSettings.collapsedGroups`.
+
+- **New Manager-wide setting: "Show the server's own console/debug window"** (Settings →
+  General → Startup & Safety, `AppSettings.showServerConsoleWindow`, default on - unchanged
+  behavior). Both games allocate their own small-font console window the moment their exe is
+  spawned (ARK: Survival Evolved's through the `.bat`/cmd.exe it launches via, ARK: Survival
+  Ascended's directly) - there's no launch flag that suppresses it and no way to resize its
+  font from the Manager. Unchecking this passes Node's own `windowsHide` to both spawn calls
+  instead, which stops Windows from ever creating the window - the server itself, and its own
+  log file, are unaffected either way. No-op on non-Windows.
+
+- **ARK: Survival Evolved: Backup tab's Player Profile Backups section removed.** Its own
+  `.profilebak`/log format for this isn't verified the way ARK: Survival Ascended's is (see
+  `GameDefinition.supportsPlayerProfileBackups`, already `false` for it) - the desktop
+  Backups tab now actually hides the whole section (checkbox, backups-to-keep field, and the
+  browse/restore panel) instead of showing controls for a feature that was already a silent
+  no-op. The Web Dashboard's own Backup tab still shows it unconditionally for every game -
+  not yet fixed there (same class of gap as the "Not yet done" note above).
+
+- **ARK: Survival Evolved: update checking turned off.** Its dedicated server is no longer
+  developed - SteamCMD's public branch build id for it essentially never changes, so
+  comparing against it had nothing useful to say and could only ever show a permanently-stale
+  "No new update available." New `GameDefinition.supportsUpdateCheck` flag (`false` for it,
+  `true` for ARK: Survival Ascended) gates both the background poller (`updateCheck.ts`, was
+  polling SteamCMD for every SteamCMD-based game every 30 minutes regardless of whether
+  anything displayed it) and the Analytics tab's "New update"/"A server update is available"
+  panel. The SteamCMD **install/update** button itself (Dashboard card, Update Log tab) is
+  untouched - installing/updating ARK: Survival Evolved's server files still works exactly as
+  before, this only turns off the separate "is a newer build available" check.
+
+- **ARK: Survival Evolved: game version display made more robust, cause of the original
+  report not conclusively found.** A real report said the Analytics/Dashboard version display
+  still wasn't updating for ARK: Survival Evolved servers, even after the earlier fix that
+  confirmed the version-line regex itself matches a real log line
+  (`serverVersion.test.ts`). Static review of the whole pipeline (log path, the edge-triggered
+  cache in `serverVersionWatcher.ts`, the 'running'-transition/fallback timing, the .bat/pid
+  hand-off code) found nothing ARK: Survival Evolved-specific - every step is shared,
+  game-agnostic code already exercised by ARK: Survival Ascended working correctly. One real
+  gap was found and fixed regardless: `IPC.serverGetGameVersion` only ever returned whatever
+  `serverVersionWatcher.ts`'s edge-triggered state tracking had already cached, so if that
+  tracking ever missed the right transition for any reason, the polling both the Dashboard and
+  Analytics tab already do would keep re-reading the same stale (possibly still-null) cache
+  forever rather than ever re-checking the log file directly. It now falls back to a live log
+  read whenever nothing's cached yet, caching whatever it finds - this can only help, but
+  wasn't confirmed to be *the* cause, since the mechanism this replaces looked structurally
+  sound on inspection. If the version still doesn't appear after this, that points at
+  something below this app's own version-reading code (e.g. the log file's actual on-disk
+  path/content on a real installation) rather than the cache/polling layer.
+
+- **Root cause found for both the empty console and the missing version: `-log` is required
+  after all.** A previous pass here considered and rejected adding `-log` back to ARK:
+  Survival Evolved's launch args, on the strength of a test that encoded an earlier
+  real-hardware confirmation that it was deliberately left out. A real report has since
+  confirmed the opposite: without it, `ShooterGame.log` - the file the Manager's Console/
+  Cluster Console/Web Dashboard console and version detection all read - never fills in the
+  way the Manager needs, even though `-servergamelog` is also passed. `-servergamelog` turns
+  out to control a separate, dated tribe-log feature (`ServerGame.<date>.txt`), not the
+  engine's own log; `-log` is what actually was missing. `buildLaunchArgs` now pushes both for
+  ARK: Survival Evolved (`-servergamelog` for the tribe logs, `-log` right after it for the
+  engine log), and `launchArgs.test.ts` is updated to match. The earlier "-log deliberately
+  omitted" confirmation was apparently about getting the server to *launch* successfully, not
+  about whether the file the Manager reads actually fills in - two different things that
+  happened to get conflated.
+
+- **ARK: Survival Evolved: Zombie Detection now also watches for a frozen world while
+  running, not just a stuck startup.** A real report described a server that stayed "running"
+  (process alive, sometimes still RCON-reachable) with its actual game loop frozen - the
+  existing Zombie Detection (`zombieDetection.ts`) only ever watched the `starting` phase, so
+  it had nothing to say about that. It now also arms, ARK: Survival Evolved only, the moment a
+  profile reaches `running`: every minute it checks whether `ShooterGame.log` has grown at all
+  since the last check; if it stays exactly the same size for a full
+  `zombieDetectionTimeoutMinutes`, that's treated as a frozen world tick and killed the same
+  way (optionally auto-restarted), reusing the same settings already on the Server Management
+  tab. A momentarily-unreadable log (a stat error, a rotation race) is never itself treated as
+  zombie evidence - only a confirmed *unchanged* size counts, so a transient glitch can't cause
+  a false-positive kill. ARK: Survival Ascended doesn't get this second watch - its own
+  startup-stuck check already covers the zombie scenario actually reported for it, and this
+  would otherwise be an unverified, unrequested behavior change. (The specific example log line
+  a report pointed at - a seasonal "Set `<event>` event location: ..." line written once during
+  world init - wasn't used as the literal signal: it's not confirmed to repeat during normal
+  running, and every seasonal event's location line apparently gets logged at boot regardless
+  of the calendar, so hardcoding one particular event's text would be both fragile and
+  unnecessary. Watching whether the log is growing *at all* is the same idea, generalized
+  safely to whatever a real server actually logs on its own.)
+
+- **ARK: Survival Evolved: join/leave events now show up in the Console/Cluster Console/Web
+  Dashboard.** With `-log` now filling in `ShooterGame.log` for it, a real excerpt showed its
+  join/leave wording is simply different from ARK: Survival Ascended's, not just delayed -
+  `logEvents.ts`'s `JOIN_LEFT_RE` requires a `[UniqueNetId: ... Platform: ...]` bracket ARK:
+  Survival Evolved never writes at all. It instead logs `<Player> joined/left this ARK!
+  (<SteamID64>)` with an optional trailing `(TribeID: <id>)`, on a plain line with no bracket
+  - now matched by a new `JOIN_LEFT_ALT_RE`, tried whenever the first one doesn't match. The
+  same real excerpt also showed ARK: Survival Evolved writing a second, earlier line for the
+  very same join/leave (inner-timestamped, no Steam ID, no bracket either) - deliberately left
+  unmatched by requiring the Steam ID group, the same "avoid a duplicate" pattern already used
+  for "Frozen by ID" just below it, rather than emitting the same join/leave twice. Kill events
+  needed no change - `rest.includes('was killed by')` already isn't wording-specific enough to
+  care which game wrote it, confirmed against a real (RichColor-wrapped, tribe/day-prefixed)
+  ARK: Survival Evolved kill line and its plainer global-log echo, both already categorized
+  correctly (if the tribe-log-styled one is displayed with a bit of leftover
+  `Tribe X, ID Y: Day N, HH:MM:SS:` prefix and a stray trailing `)` from the engine's own
+  formatting - cosmetic, not a bug, and not new to ARK: Survival Evolved).
+
+- **Fixed a real bug, unrelated to ARK: Survival Evolved specifically: RCON could flood the
+  console with uncaught "read ECONNRESET" exceptions.** A real report showed dozens of these
+  in the Manager's own terminal/command-prompt window (not crashing it, but clearly a bug) -
+  traced to a genuine gap in the `rcon-client` package. `sendRconCommand` (`rcon.ts`) already
+  attached a no-op `'error'` listener to guard against exactly this, but only *after*
+  `Rcon.connect()` resolved - and `connect()` itself authenticates over the socket as its last
+  step. A connection reset during that authentication exchange fires the socket's `'error'`
+  event - which `rcon-client` re-emits on the `Rcon` instance's own `EventEmitter` - before
+  `connect()`'s promise (and therefore our listener) exists yet. With no listener at that
+  moment, Node's default behavior for an unhandled `'error'` event is to throw, once per RCON
+  call that happens to land in that window - and RCON gets polled every few seconds. Fixed by
+  constructing the `Rcon` instance directly (`new Rcon(config)`) and attaching the listener
+  *before* calling `.connect()`, rather than using the `Rcon.connect(config)` static helper -
+  closes the window entirely rather than narrowing it. Reproduced and locked in with a real
+  test (`tests/rcon.test.ts`): a fake TCP server that accepts the connection and resets it the
+  moment it receives the auth packet, confirmed to genuinely throw an uncaught `ECONNRESET`
+  against the pre-fix code and pass cleanly against the fix.
+
+- **Fixed a much bigger bug in the same family: a Windows disk-write failure could break
+  actual server actions, not just spam the console.** A real report showed a raw libuv
+  "UNKNOWN: unknown error, write" (a generic Windows I/O failure - a full disk, a locked
+  file, antivirus, a dropped network drive, ...) thrown from `logManagerEvent` during a Stop,
+  and separately from `recordStatSample` inside `monitor.ts`'s `tick()` - and, worse, a server
+  stuck showing as running in the UI long after it had actually stopped, with every further
+  action against it (Kill included) failing the same way. Every one of these best-effort,
+  secondary persistence calls previously let a disk-level failure throw straight out:
+  - `logManagerEvent` (`managerLog.ts`) is called directly from `doStartServer`/
+    `doStopServer`/`doKillServer`/... - a throw there turned an action that had *already
+    succeeded* into a reported failure, since in every one of those the real work (actually
+    stopping/killing the process) runs before the logging call.
+  - `recordStatSample` (`statsHistory.ts`) runs inside `monitor.ts`'s `tick()`, called as
+    `void tick(profile)` - not awaited or caught by anything - so a throw there became an
+    unhandled promise rejection, once per running stats-enabled profile, every ~5 seconds.
+  - `appendEventsToArchive` (`clusterLogArchive.ts`) runs as a listener on the shared
+    `serverEvents` `EventEmitter` (`registerClusterLogArchiveWatch`) - and a listener that
+    throws synchronously aborts that same `emit()` call for every other listener registered
+    after it, on that exact status change, for every running profile roughly every 2 seconds.
+  - **The likely actual explanation for the stuck-as-running server**: `serverProcess.ts`'s
+    `finalizeStopped` (and `startServer`'s own success path) call `setRunningPid`/
+    `setRunningStartedAt` (`store.ts`, persisted via `electron-store`) *immediately before*
+    `emitStatus()` - the one call that actually updates the renderer's view of a server's
+    state. If either persist call threw, `emitStatus()` right after it never ran at all,
+    leaving the UI showing the previous state indefinitely even though the Manager's own
+    internal tracking (`running.delete(profileId)`, run just before) had already moved on.
+  
+  All four now catch and log to `console.error` instead of throwing - persisting a log entry,
+  a stats sample, an archived event, or the running-pid bookkeeping used only to re-adopt a
+  process after a Manager restart, is allowed to fail without taking the actual action (or
+  another module's unrelated `serverEvents` listener) down with it. Each fix has its own test
+  simulating the write failure directly (`vi.spyOn` on `fs.appendFileSync`/`writeFileSync` or,
+  for `store.ts`, `Store.prototype.set`) and asserting the surrounding call no longer throws -
+  including, for the archive listener specifically, a test proving a later-registered
+  `serverEvents` listener still fires when an earlier one's write fails, the exact class of
+  bug this was.
+
+- **Follow-up: the same class of bug existed on the read side too, and a real report showed
+  it - fixed the same way.** Once writes stopped throwing, reads started showing up in the
+  same report instead: `readAllSamples` (`statsHistory.ts`, behind the `stats-history:get`
+  IPC handler the Analytics tab/Cluster Dashboard poll every 5s), `readManagerLog`
+  (`managerLog.ts`, the Manager Log view's own read), and `readFileTail` (`logEvents.ts`,
+  shared by the desktop Console tab, the Web Dashboard's console, and the Cluster Data group
+  console) all called `fs.readFileSync`/`fs.readSync` unguarded. All three now catch and log
+  to `console.error`, returning an empty result (`[]`/`''`) instead of throwing back out.
+  `readAllSamples` needed one extra bit of care its write-side counterpart didn't: on a read
+  failure it deliberately does *not* cache the empty result the way it does for "the file
+  genuinely doesn't exist yet" - caching `[]` there would make every future read look
+  identical to "no history" forever, even once the disk recovers, and would make
+  `recordStatSample`'s own cache-append logic start accumulating into a wrongly-reset empty
+  cache in the meantime. A test locks this in: a failed read returns `[]` once, but a real
+  sample recorded before the failure is still there on the very next successful read.
+
+  **This pattern - the exact same generic Windows I/O error (`UNKNOWN`, `errno: -4094`) now
+  hitting reads *and* writes, across the Manager's own data directory, repeatedly rather than
+  as a one-off - stopped looking like something more exception-handling can fix.** The same
+  report also showed `restoreBackup` (`backup.ts`) failing with the identical error code from
+  inside a third-party zip-extraction call, writing into the *server's own* install directory
+  - a completely different location from the Manager's own data folder that every fix above
+  touches. A restore that can't write its extracted files is a genuine failure with nothing to
+  gracefully degrade to (unlike a log line or a stats sample, there's no correct "pretend it
+  worked" for a restore), so that one is already surfacing correctly as a reported error
+  rather than crashing anything - it's included here only as evidence of how broad this is.
+  Two unrelated directories on the same machine, both reads and writes, recurring rather than
+  transient: this points at something below the app entirely (the disk itself full or
+  failing, a sync client like OneDrive holding files open, antivirus actively blocking I/O to
+  these paths, or a dropped network drive) rather than a specific code path still left to
+  harden.
+
+- **Second follow-up, and the actual resolution.** Disk space was fine (checked, plenty free
+  on every drive) and CrystalDiskInfo showed the physical drive itself (an internal NVMe,
+  ruling out the "flaky external/virtual disk" theory) as healthy - yet the exact same error
+  kept recurring, next caught crashing `'server:start'` itself: `readIniFile` (`config.ts`,
+  used by `readAdminPassword`, called from `buildLaunchArgs` on every single start) threw
+  straight out, meaning a server couldn't even be started while this was happening. Also
+  hardened the same way while already in the area, all on the same "a real report showed
+  this recurring" evidence: `getInstalledBuildId`/`checkInstallUpToDate`/`readUpdateLog`/
+  `readNewContentLog`/`clearStuckManifest` (`steamcmd.ts`, the Dashboard's Install-vs-Update
+  state and the Update Log tab), `readMapDefinitionsFile` (`jsonListFile.ts`, maps.json/
+  customMaps.json - including the write that creates the file fresh on its very first read),
+  and `upsertIniKey`/`upsertIniRepeatedKey` (`gameConfigWrite.ts`, ARK: Survival Evolved's
+  mod-save writes) - the last of which needed the same care as `readAllSamples` above, for
+  an even higher-stakes reason: falling back to `''` on a read failure the way a genuinely
+  missing file is handled would make the subsequent write think there was nothing in the
+  file to begin with, and overwrite the user's real `GameUserSettings.ini`/`Game.ini`
+  content with just the one key being upserted - actual data loss, not just a missed update.
+  It now aborts the write entirely (leaving the file untouched) when the read that's
+  supposed to feed it fails, locked in by a test that writes real content, fails the read,
+  and asserts the file is still exactly what it was before.
+
+  It turned out to be exactly the kind of thing this pattern pointed at: **a reboot of the
+  machine resolved it.** Not a disk fault, not something in the app - a stuck driver/OS-level
+  I/O state that a restart cleared. Every fix in both of these sessions stands regardless -
+  they're general resilience against a real, reproducible class of failure (a disk-level
+  read/write erroring out transiently), not specific to this one report's eventual cause, and
+  cost nothing when nothing's wrong.
+
+- **Minecraft follow-up 4: dashboard card polish, a Backup tab, a persistent+colorized console.**
+  - **Card header gets the MC icon** (`assets/games/minecraft.png`, already bundled for the
+    sidebar switch) next to the server name, same placement as ARK's own `server-card-game-icon`.
+    **Address moved back inside the dark info panel** as its own full-width row (`.server-card-info-address`,
+    `grid-column: 1 / -1`) alongside CPU/Players/Type/RAM instead of sitting in a separate div
+    below it, and **Players is now always shown** (a `-` placeholder when the status doesn't
+    have a player list yet) instead of being hidden entirely until the first status tick with
+    a non-empty list.
+  - **New Backup tab**, modeled on ARK's own Backups tab but backing up the *world* instead of
+    a map's SavedArks folder: two new `MinecraftProfile` fields (`backupDir`, `maxBackups`,
+    plus `backupSchedule`/`backupScheduleEnabled` for the same optional cron-driven automatic
+    backups ARK has - all four backfilled in `migrateMinecraftProfile` for any profile saved
+    before this pass). `minecraftBackup.ts`'s `worldDirs()` reads `level-name` from
+    server.properties (defaulting to `world`, same as the vanilla server itself) and backs up
+    whichever of `<level-name>`/`<level-name>_nether`/`<level-name>_the_end` actually exist -
+    every server type (vanilla/Paper/Spigot/Forge/Fabric) uses this same per-dimension folder
+    convention. While the server's running, `createMinecraftBackup` sends `save-off` then
+    `save-all flush` (stdin first, RCON fallback - `sendSaveCommand`) and waits a short settle
+    before zipping, then re-enables autosave with `save-on` - best-effort rather than
+    cancel-on-failure like ARK's own SaveGame/RCON gate, since Minecraft's autosave already
+    runs on its own every few minutes regardless, so the worst case here is a backup that's a
+    few seconds staler than requested. `minecraftBackupSchedule.ts` mirrors ARK's own
+    `schedule.ts` self-arming-setTimeout mechanism (armed only while the server is running,
+    re-armed on every status transition into 'running'). New IPC namespace
+    (`window.api.minecraft.backup.*`, `ipc/minecraftBackup.ts`) and renderer tab
+    (`MinecraftServerDetail/BackupsTab.tsx` + `BackupLogPanel.tsx`), placed before Server
+    Management in the tab list.
+  - **The console backlog now survives a Manager restart** (and the Minecraft server's own
+    restarts too) instead of resetting to empty every time - previously an in-memory ring
+    buffer (`consoleBacklogs` Map in `minecraftProcess.ts`) that was explicitly cleared on
+    every `startServer()` call and lost outright on a Manager restart. Replaced with
+    `minecraftConsoleArchive.ts`, a JSON-Lines file per profile under `getDataDir()` with the
+    same size-capped rolling-window trim as ARK's own `clusterLogArchive.ts` (bounded
+    read+rewrite only on the rare append that actually crosses the cap, not on every line).
+    `startServer()` no longer clears anything on a fresh start, so the archive spans multiple
+    server sessions, not just the Manager's own uptime.
+  - **Console lines are now color-coded**, matching the screenshots that drove this request:
+    a small `classifyConsoleLine` helper in `ConsoleTab.tsx` checks (in priority order, since
+    several of these are still logged at plain INFO level) a graceful shutdown starting
+    ("Stopping the server") and `/ERROR]`/`/WARN]` for red/red/orange, the "Done (...)! For
+    help" ready line for green, "joined the game" for cyan, and "left the game"/"lost
+    connection"/"disconnected" for orange - everything else stays the default color. Purely
+    cosmetic CSS classes (`.mc-console-line--*`), no change to what's actually stored/sent.
+
+- **Minecraft follow-up 5: card info order, bulk Server Controls, Global Performance, console
+  controls repositioned.**
+  - **Dashboard card's info panel reordered** to CPU/RAM then Players/Type, with Address still
+    its own full-width row underneath - just a JSX reorder (`MinecraftDashboard.tsx`), the grid
+    itself is unchanged.
+  - **New "Server Controls" bulk-action section** above the server grid, mirroring ARK's own
+    (`Dashboard.tsx`) but with only Start All/Restart All/Stop All - no Update All or
+    Stop+Update+Restart All, since Minecraft has no SteamCMD-equivalent update step. There's no
+    single-profile restart IPC for Minecraft the way ARK has `window.api.server.restart`, so
+    Restart All is a plain stop-then-start per running profile, the same sequencing
+    `minecraftScheduledActions.ts`'s own scheduled restart already uses.
+  - **New "Global Performance" sidebar block**, same `official-status-panel`/
+    `group-console-cluster-stats` markup and aggregation (servers running/total, total
+    players, total CPU%, total RAM) as ARK's Dashboard, computed across every visible
+    Minecraft profile's live status.
+  - **Console tab's Chat mode/Auto-scroll checkboxes moved below the feed, right-aligned**
+    (new `.mc-console-controls` modifier on the existing `.group-console-filters` row) instead
+    of sitting above it - matches the user's own screenshot of the desired layout.
+  - **Removed the Console tab's re-adopted-session description paragraph** ("This server was
+    already running before the Manager (re)started...") - same ongoing trend of trimming
+    explanatory text the user doesn't want cluttering the UI.
+
+- **Fixed: restarting several ARK servers close together left only 1-2 of them actually
+  coming back up.** A real report: manually restarting multiple servers resulted in most of
+  them just never starting, with no error shown. Investigated and ruled out: port conflicts
+  between profiles (confirmed unique), a shared/global RCON connection (each call opens its
+  own `Rcon` instance), and a RAM ceiling (the reporting machine had 128GB). The remaining,
+  consistent explanation: ARK's own world-loading is heavy enough - much of it
+  single-threaded - that several servers spawning in the same instant can starve each other
+  out for CPU badly enough that some never finish loading at all.
+  - **`serverProcess.ts`'s `startServer` now goes through a global (not per-profile) spawn
+    queue** (`reserveSpawnSlot`/`nextSpawnSlotAt`) that enforces at least
+    `AppSettings.serverAutoStartStaggerSeconds` between any two ARK servers' actual OS-level
+    process spawn - covering every path that can start several close together: a manual
+    Start/Restart click, the Dashboard's bulk Start All/Restart All, a scheduled restart, and
+    a crash-watch/zombie-detection auto-restart - not just `startOnManagerLaunch` (which
+    already staggered itself via `autoStart.ts`, and keeps doing so unchanged; the two don't
+    double up in practice since autoStart's own pacing already satisfies this queue by the
+    time each of its calls reaches `startServer`). The first start in a batch is never
+    delayed - only one requested while another is still within the stagger window waits.
+  - A still-queued (not yet actually spawned) start is tracked in the same `running` map as a
+    live one, with a new `cancelQueuedSpawn` escape hatch - so a Stop/Kill requested during
+    the wait cancels it outright instead of racing the queued spawn and starting it anyway
+    right after being told to stop. `getStatus()` reports `starting` consistently through the
+    wait too, instead of `stopped` just because nothing had spawned yet.
+  - Reused the existing `serverAutoStartStaggerSeconds` setting (renamed in the Settings UI to
+    "Minimum delay between servers starting") rather than adding a second one, since it's the
+    same underlying concern - Minecraft is unaffected (its own, separate `minecraftProcess.ts`
+    was never part of this).
+  - New `tests/serverSpawnStagger.test.ts` covers the queue directly: a lone start is never
+    delayed, a second one requested immediately after waits out the full stagger, a third
+    stacks behind the second (not the first), a well-spaced start incurs no wait, and
+    stopping/killing a still-queued start cancels it without ever spawning. Also patched 5
+    existing test files (`serverProcessBatchLaunch`, `startServerSpawnOptions`,
+    `stopServerPhased`, `findListeningPid`, `unexpectedExit`) to reset the new queue's module
+    state between tests - its 10s default stagger would otherwise leak from one `it()` into
+    the next real-timer test in the same file and silently defer a spawn they expected
+    synchronously.
+
+- **Minecraft Dashboard groups**, matching ARK's own Dashboard group system - `MinecraftProfile.group`
+  (set via the Start Settings tab's "Dashboard group" field) already existed but the Minecraft
+  Dashboard never actually grouped anything by it. Same markup/behavior as ARK: collapsible
+  `<details className="server-group">` sections, a drag handle on each group's summary to
+  reorder groups, and collapse state that persists across restarts. Kept in two new,
+  Minecraft-only settings (`minecraftGroupOrder`/`minecraftCollapsedGroups`) rather than
+  sharing ARK's `groupOrder`/`collapsedGroups`, since an ARK group and a Minecraft group
+  happening to share a name shouldn't share display order or collapse state. No new CSS -
+  `.server-group`/`.drag-handle`/`.hidden-servers` were already generic, not ARK-specific.
+
+- **Minecraft mod/plugin browsing and installation, v1 (Modrinth only) - new Mods tab.**
+  CurseForge is a deliberate follow-up, not implemented here: it needs its own API key
+  (register as a developer at console.curseforge.com) and its own client module, while
+  Modrinth's v2 API needs no key at all. Everything below is organized so adding CurseForge
+  later means a second client module plus a branch in `minecraftMods.ts`, not touching
+  `shared/minecraftMods.ts`'s already source-agnostic shapes.
+  - **New `MinecraftProfile.minecraftVersion` field** (Start Settings) - a real, previously
+    entirely missing prerequisite: nothing else in this app tracks a server's actual Minecraft
+    game version, but Modrinth needs it to filter compatible mod/plugin versions. Free text
+    (e.g. "1.20.1"), no auto-detection in this pass; the Mods tab shows a clear empty-state
+    message asking for it instead of guessing wrong.
+  - **`src/main/lib/modrinthClient.ts`**, a thin wrapper around Modrinth's public v2 REST API
+    (confirmed directly against Modrinth's own open-source backend models, not just third-party
+    docs, since the v2/v3 split made some of the publicly written docs ambiguous). Loader to
+    Modrinth "category" facet mapping: Fabric/Forge get their own single category; Paper and
+    Spigot share one OR-ed group (`paper`/`spigot`/`bukkit`) since plugins are broadly
+    cross-compatible across those three and splitting them would just hide results that work
+    fine. Vanilla/unknown get no loader facet at all (and never reach this client - the Mods
+    tab and `minecraftMods.ts` both gate on `supportsMinecraftMods` first).
+  - **Excludes client-only content, as requested** - `server_side:unsupported` is filtered out
+    directly in the search facets (`server_side: required` or `optional` only), not as a
+    post-filter, so a mod that does nothing on a dedicated server never shows up as installable
+    in the first place.
+  - **Dependency resolution, a real first pass, not just planned** -
+    `resolveModInstallPlan` in `minecraftMods.ts` walks a version's own `dependencies` and
+    recursively resolves every `required` one to an installable version (by exact `version_id`
+    when pinned, otherwise the latest compatible version of that `project_id`), skipping
+    anything already installed or already queued in the same run (dedup, with a depth cap as a
+    cycle safety net - confirmed against a diamond-dependency graph and a direct A-depends-on-B-
+    depends-on-A cycle in tests). `embedded` dependencies are skipped outright (already bundled
+    in the parent jar); `optional` ones are never auto-installed, just surfaced in the result so
+    the Mods tab can tell the user what they could add by hand; `incompatible` ones are only
+    reported when the conflicting project is already installed - a warning, not a block.
+  - **Install/remove/enable-disable**: downloads the version's primary file (`fetch` +
+    `arrayBuffer` + `writeFileSync`, same pattern as `steamcmdInstaller.ts`'s own download),
+    verified against Modrinth's own published sha512/sha1 hash before being kept - a corrupted
+    download is discarded rather than left as a jar the server might fail to load. Writes to
+    `mods/` (Forge/Fabric) or `plugins/` (Paper/Spigot) under the server's install directory.
+    Disabling renames the file to add a `.disabled` suffix rather than deleting it (every
+    loader only loads `.jar` files from that folder), so re-enabling needs no re-download, and
+    updating an already-disabled mod preserves that - it doesn't silently come back enabled.
+  - **No version picker in this pass** - Install/Update always resolve to the latest
+    compatible version, the same simplification ARK's own mod system already makes (an id,
+    no picker there either). A real gap to revisit, not an oversight.
+  - New `tests/modrinthClient.test.ts` (facet-building), `tests/minecraftModInstallPlan.test.ts`
+    (the dependency-walk algorithm itself, including the diamond-graph and cycle cases, with no
+    network/fs touched at all), and `tests/minecraftMods.test.ts` (install/remove/enable-disable/
+    update-check against a real temp directory, with Modrinth's own HTTP calls mocked).
+
+- **Recognizes mods/plugins already sitting in the folder, not just ones installed through the
+  Mods tab.** `profile.installedMods` used to be the only source of truth, which meant a jar
+  dropped in by hand - or installed before this feature existed - simply wasn't tracked. Fixed
+  by hashing every untracked `.jar`/`.jar.disabled` file in the mods/plugins folder (sha1) and
+  batch-looking the hashes up against Modrinth's `/version_files` endpoint - the same
+  identification mechanism Modrinth's own official launcher uses. Matches are adopted straight
+  into `profile.installedMods`; anything that doesn't match (CurseForge-sourced, hand-built, or
+  genuinely not on Modrinth) is left alone and reported as an `unidentifiedCount` instead of
+  silently doing nothing.
+  - `getModrinthVersionsFromHashes` in `modrinthClient.ts` wraps the batched `POST
+    /v2/version_files` call (`{algorithm, hashes}` -> `Record<hash, Version>`).
+    `scanForInstalledMods` in `minecraftMods.ts` does the scanning/hashing/adopting; a new
+    `requireLoaderSupportsMods` guard replaces the stricter `requireModsSupported` for this one
+    operation specifically, since identifying a file by hash doesn't need
+    `profile.minecraftVersion` the way picking a *compatible* version for search/install does -
+    so scanning now works even before that field is filled in.
+  - Runs automatically whenever the Mods tab opens for a profile, plus an explicit "Rescan
+    folder" button for files added while the tab is already open. The Browse Modrinth section
+    still asks for a Minecraft version (search needs it to filter compatible versions), but the
+    Installed section and its Rescan button no longer wait on it.
+  - New `tests/minecraftModScan.test.ts`: hash-match adoption, skip-already-tracked,
+    unidentified-count reporting (profile left untouched), `.disabled`-suffix enabled-state
+    handling, no API call when nothing is untracked, and works with no `minecraftVersion` set.
+
+- **Fix: scanning a folder with several untracked mods could trip Modrinth's rate limit
+  (HTTP 429), reported live by a user with a sizeable mods folder.** Two causes, both fixed:
+  - Scanning used to fetch each adopted mod's project info one request at a time
+    (`getModrinthProject` in a loop) - a folder with a dozen unrecognized mods meant a dozen
+    sequential requests on top of the batched hash lookup. Replaced with a new
+    `getModrinthProjects(ids)` in `modrinthClient.ts` (`GET /v2/projects?ids=[...]`, Modrinth's
+    own batch counterpart to `/project/{id}`), so `scanForInstalledMods` now costs exactly two
+    Modrinth requests total regardless of how many mods it finds: one for the hashes, one for
+    every matched project's info (deduplicated, since several versions can belong to the same
+    project).
+  - There was no recovery from a 429 at all - any transient rate-limit hit failed the whole
+    scan outright. `modrinthFetch` (and the raw `/version_files` POST) now retry on 429, waiting
+    out the response's `Retry-After` header when present or an exponential backoff otherwise, up
+    to 3 retries before actually giving up - self-heals from Modrinth's normal per-minute
+    throttling instead of surfacing it as an error.
+  - New tests in `tests/modrinthClient.test.ts` (waits out `Retry-After` and retries
+    successfully; gives up and throws after exhausting retries) and
+    `tests/minecraftModScan.test.ts` (batches the project lookup into one deduplicated call for
+    several matched mods).
+
+- **Fix: no visible way to get to the one thing blocking "Browse Modrinth" (install search).**
+  A user reported "I don't see a way to add mods" - turned out their server's Minecraft version
+  just wasn't set yet, so the Mods tab correctly showed the explanatory message
+  ("Set this server's Minecraft version in Start Settings...") but gave no way to act on it
+  without manually switching tabs and finding the right field. Added a "Go to Start Settings"
+  button under that message (and under the similar "Set Server type to..." message), which jumps
+  straight to the Start Settings tab - `MinecraftServerDetail/index.tsx` now passes
+  `onGoToStartSettings` down to `ModsTab` instead of just rendering it blind.
+
+- **Four more fixes/additions after a live screenshot (256 installed mods) surfaced them:**
+  - **Mod icons weren't loading (broken-image placeholders everywhere).** The renderer's CSP
+    (`src/renderer/index.html`) was `default-src 'self'` with no `img-src` at all, which blocks
+    `<img>` loads too - Modrinth's icon CDN (`cdn.modrinth.com`) was silently refused by the
+    browser, not by anything in this app's own code. Added
+    `img-src 'self' data: https://cdn.modrinth.com`. Also added an `onError` handler on both mod
+    icon `<img>` tags so a URL that fails to load (dead link, network hiccup) just hides itself
+    instead of showing a broken-image icon regardless.
+  - **Mods the scan can't identify now still show up in the table, instead of only being
+    counted.** `MinecraftModSource` gained a third value, `'unknown'` - not a future source like
+    CurseForge, but what `scanForInstalledMods` now assigns to an untracked file whose hash
+    doesn't match anything Modrinth knows about. It's still added to `profile.installedMods`
+    (synthetic `projectId: "local:<fileName>"`, title falls back to the file name, empty
+    version fields), so it still shows up, and because remove/enable-disable already worked
+    generically off `projectId`/`fileName`, those just work for it too with no special-casing.
+    The Status column shows "Unidentified" (muted, with a tooltip explaining why) instead of
+    "Up to date". `checkMinecraftModUpdates` skips `source: 'unknown'` entries (no real Modrinth
+    id to check) rather than firing a doomed `/project/local:x.jar/version` request for each
+    one. `MinecraftModScanResult.unidentifiedCount` is gone - the same information now comes
+    from filtering `adopted` by `source`.
+  - **Display bug: Version/Status/Actions columns were stretched out with a dead gap before the
+    buttons.** The `mc-mods-table`s had no explicit column widths, so the browser's auto table
+    layout gave the empty-header actions column (and the short Version/Status columns) far more
+    room than their content needed, pushing the Enable/Disable/Remove buttons away from the row
+    they belonged to. New `.mc-mods-col-narrow` class (`width: 1%; white-space: nowrap`) on
+    those columns makes them hug their content, so Name/Description (the one column that should
+    be wide) absorbs the leftover space instead.
+  - **"Open mods folder" / "Open server folder" buttons** - jumping to `mods/`/`plugins/` (or
+    the server's install directory) used to mean finding the path by hand. New
+    `openMinecraftModsFolder` (`minecraftMods.ts`, creates the folder first if it doesn't exist
+    yet) and `openMinecraftServerRootFolder` (`minecraftBackup.ts`, next to the existing
+    `openMinecraftBackupFolder`) both just wrap `shell.openPath`, same pattern as every other
+    "open folder" button in this app. Buttons added to the Mods tab's Installed section and the
+    top of Server Settings, respectively.
+  - New tests: `tests/minecraftModScan.test.ts` (unidentified files adopted as `source:
+    'unknown'`, mixed identified/unidentified scan, `openMinecraftModsFolder`),
+    `tests/minecraftMods.test.ts` (`checkMinecraftModUpdates` skips `'unknown'` entries), and
+    new `tests/minecraftServerFolder.test.ts` (`openMinecraftServerRootFolder`).
+
+- **Fix (follow-up): the column-width fix above wasn't enough on its own - Disable/Remove
+  (and Update, when present) were still stacking vertically instead of sitting side by side,
+  inflating every row's height.** `mc-mods-col-narrow`'s `width: 1%` only works if the column's
+  *content* can report an honest minimum width - but the actions cell's `.backup-management-
+  actions` has `flex-wrap: wrap`, and a wrapping flex container's min-content width is just its
+  single largest item, not the combined width of everything in it (wrapping means it's always
+  "allowed" to fall back to one item per line). So the column collapsed to fit one button, and
+  the rest wrapped onto their own lines underneath. Added `.mc-mods-table .backup-management-
+  actions { flex-wrap: nowrap }` to force one line - three short buttons always fit, and that
+  was the whole point of giving the column minimal width in the first place.
+
+- **CurseForge integration, v1 (search, install, update) - the planned follow-up from the
+  original Modrinth-only Mods tab is now real.** Gated behind a user-provided API key
+  (`AppSettings.curseforgeApiKey`) since CurseForge's Core API requires one, unlike Modrinth's.
+  **Get a free key at `console.curseforge.com`**: sign in with a CurseForge/Overwolf account,
+  open **API Keys** in the left sidebar, click **Generate new API key**, give it any name, and
+  agree to the non-commercial terms - the key shown there goes straight into Settings → General
+  → Integrations. Leaving it empty skips CurseForge entirely (not an error) - Modrinth search
+  keeps working exactly as before.
+  - **`src/main/lib/curseforgeClient.ts`**, a thin wrapper around the CurseForge Core API
+    (`api.curseforge.com/v1`), mirroring modrinthClient.ts's own shape (raw CurseForge shapes
+    in, this app's own normalized shapes out - handled in minecraftMods.ts, not here). Minecraft
+    is game id `432`; Forge/Fabric content is CurseForge "class" `6` (Mods), Paper/Spigot
+    content is class `4471` (Bukkit Plugins) - there's no single "mod" class the way Modrinth's
+    v2 API flattens it. `modLoaderType` (1 Forge, 4 Fabric) filters search/files for those two;
+    Paper/Spigot plugins aren't loader-filtered on CurseForge at all, so it's omitted for them.
+    `getCurseForgeModFiles` sorts by `fileDate` itself (CurseForge doesn't guarantee an order)
+    so `[0]` is reliably "the latest compatible file" - same "no version picker" simplification
+    used everywhere else in this app's mod system.
+  - **Search merges both sources** - `searchMinecraftMods` always searches Modrinth, and also
+    CurseForge once a key is set, combining and sorting the results by downloads (each tagged
+    with its own `source` so the UI can label it). A CurseForge mod with
+    `allowModDistribution: false` (the author opted out of third-party downloads) is filtered
+    out of results entirely - this app has no file to offer for it anyway. A CurseForge search
+    failure (bad key, network hiccup) is logged and dropped rather than failing the whole
+    search - Modrinth's own results still come back.
+  - **Install/update dependency resolution, same shape as Modrinth's, adapted to CurseForge's
+    own model** - `resolveCurseForgeInstallPlan` (mirrors `resolveModInstallPlan`) walks a
+    file's `dependencies` (`{modId, relationType}` pairs, not Modrinth's richer
+    `{project_id, version_id, dependency_type}`): relationType `3` (RequiredDependency) is
+    walked and installed (always the dependency's own latest compatible file - there's no
+    per-version pin like Modrinth's `version_id`), `2` (Optional) is surfaced not installed,
+    `5` (Incompatible) is a warning only if already installed, and `1`/`4`/`6` (EmbeddedLibrary/
+    Tool/Include) are skipped outright. Same depth cap, same dedup-by-already-queued-or-
+    installed reasoning, confirmed against the same diamond-graph and cycle test cases as the
+    Modrinth version.
+  - **`installMinecraftMod`/`updateMinecraftMod` now take a `source` parameter** (IPC/preload/
+    `ModsTab.tsx` all updated to pass it through - a search result or an installed entry always
+    has its own `source` handy, so this never needs guessing). The original Modrinth install
+    function was renamed to `installModrinthMod` (no longer exported) and `installMinecraftMod`
+    is now a small dispatcher by source; `'unknown'` throws (there's nothing to install from an
+    entry with no real backing id).
+  - **Downloads verified against CurseForge's own sha1 hash when published**, same discard-on-
+    mismatch behavior as Modrinth's own download path. A file with no `downloadUrl` at all
+    (author disabled distribution) fails with a clear message pointing at downloading it from
+    CurseForge directly and using Rescan folder instead - not silently skipped.
+  - **`checkMinecraftModUpdates` branches per installed entry's `source`** - Modrinth entries
+    check Modrinth, CurseForge entries check CurseForge (and are skipped, not failed, if the API
+    key was cleared since they were installed), `'unknown'` entries are skipped as before.
+  - **Not in this pass**: recognizing already-installed CurseForge mods during a folder scan.
+    CurseForge's own file-identification endpoint (`/fingerprints`, confirmed and wired up as
+    `getCurseForgeFingerprintMatches`) needs a murmur2 hash of the file with whitespace bytes
+    stripped, not a simple file hash - computing one isn't implemented yet, so a CurseForge-
+    sourced file sitting in the folder still gets adopted as `source: 'unknown'` by
+    `scanForInstalledMods`, same as before this pass. A real, clearly-scoped follow-up.
+  - New `tests/curseforgeClient.test.ts` (class/loader-type selection, API key header, 401/403
+    error message, file sorting, empty-fingerprint-list shortcut),
+    `tests/curseforgeInstallPlan.test.ts` (the dependency-walk algorithm - all the same cases as
+    Modrinth's own test file, including the diamond graph and cycle), and
+    `tests/minecraftModsCurseForge.test.ts` (search merging/sorting/filtering/fallback, install
+    with and without a required dependency, rejecting a no-distribution file, update-check
+    flagging and API-key-cleared skip).
+
+- **Fix: "Check for updates" could crash outright with HTTP 429s for a profile with a large
+  mods folder (one real report had 256 Modrinth-sourced mods), and the scan/batch-project fix
+  from the previous round didn't cover this path at all - it only fixed scanning.**
+  `checkMinecraftModUpdates` fired one request per installed mod via a bare
+  `Promise.all(installedMods.map(...))` - every request in the very same tick, with no pacing
+  and no per-item isolation. Two separate problems, both fixed:
+  - **No pacing at all** - hundreds of simultaneous requests blew straight through Modrinth's
+    300/minute budget on the very first tick, so most of them hit 429 immediately (the
+    retry-with-backoff added previously only helps a request that's occasionally rate-limited,
+    not literally all of them bursting at once - its 3-retry budget doesn't scale to that much
+    contention). New `mapWithRateLimit` paces *dispatching* each mod's check (default 4/second,
+    safely under budget) while still letting each one run concurrently once started - a check
+    over 256 mods now takes about a minute instead of failing outright, but it actually
+    finishes.
+  - **One mod's failure killed every other mod's result** - `Promise.all` rejects on the first
+    rejection, so even with pacing, a single mod that still ends up rate-limited (or hits any
+    other transient error) would throw away the results already computed for every other mod in
+    the batch. Each mod's check is now wrapped in its own try/catch inside the mapper - a
+    failure just means that one mod is skipped this round (no update badge until the next
+    "Check for updates" click), not that the whole feature errors out.
+  - New tests in `tests/minecraftMods.test.ts` (one mod's request failing doesn't take out the
+    other mod's result).
+
+- **Fix (the real cause this time, confirmed from a live screenshot of 357 installed mods):
+  the Installed table's Name column had no width constraint at all, so on a wide window it
+  absorbed every pixel of leftover space - Source/Version/Status/the action buttons ended up
+  pushed almost entirely off to the right, with a huge empty gap inside the Name column before
+  them.** The previous two rounds (narrow-column widths, then flex-wrap: nowrap) were each
+  real bugs and genuinely needed fixing, but neither was *this* - the data was always correctly
+  aligned under its own headers, the headers themselves just ended up bunched together far to
+  the right because Name, the one column with no explicit width, grew to fill 100% of whatever
+  space the other (intentionally narrow) columns didn't need. Fixed with two changes in
+  `styles.css`: `.mc-mods-table` now has `max-width: 1040px` (the section around it stays
+  full-width, matching the rest of this app - just the table itself stops growing past a
+  reasonable size), and a new `.mc-mods-col-name` (`width: 38%`) on the Name header in both
+  tables gives the browser an explicit hint instead of leaving it to soak up 100% of whatever's
+  left.
+
+- **Follow-up fix: still a visible gap between Name and Source after the above, confirmed from
+  another screenshot.** `.mc-mods-table` still had `width: 100%`, so even capped at 1040px the
+  table was *forced* to reach that width regardless of whether its content needed it - most mod
+  names are short, so `.mc-mods-col-name`'s 38% share was still mostly empty space most rows
+  didn't need. Removed `width: 100%` entirely (keeping only `max-width: 1040px` as a safety
+  cap) so the table defaults to shrinking-to-fit the sum of its columns' actual content widths
+  instead of being stretched to a fixed width no matter what - `.mc-mods-col-name` is now just
+  `white-space: nowrap` (hug the longest name actually present, same "don't reserve a fixed
+  share" reasoning as the narrow columns) rather than a fixed 38%. The Browse Modrinth/
+  CurseForge results table is the one exception that still wants `width: 100%` - its
+  Description column is prose that should wrap within the available width rather than render
+  as one unbroken max-content-width line - so it gets a new `.mc-mods-table--browse` modifier
+  class restoring that, while the Installed table (no Description column, nothing that
+  benefits from stretching) stays shrink-to-fit.
+
+- **Follow-up fix #2: still a gap after the above too, confirmed from a third screenshot - and
+  this one's actually just inherent to how tables work, not a bug to "fix" the same way.**
+  `white-space: nowrap` on the Name column meant it still sized itself to whichever single mod
+  had the longest name across the *entire* 357-mod list ("Beautiful Enchanted Books [MOD
+  EDITION]", in that screenshot) - a table column's width is shared by every row, so every
+  other, normally-short-named row necessarily had a big dead gap before Source started no
+  matter what. The only real fix is to stop letting one outlier dictate the column's width at
+  all: `.mc-mods-col-name` now has `max-width: 260px`, and an overflowing name truncates with
+  an ellipsis (new `.mc-mod-title` span wrapping the title text, `overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap`, plus `min-width: 0` on both the span and
+  `.mc-mod-name-cell` - a flex item's default min-width is its content's natural width, which
+  silently defeats `text-overflow: ellipsis` by letting the cell grow past the column's
+  max-width instead of actually truncating). The full name is still available as a native
+  `title` attribute tooltip on hover. Same treatment in both tables (Browse results and
+  Installed).
+
+- **Rebuilt the Mods tab's two tables as CSS Grid instead of `<table>`, after a fourth
+  screenshot showed the same shape of gap again despite the fix directly above.** Each of the
+  three previous rounds fixed a real, distinct bug (narrow-column width hints, then flex-wrap
+  collapsing the actions column, then the table being force-stretched, then one outlier mod
+  name sizing the whole column) - but they kept recurring because the underlying mechanism,
+  HTML table auto-layout, fundamentally sizes a column from the single most demanding piece of
+  content anywhere in that column, across every row at once. There's no way to tell a `<table>`
+  "give normal rows a normal width and only truncate the outlier" - short of the per-cell
+  `max-width` + ellipsis combination already in place, which *should* have been the final word,
+  but kept interacting with table layout in ways that were hard to fully pin down without
+  physically running it. Replaced both tables with CSS Grid (`.mc-mods-grid`,
+  `grid-template-columns` declaring each column's width once and for all) - header and every
+  data row are literally just a flat sequence of same-sized div children of one grid container
+  (the `Fragment`-per-row markup in `ModsTab.tsx`, no `<tr>` wrapper), so a column's width is
+  now entirely independent of what any row's content does; it can never be widened by one
+  outlier or collapsed by `flex-wrap`, because nothing about Grid's explicit track sizing model
+  works that way to begin with. `mc-mods-grid--browse` (`minmax(0,260px) minmax(0,1fr) 100px
+  110px auto`) keeps Description as the one wrapping/flexible column; `mc-mods-grid--installed`
+  (`minmax(0,1fr) 100px 150px 130px auto`) gives Name the flexible share instead. The
+  `mc-mod-title` ellipsis-plus-tooltip treatment from the previous fix carries over unchanged
+  (still needed - Grid doesn't make genuinely long content disappear, it just stops that
+  content from distorting every other row).
+
+- **Follow-up: the Grid version was still sitting cramped on the left of a wide window, not
+  using the available width.** `.mc-mods-grid` kept the old `max-width: 1040px` cap from the
+  `<table>` era, carried over without reconsidering it. That cap existed because a `<table>`'s
+  `width: 100%` was unpredictable (the exact bug this whole thread of fixes was chasing) - but
+  Grid's `fr` units don't have that problem: `minmax(0, 1fr)` is a deterministic share of
+  whatever width the grid actually has, regardless of any row's content, so there's no outlier-
+  content failure mode to reintroduce by letting it stretch. `.mc-mods-grid` now has
+  `width: 100%` (with a much larger `max-width: 1600px` just as a sanity cap for a genuinely
+  huge monitor) - the flexible column (Description in the Browse grid, Name in the Installed
+  grid) now actually fills the section's width instead of leaving most of the window empty.
+
+- **CurseForge fingerprint matching for scanForInstalledMods - the deliberate follow-up flagged
+  in the CurseForge v1 entry above is now implemented.** A file Modrinth's hash lookup didn't
+  recognize used to become `source: 'unknown'` outright, even if it was actually a CurseForge
+  mod the app could have identified. Now, when `AppSettings.curseforgeApiKey` is set, anything
+  still unmatched after the Modrinth pass gets a second pass against CurseForge's own file-
+  identification scheme before falling back to `'unknown'`.
+  - **New `src/main/lib/curseforgeFingerprint.ts`**: CurseForge doesn't use a normal file hash
+    for this - it's MurmurHash2 (32-bit, the original Austin Appleby algorithm, seed `1`)
+    computed over the file's bytes with whitespace bytes (tab/LF/CR/space) stripped out first.
+    This is CurseForge's own published algorithm (the same one their official app and every
+    third-party CurseForge-aware launcher uses), not something invented here -
+    `computeCurseForgeFingerprint(buffer)` implements it directly against the reference
+    description. *Caveat worth being upfront about*: this sandbox has no network access to
+    CurseForge to validate the implementation against a real server response, so it's verified
+    here by internal consistency (determinism, the whitespace-stripping behavior specifically,
+    tail-byte handling for lengths not a multiple of 4) rather than a known-good fingerprint
+    value from a real file. If it doesn't actually match anything on a real mods folder, that's
+    the first thing to double-check.
+  - **`scanForInstalledMods` reads each file's bytes once**, computing both the sha1 (for
+    Modrinth) and the CurseForge fingerprint (for CurseForge) from the same buffer, rather than
+    reading the file twice for two different identification schemes.
+  - **Only fingerprints for files Modrinth didn't already match are sent to CurseForge** -
+    consistent with the whole app's existing "don't cost more requests than necessary" pattern
+    (the same reasoning as the earlier Modrinth batch-project fix for this same function).
+  - **New `getCurseForgeMods` batch function** (`POST /v1/mods`, CurseForge's own counterpart to
+    Modrinth's `/projects`) fetches every matched mod's title/slug/icon in one request instead
+    of one per match - the exact N+1 mistake already fixed once for Modrinth's own scan path,
+    avoided here from the start instead of needing a second round of discovery.
+  - **A CurseForge fingerprint-check failure doesn't lose the Modrinth matches already found** -
+    wrapped in its own try/catch (logged as a soft warning), same "one source's failure
+    shouldn't take down the other's results" reasoning used for the search path's own
+    CurseForge try/catch.
+  - New `tests/curseforgeFingerprint.test.ts` (determinism, different-content differences, the
+    whitespace-stripping behavior specifically, tail-byte lengths, always-unsigned-32-bit) and
+    new tests in `tests/minecraftModScan.test.ts` (no CurseForge key - no CurseForge calls made;
+    a fingerprint match adopts as `source: 'curseforge'`; only unmatched files' fingerprints are
+    sent; still falls back to `'unknown'` when CurseForge also finds nothing; a CurseForge
+    failure doesn't lose the Modrinth-matched results).
+
+- **Fix: CurseForge fingerprint matching never actually found anything, even for a mod
+  confirmed to be on CurseForge (findable by searching for it by name in the Browse tab).** Not
+  a bug in the fingerprint algorithm itself - that part was verified independently (see below) -
+  but in `scanForInstalledMods`'s own tracking logic, and it's a bug that predates CurseForge
+  support entirely: `trackedFileNames` (now `settledFileNames`) was built from *every* installed
+  mod's file name, `source: 'unknown'` included. Once a file got adopted as `'unknown'` on some
+  earlier scan (back when only Modrinth hash-matching existed, or before a CurseForge key was
+  ever configured), it counted as "tracked" from then on - so `listUntrackedModFiles` excluded
+  it from every future scan, permanently. The file was never wrong about being unidentified at
+  the time; it just could never be re-examined later, even after this app gained a second
+  identification method entirely.
+  - **Fixed by splitting "tracked" into two states**: only a real match (`source: 'modrinth'` or
+    `'curseforge'`) is now treated as settled and excluded from re-scanning; a `'unknown'` entry
+    is included in `untracked` again on every scan, so it gets a fresh shot at both Modrinth and
+    CurseForge matching each time - a newly-configured API key, or a mod that's since been
+    published, can now actually fix a previously-"Unidentified" row. A file still unmatched
+    isn't re-added as a duplicate (its existing `'unknown'` entry is just left alone); a file
+    that *does* get matched this time has its stale `'unknown'` entry replaced by the real one,
+    rather than ending up tracked twice under the same file name.
+  - **Verifying the fingerprint algorithm itself, since no network access to CurseForge exists
+    in this sandbox to test against a live response**: cross-checked the core MurmurHash2
+    implementation against an independent npm package's own published test vector (input bytes
+    `[1,2,3,4]`, seed `0`, expected output `1487941662`) - confirmed to match exactly, so the
+    hashing math itself is correct. The CurseForge-specific details (seed `1`; the four
+    whitespace byte values `0x09`/`0x0a`/`0x0d`/`0x20` stripped before hashing; the
+    `/v1/fingerprints` endpoint path; the request body `{fingerprints: [...]}`; the `File`
+    object's `fileFingerprint` field name) were each independently confirmed against a public
+    OpenAPI spec and multiple third-party CurseForge API client libraries' own documentation,
+    not just a single source. None of that pointed to a bug - which is what led to looking at
+    the tracking logic instead, and that's where the actual bug was.
+  - New tests in `tests/minecraftModScan.test.ts`: a file previously adopted as `'unknown'` gets
+    re-examined and upgraded to `'curseforge'` once a match exists; an `'unknown'` entry that's
+    still unmatched isn't duplicated or re-reported as newly adopted on a later scan.
+
+- **Addition: a mod published identically on both Modrinth and CurseForge used to just show
+  one of the two in the Source column, since a file already matched by Modrinth was never even
+  checked against CurseForge.** `scanForInstalledMods` now checks CurseForge fingerprints for
+  *every* untracked file, not just the ones Modrinth missed - a file matched by both (same
+  bytes, so the same sha1 *and* the same CurseForge fingerprint) keeps Modrinth as its primary
+  `source` (the one actually used for install/update, since Modrinth needs no API key), but
+  gains a new `alsoOn: ['curseforge']`. The Mods tab's Source column now shows "Modrinth,
+  CurseForge" for that case instead of silently implying it's Modrinth-only.
+  - `InstalledMinecraftMod.alsoOn?: MinecraftModSource[]` - purely informational, only set by a
+    scan that actually checked both sources for that exact file; an entry from before this
+    existed (or one `source`'s match from a profile that's never had a CurseForge key
+    configured) won't have it retroactively without a fresh Rescan.
+  - New `installedSourceLabel` in `ModsTab.tsx` joins `source` and `alsoOn` for display
+    (`"Modrinth, CurseForge"`) instead of the plain single-source `sourceLabel`.
+  - New tests in `tests/minecraftModScan.test.ts`: CurseForge fingerprints are now sent for
+    every untracked file including Modrinth-matched ones; a dual match sets `alsoOn` on the
+    Modrinth-sourced entry rather than creating a second, competing entry for the same file.
+
+- **Fix: the Mods grid still didn't fill the window's width on a 2K monitor, and a mod already
+  on both Modrinth and CurseForge still didn't show "Modrinth, CurseForge" for an older,
+  already-settled entry.**
+  - **Grid width**: `.mc-mods-grid` had carried over a `max-width: 1600px` sanity cap from the
+    original `<table>`-era CSS. Grid's `fr`-based columns are safe to stretch arbitrarily wide
+    (see the comment above the rule) - there's no outlier-content failure mode to reintroduce,
+    unlike the old table's `width: 100%` - so the cap is just gone now; the grid fills whatever
+    width `.server-detail` actually has.
+  - **Retroactive cross-listing**: the previous `alsoOn` fix (above) only checked a file against
+    CurseForge *while it was still `untracked`* - i.e. the first time it's ever seen, or while
+    it's sitting as an unidentified `'unknown'` entry. A mod already settled as `source:
+    'modrinth'` from a scan that predates the `alsoOn` feature (or predates a CurseForge key
+    being configured at all) is excluded from `untracked` by `settledFileNames` and was never
+    re-examined by any later Rescan, so it could never retroactively gain its CurseForge
+    cross-listing - exactly the case reported. `scanForInstalledMods` now also runs a new
+    `crossCheckSettledModrinthModsAgainstCurseForge` pass first (only when a CurseForge key is
+    configured): every already-settled `source: 'modrinth'` entry whose `alsoOn` is still
+    `undefined` has its on-disk file's fingerprint computed and checked against CurseForge in
+    one batched call. A match backfills `alsoOn: ['curseforge']`; no match sets `alsoOn: []`
+    (explicitly empty, not left `undefined`) so it's marked "already checked" and never
+    re-queried on every future scan - only entries truly never checked are considered each time.
+    Deliberately one-directional for now (Modrinth-primary entries checked against CurseForge,
+    not the reverse), since that's the concrete case reported.
+  - New tests in `tests/minecraftModScan.test.ts`: an already-settled Modrinth entry gets
+    `alsoOn: ['curseforge']` backfilled on the next scan when CurseForge has a fingerprint match
+    for its file; one with no match gets `alsoOn: []` and is never sent to CurseForge again on a
+    subsequent scan.
+
+- **Fix: stopping a modded (Forge) Minecraft server on Windows left the Manager stuck showing
+  "Stopping" forever, even though the server itself had already fully exited.** A `launchMode:
+  'script'` launch on Windows runs through a `cmd.exe` wrapper (`entry.process` in
+  `minecraftProcess.ts`) that spawns the real java process as its own child rather than
+  replacing itself the way a POSIX shell's `exec` does - `watchForScriptPidHandoff` already
+  corrects the *tracked pid* to the real java one once it's found listening on the port, but
+  `entry.process` itself stays the wrapper forever. Stop/kill used to finalize "stopped" only
+  from `entry.process`'s own `'exit'` event - and some servers' generated `run.bat` ends in a
+  `pause` (or similar) that blocks forever on a piped, non-interactive stdin once java has
+  already exited, since there's nothing left to ever supply the keystroke it's waiting for. So
+  `cmd.exe` never actually exits, that event never fires, and the Manager waits on it forever.
+  - `waitForExitOrKill` now also polls `isPidAlive(entry.pid)` (the real tracked pid) in
+    parallel with waiting for `entry.process`'s own `'exit'` - whichever happens first resolves
+    it. Once the real pid is confirmed gone, a still-alive wrapper is force-killed directly
+    (rather than left running forever in the background), which in turn makes it actually emit
+    `'exit'` and run the cleanup already registered on it in `startServer`.
+  - `killServer` (the force-kill/Kill button path) now also force-kills the wrapper pid
+    directly alongside the real one, rather than relying on the wrapper to exit by itself once
+    its child is gone.
+  - New `tests/minecraftProcessWindowsScriptWrapperHang.test.ts`: pins `platform: 'win32'` and
+    fakes the `cmd.exe` wrapper/real-java-pid split directly (same technique
+    `tests/findListeningPid.test.ts` uses for ARK's equivalent handoff logic) to reproduce a
+    wrapper that never emits its own `'exit'` event while the real pid it spawned does exit -
+    confirmed to fail without this fix (`stopServer` never resolves away from `'stopping'`) and
+    pass with it.
+
+- **Fix: a long-standing regression of the manager-wide input-freeze bug (`bb7204c` - a text
+  field silently stops accepting keystrokes after certain actions, Electron/Windows sometimes
+  failing to hand OS-level keyboard focus back to the main window once a native modal closes).**
+  That fix covered every `window.confirm()` call site and the file/folder pickers, but missed
+  one real native modal that predates it: the Windows UAC elevation prompt triggered by
+  `firewall.ts`'s "Add firewall rule for SteamCMD" button (`Start-Process -Verb RunAs`) never
+  refocused the main window afterward - same class of OS-level dialog as the ones already
+  fixed, so triggering it reproduced the exact same "fields silently stop accepting keystrokes"
+  symptom through an unfixed path. `registerSteamcmdInstallHandlers` now takes the
+  `BrowserWindow` itself (previously just its `webContents`) and calls `mainWindow.focus()`
+  right after `addFirewallRulesForSteamCmd` settles, success/failure/cancellation alike - same
+  pattern as `confirmAction()` and `dialog.ts`'s pickers.
+
+- **Change: the Mods tab's Source column shows each mod source's own logo instead of its
+  plain-text name.** User-provided logo files (`forge.png`, `Modrinth_Logo.png` - added at the
+  repo root for this) moved into `src/renderer/src/assets/mod-sources/` as
+  `forge.png`/`modrinth.png`. Note `forge.png` is actually the Forge *mod loader*'s anvil logo,
+  not CurseForge's own brand logo - used here for CurseForge anyway at the user's explicit
+  request, since no CurseForge-specific logo was provided.
+  - New `SourceIcon`/`InstalledSourceIcons` in `ModsTab.tsx` replace the old plain-text
+    `sourceLabel`/`installedSourceLabel` helpers in both grids' Source column - the name is
+    still there as the image's `alt`/`title` (a tooltip, and not lost for accessibility). The
+    Installed grid's cross-listed case (`alsoOn`) now renders every logo that applies
+    side by side instead of a comma-joined "Modrinth, CurseForge" string.
+  - New `.mc-mod-source-cell`/`.mc-mod-source-icon` CSS - a small (22px) `object-fit: contain`
+    icon, with `flex-wrap: wrap` on the cell itself for the Installed grid's multi-logo case.
+  - Scoped to the Source column cells only, per explicit confirmation - the "Browse Modrinth
+    [& CurseForge]" section headings/paragraphs above the grid stay as plain text.
+
+- **Fix: a mod available on both Modrinth and CurseForge showed up as two separate, identically-
+  named rows in the Mods tab's Browse search results.** Unlike `scanForInstalledMods` (which has
+  an actual file to hash/fingerprint and so can *confirm* two hits are the same mod),
+  `searchMinecraftMods` only has each source's own search metadata to go on - there's no shared
+  cross-platform id to match on at search time. New `mergeDuplicateSearchResults` in
+  `minecraftMods.ts` merges hits that share an exact, case-insensitive title into a single row -
+  Modrinth kept as the primary/installable one when both are present (same "no API key needed"
+  preference used everywhere else that picks between the two sources), with the other source(s)
+  attached as a new, purely informational `MinecraftModSearchResult.alsoAvailableOn` field (same
+  role as `InstalledMinecraftMod`'s own `alsoOn`) - Install still always uses the primary row's
+  own source/projectId, this isn't a source picker. Traded off deliberately: a coincidentally
+  same-titled but actually different mod from each source would get merged too, in exchange for
+  not showing an obvious true-positive duplicate twice.
+  - `ModsTab.tsx`'s old single-source `SourceIcon` usage in the Browse grid is now the same
+    `SourceIcons` (plural) component already used for the Installed grid's `alsoOn` case, so a
+    merged row shows every applicable logo side by side there too.
+  - New tests in `tests/minecraftModsCurseForge.test.ts`: a same-titled hit from both sources
+    merges into one row with `alsoAvailableOn` set (case-insensitive); two hits with genuinely
+    different titles are left as two separate rows.
+
+- **Fix: stopping a server correctly (the Forge "stuck on Stopping" fix above) now showed
+  "Process exited with code 1" in red on the server card, even though the stop completed
+  exactly as asked.** `child.on('exit')` unconditionally treated any non-zero/non-null exit code
+  as an error worth surfacing - that used to be a safe assumption, but `waitForExitOrKill`/
+  `killServer` now force-kill a hung Windows script-mode wrapper (cmd.exe) directly once the
+  real server pid is confirmed gone (see the fix above), and a forcibly-terminated process's own
+  exit code is whatever the OS reports for that (code 1 on Windows), not 0 - even on a
+  completely clean, deliberate stop. The handler now checks whether the status was already
+  `'stopping'` (set by `stopServer`/`killServer` before they ever touch the process) before
+  attaching a `lastError` - the same "expected vs. a surprise" distinction ARK's own
+  `serverProcess.ts` already makes for its equivalent handler. An exit seen from `'starting'`/
+  `'running'` (nobody asked for it) still surfaces the error as before.
+  - New tests in `tests/minecraftProcess.test.ts`: a deliberate `stopServer()` reports no
+    `lastError` even when the underlying process's own exit code is non-zero; an unexpected
+    exit while still `'running'` still does. Listens to the `'status'` event directly rather
+    than `getStatus()` afterward, since the running-process bookkeeping (and the `lastError` it
+    carried) is already cleared by the time a caller could poll for it - same for every other
+    exit path, not something this fix changed.
+
+- **Change: CurseForge is now preferred over Modrinth whenever a mod is found on both and a
+  CurseForge API key is configured** (explicit user request - previously Modrinth was always
+  kept as the "primary" source when the two overlapped, reasoning that it needs no API key;
+  that default no longer applies once the user has actually set one up). Three places this
+  shows up, all gated on a key being configured (nothing changes with no key set, same as
+  before):
+  - `mergeDuplicateSearchResults` (Browse search results): the merged row now keeps the
+    CurseForge hit as primary/installable, with Modrinth attached via `alsoAvailableOn` instead
+    of the other way around.
+  - `scanForInstalledMods`'s own fingerprint-matching loop: a file matched by both sources
+    during a scan is now adopted as `source: 'curseforge'` with `alsoOn: ['modrinth']`, not the
+    reverse.
+  - The retroactive backfill (previously `crossCheckSettledModrinthModsAgainstCurseForge`, now
+    `preferCurseForgeForSettledModrinthMods`) no longer just tags `alsoOn` on an already-settled
+    Modrinth entry - it fully promotes it to `source: 'curseforge'` (fetching the real CurseForge
+    metadata via `getCurseForgeMods`, same as a fresh scan would) so a mod installed via Modrinth
+    before a CurseForge key existed gets the same treatment on its next Rescan as a brand new
+    match would. The "already checked, no match" `alsoOn: []` sentinel (vs. `undefined` meaning
+    never checked) still works the same way to avoid re-querying every scan.
+  - Updated `tests/minecraftModScan.test.ts`/`tests/minecraftModsCurseForge.test.ts` for the new
+    CurseForge-primary expectations in all three spots.
+
+- **Addition: ARK: Survival Ascended's own Mods tab is now "visual" too (user request, now that
+  the CurseForge integration built for the Minecraft tab is confirmed working) - a real icon/
+  name resolved from CurseForge next to a mod id, and a "Search CurseForge" section to find and
+  add a mod by name instead of hunting for a bare numeric id on CurseForge's website yourself.**
+  ARK: Survival Evolved is deliberately untouched - its own mod ids are Steam Workshop ids, a
+  completely different namespace CurseForge knows nothing about; every addition below is gated
+  on `!isEvolved`.
+  - New `src/main/lib/arkMods.ts`: `searchArkMods(query)` (new `searchCurseForgeArkMods` in
+    `curseforgeClient.ts`, ARK:SA's own CurseForge counterpart to `searchCurseForgeMods`) and
+    `getArkModsInfo(modIds)` (batched, via the already game-agnostic `getCurseForgeMods` - no
+    new client code needed for this half) for enriching every mod id already in a profile's
+    list, not just ones added via search. Both return empty (not an error) with no CurseForge
+    key configured; `getArkModsInfo` also silently drops any non-numeric id (e.g. an
+    Evolved-style Steam Workshop id, or just garbage) before ever calling CurseForge with it.
+  - **ARK: Survival Ascended's own CurseForge game id (83374) isn't in CurseForge's official
+    docs** (their public docs only show Minecraft's 432 as a worked example) - this is
+    community-sourced, corroborated by two independent reports of a running ARK:SA server's own
+    mod tooling using `"gameId": 83374`, and by player reports that CurseForge-downloaded ARK:SA
+    mods land in a folder literally named `83374` inside the game's own Mods directory
+    (CurseForge's own on-disk convention is `<gameId>/<modId>`). No `classId` is sent for ARK:SA
+    searches - unlike Minecraft (several CurseForge "classes": Mods, Bukkit Plugins, ...),
+    ARK:SA's own CurseForge listing has exactly one content type ("Mods"), so there was nothing
+    to disambiguate and guessing a wrong numeric classId risked silently returning zero results
+    instead of everything.
+  - New IPC: `ark-mods:search`/`ark-mods:info` (`src/main/ipc/arkMods.ts`,
+    `window.api.arkMods.search`/`.info`), new shared types `ArkModSearchResult`/
+    `ArkModInfo`/`ArkModInfoMap` in `shared/types.ts` - deliberately a much thinner shape than
+    `MinecraftModSearchResult`: nothing here picks a version/loader-compatible file, since ARK
+    mods aren't actually downloaded/installed through this app at all (the server fetches its
+    own mods by id at startup) - it's purely "what is this id called and what does it look
+    like," enough to prefill `ServerMod.id`/`.name` from a real search hit.
+  - `ServerDetail/ModsTab.tsx`: a new "Search CurseForge" section (hidden entirely for ARK:SE,
+    and showing a "set a key in Settings" hint instead of results when no key is configured)
+    lists hits with icon/name/summary/downloads and an Add button (disabled, labeled "Added",
+    once that id is already in the list) - Add prefills both id and name, unlike the existing
+    manual "Mod ID" input which only ever took a bare id. The existing mod table's own Mod ID
+    column now also shows a resolved icon/name next to every row it can identify (looked up for
+    every id already in the list, keyed on a sorted/joined id string so toggling Enabled/
+    Passive/Dev, renaming, or reordering doesn't re-trigger a lookup for a set of ids that
+    hasn't actually changed) - this doesn't touch the existing free-text Mod Name field at all,
+    it's a separate, purely informational hint.
+  - New `tests/arkMods.test.ts` and new tests in `tests/curseforgeClient.test.ts` for the new
+    search/info functions (mapping, empty-list/no-request behavior with no API key, non-numeric
+    id filtering, dedup). No renderer component test suite exists in this project to extend for
+    the `ModsTab.tsx` changes themselves (same as every other UI-only change here) - `npm run
+    typecheck`/`build` both pass, but this wasn't visually verified running the actual app (no
+    display in this environment to drive Electron's UI with).
+
+- **Follow-up, from a real screenshot of the above: the free-text Mod Name field was redundant
+  once a resolved CurseForge name already existed, and the table's right-most Actions column
+  (↑/↓/⤒/Remove) was visibly misaligned from the rest of the row once a row's resolved name got
+  long.** Both ARK: Survival Ascended's own CurseForge enrichment and the Minecraft Mods tab hit
+  the exact same underlying issue the Minecraft tab already had to fix once before (see its own
+  "CSS Grid, not a `<table>`" entry above) - so the fix is the same one, applied here too.
+  - **ARK: Survival Ascended's Name column is no longer an editable text input.** It now shows
+    the real icon + name resolved from CurseForge (falling back to whatever label a mod already
+    had, typed in before this feature existed, if CurseForge hasn't resolved it) - purely
+    informational, same as the Minecraft Mods tab's own Name cell. **ARK: Survival Evolved is
+    unaffected and keeps its editable free-text Name field exactly as before** - it has no
+    CurseForge data to show instead, since its mod ids are Steam Workshop ids.
+  - **The whole mods list is now a CSS Grid** (`ark-mods-grid`/`ark-mods-grid--ascended`/
+    `ark-mods-grid--evolved` in `styles.css`, `ModsTab.tsx`'s own `<table>` replaced with the
+    same Fragment-per-row flat-children markup the Minecraft tab's grid already uses) instead of
+    an HTML `<table>` - this is what actually fixes the reported Actions-column misalignment,
+    not a tweak to the old table's own CSS, for the same reason incremental table-CSS patches
+    never fully fixed it for the Minecraft tab either: a column's width in table auto-layout
+    depends on content across every row at once, which Grid's explicit per-track
+    `grid-template-columns` doesn't.
+
+- **Fix: the CurseForge-resolved icon never actually showed up, in either ARK's new Mods tab
+  enrichment/search or (very possibly, silently, just never reported) the Minecraft Mods tab's
+  own CurseForge results.** `index.html`'s CSP `img-src` only allow-listed the one specific host
+  `https://media.forgecdn.net`, picked without ever having a live response to confirm it against
+  (no network access to CurseForge from this sandbox - see the fingerprint-algorithm
+  verification entry above for the same caveat on a different piece of CurseForge integration
+  work). CurseForge's own CDN serves different asset kinds from different `forgecdn.net`
+  subdomains (e.g. `edge.forgecdn.net` for file downloads) - if mod logos are served from a
+  different one than `media.`, the CSP silently blocked every one of them, with the `<img>`
+  tag's own `onError` handler just hiding the broken image rather than surfacing anything. Now
+  `https://*.forgecdn.net` (wildcard subdomain) instead of the one specific hostname, so this
+  class of bug can't recur for whichever subdomain CurseForge actually uses for a given asset.
+
+- **Fix: once the icon fix above actually showed CurseForge-resolved names, ARK: Survival
+  Ascended's Mods grid had a big dead gap between a short Name and the Mod ID/Actions columns
+  pinned at the far right.** `ark-mods-grid--ascended`/`--evolved`'s own Name track was
+  `minmax(0, 1fr)` - the same "give the primary column the whole leftover share" choice that's
+  correct for the Minecraft Mods tab's own Name column (genuinely the widest, most-attention-
+  grabbing thing in that grid), but wrong here: most real ARK mod names are much shorter than
+  the row is wide, so claiming all the leftover space just pushed Mod ID/Actions far off to the
+  right with nothing filling the space between. Name is now capped (`minmax(0, 360px)`) like
+  Mod ID already was, instead of an `fr` track - with no `fr` track left at all, the grid's
+  columns size to their own content/cap and stop, so any genuinely leftover width (a very wide
+  window, or every mod in the list having a short name) just sits unused past the last column
+  instead of being forced into a gap mid-row.
+
+- **Change: ARK's Mods grid is now centered in the tab (with `max-width: 1100px` + `margin: 0
+  auto`) on a wide window instead of sitting pinned to the left, and the Mod ID column's text
+  is centered within its own column rather than left-aligned** (user request, follow-up to the
+  gap fix above - once nothing stretched the grid to fill the tab's full width, the leftover
+  space all sat to its right instead of being split evenly on both sides).
+
+- **Fix, from a real screenshot of the centering change above: the "Add mod ID" input row
+  stayed pinned to the tab's own left edge while the grid below it centered itself, visibly
+  misaligned from it - and capping Name to stop it stretching to a multi-thousand-pixel-wide
+  browser's own edge had shrunk the whole table down to a visibly tiny, overly-narrow block
+  once an outer centered cap existed to constrain it anyway.**
+  - New `.ark-mods-list` wrapper (`ModsTab.tsx`) now holds the "Add mod ID" row and the grid
+    together, with the `max-width: 1200px; margin: 0 auto` centering living on *it* instead of
+    on the grid and `.mods-add` separately - centering two siblings independently, each with
+    its own (different) max-width, centers them on the same point but leaves their *left edges*
+    different, which is exactly what read as misaligned. Both now share one bounding box.
+  - Name's column track is back to `minmax(0, 1fr)` instead of the capped `minmax(0, 360px)`
+    from the gap fix above - with `.ark-mods-list` already capping/centering the *overall*
+    layout so nothing stretches all the way out to a wide browser's own edge, letting Name claim
+    the rest of that already-bounded width is the right amount of stretch: comfortably sized
+    without reproducing the original edge-to-edge gap problem the cap was there to fix.
+
+- **Fix: still reported "too shrunk" after the 1200px cap above, on a wide enough monitor.**
+  `.ark-mods-list`'s `max-width` is now a percentage (`95%`) rather than another fixed pixel
+  guess - after two rounds of a fixed cap (1100px, then 1200px) each getting reported as too
+  narrow on a wide enough window, a percentage scales with however wide the window actually is
+  instead of requiring yet another pixel number to guess at, while still leaving a modest,
+  proportional margin on both sides rather than stretching flush to the tab's own edges.
+
+- **Fix: even the percentage cap above still came back as "hasn't moved" on a confirmed-
+  maximized 2K monitor with a confirmed-current build.** Three different `.ark-mods-list` width
+  values in a row (1100px, 1200px, 95%) all reportedly rendered identically, which stopped being
+  explainable by the cap value itself and started pointing at centering a capped width not
+  taking effect correctly in this specific layout (`.ark-mods-list` is a flex item of
+  `.mods-tab`'s column flex layout - an arrangement not otherwise used elsewhere in this app).
+  Rather than keep guessing at why without being able to inspect the live DOM, `.ark-mods-list`
+  now just matches the Minecraft Mods tab's own grid exactly: no cap, `width: 100%`, Name a real
+  `minmax(0, 1fr)` track - the one arrangement already proven to behave correctly on this exact
+  CSS Grid architecture (confirmed working there across this whole session). If filling the
+  available width turns out to need centered margins again once that's confirmed actually
+  working, that's a much smaller, easier follow-up than continuing to guess at cap values that
+  may not even have been the real constraint.
+
+- **Fix: confirmed from the above - dropping the cap entirely did visibly fill the tab
+  edge-to-edge (user: "back to square one"), proving a flex item's own `width` genuinely
+  applies in `.ark-mods-list` (a flex item of `.mods-tab`'s column layout). In hindsight, the
+  actual likely culprit all along was `margin: 0 auto` itself never centering it - each of the
+  three earlier capped attempts could easily have been correctly narrowed but left flush-left
+  instead of centered, which would explain three cosmetically-similar "hasn't moved" results
+  between slightly different cap values.** `.ark-mods-list` now uses `align-self: center`
+  (overriding just this one flex item's own cross-axis alignment, overriding `.mods-tab`'s
+  default `align-items: stretch`) instead of relying on auto margins absorbing leftover space -
+  a more direct mechanism with less indirection to silently fail - alongside a generous
+  `max-width: 1600px` cap, picked now that dropping the cap entirely confirmed the available
+  width is genuinely wide enough for 1600px to read as "spread out," not "shrunk."
+
+- **Change: ARK's Mods grid now shows Mod ID before Name** (user request) - both the header row
+  and each data row in `ModsTab.tsx` swap their order, and `grid-template-columns` in
+  `styles.css` (`ark-mods-grid--ascended`/`--evolved`) swaps the two columns' tracks to match.
+
+- **Change: the Copy/Paste Mod List feature now works with bare mod ids, one per line, instead
+  of the full `{id, name, enabled, passive, dev}` JSON it used to round-trip** (user request -
+  now that the Mods tab resolves a mod's real name from CurseForge automatically, there was
+  nothing left worth carrying along with the id). `serializeMods`/`parseImportedMods`
+  (`src/main/lib/modsExport.ts`) rewritten accordingly:
+  - **Copy** now writes just `mods.map(m => m.id).join('\n')` instead of the old JSON blob.
+  - **Paste** splits on any run of non-digit characters (not strictly newlines), so a list
+    copied as `"123, 456 789"` parses the same as one id per line - the point of dropping the
+    structured JSON format entirely is accepting an id list from *anywhere* one already exists
+    (a wiki page, a Discord message, a friend's own modpack list), not just this app's own
+    previous export. Every parsed id becomes a fresh entry with the same enabled/not-passive/
+    not-dev defaults `addMod`'s own manual single-id path already uses, deduplicated, with a
+    clear error if the pasted text has no numeric ids in it at all.
+  - Updated copy/paste section text in `ModsTab.tsx` to describe the new format; rewrote
+    `tests/modsExport.test.ts` for the new behavior (separators, dedup, defaults, the empty-
+    result error case) in place of the old JSON-round-trip/validation tests.
+
+- **The web dashboard (`src/main/lib/webDashboard.ts`) now lists, starts, stops, and remote-
+  controls Minecraft servers too, not just ARK ones - and its ARK Mods tab gained the same
+  CurseForge search/icon/resolved-name enrichment the desktop app's own `ModsTab.tsx` already
+  had (see the entries above).** Two separate requests handled together since both touch the
+  same file: "adapt the web dashboard to Minecraft servers, and to the recent ARK-side
+  novelties."
+  - **Core dispatch strategy**: rather than building a second, fully parallel Minecraft UI
+    tree in the dashboard's single-file client (which would have meant 1500+ new lines, on
+    the order of the desktop app's own separate `MinecraftServerDetail/*` React tree), every
+    route that already returns a shape close enough to be shared (`ServerStatus` ≈
+    `MinecraftServerStatus`; `RconResult`/`BackupEntry`/`BackupLogEntry` are the exact same
+    shared types both games' backend modules already use) now dispatches internally by game
+    type and returns that same shape either way - so the dashboard's existing generic
+    client-side rendering (it already carried `gameIconUrl`/`gameDisplayName` per server, to
+    tell ARK: Survival Ascended and ARK: Survival Evolved icons apart) picks up Minecraft
+    servers correctly with little to no client-side change for the core views.
+  - **What now works for a Minecraft server, same as ARK**: `GET /api/servers` lists it
+    (icon from a new `/game-icons/minecraft.png`, `minecraft.png` copied into `build/games/`
+    since it previously only existed in the renderer's own bundled Vite assets, never in the
+    `extraResources`-copied folder the dashboard and packaged app both actually read icons
+    from); Dashboard/Cluster cards and the Console view's status panel show it with zero
+    extra client code since both already rendered off the generic shape; the Console view's
+    live event stream tails Minecraft's own stdout via `minecraftConsoleEvents`/
+    `minecraftServerEvents` (every line wrapped as a generic `{label: 'LOG', cls: 'log', ...}`
+    `LogEvent`, since Minecraft's console has no ARK-style JOIN/CHAT/KILL/etc. categorization
+    to parse into); Start/Stop dispatch to `doStartMinecraftServer`/`doStopMinecraftServer`;
+    the RCON command box tries the live process's stdin first
+    (`sendStdinCommand`, same priority order the desktop Console tab's own command box and
+    `ipc/minecraft.ts` already use), falling back to real RCON
+    (`sendMinecraftRconCommand`) only for a re-adopted server with no live process handle;
+    `GET .../players` parses Minecraft's own `list` RCON response
+    (`parseMinecraftPlayerList`, already existed) into the same `{name, id}[]` shape ARK's
+    route returns.
+  - **What's explicitly not available for a Minecraft server yet, and says so rather than
+    guessing or silently no-op'ing**: `POST .../restart`, `.../update`, and
+    `.../stop-update-restart` all return `400` with a clear message (Minecraft has no restart
+    action and no auto-update mechanism in this Manager - a server jar is swapped by hand) -
+    and the Console view's Restart/Update Restart buttons, plus the Dashboard/Cluster card's
+    "⋮" action-sheet entries for them, are hidden entirely for a Minecraft server rather than
+    shown disabled. The six other admin-only tabs that only ever made sense for an ARK
+    profile's own on-disk layout - Settings, Mods, Backups, Analytics, Map Management, Server
+    Management, Update Log - each now show a plain "Not available for Minecraft servers yet -
+    only Console/start/stop currently work here" message and hide their form instead of
+    fetching a route built for a `ServerProfile` and either 404ing or rendering garbage for a
+    `MinecraftProfile`.
+  - **ARK Mods tab CurseForge port**: three new admin-gated routes mirror the arkMods.ts
+    functions the desktop app's ModsTab already called over IPC - `GET /api/arkmods/status`
+    (`{ hasCurseForgeKey }`, never the key itself, so the client can show/hide the search
+    section the same way the desktop tab does for `hasCurseForgeKey`), `GET
+    /api/servers/:id/mods/search?q=...` (`searchArkMods`), and `POST
+    /api/servers/:id/mods/info` (`{ modIds }` → `getArkModsInfo`). The Mods view's HTML
+    gained a collapsible "Search CurseForge" section (hidden entirely for an ARK: Survival
+    Evolved profile, whose mod ids are a Steam Workshop namespace with nothing CurseForge
+    could resolve) and the table's Name column now shows the resolved icon+name for ARK:
+    Survival Ascended (falling back to whatever label a mod already had, same as the desktop
+    tab) instead of staying an editable text input - which stays exactly as it was for ARK:
+    Survival Evolved. The table's Mod ID/Name column order was also swapped to match the
+    desktop tab's own recent reordering (see "ARK's Mods grid now shows Mod ID before Name"
+    above). The Mods tab, like the other five admin tabs above, shows the same "not available
+    for Minecraft servers yet" message for a Minecraft server - Minecraft's own mod browsing
+    wasn't part of this round.
+  - New tests in `tests/webDashboard.test.ts`: a `describe('Minecraft servers', ...)` block
+    (`/api/servers` listing, backlog/live-stream events incl. the `reset` event on
+    restart, start/stop dispatch, the three 400 routes, RCON stdin-then-fallback, player
+    list parsing) plus three new admin-route tests for `/api/arkmods/status` and the two
+    mods routes (mocking `../src/main/lib/arkMods` directly rather than hitting real
+    CurseForge). `npm run typecheck`, the full `npx vitest run` (863 tests), and `npm run
+    build` all pass - this wasn't visually verified in a real browser against a live
+    Minecraft server, since this environment has no display, but the server-side behavior
+    is covered by real HTTP requests against a real `http.Server` (this codebase's own
+    established testing pattern for this file, not a new one introduced here).
+
+- **Follow-up: the web dashboard's ARK Mods tab gained the move-to-top/up/down reorder
+  buttons the desktop app's own ModsTab already had (user-reported gap), and Minecraft
+  servers are now fully separated from ARK ones in the web dashboard - their own "Minecraft
+  Servers" list and their own five admin tabs (Start Settings/Server Settings/Mods/Backup/
+  Server Management), matching the desktop Manager's own separate Minecraft section instead
+  of the six-way "not available for Minecraft servers yet" placeholder the previous entry
+  above left in place.**
+  - **ARK Mods reorder buttons**: `renderModsTable()`'s Actions column now has the same
+    ⤒/↑/↓ trio as the desktop `ModsTab.tsx` (move to top, swap with the previous/next row),
+    each disabled at the respective end of the list, alongside the existing Remove button -
+    all three just `saveMods()` a reordered copy of the array, reusing the exact same save
+    path every other mods edit here already goes through.
+  - **Minecraft/ARK separation on the server-list views**: `renderDashboardCards`/
+    `renderClusterCards` (ARK's Dashboard/Cluster Dashboard) now filter `latestServers` to
+    `isArkServerEntry` before rendering, and a new **Minecraft Servers** nav tab/view
+    (`renderMcDashboardCards`, sharing the same card-grid renderer via a new
+    `renderServerCardsGrid` helper both call into) shows Minecraft servers on their own,
+    filtered by the new `isMcServerEntry`. Clicking a card in either list still jumps straight
+    to the shared Console tab (already correctly dispatches by game - see the previous
+    entry), same as before.
+  - **Five new Minecraft-specific admin tabs**, in their own always-visible sidebar section
+    (unlike ARK's per-server tabs, which stay hidden outside a server-scoped view) with their
+    own server pickers populated from Minecraft profiles only (`MC_SERVER_PICKERS`,
+    `populatePickerGroup` factored out of the old single-purpose `populateServerPickers` so
+    both picker groups share the same optgroup-by-dashboard-group logic) - all syncing to the
+    one shared `currentId` the ARK pickers already use, so a card click in either list and a
+    picker change in either tab group stay in agreement:
+    - **MC Start Settings** (admin+, mirrors the desktop `StartSettingsTab.tsx`): name,
+      server type, Minecraft version, install directory, launch mode (jar/script) and its
+      file name, min/max memory, extra JVM/program arguments, dashboard group, hidden -
+      against a new, intentionally unrestricted `GET`/`POST /api/servers/:id/mc-startsettings`
+      (same "admin can change any field" shape as ARK's own `/profile` route, just backed by
+      `getMinecraftProfile`/`saveMinecraftProfile` instead).
+    - **MC Server Settings** (moderator+, mirrors `ServerSettingsTab.tsx`): every
+      server.properties field the desktop tab edits (gameplay/appearance/world/networking/
+      misc - ~35 fields), generated client-side from a `MC_PROPERTIES_SECTIONS` data array
+      (type + label + default + options, mirroring the desktop tab's own per-field objects)
+      rather than hand-writing 35 inputs, against new `GET`/`POST
+      /api/servers/:id/mc-serversettings` (`readServerProperties`/
+      `upsertServerPropertiesKeys`, both already existed for `minecraftProperties.ts`).
+    - **MC Backup** (moderator+ for list/create, admin+ for restore/delete - same split as
+      ARK's own Backups tab): backup directory/retention/schedule (saved through
+      mc-startsettings, same as ARK's own backup settings going through the admin-only
+      `/profile`), create-now, the backup table, and the backup process log - against new
+      `GET`/`POST /api/servers/:id/mc-backups`, `.../mc-backups/restore`,
+      `.../mc-backups/delete`, `.../mc-backups/log`, wired to the already-existing
+      `minecraftBackup.ts` functions (`createMinecraftBackup`/`listMinecraftBackups`/etc. -
+      built in an earlier round for the desktop `BackupsTab.tsx`, never exposed over HTTP
+      until now). No player-profile-backups panel - Minecraft has no equivalent feature.
+    - **MC Server Management** (moderator+, mirrors `ServerManagementTab.tsx`): start-on-
+      Manager-launch and the scheduled-restart day/time picker (with its own live countdown,
+      reusing the exact same `buildDayCheckboxes`/`computeNextOccurrence`/`formatCountdown`
+      helpers ARK's own Server Management view already defined) - against new `GET`/`POST
+      /api/servers/:id/mc-management`, a narrow whitelist route mirroring ARK's own
+      `/servermanagement` pattern exactly, just with Minecraft's much shorter field list (no
+      crash-watch/zombie-detection/dino-wipe - Minecraft has neither).
+    - **MC Mods** (admin+, mirrors `ModsTab.tsx`'s Modrinth/CurseForge integration): search
+      (both sources, CurseForge only once a key is configured - same `searchMinecraftMods`
+      the desktop tab already calls), install (walking required dependencies automatically,
+      same as desktop), per-mod enable/disable and remove, "Rescan folder" (adopts untracked
+      files already sitting in mods/plugins), and "Check for updates" (per-mod update badge,
+      with an inline Update action) - against six new routes (`GET .../mc-mods`, `GET
+      .../mc-mods/search`, `POST .../mc-mods/install`, `.../remove`, `.../enabled`,
+      `.../rescan`, `GET .../mc-mods/updatecheck`), all thin wrappers around the existing
+      `minecraftMods.ts` functions. A server type with no mod/plugin ecosystem (vanilla,
+      Forge/Fabric/Paper/Spigot's own `unknown`) gets the same clear error message
+      (`requireLoaderSupportsMods`'s own text) as the desktop tab, surfaced in the search/
+      rescan/install error areas rather than a separate "unsupported" banner.
+  - **Role tiers** match what was asked: MC Start Settings and MC Mods stay admin+ only (same
+    tier as ARK's own Settings/Mods); MC Server Settings, MC Backup, and MC Server Management
+    are moderator+ - a step more permissive than their ARK counterparts (ARK's Settings/Mods
+    are both admin-only with no moderator-accessible equivalent at all) per what was
+    specifically asked for Minecraft.
+  - New `describe('Minecraft-specific tabs', ...)` block in `tests/webDashboard.test.ts`
+    (profile/properties/management/backups/mods routes, including the "no mod ecosystem"
+    error path for every mod action against the mock profile's `serverType: 'vanilla'`) plus
+    role-gating tests in the auth-enabled describe block (moderator blocked from admin-only
+    mc-startsettings/mc-mods, readonly blocked from moderator-only mc-serversettings/
+    mc-management/creating an mc-backup). `npm run typecheck`, the full `npx vitest run` (895
+    tests), and `npm run build` all pass.
+  - **This round's client-side changes were additionally verified in a real headless
+    Chromium** (Playwright, pre-installed in this environment) rather than relying on
+    typecheck/build alone the way every earlier client-side-only round in this file had to -
+    a temporary, not-committed test drove every new/changed nav tab end to end (Dashboard →
+    card click → Console → every ARK per-server tab incl. the new mod-reorder buttons;
+    Minecraft Servers → card click → Console → every new MC tab, editing a field on each to
+    exercise the save path too) against the real rendered page, asserting zero `pageerror`/
+    `console.error` events. It came back clean on the first fully-corrected run (the only
+    flagged "error" was Chrome's own generic network-failure log for the one expected 400 -
+    searching Mods for the mock profile's `serverType: 'vanilla'`, which has no mod ecosystem
+    by design) - genuine evidence this round's ~1600 lines of new client JS run without a
+    runtime exception, not just that they parse and typecheck.
+
+- **"+ Add server" on the Minecraft Dashboard now fetches (or, for Forge/Spigot, downloads
+  and runs an installer for) the right server files for a brand-new server, instead of
+  always creating a completely blank profile with nothing on disk.** Previously, setting up a
+  new Minecraft server from scratch meant installing it by hand outside the Manager first,
+  then either "Import existing server" or configuring every field manually - there was no
+  install-from-scratch path for any server type.
+  - **New `shared/minecraftInstall.ts`**: `MinecraftInstallableType` (every real
+    `MinecraftServerType` except `'unknown'`), `MinecraftVersionOption`,
+    `MinecraftInstallParams` (serverType/minecraftVersion/installDir/acceptEula),
+    `MinecraftInstallResult` (installDir/launchMode/jarFileName/scriptFileName/
+    minecraftVersion/serverType) - the shape both `window.api.minecraft.install` and the new
+    main-process modules below share.
+  - **New `src/main/lib/minecraftInstallClient.ts`**: thin fetch wrappers around each loader's
+    own official (or de-facto-standard) public API/distribution channel - Mojang's version
+    manifest for vanilla, PaperMC's download API for Paper, FabricMC's meta API for Fabric
+    (whose `.../server/jar` endpoint builds a ready-to-run server jar on the fly - no separate
+    installer step needed, unlike Forge), and Forge's own Maven `maven-metadata.xml` (parsed
+    with a plain regex - a flat, machine-generated, single-level list, not worth a real XML
+    parser for) since Forge publishes no JSON API at all. Spigot has no download endpoint
+    whatsoever - its own license terms require building it locally from Mojang's mappings via
+    BuildTools.jar, so there's nothing to "fetch" for it beyond that one fixed jar; the actual
+    build happens in `minecraftInstall.ts` below.
+  - **New `src/main/lib/minecraftInstall.ts`**: `listInstallableMinecraftVersions(serverType)`
+    (dispatches to the right client function per loader - Forge's own listing additionally
+    walks the last ~20 Vanilla release versions checking each one's Maven metadata, since
+    Forge has no "list every Minecraft version it ever targeted" endpoint, only a flat combo
+    list filterable by one Minecraft version at a time) and
+    `installMinecraftServerFiles(params)`, which refuses outright - before downloading
+    anything - if `acceptEula` isn't `true` ("you must accept the Minecraft EULA to
+    continue", linking to the real EULA) or no version was picked, then dispatches per
+    `serverType`:
+    - **vanilla/Paper**: download the server jar, verified against the checksum each API
+      actually publishes for it (sha1 for vanilla, sha256 for Paper) - a corrupted/truncated
+      download is discarded with a clear error rather than left as a jar the server might
+      fail to load.
+    - **Fabric**: downloads the on-the-fly-built `fabric-server-launch.jar` - no checksum to
+      verify against, since Fabric's meta server generates it per request rather than
+      publishing one fixed artifact.
+    - **Forge**: downloads the installer jar, runs `java -jar forge-installer.jar
+      --installServer` (failing clearly up front, before any download, if `java` isn't on
+      PATH at all - `requireExecutableOnPath`), then reuses the *existing*
+      `detectMinecraftLaunchable` (minecraftDetect.ts, already used by the Settings tab's
+      "Re-detect" button) to figure out whether the result is a script (modern Forge) or a
+      jar (older Forge), rather than re-implementing that detection a second time.
+    - **Spigot**: downloads BuildTools.jar and runs `java -jar BuildTools.jar --rev
+      <version>` (failing clearly up front if either `java` or `git` - BuildTools needs both
+      - isn't on PATH), then looks for the `spigot-<version>.jar` it produces. This is a
+      genuinely heavy operation (BuildTools clones and compiles from source, routinely taking
+      several minutes) - the install dialog says so, and recommends Paper (a faster,
+      drop-in-compatible alternative most servers prefer today) as the first-listed option
+      instead.
+    Every step logs to the Manager Log (`logManagerEvent`) the same way every other
+    long-running operation in this app does, and `eula.txt` is only ever written after every
+    other step has already succeeded.
+  - **New IPC**: `minecraft-install:list-versions`/`minecraft-install:run`
+    (`src/main/ipc/minecraftInstall.ts`, registered in `ipc/index.ts`), exposed as
+    `window.api.minecraft.install.{listVersions,run}` - doesn't create or save a
+    `MinecraftProfile` itself, mirroring `profiles.importFromInstall`'s "caller reviews/saves
+    the result" pattern; the renderer builds the profile from `createDefaultMinecraftProfile`
+    plus whatever `install.run` returned.
+  - **New `InstallMinecraftServerPanel.tsx`**, opened from "+ Add server" on
+    `MinecraftDashboard.tsx` (replacing the old instant blank-profile creation as the primary
+    path): name, server type (with a one-line hint per type, Spigot's explaining the
+    BuildTools trade-off above), Minecraft version (fetched live for whichever type is
+    selected, re-fetched on every type change), install directory (text field + the existing
+    folder-picker dialog), and the required EULA checkbox, with an inline progress line while
+    installing and a "Configure manually" link back to the old blank-profile path for a
+    server whose files will be set up by hand afterward (e.g. a modpack's own custom launch
+    script) - the install path was added as the new default, not a replacement, for every
+    other way of getting a server into this app.
+  - **Verified against mocked network/process boundaries, not real network access**: this
+    sandbox's own proxy policy blocks every one of these APIs outright (confirmed via
+    `curl`/the proxy's own status endpoint - `connect_rejected` for
+    piston-meta.mojang.com/api.papermc.io/meta.fabricmc.net/maven.minecraftforge.net alike),
+    so every client function and the install orchestration were written against each
+    project's own published, versioned public documentation and tested with a mocked
+    `fetch`/`child_process` (new `tests/minecraftInstallClient.test.ts` and
+    `tests/minecraftInstall.test.ts`, 16+18 tests - URL construction, response parsing,
+    checksum verification success/failure, the EULA/missing-version/missing-executable
+    refusal paths, and the full install flow for all five server types) - the same "confirmed
+    against docs, not a live response" caveat this codebase's CurseForge fingerprint
+    algorithm already carries. **Please run an install of each type end to end on a machine
+    with real internet access (and, for Forge/Spigot, a JDK + Git on PATH) before relying on
+    it** - `npm run typecheck`, the full `npx vitest run` (929 tests), and `npm run build` all
+    pass, but none of that proves the real Mojang/PaperMC/FabricMC/Forge endpoints still look
+    exactly like their own documentation says today, and the renderer side (a desktop Electron
+    dialog, not the web dashboard) wasn't visually verified either - this environment has no
+    display to drive the actual app's UI in.
+
+- **NeoForge support, for both mods and server install - the mod/plugin ecosystem's modern
+  successor to Forge, added as a full peer of every other `MinecraftServerType` rather than
+  bolted on separately.** `MinecraftServerType` gained `'neoforge'`, threaded through every
+  place the other loader types already were:
+  - **Mod search**: Modrinth's own `neoforge` loader category (`loaderCategoriesFor`) and
+    CurseForge's own `modLoaderType` enum value 6 (`modLoaderTypeFor`) - both confirmed
+    against each API's own public documentation, same caveat as everywhere else in this app
+    that talks to either (no live network access to verify from this sandbox).
+    `supportsMinecraftMods`/`modTargetDir` (mods/ folder, same as Forge/Fabric) both updated
+    too, so the Mods tab (desktop and web dashboard alike) just works for a NeoForge profile
+    with no further changes - they already dispatch on `serverType` generically.
+  - **Detection fix**: `detectMinecraftServerType`'s jar/script-name heuristic checked
+    `name.includes('forge')` before a NeoForge-specific check existed - since `"neoforge"`
+    contains `"forge"` as a substring, every NeoForge jar/script was being silently
+    misclassified as plain Forge. Now checks `neoforge` first. NeoForge's own generated
+    `run.sh`/`run.bat` is named identically to modern Forge's (no "neoforge" in the name at
+    all), so the file name alone can't disambiguate a script launch either way -
+    `detectMinecraftServerType` now optionally takes `installDir` and checks for
+    `libraries/net/neoforged` (vs Forge's own `libraries/net/minecraftforge`) when the name
+    alone isn't enough, a reliable signal neither installer's own file naming carries.
+  - **Install from scratch**: new `minecraftInstallClient.ts` functions
+    (`listNeoForgeVersions`/`neoForgeInstallerUrl`/`neoForgeVersionToMinecraftVersion`) and
+    `minecraftInstall.ts`'s `installNeoForgeServer` - same installer-jar-then-
+    `--installServer` flow as Forge's own install path (NeoForge's installer is a fork of
+    Forge's), reusing the exact same `detectMinecraftLaunchable` call afterward to figure out
+    the result. The one real difference from Forge: NeoForge's own `maven-metadata.xml` lists
+    plain build versions with no Minecraft version combined into the string at all (Forge's
+    lists `<mcVersion>-<forgeVersion>` combos) - `neoForgeVersionToMinecraftVersion` derives
+    the Minecraft version from the build version per NeoForge's own documented scheme
+    (`<mcMinor>.<mcPatch>.<build>`, e.g. "21.1.72" → Minecraft 1.21.1), and the version
+    picker's label spells out the derived version alongside the raw build string so it isn't
+    just a bare, meaningless-looking number. Covers the modern NeoForge versioning scheme
+    (Minecraft 1.20.2 onward, the vast majority of real NeoForge usage) - 1.20.1's own
+    legacy-numbered NeoForge builds (a narrow historical case, published under a different
+    Maven artifact with Forge-style combo versioning) aren't covered.
+  - **UI**: `'neoforge'` added to every `MinecraftServerType` picker (desktop Start Settings,
+    the install dialog, the web dashboard's own MC Start Settings) and the "not available"
+    guidance text on the Mods tab that used to say "Forge/Fabric/Paper/Spigot".
+  - **Icon**: a user-provided `neoforge.png` is now a proper asset
+    (`src/renderer/src/assets/games/neoforge.png` for the desktop app, `build/games/
+    neoforge.png` served by the web dashboard's existing `/game-icons/<fileName>` route -
+    same mechanism `minecraft.png` already used, just added to its known-file-names
+    allow-list). New `MINECRAFT_SERVER_TYPE_ICONS` (a deliberately sparse
+    `Partial<Record<MinecraftServerType, string>>` - every other type has no icon asset yet
+    and just keeps showing its plain text label, nothing degrades) wires it into the three
+    spots asked for: the Minecraft Dashboard's server card Type line, the Server type picker
+    in Start Settings/the install dialog (shown as a live preview next to the dropdown, since
+    a native `<select>` can't show an icon per `<option>`), and the Mods tab's Browse header -
+    all three mirrored into the web dashboard too (its own MC Start Settings type picker and
+    MC Mods search header), with a new `serverType` field added to its `/api/servers`
+    Minecraft payload so the client has something to key the icon off.
+  - New tests: `detectMinecraftServerType`'s substring-bug fix and the `installDir`-based
+    script disambiguation (`tests/minecraftDetect.test.ts`), every new
+    `minecraftInstallClient.ts` function (`tests/minecraftInstallClient.test.ts`), the
+    `installNeoForgeServer`/`listInstallableMinecraftVersions('neoforge')` dispatch paths
+    including the missing-Java and bad-version-string failure cases
+    (`tests/minecraftInstall.test.ts`), `modTargetDir`'s mods/ folder for NeoForge
+    (`tests/minecraftMods.test.ts`), the Modrinth/CurseForge loader mappings
+    (`tests/modrinthClient.test.ts`/`tests/curseforgeClient.test.ts`), and the web
+    dashboard's `/game-icons/neoforge.png` route (`tests/webDashboard.test.ts`) - 946 tests
+    total now. **This round's web dashboard icon wiring was additionally verified in a real
+    headless Chromium** (same approach as the Minecraft-tabs round above): selected a NeoForge
+    profile, confirmed the icon actually renders at `/game-icons/neoforge.png` in both the MC
+    Start Settings picker and the Mods browse header, and confirmed it disappears again live
+    (no page reload) when switching the type dropdown to a type with no icon - zero
+    `pageerror` events. `npm run typecheck` and `npm run build` both pass too.
+
+- **The web dashboard now has the same ARK/Minecraft game switcher as the desktop Manager, and
+  its Minecraft tabs only ever show up once that switcher is on Minecraft** (user request, from
+  a screenshot of the desktop app's own sidebar icon-button pair): "make the MC tabs show only
+  for MC servers, and separate MC from ARK the way the Manager does." Previously both games'
+  entire nav button lists sat in the sidebar at once, with only each server picker filtered by
+  game - there was no actual mode switch, just two parallel sets of always-visible buttons.
+  - **Markup**: the sidebar's ARK nav buttons are now wrapped in `<div id="nav-group-ark">` and
+    the Minecraft ones in `<div id="nav-group-minecraft">` (both `class="nav-group"`), with a
+    new `<div id="game-switch">` - two icon buttons (`#game-switch-ark`/`#game-switch-minecraft`,
+    reusing the existing `/game-icons/ark-evolved.png` and `/game-icons/minecraft.png` routes) -
+    placed above both groups, directly mirroring `App.tsx`'s own `GameSwitch` component and its
+    `.app-sidebar-game-switch` styling (same active-state border/background treatment, copied
+    into the dashboard's embedded CSS rather than reinvented).
+  - **Client JS**: a new `gameMode` variable (`'ark' | 'minecraft'`, defaults to `'ark'`) and
+    `selectGameMode(mode)` function toggles each switch button's `.active` class, shows/hides
+    the two `.nav-group` divs via `style.display`, and jumps to that game's own default view
+    (`cluster` for ARK, `mcdashboard` for Minecraft) - the same one-mode-at-a-time behavior as
+    the desktop app's `gameMode === 'minecraft'` branch in `App.tsx`, just toggling visibility
+    instead of swapping out a whole React tree. The page now calls `selectGameMode('ark')` on
+    load instead of calling `applyActiveView()` directly (redundant once `selectGameMode`
+    already calls `selectView`, which calls `applyActiveView` itself).
+  - **Keeping Console reachable**: Console is a genuinely shared view (one implementation, one
+    SSE stream, used by both games) and its own nav button lives in the ARK group - which
+    disappears once Minecraft mode hides that whole group. Rather than duplicating the Console
+    view or filtering its shared server dropdown by game (both considered and rejected as scope
+    beyond what was asked), the Minecraft nav group simply gained its own second button
+    (`#nav-mc-console`, first item in the group) pointing at the exact same `view-console`
+    section, so Console stays one click away in either mode.
+  - **Deliberately left alone**: the individual Minecraft nav buttons still don't get ARK's
+    per-view contextual hide/show (`SERVER_SCOPED_VIEWS`/`updateServerScopedNavVisibility`) -
+    that's an existing, separate design decision from the round that first split Minecraft out
+    of ARK, reaffirmed rather than changed here. Role-based hiding (`canAdmin`/`canOperate`
+    toggling individual MC button visibility) composes fine underneath the new group-level
+    `display:none`, since nested `display:none` hides regardless of a child's own display value.
+  - **Verified**: a temporary headless-Chromium check (same harness as prior rounds, deleted
+    after use) loaded the dashboard, confirmed the ARK group is visible and the Minecraft group
+    hidden by default with the ARK switch button marked active, clicked the Minecraft switch
+    button and confirmed the groups swapped and its button became active, clicked the new MC
+    Console button and confirmed the shared Console view actually opened, then switched back to
+    ARK and confirmed the groups swapped back correctly - zero `pageerror`/console-error events
+    throughout. `npm run typecheck`, the full `npx vitest run` (946 tests, all passing,
+    including the existing `tests/webDashboard.test.ts` suite unaffected by the markup
+    restructure), and `npm run build` all pass too.
+
+- **The remaining `MinecraftServerType` icons - Vanilla, Paper, Fabric, Spigot, and Forge -
+  filling in the gap NeoForge's own round left behind** (user-provided assets, pushed straight
+  to the repo root as `vanilla.png`/`paper.png`/`fabric.png`/`spigot.jpg`; Forge reuses the
+  existing `assets/mod-sources/forge.png` art per the user's own suggestion, rather than
+  needing a new asset). `MINECRAFT_SERVER_TYPE_ICONS` (`minecraftServerTypeIcons.ts`) is no
+  longer a near-empty `Partial` with just NeoForge in it - every real `MinecraftServerType`
+  now has an icon, so it's "sparse" only in the formal sense that `'unknown'` still has none.
+  - **Assets**: the four new files copied into `assets/games/` (desktop bundle) and
+    `build/games/` (the web dashboard's own `/game-icons/<fileName>` route, read from disk at
+    runtime rather than bundled) - same dual-location pattern NeoForge's icon already
+    established. Forge's icon is a second copy of `assets/mod-sources/forge.png` under
+    `assets/games/forge.png`/`build/games/forge.png`: same artwork, reused for two different
+    meanings (the CurseForge mod-source logo there, the Forge loader-type icon here) rather
+    than invented from scratch.
+  - **One real code gap this exposed**: `spigot.jpg` is a JPEG, and the web dashboard's
+    `/game-icons/<fileName>` route was hardcoded to always answer `Content-Type: image/png`
+    regardless of the actual file - harmless for every icon so far since they all happened to
+    be PNGs, but wrong for a JPEG. Fixed by picking the content type from the file extension
+    (`image/jpeg` for `.jpg`/`.jpeg`, `image/png` otherwise) rather than hardcoding one value.
+  - **Wiring**: all six loader types (`vanilla`/`paper`/`fabric`/`forge`/`neoforge`/`spigot`)
+    added to the web dashboard's own `MC_SERVER_TYPE_ICON_URLS` map, which already drove both
+    the MC Start Settings type picker's live icon preview and the Mods tab's Browse header icon
+    generically - no call-site changes needed there, same as the desktop side's
+    `MINECRAFT_SERVER_TYPE_ICONS` map already driving the Dashboard card's Type line, the
+    Server type picker (Start Settings/install dialog), and the Mods tab's Browse header for
+    every type at once. Added a `declare module '*.jpg'` to `assets.d.ts` (only `*.png` existed
+    there before, since Spigot's icon is this app's first non-PNG asset import).
+  - **Verified**: new `tests/webDashboard.test.ts` cases cover all five new icon routes,
+    including that `/game-icons/spigot.jpg` actually answers `image/jpeg` (not the old
+    hardcoded `image/png`). A temporary headless-Chromium check (deleted after use) selected
+    the Minecraft server in MC Start Settings, stepped the Server type dropdown through all six
+    loader types, and confirmed the live icon preview's `src` and visibility updated correctly
+    for every one of them - zero `pageerror`/console-error events. `npm run typecheck`, the
+    full `npx vitest run` (now 951 tests, all passing), and `npm run build` all pass too.
+
+- **Four requests handled together since they all touch the same install/loader-version
+  machinery: a real bug fix for Paper installs, full SpongeVanilla/SpongeForge support, and a
+  two-selector Minecraft-version/loader-version picker (with a star on the recommended build)
+  replacing the old single free-text or single-combo-string pickers everywhere a Minecraft
+  server's version is chosen.**
+  - **Bug fix: `Error invoking remote method 'minecraft-install:list-versions': ... HTTP 410`
+    for Paper.** PaperMC fully sunset their v2 API (`api.papermc.io`) - every endpoint there
+    now answers 410 Gone, which is exactly what broke every Paper install/version-list call.
+    Migrated `minecraftInstallClient.ts`'s entire Paper section to PaperMC's own documented
+    replacement, the "Fill" v3 API (`https://fill.papermc.io/v3`) - a genuinely different
+    shape, not just a renamed host: versions come grouped by family, builds carry an explicit
+    `channel` (STABLE/BETA/ALPHA) instead of a bare build-number list, and each build's own
+    download entry already has a ready-to-fetch URL + sha256 (no separate "build download
+    url" endpoint needed the way v2 required). `getLatestPaperBuild` now picks the newest
+    STABLE-channel build (falling back to the newest of any channel for a very fresh Minecraft
+    version with no STABLE build yet) instead of just the highest build number, matching
+    Fill's own documented `jq` example for "latest stable build". New `getPaperBuild`/
+    `listPaperBuildOptions` support picking (and starring the recommended) a specific build,
+    for the new loader-version selector below.
+  - **SpongeVanilla and SpongeForge** (user-provided `sponge.png`, user explicitly chose both
+    variants after being told the tradeoff): added as two separate `MinecraftServerType`
+    values rather than one ambiguous "sponge" - SpongeVanilla is a standalone single-jar
+    server (installed the same one-step way as vanilla/Paper/Fabric); SpongeForge is a mod
+    that needs a real Forge server installed first, so `installSpongeForgeServer` runs the
+    normal Forge install path, then downloads the SpongeForge jar straight into the resulting
+    `mods/` folder on top of it. **This is the least-verified integration in the app, more so
+    than NeoForge originally was**: SpongePowered's own dedicated downloads API could not be
+    confirmed live at all (its Vue frontend repo is archived, and the backend it reads from
+    documents its production host only in an unconfirmed `openapi.yaml`, which didn't even
+    resolve via DNS when checked) - used their Maven repo directly instead
+    (`repo.spongepowered.org`), the same `maven-metadata.xml` approach already used for Forge/
+    NeoForge, confirmed via SpongePowered's own current GitHub README (its "Latest Builds"
+    badges link straight into that Maven repo's browser, with group id `org.spongepowered` and
+    artifact ids `spongevanilla`/`spongeforge`, version format `<mcVersion>-<build>`). What is
+    genuinely NOT confirmed: the exact published jar file name for a given version (assumed to
+    be the plain Maven default, `<artifactId>-<version>.jar`, no classifier) - if a Sponge
+    install 404s on the actual jar download (as opposed to failing to list versions), that
+    assumption is the first thing to check. SpongeForge's own required Forge version isn't
+    exposed by Sponge's Maven listing either, so `installSpongeForgeServer` installs whichever
+    Forge build is "recommended" for the same Minecraft version instead - a reasonable
+    default, not a verified-compatible pairing. Wired into every existing per-type surface:
+    `supportsMinecraftMods`, `modTargetDir` (`mods/`, same as Forge/Fabric - Sponge's plugin
+    loading follows Forge's folder convention, not Bukkit's `plugins/`), Modrinth's `sponge`
+    loader category (shared by both variants - SpongeAPI plugins are implementation-agnostic),
+    CurseForge (no real Sponge content category there, falls back to the generic Mods class
+    with no loader-type filter), the jar-name detection heuristic (`spongeforge` checked
+    before plain `forge`, since it contains "forge" as a substring - same trap NeoForge's own
+    detection fix addressed previously), and the shared `sponge.png` icon (one SpongePowered
+    logo for both variants, same dual-location `assets/games/`/`build/games/` pattern as every
+    other loader icon).
+  - **Two-selector version picker, replacing the old single picker everywhere a Minecraft
+    server's version is chosen** (user request, explicitly confirmed for both "+ Add server"
+    and Start Settings after a design-tradeoff question): a Minecraft-version `<select>` plus,
+    for every type except vanilla/Spigot (`supportsLoaderVersionSelection` in
+    `shared/minecraftInstall.ts` - those two publish exactly one artifact per Minecraft
+    version, nothing further to choose), a second loader/build-version `<select>` populated
+    once the first is picked, with a ★ next to whichever option counts as "recommended" for
+    that loader. Previously Forge/NeoForge crammed both into one flat list of
+    `"<mcVersion>-<build>"`-style combo strings - genuinely confusing to pick from, and
+    impossible to extend to a real "recommended build" star at all. New
+    `listInstallableLoaderVersions(serverType, minecraftVersion)` (`minecraftInstall.ts`)
+    joins the existing `listInstallableMinecraftVersions`, both now exposed over IPC
+    (`window.api.minecraft.install.listLoaderVersions`) and, for the web dashboard (which has
+    no IPC boundary - everything already runs in the main process), two new HTTP routes
+    (`GET /api/mc-install/versions`/`loaderversions`, admin-gated like MC Start Settings
+    itself). What actually marks a build "recommended" varies by loader, documented at each
+    call site rather than faked uniformly: **Forge** has a real, official signal - its own
+    `promotions_slim.json` (`<mcVersion>-recommended`, falling back to `<mcVersion>-latest` if
+    Forge hasn't picked one for a very fresh Minecraft version yet); **Paper** uses its Fill
+    API's own STABLE channel; **Fabric** uses its own `stable` flag; **NeoForge and Sponge**
+    have no such signal at all, so the newest build is starred instead as a best-effort
+    default, called out as exactly that (not an official recommendation) in both the code
+    comments and the picker's own behavior.
+  - **Start Settings** (`StartSettingsTab.tsx` desktop, `mcss-version`/`mcss-loaderversion`
+    web dashboard) gained a new `MinecraftProfile.loaderVersion?` field to hold the second
+    selector's pick - purely informational (same "cosmetic, corrects itself, nothing reads it"
+    status as `serverType` itself already had), optional so it's a no-op for every server that
+    predates this field. Both pickers fall back to a free-text field only for `serverType:
+    'unknown'` (not a real loader to ask an install API about at all); for every real loader
+    type, a value the server already had that isn't (or isn't yet) in the live list is kept as
+    an extra synthetic option rather than silently dropped, so an older/custom value a server
+    was already set to never just vanishes from the dropdown.
+  - **"+ Add server"** (`InstallMinecraftServerPanel.tsx`) carries the picked `loaderVersion`
+    through to `installMinecraftServerFiles`, and the resulting profile now starts with its
+    own `loaderVersion` already filled in from whatever was actually installed - `MinecraftInstallResult`
+    gained the same field for this.
+  - **Verified**: full rewrite of `tests/minecraftInstallClient.test.ts`'s Paper section for
+    the new Fill v3 shapes (including the STABLE-fallback and specific-build-fetch paths) and
+    new tests for every new function (`listPaperBuildOptions`, `listFabricLoaderOptions`,
+    `listForgeMinecraftVersions`/`listForgeLoaderOptions` including the promotions-file
+    fallback and failure path, `listNeoForgeMinecraftVersions`/`listNeoForgeLoaderOptions`,
+    the whole new Sponge client section); `tests/minecraftInstall.test.ts` rewritten for the
+    new `(minecraftVersion, loaderVersion)` parameter shape across every loader (including the
+    "resolves the recommended/newest build itself when loaderVersion is omitted" path for
+    Forge/NeoForge/SpongeVanilla) plus new SpongeVanilla/SpongeForge install tests; new
+    per-type cases added to `tests/minecraftDetect.test.ts` (the SpongeForge/"forge" substring
+    trap), `tests/minecraftMods.test.ts`, `tests/modrinthClient.test.ts`, and
+    `tests/curseforgeClient.test.ts` - 985 tests total now. A temporary headless-Chromium check
+    (deleted after use) drove the web dashboard's MC Start Settings end to end: confirmed
+    SpongeVanilla/SpongeForge appear in the Server type picker, the Minecraft-version select
+    populates live from a mocked install API and keeps the server's existing value selected,
+    the loader-version select shows up with a ★ on the mocked "recommended" option, picking
+    one actually persists `loaderVersion` through the save route, and switching to vanilla
+    correctly hides the loader-version row entirely - zero `pageerror` events. The desktop
+    React side (`InstallMinecraftServerPanel.tsx`/`StartSettingsTab.tsx`) was **not** visually
+    verified in a real renderer - same standing limitation as every other desktop-only change
+    in this project (no display to drive the actual Electron window from this sandbox) - only
+    typechecked and reasoned through against the same APIs the web dashboard check exercised
+    live. `npm run typecheck`, the full `npx vitest run`, and `npm run build` all pass.
+
+- **A real, separate "Plugins" tab, distinct from "Mods"** (user request - asked after being
+  told the tradeoff against just relabeling the one existing tab, and explicitly chose a
+  genuinely separate tab over a dynamic rename). The Mods tab's own content (search/install,
+  installed list, rescan, update check) was already fully generic - it already said "mods/
+  plugins" everywhere rather than assuming one or the other - so this is purely a navigation/
+  labeling split, not a new feature: a server's own ecosystem decides which single tab it
+  gets, never both. New `minecraftModEcosystem(serverType)` (`shared/minecraftMods.ts`)
+  returns `'mods'` for Forge/Fabric/NeoForge, `'plugins'` for Paper/Spigot/SpongeVanilla/
+  **and** SpongeForge (Sponge calls its own extensions "plugins" regardless of which
+  implementation hosts them - this app's existing SpongeForge mod search already only ever
+  searched the `sponge` Modrinth category, never a separate Forge-mod one, so "Plugins" was
+  already the only ecosystem it actually offered), and `null` for vanilla/unknown.
+  - **Desktop** (`MinecraftServerDetail/index.tsx`): the tab list is now computed from
+    `profile.serverType` instead of a static array - a genuinely different `MinecraftTabKey`
+    (`'mods'` or `'plugins'`) appears depending on the ecosystem, both rendering the exact
+    same `ModsTab` component underneath. Switching a server's own type in Start Settings away
+    from whichever tab is currently open doesn't force-navigate away from it (an accepted,
+    pre-existing-pattern edge case, not a crash) - same as every other tab already behaves
+    when its own preconditions change out from under it.
+  - **Web dashboard**: kept the existing single, always-visible nav button/view (its own
+    earlier design decision - MC nav buttons don't currently get per-selected-server
+    visibility at all, see the game-switcher round) rather than introducing that just for
+    this, but its label now switches live between "MC Mods" and "MC Plugins" (button text and
+    the view's own heading) based on whichever server is actually selected - functionally the
+    same outcome as the desktop's separate tab keys, since only one ecosystem is ever
+    relevant for a given selected server anyway.
+  - **Verified**: new `tests/minecraftModEcosystem.test.ts` covers every server type's
+    mapping - 988 tests total now. A temporary headless-Chromium check (deleted after use)
+    selected a Forge server and confirmed both the nav button and the view heading read "MC
+    Mods", then selected a Paper server and confirmed both switched live to "MC Plugins" -
+    zero `pageerror`/console-error events. The desktop tab-key split was only typechecked, not
+    visually verified (no React testing setup exists in this project, and no display to drive
+    the actual renderer from this sandbox - same standing limitation noted throughout this
+    round). `npm run typecheck`, the full `npx vitest run`, and `npm run build` all pass.
+
+- **Real bug fix, surfaced by the Plugins tab split above: the Plugins tab's own search was
+  silently only ever able to find mods, never actual plugins** (user report: "you replaced
+  the Mods tab with Plugins for Sponge, and this tab searches for mods"). The root cause
+  predates the Plugins tab itself - `buildModrinthFacets` (`modrinthClient.ts`) has always
+  hardcoded its search to `project_type:mod`, on the documented (but wrong) assumption that
+  Modrinth's v2 API has no separate project type for plugins at all. Confirmed against
+  Modrinth's own source (`labrinth`/`knossos`): `plugin` and `datapack` are genuinely distinct
+  project types in their real data model - Bukkit/Spigot/Paper/Sponge loaders are explicitly
+  linked to `project_type: "plugin"`, not `"mod"`. The v2 API's *response* serializer rewrites
+  that field to the string `"mod"` in what it hands back to an already-fetched hit (so nothing
+  client-side ever saw `"plugin"` as a value) - but that rewrite is cosmetic on the way out
+  only, never applied to search filtering itself, so a `facets` query literally filtering on
+  `project_type:mod` was excluding every real plugin from every search, for every server type,
+  the entire time this app has had mod/plugin search at all (not something the Sponge/Plugins
+  round introduced - it just made the gap directly visible for the first time, since Paper/
+  Spigot's own `['paper','spigot','bukkit']` loader-category facet coincidentally still
+  matched a handful of crossover/mistagged results before, giving a false impression of
+  "mostly working"). Fixed by OR'ing both real project types in the same facet group
+  (`['project_type:mod', 'project_type:plugin']`) - confirmed correct against Modrinth's own
+  frontend code, which does exactly this when it wants to cover more than one content type at
+  once. `tests/modrinthClient.test.ts` updated for the corrected facet shape, across both a
+  mod-ecosystem loader and a plugin-ecosystem one (so it can't silently regress back to
+  excluding plugins again for just one of the two tabs) - 989 tests total now. `npm run
+  typecheck`, the full `npx vitest run`, and `npm run build` all pass. Not verified against a
+  real Modrinth search response (no network access from this sandbox, same standing caveat as
+  every API client in this codebase) - please confirm Paper/Spigot/Sponge search results
+  actually include real plugins now, on a machine with real internet access.
+
+- **Follow-up to the Plugins-tab split above: SpongeForge gets a genuinely separate "Mods"
+  tab AND "Plugins" tab, each with its own independent search/install** (user correction -
+  the previous round's dynamic-label approach on the web dashboard, and even the desktop's
+  one-component-two-labels framing, didn't go far enough: SpongeForge really does run two
+  independent ecosystems at once - its own Sponge plugin layer, and the Forge mod layer it's
+  actually built on - and the user explicitly wanted both searchable separately, not one tab
+  that just changes its label).
+  - **Core model**: new `minecraftServerSupportsEcosystem(serverType, ecosystem)` (shared/
+    minecraftMods.ts) - true for a type's one matching ecosystem same as before, but true for
+    **both** `'mods'` and `'plugins'` specifically for `spongeforge`. Every search/install
+    function from the Mods tab down to the Modrinth/CurseForge clients now takes an explicit
+    `ecosystem` parameter deciding which loader category to filter by - `loaderCategoriesFor`/
+    `modLoaderTypeFor`/`classIdFor` all gained a second parameter, where SpongeForge is the one
+    real case `serverType` alone no longer determines (`ecosystem: 'mods'` → plain `forge`
+    category/loader type; `ecosystem: 'plugins'` → `sponge` category, no CurseForge loader
+    type, same as SpongeVanilla).
+  - **Tracking which ecosystem each installed entry belongs to**: `InstalledMinecraftMod`
+    gained an optional `ecosystem` field - set directly from the search/tab context for an
+    explicit install (the UI already knows which tab initiated it, so no guessing needed),
+    and derived best-effort from the matched version/file's own loader tags
+    (`ecosystemFromLoaderTags`, reading Modrinth's `loaders` field or CurseForge's
+    `gameVersions` array) when `scanForInstalledMods` adopts an untracked file with no tab
+    context to trust. An entry whose ecosystem genuinely can't be determined is shown in
+    *every* ecosystem tab a server type offers rather than hidden from any of them - the same
+    "never silently hide a mod" philosophy already used for `source: 'unknown'` entries.
+    `updateMinecraftMod`/`checkMinecraftModUpdates` read each entry's own stored tag rather
+    than asking the caller to pick again.
+  - **Desktop** (`ModsTab.tsx`): takes the `ecosystem` prop that was already added in the
+    previous round and now actually uses it end to end - passes it into every search/install
+    IPC call, and filters which slice of `profile.installedMods` its own "Installed" grid
+    shows (`installedModsFor`). For SpongeForge, `MinecraftServerDetail/index.tsx` now renders
+    two fully independent `ModsTab` instances (one per tab) instead of one component whose
+    label happened to change - each with its own search box, its own search results, and its
+    own filtered Installed list.
+  - **Web dashboard**: replaced last round's single "always-relabeled" MC Mods view with two
+    real, independent views - a genuinely new `view-mc-plugins`/`nav-mc-plugins` alongside the
+    existing `view-mc-mods`/`nav-mc-mods` (both admin-gated, both always visible within
+    Minecraft mode like every other MC nav button). The entire client-side controller (search,
+    install, installed-list render, rescan, update-check) was refactored from one hardcoded
+    set of functions into `createMcModEcosystemView(ecosystem, ids)`, instantiated twice -
+    each instance owns its own DOM element refs and closure state, so the two tabs genuinely
+    don't share so much as a search box. Both still hit the exact same backend routes
+    (`/api/servers/:id/mc-mods/search`/`install`), now carrying an `ecosystem` query param/
+    body field; the "list installed" route is unchanged (still returns the full list) and each
+    view filters its own slice client-side, same reasoning as the desktop side. Each view also
+    shows a clear "this server type has no \"X\" ecosystem" message (rather than an empty
+    search box) when the currently selected server doesn't actually offer that ecosystem -
+    true for most types in one direction, false for both at once only for SpongeForge.
+  - **Two real bugs found and fixed along the way**: (1) a stray backtick inside a new code
+    comment inside the client `<script>` template literal silently terminated the whole
+    template early, breaking the entire dashboard - same class of mistake flagged and fixed in
+    an earlier round, now doubly confirmed as a real hazard specific to this file's
+    architecture (the syntax-check script this project already uses catches it immediately,
+    but it's easy to introduce by hand). (2) `ecosystemFromLoaderTags` crashed on a CurseForge
+    fingerprint match whose response happened to omit `gameVersions` (an edge case a stricter
+    mock fixture exposed) - fixed to tolerate a missing/non-array input and tag the result
+    `ecosystem: undefined` instead of crashing the whole scan silently back to "unknown". (3)
+    *Found via an actual browser check, not inspection*: `sponge.png` was never added to
+    `KNOWN_GAME_ICON_FILE_NAMES` in the round that introduced it - `/game-icons/sponge.png`
+    (used by both the MC Start Settings type picker and, now, both Mods/Plugins tabs' Browse
+    headers) was 404ing the entire time despite the file existing on disk. Fixed, and a new
+    `tests/webDashboard.test.ts` case added alongside the other per-loader icon routes so this
+    can't quietly regress again.
+  - **Verified**: new SpongeForge-specific tests in `tests/minecraftMods.test.ts` (rejecting a
+    search/install for an ecosystem a type genuinely doesn't have; a SpongeForge install
+    tagging its result with whichever ecosystem was asked for), `tests/minecraftModScan.test.ts`
+    (ecosystem derived correctly from a Modrinth match's `loaders` field; a CurseForge match
+    with no `gameVersions` at all still adopts instead of crashing), `tests/curseforgeClient.test.ts`
+    (SpongeForge's split modLoaderType/classId behavior per ecosystem), and
+    `tests/minecraftModEcosystem.test.ts` (`minecraftServerSupportsEcosystem` covering every
+    type, including SpongeForge's both-at-once case) - 1000 tests total now. A temporary
+    headless-Chromium check (deleted after use) drove the full real-world scenario end to end:
+    a Forge server shows Mods-only (Plugins tab shows the "no ecosystem" message and vice
+    versa for a Paper server), a SpongeForge server shows **both** tabs fully populated at
+    once with correctly separated Installed lists (a Forge-tagged mod only ever appears under
+    Mods, a Sponge-tagged plugin only under Plugins), and searching from each tab independently
+    sends its own distinct `ecosystem` value to the backend - zero `pageerror`/console-error/
+    bad-response events once the sponge.png bug above was caught and fixed. The desktop side's
+    two-instance rendering was only typechecked, not visually verified (same standing
+    limitation as every desktop-only change in this project). `npm run typecheck`, the full
+    `npx vitest run`, and `npm run build` all pass.
+
+- **Follow-up correctness fix: the Plugins tab's CurseForge search was still returning real
+  Forge/Fabric mods for Sponge** (user correction - the dual-ecosystem rebuild above was
+  structurally right, but one mapping inside it was still wrong: `classIdFor(serverType,
+  ecosystem)` fell back to CurseForge's generic "Mods" class (id 6) whenever no dedicated
+  CurseForge class existed for the requested ecosystem+type combo - true for Sponge's
+  `'plugins'` ecosystem, since CurseForge has no "Sponge Plugins" class at all, unlike Paper/
+  Spigot's real `BUKKIT_PLUGINS_CLASS_ID`. That fallback was a deliberate but wrong tradeoff
+  from the previous round (its own doc comment even predicted the risk and dismissed it) -
+  in practice it meant every CurseForge search from the Plugins tab, for SpongeVanilla or
+  SpongeForge, actually queried CurseForge's real Forge/Fabric Mods class and returned
+  genuine mod content mislabeled as plugin results. Modrinth's own side was unaffected (it
+  has a real `sponge` category already).
+  - **Fix** (`src/main/lib/curseforgeClient.ts`): `classIdFor` now returns `number | undefined`
+    - `undefined` means "no real CurseForge class exists for this combination," returned for
+    `ecosystem: 'plugins'` on every server type except Paper/Spigot. `searchCurseForgeMods`
+    (its only caller) now checks for `undefined` first and returns `[]` immediately, skipping
+    the CurseForge fetch entirely, instead of coercing `undefined` into the literal string
+    `"undefined"` as a query param.
+  - **Verified**: updated the two `tests/curseforgeClient.test.ts` cases that previously
+    asserted the old (buggy) `classId === '6'` fallback for Sponge's plugin ecosystem - they
+    now assert no CurseForge fetch happens at all for that case (both the plain SpongeVanilla
+    case and SpongeForge's own `'plugins'` half, which still correctly makes one real fetch
+    for its `'mods'` half). `npm run typecheck`, the full `npx vitest run` (1000 tests), and
+    `npm run build` all still pass.
+
+- **Correction to the fix immediately above: CurseForge's Plugins class isn't Paper/Spigot-
+  only - it's one generic class shared by every server-side plugin platform, Sponge
+  included** (user correction - "curseforge a une section plugins": CurseForge genuinely has
+  a Plugins section, so skipping the CurseForge search entirely for Sponge, as the previous
+  round just shipped, was throwing away real results instead of fixing the mislabeling). On
+  reflection, CurseForge's class taxonomy for Minecraft only ever splits "Mods" (class 6,
+  Forge/Fabric/NeoForge) from "Plugins" (class 4471) - that second class's URL slug is
+  `bukkit-plugins`, a naming leftover from when Bukkit was the only plugin API CurseForge
+  supported, but the class itself was never split per plugin platform the way Mods is split
+  from Plugins. Sponge plugins that do exist on CurseForge are filed under that same class,
+  not a separate one - so the right fix was to route Sponge's `'plugins'` ecosystem to the
+  same class Paper/Spigot already use, not to treat it as unmapped.
+  - **Fix** (`src/main/lib/curseforgeClient.ts`): renamed `BUKKIT_PLUGINS_CLASS_ID` to
+    `PLUGINS_CLASS_ID` and `classIdFor` now returns it for `ecosystem: 'plugins'` on *every*
+    server type, not just Paper/Spigot - back to a plain `number` return (no more `undefined`
+    case to special-case). `searchCurseForgeMods` reverted to its simpler pre-"skip" form.
+    `modLoaderTypeFor` is unaffected - CurseForge's Plugins class still isn't split by
+    loader/platform, so no `modLoaderType` param is sent for any plugin-ecosystem search,
+    Sponge included, same as it always was for Paper/Spigot.
+  - **Verified**: updated `tests/curseforgeClient.test.ts`'s Sponge cases back to asserting a
+    real CurseForge fetch happens with `classId=4471` and no `modLoaderType` (both the plain
+    SpongeVanilla case and SpongeForge's own `'plugins'` half). `npm run typecheck`, the full
+    `npx vitest run` (1000 tests), and `npm run build` all pass. Not re-verified in a live
+    browser against CurseForge's real API (no network access in this environment) - please
+    confirm on a machine with real internet access that Sponge plugin search now returns
+    genuine Sponge-platform plugins (mixed in among Bukkit/Spigot/Paper results under the
+    same class, since CurseForge itself doesn't separate them further).
+
+- **Discord bot integration: the standalone Python "Bober" status bot is now a native part
+  of the Manager**, ported to TypeScript rather than kept as a separate hand-run Python
+  project with its own venv/`.env` (user request - "intègre entièrement" after discussing
+  the tradeoffs). Full French user-facing strings preserved throughout (every embed, every
+  slash command reply) - this was a mechanical port, not a rewrite "in the spirit of".
+  - **Architecture: a genuinely separate OS process, not code living inside the Manager's
+    own main process** - decided after discussing the tradeoff explicitly with the user. A
+    bug in ~3000 lines of Discord-API logic (a bad embed, a Discord API hiccup, a rogue
+    slash command handler) can now never take down server management/monitoring/the web
+    dashboard, and the reverse also holds - the bot process can keep running and even
+    report "Manager unreachable" on Discord if the Manager itself crashes, instead of just
+    going silent. The cost: the bot talks to the Manager purely over its own existing local
+    Web Dashboard HTTP API rather than calling internal functions directly - judged well
+    worth it for the isolation.
+  - **The real simplification this unlocked**: the standalone bot had to open its own RCON
+    sockets and re-implement Minecraft's Server List Ping protocol, because it had no
+    relationship with the Manager by default. Since this version is *spawned by* the
+    Manager, it doesn't need any of that - `GET /api/servers` (the same route the browser
+    dashboard already polls) gives it the full live ARK+Minecraft server list, state,
+    players and version in one call, and `POST /api/servers/:id/rcon` (the same route the
+    desktop Console tab's command box already uses) covers `/rcon`, `/rconall`,
+    `/dinowipe`, `/saveworld` and `/adminchat` - all just different text commands through
+    that one existing endpoint. No RCON library, no Minecraft ping protocol, and critically
+    **no more manual per-server config** - the old bot needed `ARK_SERVER_N_NAME/IP/
+    RCON_PORT/RCON_PASSWORD/MAP/MAX_PLAYERS` typed into `.env` for every single server; this
+    version needs none of that, it just asks the Manager.
+  - **No manual API key copy-pasting either**: the old bot needed a Web Dashboard API key
+    created by hand in Settings and pasted into `.env`. This version auto-provisions one
+    internally (`src/main/lib/discordBot.ts`'s `ensureApiKey`, reusing the exact same
+    `generateApiKeyId`/`generateApiKeySecret`/`hashPassword`/`buildApiKey`/
+    `saveWebDashboardApiKey` functions Settings' own "create API key" button calls) labeled
+    "Discord Bot (interne)" in that same key list, minted fresh (old one revoked) every time
+    the bot (re)starts - a stored `secretHash` can't be turned back into the plaintext key
+    the bot needs to send, so reusing one across restarts isn't possible anyway, and these
+    keys are never shown to the user beyond that label. When Settings' "Require access
+    token" is off, no key is sent at all (matching the Web Dashboard API's own no-auth-by-
+    default posture). The CurseForge module also reuses the Mods tab's existing
+    `curseforgeApiKey` setting rather than asking for a second key just for this.
+  - **Build pipeline**: `src/bot/` is a separate TypeScript module tree, bundled by
+    **esbuild** (`scripts/build-bot.mjs` → `out/bot/index.js`) rather than folded into
+    electron-vite's own Rollup-based main build - discord.js has internal circular
+    `require()`s (`Base` ↔ `Channel` ↔ `GuildChannel` ↔ `util`) that Rollup's commonjs
+    plugin reorders into a broken init sequence (`TypeError: Class extends value undefined`,
+    confirmed by actually trying it), which esbuild doesn't hit since it preserves real
+    `require()` semantics. `zlib-sync`/`bufferutil`/`utf-8-validate` (optional native
+    speedups `@discordjs/ws` tries behind its own try/catch) are marked external on both
+    the esbuild and - briefly, before the esbuild switch - Rollup side, since they're never
+    actually installed here. The Manager's main process spawns the bundle via Node's
+    `child_process.fork()` with `ELECTRON_RUN_AS_NODE=1` (Electron's documented pattern for
+    a plain-Node helper process) - verified end to end with a real `fork()` call under
+    Electron's own binary, not just a typecheck.
+  - **Supervisor** (`src/main/lib/discordBot.ts`): `applyDiscordBotSettings` (called on every
+    Settings save, same unconditional-reapply pattern `applyWebDashboardSettings` already
+    uses, and once at Manager startup) starts/stops the bot to match
+    `discordBotEnabled`+a non-empty token. Config is written to a JSON file in the Manager's
+    data dir and passed as the child's first argv (not an env var or an IPC message - the
+    bot can always re-read its own current config on a restart without depending on timing
+    with the parent). stdout/stderr are piped into the existing Manager Log
+    (`logManagerEvent`/`newTaskId`, tagged "Bot Discord") rather than a new log sink. The
+    bot process is deliberately **not** killed when the Manager quits - same "survives the
+    Manager closing" philosophy already applied to game server processes, and the one thing
+    that makes "report Manager unreachable" above actually possible.
+  - **Ported 1:1** (new `src/bot/` files): `managerApiClient.ts` (the HTTP client described
+    above, tolerating the Manager's self-signed cert via `undici`'s `Agent` when Settings'
+    HTTPS mode is on), `statusEmbeds.ts`/`externalStatus.ts` (EOS/AWS/Cloudflare/Xbox Live/
+    Minecraft Auth checks, verbatim), `curseforge.ts`/`curseforgeCheck.ts` (the HTML→Discord-
+    Markdown changelog converter, changelog splitting, the periodic update-check loop),
+    `maintenanceState.ts`/`schedule.ts` (in-memory only, not persisted - matches the
+    standalone bot's own documented behavior, not a regression), and every slash command
+    (`src/bot/commands/`): `/status`, `/statusserveur`, `/statusmc`, `/maintenance` (on/off/
+    all), `/maintenancemc` (on/off/all), `/botmaintenance`, `/check` (on/off), `/schedule`
+    (dinowipe/list/cancel), `/dinowipe`, `/saveworld`, `/adminchat`, `/adminchatall`,
+    `/rcon`, `/rconall`, `/start`, `/stop`, `/restart`, `/update`, `/updaterestart`,
+    `/setchannel`, `/addmod`, `/removemod`, `/listmods`, `/testmod` - same whitelists
+    (`MAINTENANCE_WHITELIST`/`MANAGER_WHITELIST`, now Settings fields instead of `.env`
+    lists), same autocomplete behavior (now sourced from the live `/api/servers` list
+    instead of a static one), same per-server maintenance/check-disabled overrides on the
+    status lines.
+  - **Settings UI**: a new "Discord Bot" tab in the desktop Settings screen (token, dev
+    guild id, both clusters' channel/refresh/embed/check settings, the two whitelists as
+    comma-separated id fields, CurseForge module toggle/default mods/check interval, plus a
+    live running/error status line and a "Restart bot" button) - shares the existing
+    Settings form/save button rather than a separate dialog.
+  - **Verified**: 50 new tests across `tests/discordBot*.test.ts` - the CurseForge HTML→
+    Markdown converter and changelog splitter against known input/output pairs, the status-
+    embed line-building logic for every server state (running/maintenance/each Manager
+    state/check-disabled-filtered-out) and both clusters, the Manager API client's 401/403/
+    network-error handling and request shapes (mocked `fetch`), the server-list cache's ARK/
+    Minecraft split and name lookup, maintenance-state get/set, and the main-process
+    supervisor's config-building and API-key-provisioning logic (mocked `electron`/store/
+    `child_process.fork`) - including that a stale previous API key is actually revoked, not
+    just replaced. `npm run typecheck`, the full `npx vitest run` (1050 tests), and `npm run
+    build` all pass; the bundled `out/bot/index.js` was run standalone and via a real
+    `fork()` + `ELECTRON_RUN_AS_NODE` call (both fail cleanly on `discord.com` DNS resolution
+    in this network-sandboxed environment - no Discord token/live gateway connection could
+    be tested here). **Not verified**: an actual Discord server receiving real slash
+    commands, embeds rendering correctly in a real Discord client, or the full start/stop/
+    RCON round trip against a real running ARK/Minecraft server - please run this against a
+    real bot token and real servers before relying on it.
+
+- **Follow-up to the Discord bot integration above: `/check off` is now persistent** (user
+  request, closing a gap flagged right after the integration landed). The standalone bot
+  had both a static, persistent `DISABLED_SERVERS` list in `.env` *and* a separate, non-
+  persistent `/check on/off` toggle layered on top of it - the port above only carried over
+  the non-persistent toggle, so a bot restart silently un-excluded every server `/check off`
+  had hidden. Rather than reintroducing a second, static config list, the toggle itself now
+  persists - one mechanism instead of two.
+  - **Fix** (`src/bot/maintenanceState.ts`): new `initMaintenanceState(stateDir)`, called
+    once at startup (`src/bot/index.ts`, right after `loadConfig()`), loads the disabled-
+    server id set from `disabled_servers.json` in the bot's own state dir - same file-based
+    persistence style already used by the CurseForge module's two JSON files, same
+    tolerate-a-missing-or-malformed-file-without-crashing behavior. `setCheckDisabled` now
+    writes the updated set back to that file on every call. Every other maintenance flag
+    (ARK/Minecraft maintenance, the bot's own maintenance mode) stays deliberately in-memory
+    only, unchanged - this fix is scoped to `/check` alone, not a general persistence pass.
+  - **Verified**: three new tests in `tests/discordBotMaintenanceState.test.ts` - a
+    simulated restart (`initMaintenanceState` called again against the same state dir)
+    correctly reloads what was persisted rather than starting empty, a fresh/empty state
+    dir starts with nothing disabled, and a malformed `disabled_servers.json` is ignored
+    (logged, not thrown) rather than crashing the bot on startup. `npm run typecheck`, the
+    full `npx vitest run` (1053 tests), and `npm run build` all pass.
+
+- **Real bug, found by the user: autocomplete on every `serveur:` option showed nothing**
+  (e.g. typing `/check on serveur:`). Every slash command's autocomplete handler read from
+  `serverCache.ts`'s in-memory cache but never refreshed it itself - that cache is only
+  populated by `/status`/`/statusmc` actually being run, or by the auto-refreshed embed
+  loop (which only exists at all when a status channel is configured). A bot that had just
+  started, with no status channel set and nobody having run `/status` yet, had a
+  permanently empty cache - every autocomplete dropdown across every command stayed empty
+  until one of those happened to run once.
+  - **Fix**: every `autocomplete` handler (`src/bot/commands/*.ts`, 11 call sites across
+    `statusCommands.ts`, `maintenanceCommands.ts`, `scheduleCommands.ts`, `adminCommands.ts`,
+    `managerCommands.ts`) now calls `refreshServerCache(config)` itself before building
+    suggestions, the same one-call, localhost-only round trip `/status` already does -
+    comfortably inside Discord's ~3s autocomplete response budget. `execute` handlers were
+    unaffected (they already refreshed the cache themselves); this was purely an
+    autocomplete-specific gap, caught because every one of them had quietly skipped the
+    `config` parameter their own type signature already offered.
+  - `npm run typecheck`, the full `npx vitest run` (1053 tests), and `npm run build` all
+    pass. Autocomplete itself can't be exercised by the existing test suite (it needs a real
+    Discord interaction), so this is typechecked/built but not independently tested beyond
+    the existing `refreshServerCache`/`autocompleteServerNames` unit coverage - please
+    confirm in Discord that `serveur:` now suggests servers immediately after a fresh bot
+    start, with no status channel configured and no `/status` run first.
+
+- **Two real bugs found from the user's own first real run of the bot** (live logs against
+  a real Discord bot token and a real Manager - the first actual runtime signal this
+  integration has had, everything before this was typecheck/build/mocked-fetch only).
+  - **AWS Health check always failed to parse**: `Impossible de récupérer le statut AWS :
+    Unexpected token '�'...`, every single cycle. The real
+    `health.aws.amazon.com/public/currentevents` endpoint serves its JSON with a leading
+    UTF-8 BOM (`﻿`) - `response.json()` calls `JSON.parse` on the raw text without
+    stripping it, so parsing failed deterministically, not as a flaky network hiccup. Fixed
+    (`src/bot/externalStatus.ts`) with a `fetchJsonWithTimeout` helper that reads the body
+    as text and strips a leading BOM before `JSON.parse`, now used by the EOS, AWS and
+    Cloudflare checks (the three that parse JSON - Xbox/Official Network/Minecraft Auth only
+    ever read raw text, unaffected). New `tests/discordBotExternalStatus.test.ts` (8 tests,
+    first real coverage for this file) locks in the BOM-prefixed case for all three, plus
+    the AWS Middle-East-filtering logic and the official-network "Offline" keyword
+    matching - none of `externalStatus.ts` had test coverage before, since this bug is
+    exactly the kind unit tests against *mocked* fetch responses can't catch on their own
+    (nothing I wrote would have thought to prepend a BOM) - this one only surfaced from an
+    actual run against the real endpoint.
+  - **"ARK Server Manager injoignable (fetch failed)" gave no way to diagnose why**: undici's
+    `fetch` wraps every connection-level failure (refused, DNS, TLS...) in a generic
+    `TypeError: fetch failed`, with the actually useful reason (e.g. `connect ECONNREFUSED
+    127.0.0.1:8090`) sitting on `err.cause`, which `managerApiClient.ts` was dropping -
+    every real failure logged identically regardless of cause. Now included in the error
+    message. This doesn't fix the user's underlying "can't reach the Manager" symptom by
+    itself (still being tracked down - likely the Web Dashboard not actually enabled/running
+    at the configured port, or a mismatched port) but the next occurrence will say exactly
+    why instead of just "fetch failed". New test in
+    `tests/discordBotManagerApiClient.test.ts` confirms `err.cause`'s message is now
+    surfaced. `npm run typecheck`, the full `npx vitest run` (1062 tests), and `npm run
+    build` all pass.
+
+- **Found the actual root cause of the "ARK Server Manager injoignable" reports above:
+  the bot's Manager API URL hardcoded `127.0.0.1`, ignoring Settings' own Web Dashboard
+  Host field entirely.** Node's `http(s).Server.listen(port, host)` only binds to the
+  exact host given - `'127.0.0.1'` (default) and `'0.0.0.0'` (every interface, wildcard)
+  both still accept a `127.0.0.1` connection, but a specific LAN IP (a real, supported
+  choice in that same Settings tab, for exposing the dashboard to other devices) binds
+  *only* that interface. With that configured, the dashboard was genuinely running and
+  reachable from a browser, while the bot's hardcoded `127.0.0.1` got `ECONNREFUSED` every
+  single cycle - exactly the symptom reported (confirmed enabled, on the right port,
+  `/check` and everything else still empty).
+  - **Fix** (`src/main/lib/discordBot.ts`): new `managerApiHost(settings)` uses the
+    configured `webDashboardHost` directly whenever it's a specific address, falling back
+    to `127.0.0.1` only for an empty value or the `0.0.0.0` wildcard - connecting to a
+    machine's own LAN IP from itself always works, so there's no real reason to special-
+    case `127.0.0.1` beyond those two cases. Replaces the previous unconditional
+    `127.0.0.1`.
+  - **Verified**: two new tests in `tests/discordBot.test.ts` - a specific LAN-IP host
+    produces that exact `managerApiUrl`, and both an empty host and the `0.0.0.0` wildcard
+    still fall back to `127.0.0.1`. `npm run typecheck`, the full `npx vitest run` (1064
+    tests), and `npm run build` all pass. Still not independently confirmed against the
+    user's own exact Settings (their Host value wasn't shared) - if `webDashboardHost` was
+    actually left at the default `127.0.0.1` the whole time, this fix doesn't explain their
+    specific case and the search continues from there.
+
+- **Found why none of the three fixes above actually changed anything for the user despite
+  repeated pulls/rebuilds/restarts: `npm run dev` never rebuilds the bot bundle at all.**
+  Only `npm run build` ran `scripts/build-bot.mjs`; `"dev": "electron-vite dev"` only
+  rebuilds `src/main`/`src/preload`/the renderer. Anyone iterating via `npm run dev` (as
+  opposed to a full `npm run build` + launching the packaged app) had `out/bot/index.js`
+  permanently frozen at whichever `npm run build` last touched it, however many times they
+  edited `src/bot/`, pulled, or restarted the Manager - explaining the identical "fetch
+  failed"/AWS-BOM log lines surviving three separate fix attempts untouched.
+  - **Fix**: `"dev": "node scripts/build-bot.mjs && electron-vite dev"` - rebuilds the bot
+    bundle once up front every time `npm run dev` starts. It still won't live-reload on a
+    further `src/bot/` edit while that same `dev` session keeps running (esbuild's script
+    runs standalone, outside electron-vite's own watch pipeline) - restart `npm run dev`
+    itself to pick up a bot-side change, same restart-to-reload expectation as any other
+    main-process edit already has by convention here.
+  - **Verified**: ran `npm run dev` with `out/bot/` deleted first and confirmed
+    `out/bot/index.js` is rebuilt before `electron-vite dev` itself starts. `npm run
+    typecheck`, the full `npx vitest run` (1064 tests), and `npm run build` all still pass.
+- **Added a "Stop bot" button** next to "Restart bot" in the Discord Bot Settings tab (user
+  request) - stops the running process immediately without touching the Enabled checkbox,
+  for a quick "turn it off right now" independent of Settings' own save-to-apply flow. The
+  next Settings save (or a Manager restart) still respawns it if that checkbox is still
+  checked - this is a one-shot stop, not a persisted "stay disabled" state; also offered
+  when the checkbox was just unchecked but not yet saved, so a stale running process from
+  before that doesn't require a save just to stop it. New `discordBotStop` IPC channel
+  wrapping the already-existing `stopDiscordBot()`.
+
+- **The AWS BOM fix above wasn't enough - the real response has more than one leading BOM-
+  like character.** After the Manager-host fix landed, the user's logs showed "ARK Server
+  Manager injoignable" finally gone, but the exact same AWS JSON parse error survived
+  unchanged - stripping a single leading `﻿` wasn't enough, because a real capture of
+  the response showed *two* in a row (the log's mangled `´┐¢´┐¢` - two repeated garbled
+  sequences - was the actual clue, missed the first time). Rather than keep guessing exactly
+  how many BOM characters (or what else) precedes the real JSON, `fetchJsonWithTimeout`
+  (`src/bot/externalStatus.ts`) now finds the first `[` or `{` anywhere in the response text
+  and parses from there, discarding everything before it unconditionally - correct no
+  matter what junk precedes it or how much of it there is, since every endpoint this helper
+  is used for always returns a JSON array or object at the top level.
+  - **Verified**: two new tests in `tests/discordBotExternalStatus.test.ts` - two leading
+    BOM characters in a row, and a response prefixed with arbitrary non-BOM junk text
+    (neither of which the previous single-character strip would have handled). `npm run
+    typecheck`, the full `npx vitest run` (1066 tests), and `npm run build` all pass.
+- **Root-caused why three straight fix attempts kept showing identically unchanged log
+  lines, independent of the `npm run dev` bundling gap found earlier**: the user had been
+  stuck on an unrelated, several-messages-long `git pull`/merge-conflict/stash tangle in
+  their own local checkout the entire time (conflict markers repeatedly reappearing in
+  `package.json`/`package-lock.json` from a stale `git stash` entry predating this whole
+  integration) - every rebuild in between was still running pre-fix code because the pull
+  that would have brought each fix in kept failing. Once that was cleared up (dropping the
+  stale stash, whose only contents were exactly the already-reconciled `package.json`/
+  `package-lock.json`, and completing the pending merge commit), the Manager-connectivity
+  fix was confirmed working immediately (the "injoignable" warning disappeared from the
+  user's own logs) - the AWS BOM issue surviving that same pull is what led to this round's
+  fix above actually being a real, previously-masked second bug, not a repeat of the first.
+
+- **The bracket-search fix above wasn't the end of it either: AWS's response fails to parse
+  for a *third*, different reason past the leading junk** - after the fix above landed, the
+  user's log showed the mangled leading characters finally gone (`fetchJsonWithTimeout` is
+  working), but a new parse error further into the text, right around where the real JSON
+  content starts. Diagnosing this exactly from the log alone has hit the same wall twice
+  now: Windows console encoding mangles non-ASCII bytes into unreadable mojibake
+  (`´┐¢`-style garbage) before they ever reach the pasted log, so two different real
+  problems have now been misread as "the same BOM issue" from the log text alone.
+  - **Fix** (`src/bot/externalStatus.ts`): `fetchJsonWithTimeout` now catches its own
+    `JSON.parse` failure and re-throws with a `JSON.stringify`-escaped preview of the
+    exact text it tried to parse (safe regardless of console encoding, since
+    `JSON.stringify` always escapes non-printable/non-ASCII characters to `\uXXXX`) plus
+    the literal Unicode code points of its first 20 characters as plain numbers - something
+    no console encoding mismatch can mangle. The next occurrence will log the actual bytes
+    unambiguously instead of needing yet another round of guessing from mangled terminal
+    output.
+  - **Verified**: new test in `tests/discordBotExternalStatus.test.ts` asserts on the
+    literal code point number (`65533`, i.e. `�`) rather than the character itself -
+    deliberately, since asserting on the raw character would have the exact same source-
+    encoding fragility this fix exists to route around. `npm run typecheck`, the full `npx
+    vitest run` (1067 tests), and `npm run build` all pass. Still not root-caused: the next
+    real log line is needed to actually fix whatever this third issue turns out to be -
+    this round only guarantees that log line will be legible.
+
+- **The actual root cause of the entire AWS saga, finally found via the diagnostic above:
+  the real response is UTF-16LE-encoded, not UTF-8.** The user's next log line showed the
+  code points `91,0,123,0,34,0,100,0,...` - `[`, NUL, `{`, NUL, `"`, NUL, `d`, NUL... a
+  `0x00` byte after every single ASCII character, the unmistakable signature of ASCII-range
+  text encoded as UTF-16LE. `fetch`'s `response.text()` always decodes as UTF-8 with no way
+  to override it, and the endpoint declares no charset to reveal otherwise - every earlier
+  "BOM" theory in this saga was real evidence of the *same* underlying misdecoding, just
+  misread as a narrower leading-prefix issue because a console encoding mismatch (separately
+  confirmed) kept mangling the raw bytes before they ever reached a readable log line.
+  - **Fix** (`src/bot/externalStatus.ts`): new `readResponseText(response)` reads the raw
+    bytes via `response.arrayBuffer()` and picks the correct decoder itself - a real UTF-16LE/
+    UTF-16BE/UTF-8 BOM first, then falls back to detecting *unmarked* UTF-16LE by the same
+    "every other byte is zero" shape confirmed above (the real AWS response has no BOM at
+    all). Used everywhere this file reads a response body as text - not just the JSON checks
+    (EOS/AWS/Cloudflare), but also the plain-text ones (Official Network ASA, Xbox Live) that
+    could have silently matched nothing against a misdecoded body the exact same way, just
+    without an exception to surface it. `fetchJsonWithTimeout`'s bracket-search and
+    diagnostic-logging from the last two rounds stay in place as a defensive second layer -
+    harmless, and correct decoding should make them unnecessary in practice now.
+  - **Verified**: rewrote `tests/discordBotExternalStatus.test.ts`'s fake-response helper to
+    go through real byte encoding/decoding (`Buffer`-based) instead of plain JS string
+    literals standing in for "already decoded" text, a more faithful test of the actual code
+    path - plus new cases for genuinely UTF-16LE-encoded responses, with and without a BOM
+    (the no-BOM case is the exact shape confirmed from the real AWS response), for both
+    `queryAwsStatus` and `queryOfficialNetworkStatus`. 14 tests in that file now, 1070 total.
+    `npm run typecheck`, the full `npx vitest run`, and `npm run build` all pass.
+
+- **Discord status embeds now show each Manager group as its own field, instead of lumping
+  every server into one combined "Cluster" field** (user request, confirmed working against
+  their own 13-server cluster right after the whole connectivity saga above finally
+  resolved) - mirrors the desktop Dashboard/Cluster Dashboard, which already visually
+  separates a "Testing" group (or any other) from the main one.
+  - **`src/bot/statusEmbeds.ts`**: new `groupServersByGroup` groups the visible server list
+    by the Manager's own `group` field (already part of `ManagerServerInfo`, sourced
+    straight from `/api/servers`), preserving the order servers already arrive in rather
+    than re-sorting - `/api/servers` already returns them pre-sorted by group
+    (`sortProfilesForDisplay`), so a simple order-preserving group-by keeps both the
+    within-group order and the group order itself correct with no separate "group order"
+    setting to fetch just for this. An empty/unset group name falls back to the "Cluster"
+    label, matching the Manager's own default. `buildStatusEmbed` now emits one `📡
+    <group name>` field per group instead of a single hardcoded `📡 Cluster` field (the
+    aggregate "Status Cluster" line in the Système field is unchanged - still computed
+    across every visible server regardless of group); `buildMinecraftStatusEmbed` got the
+    same treatment with `⛏️ <group name>` fields, for consistency with the ARK side (the
+    Minecraft Dashboard already supports its own groups too, via `minecraftGroupOrder`/
+    `minecraftCollapsedGroups`, so the same gap would have surfaced there next).
+  - **Verified**: 4 new tests in `tests/discordBotStatusEmbeds.test.ts` - multiple groups
+    render as separate, correctly-named fields with the right servers in each, a server
+    with no group set still falls back to a "Cluster" field, group order is preserved
+    rather than alphabetized, and the same grouping works for the Minecraft embed. All
+    existing tests (which only ever used a single implicit group) still pass unchanged -
+    1074 tests total. `npm run typecheck`, the full `npx vitest run`, and `npm run build`
+    all pass.
+
+- **Fixed: Discord status embed group fields didn't respect the Manager's own configured
+  group order** (user report, with a screenshot showing "Cluster, PTR, Testing" instead of
+  the expected "Testing" before "PTR") - the previous entry above assumed `/api/servers`
+  "already returns them pre-sorted by group" via `sortProfilesForDisplay`; that assumption
+  was wrong. Reading `sortProfilesForDisplay` (and `sortMinecraftProfilesForDisplay`) in
+  `src/main/lib/webDashboard.ts` showed they sort group names **alphabetically**
+  (`groupNames.sort()`), not by `settings.groupOrder`/`minecraftGroupOrder` - that's exactly
+  why "PTR" sorted before "Testing". The desktop Dashboard never relies on that API-level
+  order for its own display either: `Dashboard.tsx`/`MinecraftDashboard.tsx` each re-derive
+  their own `groupNames` client-side from `settings.groupOrder`/`minecraftGroupOrder`
+  (explicitly-ordered names first, then any other group appended alphabetically) - the same
+  logic the bot needed, just never wired up for it.
+  - **`shared/discordBot.ts`**: `DiscordBotConfig` gained `groupOrder: string[]` and
+    `minecraftGroupOrder: string[]`, mirroring `AppSettings`'s own fields of the same name.
+  - **`src/main/lib/discordBot.ts`**: `buildConfig` now passes `settings.groupOrder` and
+    `settings.minecraftGroupOrder` straight through into the bot's config file.
+  - **`src/bot/statusEmbeds.ts`**: new `orderGroupNames(groupNames, groupOrder)` applies the
+    exact same ordering as the desktop Dashboard (explicitly-ordered names first in that
+    order, everything else appended alphabetically); `groupServersByGroup` now takes a
+    `groupOrder` argument and returns its `Map` built in that resolved order instead of
+    insertion order. `buildStatusEmbed` passes `config.groupOrder`, `buildMinecraftStatusEmbed`
+    passes `config.minecraftGroupOrder`. The stale doc comment claiming `/api/servers`
+    "already returns them pre-sorted by group" was corrected.
+  - **Verified**: updated the now-incorrect "preserves the order groups already arrive in"
+    test to reflect the real default (alphabetical, since `groupOrder` is empty unless set)
+    and added two new tests - one confirming an explicit `groupOrder` of `['Testing', 'PTR']`
+    produces `Testing, PTR, Cluster` (the user's exact reported scenario) for the ARK embed,
+    and one confirming `minecraftGroupOrder` works the same way for the Minecraft embed.
+    1076 tests total, all passing. `npm run typecheck`, the full `npx vitest run`, and
+    `npm run build` all pass. **Not yet verified**: the user hasn't confirmed against their
+    live bot yet - needs a `git pull` + rebuild + bot restart on their end, same as every
+    other round.
+
+- **Added: "Keep running in the background when the window is closed" (close-to-tray)**
+  (user request) - closing the window no longer has to quit the app; it can now hide to a
+  system tray icon instead, so every managed server, the web dashboard, and the Discord bot
+  all keep running in the background. Off by default - closing the window still quits the
+  app exactly as before unless the user opts in.
+  - **`shared/types.ts`**: new `AppSettings.closeToTrayEnabled: boolean`.
+  - **`src/main/store.ts`**: default `false` added in both `getSettings()`'s merge-defaults
+    object and the `electron-store` schema's own defaults, same pattern as every other
+    settings field.
+  - **`src/main/index.ts`**: a module-level `isQuitting` flag, set from `app.on('before-quit', ...)`
+    (which always fires before Electron tries to close any window, so it's already correct
+    by the time a window's own `close` handler runs - no race between "real quit" and "just
+    closing the window"). The main window's `close` handler now checks
+    `!isQuitting && getSettings().closeToTrayEnabled` (read fresh on every close, not cached,
+    so toggling the setting takes effect on the very next close without a restart) - if both
+    hold, `event.preventDefault()` and `mainWindow.hide()` instead of letting it actually
+    close. A `Tray` (reusing the same `iconPath` as the window's own icon) is created once,
+    with a context menu offering "Ouvrir Bober Server Manager" (show + focus the window) and
+    "Quitter" (`app.quit()` - the only way to actually exit while this setting is on);
+    left-clicking the tray icon also shows/focuses the window, matching the Windows
+    convention. `window-all-closed`'s existing quit-on-close behavior is untouched and still
+    applies exactly as before whenever the setting is off.
+  - **`src/renderer/src/pages/DataSettingsView.tsx`**: new checkbox in the "Startup & Safety"
+    section of Settings > General, right under "Start Manager when you log into Windows",
+    with an explanation of what stays running and how to actually quit (the tray menu).
+  - **`src/renderer/src/pages/SteamCmdView.tsx`**, **`tests/webDashboard.test.ts`**,
+    **`tests/discordBot.test.ts`**: added the new field (defaulting to `false`) to every
+    other full `AppSettings` literal in the codebase, so TypeScript keeps enforcing that
+    none of them silently drift out of sync with the real shape.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged -
+    this feature has no isolated unit to test, since it's pure Electron window/tray
+    wiring), and `npm run build` all pass. **Not yet verified**: no automated test covers
+    actual tray behavior (Electron's `Tray`/`BrowserWindow` aren't something `vitest` can
+    exercise headlessly) - needs the user to confirm in the real app that closing the
+    window with the setting on hides it to the tray instead of quitting, that the tray
+    icon's "Ouvrir" reopens the window, and that "Quitter" actually exits (including
+    stopping the Discord bot/web dashboard along with the rest of the process).
+
+- **Fixed: renaming or deleting a server made every text field/checkbox in the app stop
+  responding, until a workaround was found** (user report: "quand je fais une action de
+  changement de nom de serveur ou de suppression, les paramètre à texte et à coché ne
+  fonctionne plus"). A real production bug, not a misreport - just a much harder one to
+  pin down than it first looked, because the obvious theories were all wrong:
+  - Not a main-process deadlock: a 2-second heartbeat logged straight to the terminal (a
+    throwaway diagnostic added specifically to test this) kept ticking the entire time the
+    app was "frozen," proving the main process's event loop was never blocked.
+  - Not a stuck IPC call either: once the user got DevTools open (the app disables
+    Electron's default menu, which is what normally wires up F12/Ctrl+Shift+I - had to add
+    `mainWindow.webContents.openDevTools({ mode: 'detach' })` in dev mode just to see the
+    renderer's own console at all) and found the Console panel's level filter was silently
+    hiding "5 hidden" messages, every diagnostic breadcrumb through the full
+    save/delete/move IPC round trip printed cleanly on both the main and renderer side -
+    the operation itself always completed successfully.
+  - The actual bug only showed up once the user ran `document.hasFocus()` live in that same
+    DevTools console right after a delete's `confirm()` dialog closed: `false`. The
+    renderer's own document had lost focus and never gotten it back - a known
+    Electron/Windows issue already partially addressed in this codebase
+    (`confirmAction.ts`/`dialog.ts`'s existing `mainWindow.focus()` calls), but evidently
+    not reliably enough. Manually alt-tabbing away and back fixed it every time; a plain
+    `mainWindow.focus()` + `mainWindow.webContents.focus()` call (tried first, see the
+    now-superseded focus-only commit on this branch) did not - consistent with Windows'
+    anti-focus-stealing protection, which can silently no-op `SetForegroundWindow` for a
+    background process reclaiming focus on its own, even over its own window.
+  - **`src/main/lib/windowFocus.ts`** (new): `forceRefocus(mainWindow)` calls
+    `mainWindow.minimize()` + `mainWindow.restore()` (or just `restore()` if already
+    minimized) before `focus()`/`webContents.focus()` - forcing the same genuine OS-level
+    foreground transition alt-tabbing does, rather than asking Windows nicely via a plain
+    `.focus()` call it's free to ignore.
+  - **`src/main/ipc/system.ts`**, **`src/main/ipc/dialog.ts`**, **`src/main/ipc/steamcmdInstall.ts`**:
+    all three existing refocus-after-a-native-dialog call sites (`appFocusWindow` behind
+    `confirmAction()`, the file/folder picker dialogs, the SteamCMD firewall UAC prompt)
+    now call the shared `forceRefocus()` instead of each duplicating a plain `.focus()`.
+  - Renaming a server turned out not to be a separate cause - editing the Name field itself
+    never calls any native dialog - it just surfaced the *already*-broken focus state left
+    over from an earlier Delete in the same session, which is why the user saw both
+    actions "break" typing.
+  - **Diagnostic trail, since this took several rounds to actually pin down**: a
+    2-second main-process heartbeat + step-by-step `[DIAG]` logging through every
+    `profiles.save`/`delete`/`move`/`copy` IPC handler (both ARK and, once the user
+    mentioned testing both games, the equivalent Minecraft handlers/renderer call sites
+    too) + an auto-opened detached DevTools window in dev mode - all added temporarily
+    across several commits on this branch and fully removed again once
+    `document.hasFocus()` gave the real answer.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged -
+    no automated test can drive real OS-level window focus), and `npm run build` all pass.
+    The user confirmed live, after pulling this exact fix, that deleting a server no longer
+    leaves any field unresponsive ("c'est fix !").
+
+- **Moved Settings (and Log) into a sidebar shared by both game modes, instead of being
+  reachable only from ARK's own Dashboard header** (user request, right after confirming the
+  focus fix above - turned out to be why "close to tray" looked broken too: it couldn't be
+  reached/enabled at all while in Minecraft mode). Before this, `App.tsx`'s render short-
+  circuited into a completely separate Minecraft branch (just `GameSwitch`, nothing else) and
+  reached `showSteamCmd`/`showDataSettings`/`showProfileManagement` only afterward - which
+  meant those checks, and the Settings/Log buttons that set them, never ran at all while
+  `gameMode === 'minecraft'`.
+  - **`src/renderer/src/App.tsx`**: moved the `showSteamCmd`/`showDataSettings`/
+    `showProfileManagement` checks to the very top of the render, before the
+    `gameMode === 'minecraft'` branch, so they work as top-level screens reachable from
+    either mode (SteamCMD and Profile Management stay ARK-only in practice, since nothing in
+    Minecraft mode links to them, but Settings now does from both). Added a
+    `.app-sidebar-settings` button (pinned to the sidebar's bottom via CSS `margin-top:
+    auto`) to both the ARK and Minecraft sidebars. Minecraft's sidebar also gained a
+    "Minecraft Servers"/"Log" pair mirroring ARK's own Dashboard/Log buttons (both toggle
+    the same shared `mainPage` state, swapping `MinecraftDashboard` for `ManagerLogView` in
+    the content area) - the Manager Log is global, not per-game, so there was no reason it
+    should only be visible from ARK mode either.
+  - **`src/renderer/src/pages/Dashboard.tsx`**: removed the now-redundant `onOpenDataSettings`
+    prop and its "Settings" header button (moved, not duplicated) - SteamCMD and Profile
+    Management stay as ARK Dashboard header buttons, unchanged.
+  - **`src/renderer/src/styles.css`**: new `.app-sidebar-settings` rule.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged - no
+    existing test touched `Dashboard`'s removed prop or `App.tsx`'s render order), and
+    `npm run build` all pass. **Not yet verified**: needs the user to confirm Settings and
+    Log are both reachable from Minecraft mode now, and that ARK mode still looks/behaves
+    identically (Settings moved from the Dashboard header into the sidebar).
+
+- **Web Dashboard: hid Minecraft's per-server nav tabs until an actual MC server is
+  selected, matching ARK's own tabs** (user screenshot showing Console/MC Start Settings/MC
+  Server Settings/MC Mods/MC Plugins/MC Backup/MC Server Management all visible at once from
+  the plain "Minecraft Servers" overview, with nothing selected). This was a deliberate,
+  explicitly-documented design choice when the Minecraft section was first built (the whole
+  `nav-group-minecraft` was gated only by game mode, not by `activeView` the way ARK's own
+  `SERVER_SCOPED_VIEWS` already gates its per-server tabs) - revisited now that it's visibly
+  inconsistent with ARK's own behavior.
+  - **`src/main/lib/webDashboard.ts`**: `updateServerScopedNavVisibility()` (recomputed on
+    every nav click, same as ARK's own tabs already were) now also shows/hides
+    `navMcConsoleBtn` and the new `mcAdminNavBtns`/`mcModeratorNavBtns` arrays based on
+    whether `activeView` is `'console'` or in `MC_SERVER_SCOPED_VIEWS` - replacing the old
+    one-time `if (role && !canAdmin) { ... }` hides (which, being one-time, could never
+    re-show a button once hidden - now folded into the same per-view/per-role check ARK's
+    tabs use). The underlying per-server views were already architecturally ready for this:
+    each one (`loadMcStartSettingsView()` etc.) already has its own server picker and a
+    "No Minecraft server selected" placeholder, and `selectServer()`/`currentId` were
+    already shared across both games - the nav buttons just weren't deferring to any of
+    that.
+  - **Mobile**: also found and fixed a real (if narrow) gap while reviewing the dashboard's
+    existing `@media (max-width: 700px)` block for this - `#token-gate` (the access-token
+    login screen, the very first thing a mobile viewer with "Require access token" on would
+    see) had a fixed `width: 320px` form plus 28px padding per side, needing 376px to avoid
+    overflowing - wider than several real phones (iPhone SE and older/budget Android are
+    320-360px). Now `width: auto; max-width: 320px; padding: 20px` on mobile. The rest of
+    the dashboard, including every MC view above, turned out to already inherit solid mobile
+    behavior for free - they're all built from the same generic classes
+    (`.settings-form`/`.settings-grid2`/`.form-actions`/`.data-table`/`.admin-tab-content`/
+    `.content-row`/`.server-picker`/etc.) the existing mobile breakpoint already covers, and
+    the action-sheet/context-menu popups were already clamped to the viewport. No sweeping
+    rewrite needed - the groundwork was already there, just not applied to the Minecraft
+    nav tabs or the token gate.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged -
+    this is plain client-side JS/CSS embedded in a template string with no dedicated test
+    harness, same as the rest of `webDashboard.ts`'s browser-side code), and `npm run build`
+    all pass. **Not yet verified**: needs the user to confirm in a real browser that the MC
+    nav tabs now stay hidden on "Minecraft Servers" and reappear once a server's Console (or
+    one of its own tabs) is open, and that the token gate no longer overflows on a phone.
+
+- **Grouped the desktop Log/Settings sidebar buttons together at the bottom, instead of Log
+  sitting up with the main nav and only Settings pinned to the bottom edge** (user request,
+  right after the previous "move Settings/Log into a shared sidebar" round). The earlier fix
+  had Settings alone carrying `margin-top: auto`, which does push it to the very bottom, but
+  left Log up with Dashboard/Cluster Dashboard/Minecraft Servers - visually separated from
+  Settings by whatever empty space the sidebar had, rather than sitting directly above it as
+  a pair.
+  - **`src/renderer/src/styles.css`**: renamed `.app-sidebar-settings` to `.app-sidebar-log`
+    and moved the `margin-top: auto`/`border-top` from Settings onto Log instead - the first
+    item of a bottom-pinned pair carries the auto-margin, so Log gets pushed down and
+    Settings (last in the DOM, no special margin needed) just follows immediately after it.
+  - **`src/renderer/src/App.tsx`**: moved the class from the Settings `<button>` to the Log
+    `<button>` in both the ARK and Minecraft sidebars (merging it with the existing
+    conditional `active` class via a template string, since Log already needed one).
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged),
+    and `npm run build` all pass. **Not yet verified**: needs the user to confirm Log now
+    sits directly above Settings, both grouped at the sidebar's bottom, in both game modes.
+
+- **Confirmed: "close to tray" (the earlier Settings > Startup & Safety feature) works** -
+  the user reported it still quitting the app entirely instead of hiding to the tray even
+  after enabling it and confirmed Settings was now reachable (the previous round's fix).
+  Added temporary `[DIAG]` logging at both ends of the round trip (what the Settings save
+  IPC handler receives/persists/reads back, and what the window's own `close` handler sees
+  for `isQuitting`/`closeToTrayEnabled`) to find where the value was getting lost between
+  Save and the next close. First confirmed real: a close right after toggling+saving showed
+  `closeToTrayEnabled: false` at close time despite having just been saved `true`. Asked the
+  user to redo the exact sequence in one continuous session (toggle → Save → close, no
+  navigating elsewhere in between) with a fresh `git reset --hard` + full reinstall/rebuild -
+  it then worked. No code change happened between the failing and passing attempts (only the
+  diagnostic logging), so the earlier failure was most likely a stale build/store from the
+  git sync issues earlier in this session (the repeated stray-merge-commit problem) rather
+  than an actual bug in the close-to-tray logic itself - removed the logging now that it's
+  confirmed working.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged),
+    and `npm run build` all pass. The user confirmed live ("c'est fix") that closing the
+    window now hides it to the tray as intended.

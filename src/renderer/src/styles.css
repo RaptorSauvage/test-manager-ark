@@ -164,6 +164,17 @@ label.checkbox {
   color: var(--danger);
 }
 
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+
 .status-message {
   color: var(--ok);
   font-size: 0.85rem;
@@ -204,6 +215,56 @@ label.checkbox {
   color: var(--text);
   border-left-color: var(--accent);
   background: rgba(79, 140, 255, 0.1);
+}
+
+.app-sidebar-game-switch {
+  display: flex;
+  gap: 4px;
+  padding: 0 16px 14px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-sidebar-game-switch button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-left: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+}
+
+.app-sidebar-game-switch button img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  /* Dims the icon when its mode isn't the active one - same "muted until active" language
+     the rest of the sidebar's text buttons already use. */
+  opacity: 0.55;
+}
+
+.app-sidebar-game-switch button.active {
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.15);
+  color: var(--text);
+}
+
+.app-sidebar-game-switch button.active img {
+  opacity: 1;
+}
+
+/* Pins Log+Settings together as a group at the bottom of the sidebar (regardless of how many
+   nav buttons come before it, ARK's or Minecraft's) via the sidebar's own flex-column layout -
+   the margin goes on Log (the first of the two) so the pair stays adjacent to each other,
+   separated from the rest of the nav by the gap/border instead of each button pushing
+   independently to its own edge. */
+.app-sidebar-log {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding-top: 2px;
 }
 
 .app-content {
@@ -398,6 +459,10 @@ label.checkbox {
 .group-console-filters .checkbox {
   gap: 4px;
   color: var(--text);
+}
+
+.mc-console-controls {
+  justify-content: flex-end;
 }
 
 .group-console-rcon {
@@ -603,6 +668,41 @@ label.checkbox {
   overflow-y: auto;
   font-family: 'Cascadia Code', 'Consolas', monospace;
   font-size: 0.85rem;
+}
+
+.console-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Fills essentially the full window height minus the page's own fixed-height chrome
+     (header, tab nav, padding) - a plain 60vh (the previous value) left a large empty gap
+     below the feed on anything but a short window. */
+  height: calc(100vh - 200px);
+}
+
+.mc-console-line {
+  padding: 1px 0;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mc-console-line--error,
+.mc-console-line--stopping {
+  color: var(--danger);
+}
+
+.mc-console-line--warn,
+.mc-console-line--leave {
+  color: var(--warn);
+}
+
+.mc-console-line--ready {
+  color: var(--ok);
+}
+
+.mc-console-line--join {
+  color: var(--cyan);
 }
 
 .log-event {
@@ -831,6 +931,16 @@ label.checkbox {
   margin-bottom: 12px;
 }
 
+.server-group summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.server-group.dragging {
+  opacity: 0.4;
+}
+
 .hidden-servers .server-grid,
 .server-group .server-grid {
   margin-top: 12px;
@@ -856,6 +966,43 @@ label.checkbox {
   margin: 0;
   flex: 1;
   font-size: 1.1rem;
+}
+
+.server-card-game-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.server-type-value {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.server-type-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.mc-mods-browse-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.server-type-icon-large {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  align-self: center;
 }
 
 .drag-handle {
@@ -936,6 +1083,26 @@ label.checkbox {
 
 .server-card-info dt {
   color: var(--muted);
+}
+
+.server-card-info-address {
+  grid-column: 1 / -1;
+}
+
+.copyable-address {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.copyable-address:hover {
+  color: var(--accent);
 }
 
 .analytics-tab {
@@ -1123,7 +1290,8 @@ label.checkbox {
 }
 
 .server-settings-tab > .form-actions,
-.server-settings-tab > .error-message {
+.server-settings-tab > .error-message,
+.server-settings-tab > .empty-state {
   flex: 1 1 100%;
   max-width: none;
 }
@@ -1307,6 +1475,10 @@ label.checkbox {
   margin: 0;
 }
 
+.install-minecraft-panel {
+  margin-bottom: 16px;
+}
+
 .stats-section-header {
   display: flex;
   flex-wrap: wrap;
@@ -1429,14 +1601,44 @@ label.checkbox {
   gap: 12px;
 }
 
+.games-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.games-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.games-list-item span:first-of-type {
+  flex: 1;
+}
+
+.games-list-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
 .path-input-row {
   display: flex;
   gap: 8px;
 }
 
 .path-input-row input,
-.path-input-row select {
+.path-input-row select,
+.path-input-row textarea {
   flex: 1;
+}
+
+.launch-command-preview {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.8rem;
+  resize: vertical;
 }
 
 .form-actions {
@@ -1499,6 +1701,16 @@ label.checkbox {
 .server-management-tab > .schedule-section {
   flex: 1 1 380px;
   max-width: 480px;
+}
+
+/* Any stray text directly in this flex-wrap row (not inside a .schedule-section) needs an
+   explicit full-width flex-basis, or its intrinsic (unwrapped, single-line) width is used
+   for flex sizing instead - the same bug fixed for .server-settings-tab above, guarded
+   here too since both tabs share this row-wrap layout. */
+.server-management-tab > .error-message,
+.server-management-tab > .empty-state {
+  flex: 1 1 100%;
+  max-width: none;
 }
 
 .schedule-section {
@@ -1575,36 +1787,103 @@ label.checkbox {
   font-weight: 600;
 }
 
+/* Wraps the "Add mod ID" row and the grid together so they share one left/right edge and move
+   together - without this, centering them *separately* (each with its own narrower max-width)
+   centered them on the same point but left their *left edges* different, which read as broken/
+   misaligned (a real report: the Add row stayed pinned to the page's own left edge while the
+   grid centered itself below it).
+   .mods-tab is `display: flex; flex-direction: column`, so .ark-mods-list is itself a flex
+   item - confirmed (by dropping the cap entirely to a plain width: 100% and seeing that
+   actually, visibly, fill the tab edge-to-edge) that a flex item's own width genuinely does
+   apply here. What's suspect in hindsight is centering it with `margin: 0 auto`: three rounds
+   of max-width + margin: 0 auto (1100px, 1200px, a 95% percentage) each came back
+   indistinguishable from the last - plausible if the cap was actually narrowing it correctly
+   each time but the auto-margin centering silently never took effect, leaving it flush-left at
+   each (similar-looking) narrower width instead of centered, which would explain "hasn't
+   moved" between three cosmetically-similar flush-left results. align-self: center is a more
+   direct, less indirection-dependent way to center a single flex item along its container's
+   cross axis than relying on its margins absorbing leftover space - used here instead. */
+.ark-mods-list {
+  width: 100%;
+  max-width: 1600px;
+  align-self: center;
+}
+
 .mods-add {
   display: flex;
   gap: 8px;
   max-width: 520px;
+  margin-bottom: 12px;
 }
 
 .mods-add input {
   flex: 1;
 }
 
-.mods-table {
+/*
+ * CSS Grid, not a <table> - same reasoning, and the exact same proven fix, as the Minecraft
+ * Mods tab's own mc-mods-grid (see styles.css's own comment above those rules for the full
+ * story): HTML table auto-layout sizes a column from the single most demanding piece of
+ * content anywhere in that column across every row at once, which is exactly what produced a
+ * real, reported misalignment between this table's own Mod ID/Name columns and its right-most
+ * actions column once rows started carrying longer CurseForge-resolved names. Grid sidesteps
+ * it entirely: grid-template-columns declares each column's width explicitly and identically
+ * for the header row and every data row (flowing left-to-right/top-to-bottom through the same
+ * column tracks as direct children of the same grid container - see the Fragment-per-row
+ * markup in ModsTab.tsx), so a column's width no longer depends on anything any row's content
+ * does.
+ */
+.ark-mods-grid {
+  display: grid;
   width: 100%;
-  border-collapse: collapse;
+  column-gap: 8px;
 }
 
-.mods-table th,
-.mods-table td {
-  text-align: left;
+/* Ascended has Passive/Dev checkbox columns Evolved doesn't (see ModsTab.tsx's own isEvolved
+   gating) - Mod ID is a known-bounded small vocabulary (short numeric ids, nothing that can
+   produce a surprise long outlier) so a fixed track is fine, and the checkbox columns are a
+   fixed, identical width on every row. Name is back to minmax(0, 1fr) - capping it
+   (minmax(0, 360px)) to stop it from claiming all the way out to the edge of a multi-thousand-
+   pixel-wide browser window just made the whole grid shrink-wrap down to a visibly tiny table
+   (a real report: "too shrunk") once .ark-mods-list above started capping/centering the overall
+   layout instead. With that outer cap already doing the "don't stretch edge-to-edge" job, Name
+   claiming the rest of *that* bounded width is the right amount of stretch - comfortably sized
+   without reproducing the original edge-to-edge gap problem. */
+.ark-mods-grid--ascended {
+  grid-template-columns: 90px 90px 90px 120px minmax(0, 1fr) auto;
+}
+
+.ark-mods-grid--evolved {
+  grid-template-columns: 90px 120px minmax(0, 1fr) auto;
+}
+
+.ark-mods-grid-header,
+.ark-mods-grid-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
   padding: 8px;
   border-bottom: 1px solid var(--border);
   font-size: 0.85rem;
 }
 
-.mods-table tbody tr.mod-disabled {
+.ark-mods-grid-header {
+  font-weight: 600;
+}
+
+.ark-mods-grid-empty {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  padding: 8px;
+}
+
+.ark-mods-grid-cell.mod-disabled {
   opacity: 0.5;
 }
 
-.mods-select-col {
-  width: 1%;
-  white-space: nowrap;
+.ark-mods-grid-actions {
+  gap: 4px;
+  flex-wrap: nowrap;
 }
 
 .mods-select-col-header {
@@ -1617,14 +1896,79 @@ label.checkbox {
   width: 100%;
 }
 
+.ark-mod-name-cell {
+  gap: 8px;
+}
+
+.ark-mod-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 .mod-id {
   color: var(--warn);
   white-space: nowrap;
+  justify-content: center;
+  text-align: center;
 }
 
-.mods-list-actions {
+/* ARK: Survival Ascended's own CurseForge enrichment (ModsTab.tsx's arkInfo) - a real icon
+   resolved from CurseForge next to a mod's Name cell, same role as the Minecraft Mods tab's own
+   mc-mod-icon but named separately since ARK mods aren't downloaded/installed through this app
+   the way Minecraft ones are (see arkMods.ts), just referenced by id. */
+.ark-mod-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.ark-mods-search {
+  margin-bottom: 20px;
+}
+
+.ark-mod-search-results {
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.ark-mod-search-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.ark-mod-search-result-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.ark-mod-search-result-name {
+  font-weight: 600;
+}
+
+.ark-mod-search-result-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.ark-mod-search-result-downloads {
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .backup-settings-row {
@@ -1741,6 +2085,126 @@ label.checkbox {
 .backups-table tbody tr.selected {
   background: var(--accent);
   color: #fff;
+}
+
+/*
+ * CSS Grid, not a <table>. Three rounds of fixing the <table>-based version (narrow-column
+ * width hints, flex-wrap, shrink-to-fit sizing, max-width caps on the Name column) each solved
+ * one real symptom but never the actual disease: HTML table auto-layout sizes a column based on
+ * the single most demanding piece of content anywhere in that column, across every row at once
+ * - there is no way to tell it "give normal rows a normal width and let only the one outlier
+ * truncate instead." A real screenshot of 357 installed mods kept showing the same shape of bug
+ * (a dead gap between Name and Source) through every one of those rounds, each time for a
+ * subtly different reason.
+ *
+ * Grid sidesteps this entirely: `grid-template-columns` declares each column's width explicitly
+ * and identically for the header row and every data row (they're all just direct children of
+ * the same grid container, flowing left-to-right/top-to-bottom through the same column tracks -
+ * see the Fragment-per-row markup in ModsTab.tsx). A column's width no longer depends on
+ * anything any row's content does; an overflowing value just truncates on its own
+ * (mc-mod-title), it can never push the column - or any other row - wider.
+ */
+/* width: 100% is safe here in a way it never was for the old <table> - Name's `minmax(0, 1fr)`
+   track (see the two variants below) is the only one that grows to fill leftover space, and
+   `fr` distribution is a deterministic share of the grid's own width, not content-dependent the
+   way table auto-layout's "leftover space" was. There's no outlier-content failure mode to
+   reintroduce by letting this stretch, so no max-width cap either - a 1600px cap still left the
+   grid cramped on a 2K monitor's wide window; just let it fill whatever width .server-detail
+   actually has. */
+.mc-mods-grid {
+  display: grid;
+  width: 100%;
+  column-gap: 12px;
+}
+
+/* Name gets the lion's share (capped, not fixed, so a narrow window can still shrink it) since
+   it's the primary identifying column; Description is the other flexible one (prose that
+   should wrap within its track, not render as one unbroken line) and splits remaining space
+   with Name via its own 1fr. Source/Downloads/the Install button are all a known-bounded small
+   vocabulary - fixed-ish tracks are fine, nothing there can produce a surprise long outlier. */
+.mc-mods-grid--browse {
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr) 100px 110px auto;
+}
+
+/* No Description column here - Name alone gets the flexible 1fr share. Version is free-form
+   text from whichever source installed it (same unbounded-outlier risk as a mod's title), so
+   it also gets the mc-mod-title ellipsis treatment in ModsTab.tsx even though its own column
+   track is a fixed width here. */
+.mc-mods-grid--installed {
+  grid-template-columns: minmax(0, 1fr) 100px 150px 130px auto;
+}
+
+.mc-mods-grid-header,
+.mc-mods-grid-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.mc-mods-grid-header {
+  font-weight: 600;
+}
+
+.mc-mods-grid-empty {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.mc-mod-name-cell {
+  gap: 8px;
+}
+
+/* Source column: the source's own logo instead of its plain-text name (Modrinth/CurseForge) -
+   the name's still there as alt text/a title tooltip. gap/flex-wrap matter here since the
+   Installed grid can show more than one logo side by side when a mod's alsoOn means it's
+   cross-listed on more than one source. */
+.mc-mod-source-cell {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mc-mod-source-icon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* Prose, not a single value - wraps within its track rather than truncating to one line (the
+   row grows to fit, same as the old <table>'s own wrapping <td> did). */
+.mc-mod-description-cell {
+  white-space: normal;
+  align-items: flex-start;
+}
+
+/* Truncates with an ellipsis instead of forcing its column wider - applied to both the Name
+   cell's title text and (in the Installed grid) the Version text, the two free-form,
+   unbounded-length values in these grids. The full value is still available as a native
+   title-attribute tooltip on hover (set in ModsTab.tsx). min-width: 0 matters here: a flex
+   item's default min-width is its own content's natural width, which silently defeats
+   text-overflow: ellipsis by letting the item grow past its track instead of actually
+   truncating. */
+.mc-mod-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.mc-mods-grid-actions {
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.mc-mod-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .backups-select-col {

@@ -1,14 +1,17 @@
 import { spawn, exec, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { platform } from 'node:process'
 import { promisify } from 'node:util'
 import type { ServerMod, ServerProfile, ServerStatus } from '@shared/types'
+import { getGameDefinition } from '@shared/games'
 import { sendRconCommand } from './rcon'
 import { readAdminPassword } from './config'
-import { setRunningPid, setRunningStartedAt } from '../store'
+import { setRunningPid, setRunningStartedAt, getSettings } from '../store'
 import { delay } from './delay'
+import { logManagerEvent, newTaskId } from './managerLog'
 
 const execAsync = promisify(exec)
 
@@ -119,7 +122,9 @@ export function watchLogFileForMarker(
 }
 
 interface RunningServer {
-  /** Null for a server adopted from a previous app run - we have its pid but no live handle. */
+  /** Null for a server adopted from a previous app run - we have its pid but no live handle.
+   *  Also null (with `pid` a 0 placeholder) while queued for a staggered spawn - see
+   *  `cancelQueuedSpawn` below. */
   process: ChildProcess | null
   pid: number
   status: ServerStatus
@@ -127,9 +132,50 @@ interface RunningServer {
    *  itself is still up (see handleUnexpectedExit) - `pid` is stale past that point, so
    *  monitor.ts falls back to an RCON-only liveness/player-list check instead of pidusage. */
   pidTracked: boolean
+  /** Set only while this entry is queued for a staggered spawn (see reserveSpawnSlot) and
+   *  hasn't actually spawned an OS process yet - cancels the pending setTimeout so a Stop/
+   *  Kill requested during that window stops it outright instead of racing the queued spawn.
+   *  Cleared (entry replaced) the moment the real process actually spawns. */
+  cancelQueuedSpawn?: () => void
 }
 
 const running = new Map<string, RunningServer>()
+
+/**
+ * Global (not per-profile) spawn queue - ensures the actual OS-level process spawn for any
+ * two ARK servers is at least `serverAutoStartStaggerSeconds` apart, regardless of what
+ * triggered them: a manual Start/Restart click, the Dashboard's bulk Start All/Restart All,
+ * a scheduled restart, or a crash-watch/zombie-detection auto-restart. ARK's own world-
+ * loading is heavy enough (much of it single-threaded) that several spawning in the same
+ * instant can starve each other out badly enough that some never actually finish loading - a
+ * real report showed restarting several servers manually resulting in only 1-2 of them
+ * actually coming back up. Reuses the same setting already used to stagger "start on Manager
+ * launch" (autoStart.ts) rather than a second one, since it's the same underlying concern -
+ * autoStart.ts's own staggering keeps working unchanged on top of this; the two don't double
+ * up in practice since autoStart's own pacing already satisfies this queue's requirement by
+ * the time each of its calls actually reaches startServer.
+ */
+let nextSpawnSlotAt = 0
+
+/** `now` is passed in (rather than this function calling Date.now() itself) so it shares the
+ *  exact same timestamp the caller already captured as the request's own `startedAt` - two
+ *  separate Date.now() calls can land a millisecond apart, which was enough to make a fresh
+ *  (unstaggered) call see `slot > now` and wait a stray ~1ms it should never have needed to,
+ *  taking the queued-spawn code path instead of spawning immediately. */
+function reserveSpawnSlot(now: number): number {
+  const staggerMs = Math.max(0, getSettings().serverAutoStartStaggerSeconds) * 1000
+  const slot = Math.max(now, nextSpawnSlotAt)
+  nextSpawnSlotAt = slot + staggerMs
+  return slot
+}
+
+/** Resets the spawn queue's internal clock - exported only for tests, so one test's queued
+ *  stagger delay can't leak into the next test in the same file (module state otherwise
+ *  persists across `it()` blocks within a file). Mirrors statsHistory.ts's own
+ *  `__resetStatsHistoryCacheForTests`. */
+export function __resetServerSpawnQueueForTests(): void {
+  nextSpawnSlotAt = 0
+}
 
 export const serverEvents = new EventEmitter()
 
@@ -278,38 +324,92 @@ export function isUpdating(profileId: string): boolean {
 }
 
 export function getExecutablePath(profile: ServerProfile): string {
-  if (platform === 'win32') {
-    return path.join(profile.installDir, 'ShooterGame', 'Binaries', 'Win64', 'ArkAscendedServer.exe')
-  }
-  return path.join(profile.installDir, 'ShooterGame', 'Binaries', 'Linux', 'ArkAscendedServer')
+  const def = getGameDefinition(profile.game)
+  const relPath = platform === 'win32' ? def.executableWin : def.executableLinux
+  return path.join(profile.installDir, ...relPath.split('/'))
 }
 
 /**
  * Builds the ARK launch command line: `<Map>?param=value?param=value -flag -flag=value`.
+ * Shared across ARK: Survival Ascended and ARK: Survival Evolved (ASE predates ASA and most
+ * of this flag surface carries over unchanged), except where marked otherwise below.
  * Exact flags can drift between game updates - `extraArgs` on the profile is the
  * escape hatch for anything not covered here.
  */
 export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: string): string[] {
+  const isEvolved = profile.game === 'ark-evolved'
   const adminPassword = adminPasswordOverride ?? readAdminPassword(profile.installDir)
-  const params = ['listen', `Port=${profile.gamePort}`, 'RCONEnabled=True', `RCONPort=${profile.rconPort}`]
-  if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
 
-  const args = [
-    `${profile.map}?${params.join('?')}`,
-    '-server',
-    '-log',
-    `-ServerPlatform=${profile.serverPlatform}`,
-    `-WinLiveMaxPlayers=${profile.maxPlayers}`
-  ]
-  const enabledMods = profile.mods.filter((mod) => mod.enabled)
-  const formatModId = (mod: ServerMod): string => (mod.dev ? `${mod.id}-dev` : mod.id)
-  const activeModIds = enabledMods.filter((mod) => !mod.passive).map(formatModId)
-  const passiveModIds = enabledMods.filter((mod) => mod.passive).map(formatModId)
-  if (activeModIds.length > 0) {
-    args.push(`-mods=${activeModIds.join(',')}`)
+  let args: string[]
+
+  if (isEvolved) {
+    // Every detail here - the exact ?-string param order and the exact flag order below -
+    // is copied from a real, working ShooterGameServer.exe command line, confirmed the hard
+    // way: reordering these (e.g. putting -servergamelog right after the map string instead
+    // of after -NoBattlEye/-ForceRespawnDinos, like the ARK: Survival Ascended shape used to)
+    // reproducibly caused a blocking "Plugin 'RuntimeMeshComponent' failed to load" dialog on
+    // launch. Why order would matter for a plugin load isn't obvious, but the fix is
+    // empirically confirmed, so it's kept exact here rather than normalized.
+    const params = [
+      `Port=${profile.gamePort}`,
+      `QueryPort=${profile.queryPort}`,
+      `RCONPort=${profile.rconPort}`,
+      'RCONEnabled=True',
+      `MaxPlayers=${profile.maxPlayers}`
+    ]
+    if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
+    // ServerPassword= is mandatory for ARK: Survival Evolved - always emitted, even blank (a
+    // blank value means no join password required, a valid, common setting). SessionName= is
+    // deliberately not passed here - GameUserSettings.ini's SessionSettings.SessionName
+    // already covers it (same as ARK: Survival Ascended), so the launch-arg duplicate was
+    // unnecessary.
+    params.push(`ServerPassword=${profile.serverPassword}`)
+
+    args = [`${profile.map}?${params.join('?')}`]
+    if (profile.disableBattlEye) args.push('-NoBattlEye')
+    if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
+    args.push('-servergamelog')
+    // -log: originally left out here on the assumption -servergamelog alone was enough to
+    // get a useful ShooterGame.log (the file the Manager's Console/version-detection read) -
+    // a real report showed the Manager's live console and version display staying empty for
+    // ARK: Survival Evolved even though the server itself ran fine, which -servergamelog
+    // alone apparently doesn't fix (it's the separate dated ServerGame.<date>.txt tribe-log
+    // feature, not the engine's own log). Added back after that report, right after
+    // -servergamelog rather than up near -server/-log's usual ARK: Survival Ascended spot -
+    // the position empirically confirmed to matter (see the comment above) is
+    // -servergamelog's, relative to -NoBattlEye/-ForceRespawnDinos, not this one's.
+    args.push('-log')
+    if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
+    // Tells the server to download/update its own workshop mods (from ActiveMods=, written
+    // to GameUserSettings.ini by gameConfigWrite.ts) instead of relying on them being
+    // pre-installed. ARK: Survival Evolved only - has no equivalent on ARK: Survival Ascended.
+    if (profile.autoManageMods) args.push('-automanagedmods')
+  } else {
+    const params = ['listen', `Port=${profile.gamePort}`, 'RCONEnabled=True', `RCONPort=${profile.rconPort}`]
+    if (adminPassword) params.push(`ServerAdminPassword=${adminPassword}`)
+
+    args = [
+      `${profile.map}?${params.join('?')}`,
+      '-server',
+      '-log',
+      `-ServerPlatform=${profile.serverPlatform}`,
+      `-WinLiveMaxPlayers=${profile.maxPlayers}`
+    ]
   }
-  if (passiveModIds.length > 0) {
-    args.push(`-passivemods=${passiveModIds.join(',')}`)
+
+  // ARK: Survival Evolved has no command-line mechanism for mods at all (confirmed - not
+  // just unconfirmed support) - its mods are instead written to GameUserSettings.ini/Game.ini
+  // by gameConfigWrite.ts whenever the Mods tab saves (see ipc/mods.ts), so nothing belongs
+  // on its command line here.
+  if (!isEvolved) {
+    const enabledMods = profile.mods.filter((mod) => mod.enabled)
+    const formatModId = (mod: ServerMod): string => (mod.dev ? `${mod.id}-dev` : mod.id)
+    const activeModIds = enabledMods.filter((mod) => !mod.passive).map(formatModId)
+    if (activeModIds.length > 0) {
+      args.push(`-mods=${activeModIds.join(',')}`)
+    }
+    const passiveModIds = enabledMods.filter((mod) => mod.passive).map(formatModId)
+    if (passiveModIds.length > 0) args.push(`-passivemods=${passiveModIds.join(',')}`)
   }
 
   if (profile.clusterEnabled) {
@@ -320,19 +420,39 @@ export function buildLaunchArgs(profile: ServerProfile, adminPasswordOverride?: 
   }
 
   if (profile.cultureSettings !== 'none') args.push(`-culture=${profile.cultureSettings}`)
-  if (profile.disableBattlEye) args.push('-NoBattlEye')
-  if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
-  if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
+  // Already pushed above, in the exact confirmed position, for ARK: Survival Evolved.
+  if (!isEvolved) {
+    if (profile.disableBattlEye) args.push('-NoBattlEye')
+    if (profile.rconTribeLog) args.push('-servergamelogincludetribelogs', '-ServerRCONOutputTribeLogs')
+    if (profile.forceRespawnDinos) args.push('-ForceRespawnDinos')
+  }
   if (profile.noSound) args.push('-nosound')
-  // Falls back to '' for a profile saved before this field existed and read some way that
-  // bypasses store.ts's own migrateProfile backfill (e.g. a test fixture) - never throws.
-  if ((profile.maxDinoLevel ?? '').trim()) args.push(`-DestroyTamesOverLevel=${profile.maxDinoLevel.trim()}`)
+  // -DestroyTamesOverLevel= is an ARK: Survival Ascended addition with unconfirmed ARK:
+  // Survival Evolved support - never emitted for it (see shared/games.ts). Falls back to ''
+  // for a profile saved before this field existed and read some way that bypasses store.ts's
+  // own migrateProfile backfill (e.g. a test fixture) - never throws.
+  if (profile.game === 'ark-ascended' && (profile.maxDinoLevel ?? '').trim()) {
+    args.push(`-DestroyTamesOverLevel=${profile.maxDinoLevel.trim()}`)
+  }
   if (profile.moddedMapEnabled && profile.moddedMapId.trim()) args.push(`-MapModID=${profile.moddedMapId.trim()}`)
 
   if (profile.extraArgs.trim()) {
     args.push(...profile.extraArgs.trim().split(/\s+/))
   }
-  return args
+  // extraArgs is free text the user maintains themselves - a flag added there before the
+  // Manager natively supported it (e.g. -servergamelog, -nosound, -NoBattlEye) would otherwise
+  // end up on the command line twice once the Manager starts emitting it too. Keeping only the
+  // first occurrence of each exact token (the map string at index 0 is always kept, since it's
+  // never a duplicate of anything else) is a no-op for a profile whose extraArgs doesn't
+  // overlap with the rest, and silently fixes it for one that does.
+  const seen = new Set<string>()
+  return args.filter((arg, index) => {
+    if (index === 0 || !seen.has(arg)) {
+      seen.add(arg)
+      return true
+    }
+    return false
+  })
 }
 
 export function getStatus(profileId: string): ServerStatus {
@@ -387,15 +507,165 @@ export function adoptPersistedProcesses(
   }
 }
 
+/**
+ * Writes a temporary launch script for `profile` and returns its path. Every established
+ * ARK: Survival Evolved server manager launches through a .bat rather than calling
+ * ShooterGameServer.exe directly - its command-line parsing is a much older, less rigorous
+ * UE4 codebase than ARK: Survival Ascended's, and going through cmd.exe (with the raw,
+ * unquoted command line exactly as a person would type it) is the confirmed-working way to
+ * reach it, rather than relying on getting Node's own Windows argument quoting to line up
+ * with what it expects. Regenerated fresh on every start, at a stable per-profile path under
+ * the OS temp dir so it's easy to find and inspect without touching the install directory.
+ */
+function writeLaunchBatchFile(profile: ServerProfile, exe: string, args: string[]): string {
+  const batPath = path.join(os.tmpdir(), `ark-manager-launch-${profile.id}.bat`)
+  const commandLine = [path.basename(exe), ...args].join(' ')
+  fs.writeFileSync(batPath, `@echo off\r\ncd /d "${path.dirname(exe)}"\r\n${commandLine}\r\n`, 'utf-8')
+  return batPath
+}
+
+/**
+ * A .bat-launched server's `child.pid` (see writeLaunchBatchFile) is cmd.exe's own pid, not
+ * ShooterGameServer.exe's - cmd.exe stays alive as its parent for as long as the batch script
+ * runs. Polls for whichever process actually holds `port` (the same `findListeningPid`
+ * technique handleUnexpectedExit already uses for a hand-off) and switches this profile's
+ * tracked pid to it once found, nulling out `process` too so killServer/waitForExitOrKill fall
+ * through to killing that real pid directly instead of the now-irrelevant cmd.exe wrapper -
+ * exactly the same re-attach shape handleUnexpectedExit uses. Until this fires, CPU/RAM
+ * monitoring is unavailable (pidTracked stays false) rather than misleadingly reporting
+ * cmd.exe's own near-zero usage. Stops on its own once handed off, or once the profile is no
+ * longer running under the wrapper pid it started with.
+ */
+function watchForBatchPidHandoff(profileId: string, port: number, wrapperPid: number, intervalMs = 2000): () => void {
+  const taskId = newTaskId('batch-pid-handoff')
+  const taskLabel = 'ARK: Survival Evolved pid handoff'
+  logManagerEvent(
+    taskId,
+    taskLabel,
+    `Launched via cmd.exe (wrapper pid ${wrapperPid}) - waiting to find the real server process listening on port ${port}.`
+  )
+
+  let stopped = false
+  let attempts = 0
+  const interval = setInterval(() => {
+    if (stopped) return
+    void (async () => {
+      const entry = running.get(profileId)
+      if (!entry || entry.pid !== wrapperPid) {
+        stopped = true
+        clearInterval(interval)
+        return
+      }
+      attempts += 1
+      const realPid = await findListeningPid(port)
+      // Logged even when nothing/the wrapper's own pid came back - the exact value (or lack
+      // of one) is the whole point of this diagnostic, added after a real report of the
+      // hand-off silently never completing with no way to tell why. Capped to the first 10
+      // attempts (20s) so a persistently-failing hand-off can't flood the log for as long as
+      // the server stays up.
+      if (attempts <= 10) {
+        logManagerEvent(
+          taskId,
+          taskLabel,
+          `Attempt ${attempts}: findListeningPid(${port}) returned ${realPid ?? 'null'}${
+            realPid === wrapperPid ? ' (still just the wrapper)' : ''
+          }.`
+        )
+      }
+      if (realPid && realPid !== wrapperPid) {
+        const alive = isPidAlive(realPid)
+        if (!alive) {
+          logManagerEvent(taskId, taskLabel, `pid ${realPid} found listening but isPidAlive() says it's gone already - skipping.`, 'error')
+        } else {
+          entry.process = null
+          entry.pid = realPid
+          entry.pidTracked = true
+          entry.status = { ...entry.status, pid: realPid }
+          setRunningPid(profileId, realPid)
+          emitStatus(entry.status)
+          logManagerEvent(taskId, taskLabel, `Found it - now tracking pid ${realPid} instead of the launch wrapper (pid ${wrapperPid}).`)
+          stopped = true
+          clearInterval(interval)
+          return
+        }
+      }
+      // A real report showed this taking well past 20s for a real ARK: Survival Evolved
+      // world to finish opening its RCON port (30-90s+ isn't unusual) - logging per-attempt
+      // detail only for the first 20s (above) but then going completely silent made it look
+      // like this had given up, when it was actually still retrying (unbounded) the whole
+      // time and eventually succeeded. A periodic reminder (every 15 attempts, ~30s) that
+      // it's still trying - never a final "gave up" message, since it never does - avoids
+      // that false impression without flooding the log the way per-attempt logging would
+      // over a long wait.
+      if (attempts * intervalMs >= 20000 && attempts % 15 === 0) {
+        logManagerEvent(
+          taskId,
+          taskLabel,
+          `Still haven't found a process listening on port ${port} after ${Math.round((attempts * intervalMs) / 1000)}s - ` +
+            'CPU/RAM monitoring stays unavailable until it does, but still retrying every 2s in the background (no timeout).'
+        )
+      }
+    })()
+  }, intervalMs)
+  return () => {
+    stopped = true
+    clearInterval(interval)
+  }
+}
+
 export function startServer(profile: ServerProfile): ServerStatus {
   if (running.has(profile.id)) {
     return running.get(profile.id)!.status
   }
 
+  const startedAt = Date.now()
+  const waitMs = Math.max(0, reserveSpawnSlot(startedAt) - startedAt)
+
+  if (waitMs <= 0) {
+    emitStatus({ profileId: profile.id, state: 'starting', startedAt })
+    return doSpawn(profile, startedAt)
+  }
+
+  // Staggered: reserve this profile's slot in `running` right away, with a placeholder pid,
+  // so a Stop/Kill requested during the wait can cancel it outright (see
+  // stopServerPhased/killServer's own cancelQueuedSpawn check) instead of racing the queued
+  // spawn, and so getStatus() reports 'starting' consistently during the wait rather than
+  // falling back to 'stopped' just because nothing's in `running` yet.
+  const queuedStatus: ServerStatus = { profileId: profile.id, state: 'starting', startedAt }
+  const timer = setTimeout(() => doSpawn(profile, startedAt), waitMs)
+  running.set(profile.id, {
+    process: null,
+    pid: 0,
+    status: queuedStatus,
+    pidTracked: true,
+    cancelQueuedSpawn: () => clearTimeout(timer)
+  })
+  emitStatus(queuedStatus)
+  return queuedStatus
+}
+
+/** The actual OS-level spawn - called either immediately from startServer (its reserved
+ *  slot was already free) or from the setTimeout above once a staggered slot arrives.
+ *  `startedAt` is always when the start was originally requested, not when this function
+ *  itself runs, so a staggered server's displayed uptime reflects "asked to start at", not
+ *  "the queue let it through at". */
+function doSpawn(profile: ServerProfile, startedAt: number): ServerStatus {
   const exe = getExecutablePath(profile)
   const args = buildLaunchArgs(profile)
 
-  emitStatus({ profileId: profile.id, state: 'starting', startedAt: Date.now() })
+  // ARK: Survival Evolved goes through a .bat/cmd.exe, like every established ARK: Survival
+  // Evolved server manager does - see writeLaunchBatchFile. ARK: Survival Ascended keeps the
+  // direct spawn, unaffected. Windows-only (a .bat is a Windows concept), matching the only
+  // platform this app ships a build for; falls back to the direct spawn elsewhere (e.g. Linux
+  // test/dev runs of this codebase).
+  const launchViaBatch = profile.game === 'ark-evolved' && platform === 'win32'
+
+  // Both games allocate their own console window the moment their exe is spawned (or, for
+  // ARK: Survival Evolved, the moment cmd.exe spawns it from within the .bat) - there's no
+  // launch flag that suppresses it and no way to resize its font from here, so the "General"
+  // Manager settings toggle instead controls Node's own windowsHide, which stops Windows
+  // from ever creating that window in the first place. No-op on non-Windows.
+  const windowsHide = !getSettings().showServerConsoleWindow
 
   let child: ChildProcess
   try {
@@ -406,9 +676,31 @@ export function startServer(profile: ServerProfile): ServerStatus {
     // detached + unref - the server must keep running even if this Manager
     // crashes or is closed; without detaching, Windows ties child processes to
     // the parent's job object and kills them the moment the parent dies.
-    child = spawn(exe, args, { cwd: profile.installDir, stdio: 'ignore', detached: true })
+    // cwd: the executable's own directory (Win64/Linux), not the install root - every
+    // community-standard ARK launch script `cd`s into that folder before running the exe
+    // (a manually confirmed working ARK: Survival Evolved launch, for instance, was run from
+    // its own Win64 folder), and this keeps the Manager's spawn matching that exactly rather
+    // than leaving a working-directory mismatch as one more unverified difference.
+    if (launchViaBatch) {
+      const batPath = writeLaunchBatchFile(profile, exe, args)
+      child = spawn('cmd.exe', ['/d', '/c', batPath], { cwd: path.dirname(exe), stdio: 'ignore', detached: true, windowsHide })
+    } else {
+      // windowsVerbatimArguments: true - Node's default Windows quoting wraps a space-
+      // containing argument in double quotes, the normally-correct thing to do for a
+      // well-behaved argv parser. Harmless no-op here (ARK: Survival Ascended's arguments
+      // never contain a bare space) and ignored on non-Windows platforms; kept for parity in
+      // case that ever changes.
+      child = spawn(exe, args, {
+        cwd: path.dirname(exe),
+        stdio: 'ignore',
+        detached: true,
+        windowsVerbatimArguments: true,
+        windowsHide
+      })
+    }
     child.unref()
   } catch (err) {
+    running.delete(profile.id) // clears a queued placeholder entry too, if this came from one
     const failed: ServerStatus = { profileId: profile.id, state: 'error', lastError: (err as Error).message }
     emitStatus(failed)
     return failed
@@ -416,6 +708,7 @@ export function startServer(profile: ServerProfile): ServerStatus {
 
   const pid = child.pid
   if (!pid) {
+    running.delete(profile.id)
     const failed: ServerStatus = { profileId: profile.id, state: 'error', lastError: 'Process started without a pid.' }
     emitStatus(failed)
     return failed
@@ -424,20 +717,23 @@ export function startServer(profile: ServerProfile): ServerStatus {
   // Still "starting" here - the OS process exists, but ARK itself hasn't
   // finished loading the world yet. We only flip to "running" once we see
   // the startup-complete marker (or the fallback timeout below fires).
-  const startedAt = Date.now()
   const status: ServerStatus = {
     profileId: profile.id,
     state: 'starting',
     pid,
     startedAt
   }
-  running.set(profile.id, { process: child, pid, status, pidTracked: true })
+  // launchViaBatch: `pid` is cmd.exe's own pid, not the real ShooterGameServer.exe's - not
+  // trustworthy for OS-level checks (CPU/RAM, force-kill) until watchForBatchPidHandoff below
+  // finds the real one.
+  running.set(profile.id, { process: child, pid, status, pidTracked: !launchViaBatch })
   setRunningPid(profile.id, pid)
   setRunningStartedAt(profile.id, startedAt)
   emitStatus(status)
 
   const fallback = setTimeout(() => markReady(), STARTUP_FALLBACK_MS)
   const stopWatchingLog = watchLogFileForMarker(profile.installDir, STARTUP_COMPLETE_MARKER, () => markReady())
+  const stopBatchPidHandoff = launchViaBatch ? watchForBatchPidHandoff(profile.id, profile.rconPort, pid) : () => {}
 
   function markReady(): void {
     clearTimeout(fallback)
@@ -451,6 +747,7 @@ export function startServer(profile: ServerProfile): ServerStatus {
   child.on('exit', () => {
     clearTimeout(fallback)
     stopWatchingLog()
+    stopBatchPidHandoff()
     const entry = running.get(profile.id)
     // A deliberate stop/kill/restart already flips the status to 'stopping'/'restarting'
     // before it ever touches the process - so seeing it exit from one of those states is
@@ -467,6 +764,7 @@ export function startServer(profile: ServerProfile): ServerStatus {
   child.on('error', (err) => {
     clearTimeout(fallback)
     stopWatchingLog()
+    stopBatchPidHandoff()
     emitStatus({ profileId: profile.id, state: 'error', lastError: err.message })
   })
 
@@ -525,6 +823,20 @@ export interface StopPhases {
  * unreachable or the save fails, there is no safe orderly path, so we skip straight to
  * the grace-period/kill fallback instead of exiting (or waiting) on an unconfirmed save.
  */
+/** If `entry` is still waiting out its staggered spawn slot (see startServer's queuing path),
+ *  cancels the pending spawn outright and finalizes it as stopped - there's no process to
+ *  gracefully save/exit yet, so Stop and Kill both collapse to the same thing for this case.
+ *  Returns the stopped status if it handled it this way, or null if `entry` is a real,
+ *  already-spawned process that the caller should handle normally. */
+function cancelIfQueuedSpawn(entry: RunningServer, profileId: string): ServerStatus | null {
+  if (!entry.cancelQueuedSpawn) return null
+  entry.cancelQueuedSpawn()
+  running.delete(profileId)
+  const stopped: ServerStatus = { profileId, state: 'stopped' }
+  emitStatus(stopped)
+  return stopped
+}
+
 export function stopServerPhased(
   profile: ServerProfile,
   graceMs = 15000,
@@ -537,6 +849,11 @@ export function stopServerPhased(
       saved: Promise.resolve(false),
       finished: Promise.resolve({ profileId: profile.id, state: 'stopped' })
     }
+  }
+
+  const queuedStop = cancelIfQueuedSpawn(entry, profile.id)
+  if (queuedStop) {
+    return { saved: Promise.resolve(false), finished: Promise.resolve(queuedStop) }
   }
 
   emitStatus({ ...entry.status, state: transientState })
@@ -586,6 +903,9 @@ export async function restartServer(profile: ServerProfile, saveSettleMs = SAVE_
 export function killServer(profileId: string): ServerStatus {
   const entry = running.get(profileId)
   if (!entry) return { profileId, state: 'stopped' }
+
+  const queuedStop = cancelIfQueuedSpawn(entry, profileId)
+  if (queuedStop) return queuedStop
 
   emitStatus({ ...entry.status, state: 'stopping' })
 

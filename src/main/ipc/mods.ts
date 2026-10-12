@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { IPC, type ServerMod } from '@shared/types'
 import { getProfile, saveProfile } from '../store'
 import { parseImportedMods } from '../lib/modsExport'
+import { syncAseModsToIni, reconcileAseModsFromIni } from '../lib/gameConfigWrite'
 
 function requireProfile(profileId: string) {
   const profile = getProfile(profileId)
@@ -14,8 +15,20 @@ export function registerModsHandlers(): void {
     const profile = requireProfile(profileId)
     const updated = { ...profile, mods }
     saveProfile(updated)
+    // ARK: Survival Evolved has no command-line mechanism for mods - this is the only thing
+    // that actually applies a Mods tab change for it (a no-op for ARK: Survival Ascended).
+    syncAseModsToIni(updated)
     return updated
   })
 
   ipcMain.handle(IPC.modsParseText, (_event, text: string) => parseImportedMods(text))
+
+  ipcMain.handle(IPC.modsReconcileFromIni, (_event, profileId: string) => {
+    const profile = requireProfile(profileId)
+    const mods = reconcileAseModsFromIni(profile)
+    if (mods === profile.mods) return profile
+    const updated = { ...profile, mods }
+    saveProfile(updated)
+    return updated
+  })
 }

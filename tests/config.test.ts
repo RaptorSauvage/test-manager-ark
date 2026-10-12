@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -32,6 +32,22 @@ describe('readIniFile', () => {
 
   it('returns an empty object when the file does not exist', () => {
     expect(readIniFile(path.join(tmpDir, 'missing.ini'))).toEqual({})
+  })
+
+  it('returns an empty object instead of throwing when the disk read itself fails', () => {
+    // readAdminPassword is called from buildLaunchArgs on every single server start - a real
+    // report on Windows showed a disk-level read failure here crashing the 'server:start'
+    // IPC handler outright, meaning a server couldn't even be started.
+    const filePath = path.join(tmpDir, 'GameUserSettings.ini')
+    fs.writeFileSync(filePath, '[ServerSettings]\r\nServerAdminPassword=hunter2\r\n')
+    const spy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(readIniFile(filePath)).toEqual({})
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
 

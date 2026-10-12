@@ -1,0 +1,265 @@
+import type { MinecraftServerType } from '@shared/minecraft'
+import type { MinecraftModEcosystem } from '@shared/minecraftMods'
+
+/**
+ * Thin wrapper around the CurseForge Core API (https://docs.curseforge.com/) - unlike
+ * Modrinth, every endpoint requires an API key (the `x-api-key` header below), free for
+ * non-commercial use at https://console.curseforge.com/ (see the README for exact steps).
+ * Returns CurseForge's own raw shapes rather than normalizing here - minecraftMods.ts is the
+ * one place that converts into this app's own MinecraftModSearchResult/InstalledMinecraftMod
+ * shapes, same split as modrinthClient.ts.
+ */
+
+const API_BASE = 'https://api.curseforge.com/v1'
+
+/** CurseForge's own numeric id for the Minecraft game - fixed, not something that varies per
+ *  request. */
+const MINECRAFT_GAME_ID = 432
+
+/** CurseForge's own numeric id for ARK: Survival Ascended - unlike MINECRAFT_GAME_ID above,
+ *  there's no official CurseForge doc page listing this (their public docs only ever show
+ *  Minecraft's 432 as a worked example), so this is community-sourced: corroborated by two
+ *  independent reports of a running ARK:SA server's own mod tooling using "gameId": 83374, and
+ *  by player reports that CurseForge-downloaded ARK:SA mods land in a folder literally named
+ *  83374 inside the game's own Mods directory (CurseForge's own convention is <gameId>/<modId>
+ *  on disk). No classId is passed for ARK:SA searches below - unlike Minecraft (which spans
+ *  several CurseForge "classes": Mods, Bukkit Plugins, ...), ARK:SA's own CurseForge listing
+ *  has exactly one content type ("Mods"), so there's nothing to disambiguate and guessing a
+ *  wrong numeric classId risked silently returning zero results instead of everything. */
+const ARK_ASCENDED_GAME_ID = 83374
+
+/** CurseForge's own numeric "class" ids for the two kinds of thing this app installs - there's
+ *  no single "mod" type covering both the way Modrinth's v2 API flattens it; Forge/Fabric/
+ *  NeoForge content is class 6 ("Mods"). Server-side plugin content - Bukkit, Spigot, Paper,
+ *  *and* Sponge alike - all share the one generic "Plugins" class 4471: CurseForge's own nav
+ *  only ever exposes a single "Plugins" section (its URL slug is "bukkit-plugins", a naming
+ *  leftover from when Bukkit was the only plugin API CurseForge supported, but the class
+ *  itself was never split per platform the way Mods vs Bukkit Plugins are two separate
+ *  classes) - there's no separate "Sponge Plugins" class to fall back from. */
+const MODS_CLASS_ID = 6
+const PLUGINS_CLASS_ID = 4471
+
+/** CurseForge's own numeric "mod loader type" enum, used to filter /mods/search and
+ *  /mods/{id}/files by loader. There's no meaningful value for the plugin ecosystem on
+ *  CurseForge (the single Plugins class above isn't split by platform the way loaderType
+ *  filters Mods, so Bukkit/Spigot/Paper/Sponge plugins can't be told apart this way) - omit
+ *  the param entirely for any `ecosystem !== 'mods'`. For SpongeForge's own `ecosystem: 'mods'`
+ *  (its underlying Forge layer - see minecraftServerSupportsEcosystem), this is the one case
+ *  where `serverType` alone doesn't already determine the loader - filtered as plain Forge
+ *  (type 1). */
+function modLoaderTypeFor(serverType: MinecraftServerType, ecosystem: MinecraftModEcosystem): number | undefined {
+  if (ecosystem !== 'mods') return undefined
+  switch (serverType) {
+    case 'forge':
+    case 'spongeforge':
+      return 1
+    case 'fabric':
+      return 4
+    case 'neoforge':
+      return 6
+    default:
+      return undefined
+  }
+}
+
+/** The one CurseForge class to search for a given ecosystem - see PLUGINS_CLASS_ID's own doc
+ *  comment for why every plugin-ecosystem server type (Paper/Spigot/Sponge alike) shares the
+ *  same class id, unlike Modrinth which does distinguish them by category. */
+function classIdFor(serverType: MinecraftServerType, ecosystem: MinecraftModEcosystem): number {
+  if (ecosystem === 'plugins') return PLUGINS_CLASS_ID
+  return MODS_CLASS_ID
+}
+
+export interface CurseForgeModLogo {
+  thumbnailUrl: string | null
+}
+
+export interface CurseForgeMod {
+  id: number
+  slug: string
+  name: string
+  summary: string
+  downloadCount: number
+  logo: CurseForgeModLogo | null
+  /** False when the author has opted the mod out of third-party distribution - its files have
+   *  no downloadUrl, so this app can't install it automatically (see installCurseForgeMod's
+   *  own check). Still shown in search results; just not installable from here. */
+  allowModDistribution: boolean | null
+}
+
+export interface CurseForgeFileHash {
+  value: string
+  /** 1 = Sha1, 2 = Md5 (CurseForge's own enum). */
+  algo: number
+}
+
+export type CurseForgeFileRelationType = 1 | 2 | 3 | 4 | 5 | 6
+
+export interface CurseForgeFileDependency {
+  modId: number
+  /** 1 = EmbeddedLibrary, 2 = OptionalDependency, 3 = RequiredDependency, 4 = Tool,
+   *  5 = Incompatible, 6 = Include. */
+  relationType: CurseForgeFileRelationType
+}
+
+export interface CurseForgeFile {
+  id: number
+  modId: number
+  fileName: string
+  displayName: string
+  downloadUrl: string | null
+  gameVersions: string[]
+  fileDate: string
+  hashes: CurseForgeFileHash[]
+  dependencies: CurseForgeFileDependency[]
+  /** The CurseForge fingerprint (murmur2 of the whitespace-stripped file, see
+   *  curseforgeFingerprint.ts) CurseForge itself computed for this exact file - every File
+   *  object carries one, not just fingerprint-match responses. Used to map a /fingerprints
+   *  match back to the on-disk file whose fingerprint was submitted. */
+  fileFingerprint: number
+}
+
+interface CurseForgeSearchResponse {
+  data: CurseForgeMod[]
+}
+
+interface CurseForgeModResponse {
+  data: CurseForgeMod
+}
+
+interface CurseForgeFilesResponse {
+  data: CurseForgeFile[]
+}
+
+interface CurseForgeFileResponse {
+  data: CurseForgeFile
+}
+
+export interface CurseForgeFingerprintMatch {
+  id: number
+  file: CurseForgeFile
+}
+
+interface CurseForgeFingerprintResponse {
+  data: {
+    exactMatches: CurseForgeFingerprintMatch[]
+  }
+}
+
+async function curseforgeFetch<T>(apiKey: string, path: string, searchParams: Record<string, string> = {}): Promise<T> {
+  const url = new URL(`${API_BASE}${path}`)
+  for (const [key, value] of Object.entries(searchParams)) url.searchParams.set(key, value)
+  const response = await fetch(url, { headers: { 'x-api-key': apiKey, Accept: 'application/json' } })
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('CurseForge rejected this API key - check it in Settings.')
+    }
+    throw new Error(`CurseForge request failed (HTTP ${response.status}): ${path}`)
+  }
+  return (await response.json()) as T
+}
+
+export async function searchCurseForgeMods(
+  apiKey: string,
+  query: string,
+  serverType: MinecraftServerType,
+  minecraftVersion: string,
+  ecosystem: MinecraftModEcosystem,
+  limit = 20
+): Promise<CurseForgeMod[]> {
+  const params: Record<string, string> = {
+    gameId: String(MINECRAFT_GAME_ID),
+    classId: String(classIdFor(serverType, ecosystem)),
+    searchFilter: query,
+    pageSize: String(limit),
+    sortField: '2', // Popularity
+    sortOrder: 'desc'
+  }
+  if (minecraftVersion.trim()) params.gameVersion = minecraftVersion.trim()
+  const loaderType = modLoaderTypeFor(serverType, ecosystem)
+  if (loaderType !== undefined) params.modLoaderType = String(loaderType)
+  const response = await curseforgeFetch<CurseForgeSearchResponse>(apiKey, '/mods/search', params)
+  return response.data
+}
+
+/** ARK: Survival Ascended counterpart to searchCurseForgeMods - no server type/loader or game
+ *  version to filter by (ARK:SA's own mods aren't published per-Minecraft-loader or pinned to
+ *  a specific game version the way Minecraft mods are), so this is just gameId + a search
+ *  term. See ARK_ASCENDED_GAME_ID's own doc comment for where that id comes from. */
+export async function searchCurseForgeArkMods(apiKey: string, query: string, limit = 20): Promise<CurseForgeMod[]> {
+  const params: Record<string, string> = {
+    gameId: String(ARK_ASCENDED_GAME_ID),
+    searchFilter: query,
+    pageSize: String(limit),
+    sortField: '2', // Popularity
+    sortOrder: 'desc'
+  }
+  const response = await curseforgeFetch<CurseForgeSearchResponse>(apiKey, '/mods/search', params)
+  return response.data
+}
+
+export async function getCurseForgeMod(apiKey: string, modId: number): Promise<CurseForgeMod> {
+  const response = await curseforgeFetch<CurseForgeModResponse>(apiKey, `/mods/${modId}`)
+  return response.data
+}
+
+/** Same data as getCurseForgeMod, but for many mods in one request - CurseForge's own batch
+ *  counterpart to /mods/{id} (POST /v1/mods, body {modIds}), same reasoning as
+ *  modrinthClient's getModrinthProjects: a folder scan that fingerprint-matches several
+ *  CurseForge mods at once should cost one mod-info request, not one per match. */
+export async function getCurseForgeMods(apiKey: string, modIds: number[]): Promise<CurseForgeMod[]> {
+  if (modIds.length === 0) return []
+  const response = await fetch(`${API_BASE}/mods`, {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ modIds })
+  })
+  if (!response.ok) {
+    throw new Error(`CurseForge request failed (HTTP ${response.status}): /mods`)
+  }
+  const body = (await response.json()) as CurseForgeSearchResponse
+  return body.data
+}
+
+/** Compatible files for one mod, newest first (CurseForge's /files endpoint doesn't guarantee
+ *  an order, so this sorts by fileDate itself) - `[0]` is "the latest compatible file"
+ *  wherever this app needs just that, same convention as modrinthClient's
+ *  getModrinthProjectVersions. */
+export async function getCurseForgeModFiles(
+  apiKey: string,
+  modId: number,
+  serverType: MinecraftServerType,
+  minecraftVersion: string,
+  ecosystem: MinecraftModEcosystem
+): Promise<CurseForgeFile[]> {
+  const params: Record<string, string> = {}
+  if (minecraftVersion.trim()) params.gameVersion = minecraftVersion.trim()
+  const loaderType = modLoaderTypeFor(serverType, ecosystem)
+  if (loaderType !== undefined) params.modLoaderType = String(loaderType)
+  const response = await curseforgeFetch<CurseForgeFilesResponse>(apiKey, `/mods/${modId}/files`, params)
+  return [...response.data].sort((a, b) => new Date(b.fileDate).getTime() - new Date(a.fileDate).getTime())
+}
+
+export async function getCurseForgeFile(apiKey: string, modId: number, fileId: number): Promise<CurseForgeFile> {
+  const response = await curseforgeFetch<CurseForgeFileResponse>(apiKey, `/mods/${modId}/files/${fileId}`)
+  return response.data
+}
+
+/**
+ * Identifies files by CurseForge's own "fingerprint" (a murmur2 hash of the file with
+ * whitespace bytes stripped - see curseforgeFingerprint.ts for the actual computation, used by
+ * scanForInstalledMods for files Modrinth's own hash lookup didn't recognize).
+ */
+export async function getCurseForgeFingerprintMatches(apiKey: string, fingerprints: number[]): Promise<CurseForgeFingerprintMatch[]> {
+  if (fingerprints.length === 0) return []
+  const response = await fetch(`${API_BASE}/fingerprints`, {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ fingerprints })
+  })
+  if (!response.ok) {
+    throw new Error(`CurseForge request failed (HTTP ${response.status}): /fingerprints`)
+  }
+  const body = (await response.json()) as CurseForgeFingerprintResponse
+  return body.data.exactMatches
+}

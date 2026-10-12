@@ -5,11 +5,21 @@
 // for as long as the backup's zipping takes.
 process.env.UV_THREADPOOL_SIZE = '8'
 
-import { app, BrowserWindow, Menu, shell } from 'electron'
+import { app, BrowserWindow, Menu, Tray, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
-import { listProfiles, getRunningPids, getRunningStartedAt, getSettings, getProfile } from './store'
+import {
+  listProfiles,
+  getRunningPids,
+  getRunningStartedAt,
+  getSettings,
+  getProfile,
+  listMinecraftProfiles,
+  getMinecraftRunningPids,
+  getMinecraftRunningStartedAt
+} from './store'
 import { applyWebDashboardSettings } from './lib/webDashboard'
+import { applyDiscordBotSettings } from './lib/discordBot'
 import { applyBackupSchedule, registerBackupScheduleWatcher } from './lib/schedule'
 import { applyScheduledRestart, applyScheduledDinoWipe } from './lib/scheduledActions'
 import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
@@ -24,6 +34,11 @@ import { registerIniLockWatcher, unlockStoppedProfilesOnStartup, applyIniLockSet
 import { registerCrashWatch } from './lib/crashWatch'
 import { registerZombieDetection } from './lib/zombieDetection'
 import { registerClusterLogArchiveWatch, startClusterLogArchiveWatch } from './lib/clusterLogArchive'
+import { doStartMinecraftServer } from './lib/minecraftActions'
+import { adoptPersistedMinecraftProcesses, isRunning as isMinecraftRunning } from './lib/minecraftProcess'
+import { startMinecraftMonitoring } from './lib/minecraftMonitor'
+import { applyMinecraftScheduledRestart } from './lib/minecraftScheduledActions'
+import { applyMinecraftBackupSchedule, registerMinecraftBackupScheduleWatcher } from './lib/minecraftBackupSchedule'
 
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
@@ -45,6 +60,40 @@ const iconPath = app.isPackaged
   ? join(process.resourcesPath, 'icon.png')
   : join(__dirname, '../../build/icon.png')
 
+// Set once quit was actually requested (tray "Quit", OS shutdown, etc.) - 'before-quit'
+// always fires before Electron tries to close any window, so by the time the window's own
+// 'close' handler below runs, this already reflects whether it's a real quit or just the
+// user clicking the window's close button. Without it, "close to tray" would have no way
+// to tell the two apart and could never actually quit at all.
+let isQuitting = false
+app.on('before-quit', () => {
+  isQuitting = true
+})
+
+let tray: Tray | null = null
+
+function createTray(mainWindow: BrowserWindow): void {
+  tray = new Tray(iconPath)
+  tray.setToolTip('Bober Server Manager')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: 'Ouvrir Bober Server Manager',
+        click: () => {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+      },
+      { type: 'separator' },
+      { label: 'Quitter', click: () => app.quit() }
+    ])
+  )
+  tray.on('click', () => {
+    mainWindow.show()
+    mainWindow.focus()
+  })
+}
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -64,6 +113,20 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // "Close to tray" (Settings > Startup & Safety) - checked fresh on every close instead of
+  // once at startup, so toggling the setting while the app is running takes effect on the
+  // very next close rather than needing a restart. Every managed server tracks its own
+  // process independently of this window (see serverProcess.ts), so hiding instead of
+  // quitting doesn't touch them - only the window itself, plus whatever's riding along in
+  // this same process (the web dashboard, the Discord bot's supervisor).
+  mainWindow.on('close', (event) => {
+    if (isQuitting || !getSettings().closeToTrayEnabled) return
+    event.preventDefault()
+    mainWindow.hide()
+  })
+
+  if (!tray) createTray(mainWindow)
+
   registerIpcHandlers(mainWindow)
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL
@@ -82,6 +145,7 @@ app.whenReady().then(() => {
   registerServerVersionWatcher()
   registerIniLockWatcher()
   registerBackupScheduleWatcher()
+  registerMinecraftBackupScheduleWatcher()
   registerCrashWatch(doStartServer)
   registerZombieDetection(doKillServer, doStartServer)
   registerClusterLogArchiveWatch(getProfile)
@@ -103,6 +167,7 @@ app.whenReady().then(() => {
 
   registerPlayerBackupWatch()
   applyWebDashboardSettings(getSettings())
+  void applyDiscordBotSettings(getSettings())
   applyLaunchOnStartup(getSettings())
   startUpdateCheckPolling()
 
@@ -118,6 +183,34 @@ app.whenReady().then(() => {
   }
 
   runAutoStart(profiles, getSettings().serverAutoStartStaggerSeconds, isRunning, doStartServer)
+
+  const minecraftProfiles = listMinecraftProfiles()
+
+  // Re-attach to Minecraft servers still running from a previous session - same reasoning
+  // as ARK's own adoptPersistedProcesses above.
+  adoptPersistedMinecraftProcesses(minecraftProfiles, getMinecraftRunningPids(), getMinecraftRunningStartedAt())
+
+  for (const profile of minecraftProfiles) {
+    applyMinecraftScheduledRestart(profile)
+    applyMinecraftBackupSchedule(profile)
+    if (isMinecraftRunning(profile.id)) startMinecraftMonitoring(profile)
+  }
+
+  const minecraftStaggerMs = Math.max(0, getSettings().serverAutoStartStaggerSeconds) * 1000
+  minecraftProfiles
+    .filter((profile) => profile.startOnManagerLaunch && !isMinecraftRunning(profile.id))
+    .forEach((profile, index) => {
+      setTimeout(
+        () => {
+          try {
+            doStartMinecraftServer(profile)
+          } catch (err) {
+            console.error(`Auto-start failed for Minecraft profile ${profile.name}:`, (err as Error).message)
+          }
+        },
+        (index + 1) * minecraftStaggerMs
+      )
+    })
 
   createWindow()
 

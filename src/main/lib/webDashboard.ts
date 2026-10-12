@@ -6,6 +6,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { app } from 'electron'
 import type { AppSettings, ServerProfile, ServerStatus, WebDashboardRole } from '@shared/types'
+import type { MinecraftProfile } from '@shared/minecraft'
 import {
   listProfiles,
   getProfile,
@@ -13,7 +14,10 @@ import {
   getSettings,
   saveSettings,
   listWebDashboardAccessTokens,
-  listWebDashboardApiKeys
+  listWebDashboardApiKeys,
+  listMinecraftProfiles,
+  getMinecraftProfile,
+  saveMinecraftProfile
 } from '../store'
 import { getStatus, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
@@ -32,6 +36,7 @@ import { listPlayerBackupFolders, listPlayerBackups } from './playerBackup'
 import { getBackupScheduleStatus, applyBackupSchedule } from './schedule'
 import { applyScheduledRestart, applyScheduledDinoWipe } from './scheduledActions'
 import { syncPlayerBackupWatch } from './playerBackupWatch'
+import { syncAseModsToIni } from './gameConfigWrite'
 import { getCachedGameVersion } from './serverVersion'
 import { getOrCreateCert } from './tlsCert'
 import { verifyPassword, roleAtLeast, getBearerTokenFromRequest, parseApiKey } from './auth'
@@ -39,18 +44,123 @@ import { readUpdateLog } from './steamcmd'
 import { listMapFolders, createMapFolder, deleteMapFolder } from './mapManagement'
 import { listMaps } from './maps'
 import { listCustomMaps } from './customMaps'
+import { type GameId, getGameDefinition, listGameDefinitions } from '@shared/games'
+import {
+  getStatus as getMinecraftStatus,
+  minecraftServerEvents,
+  minecraftConsoleEvents,
+  getConsoleBacklog as getMinecraftConsoleBacklog,
+  sendStdinCommand as sendMinecraftStdinCommand
+} from './minecraftProcess'
+import { doStartMinecraftServer, doStopMinecraftServer } from './minecraftActions'
+import { sendMinecraftRconCommand, parseMinecraftPlayerList } from './minecraftRcon'
+import {
+  readServerProperties as readMinecraftServerProperties,
+  upsertServerPropertiesKeys as upsertMinecraftServerPropertiesKeys
+} from './minecraftProperties'
+import { searchArkMods, getArkModsInfo } from './arkMods'
+import { listInstallableMinecraftVersions, listInstallableLoaderVersions } from './minecraftInstall'
+import type { MinecraftInstallableType } from '@shared/minecraftInstall'
+import {
+  createMinecraftBackup,
+  listMinecraftBackups,
+  deleteMinecraftBackup,
+  restoreMinecraftBackup,
+  getMinecraftBackupLog
+} from './minecraftBackup'
+import {
+  searchMinecraftMods,
+  installMinecraftMod,
+  removeMinecraftMod,
+  setMinecraftModEnabled,
+  scanForInstalledMods,
+  checkMinecraftModUpdates
+} from './minecraftMods'
+import type { MinecraftModSource, MinecraftModEcosystem } from '@shared/minecraftMods'
+
+// Minecraft isn't part of shared/games.ts's GameDefinition registry (that one's ARK-only by
+// design - see its own top-of-file comment) - its icon is served the same way regardless,
+// just added to the known-file-names allow-list by hand instead of coming from
+// listGameDefinitions(). NeoForge's own icon (a per-loader-type icon, not a per-game one -
+// shown next to "NeoForge" wherever a Minecraft server's type is displayed) is served through
+// this exact same route/allow-list for simplicity, rather than a second icon-serving
+// mechanism just for loader icons.
+const MINECRAFT_ICON_FILE_NAME = 'minecraft.png'
+const NEOFORGE_ICON_FILE_NAME = 'neoforge.png'
+const FORGE_ICON_FILE_NAME = 'forge.png'
+const VANILLA_ICON_FILE_NAME = 'vanilla.png'
+const PAPER_ICON_FILE_NAME = 'paper.png'
+const FABRIC_ICON_FILE_NAME = 'fabric.png'
+const SPIGOT_ICON_FILE_NAME = 'spigot.jpg'
+const SPONGE_ICON_FILE_NAME = 'sponge.png'
+const KNOWN_GAME_ICON_FILE_NAMES = new Set([
+  ...listGameDefinitions().map((g) => g.iconFileName),
+  MINECRAFT_ICON_FILE_NAME,
+  NEOFORGE_ICON_FILE_NAME,
+  FORGE_ICON_FILE_NAME,
+  VANILLA_ICON_FILE_NAME,
+  PAPER_ICON_FILE_NAME,
+  FABRIC_ICON_FILE_NAME,
+  SPIGOT_ICON_FILE_NAME,
+  SPONGE_ICON_FILE_NAME
+])
+
+/**
+ * Orders Minecraft profiles the same way sortProfilesForDisplay does for ARK ones (ungrouped
+ * first in stored order, then each group alphabetically, also in stored order) - kept as its
+ * own small copy rather than genericizing the exported ARK version, which already has its own
+ * pinned test suite/signature.
+ */
+function sortMinecraftProfilesForDisplay(profiles: MinecraftProfile[]): MinecraftProfile[] {
+  const visible = profiles.filter((p) => !p.hidden)
+  const ungrouped = visible.filter((p) => !p.group.trim())
+  const groupNames = Array.from(new Set(visible.filter((p) => p.group.trim()).map((p) => p.group.trim()))).sort()
+  const grouped = groupNames.flatMap((groupName) => visible.filter((p) => p.group.trim() === groupName))
+  return [...ungrouped, ...grouped]
+}
+
+type AnyServer = { kind: 'ark'; profile: ServerProfile } | { kind: 'minecraft'; profile: MinecraftProfile }
+
+/** Looks a server id up across both games' own profile stores - every per-server web
+ *  dashboard route that's been taught about Minecraft (see each route's own dispatch below)
+ *  uses this instead of listProfiles().find(...) alone, so a Minecraft server id resolves
+ *  too rather than always 404ing the way it did before Minecraft support existed here. */
+function findAnyServer(id: string): AnyServer | null {
+  const arkProfile = listProfiles().find((p) => p.id === id)
+  if (arkProfile) return { kind: 'ark', profile: arkProfile }
+  const minecraftProfile = listMinecraftProfiles().find((p) => p.id === id)
+  if (minecraftProfile) return { kind: 'minecraft', profile: minecraftProfile }
+  return null
+}
+
+/** Minecraft's own console (minecraftProcess.ts) is just plain lines with no JOIN/LEFT/CHAT/
+ *  etc. categorization the way ARK's own parseLogChunk produces (a real log-parsing effort of
+ *  its own, left for later) - wrapped into the same LogEvent shape the dashboard's existing
+ *  console feed/SSE client code already renders, under one generic 'LOG' category, so that
+ *  client code needs no changes to show Minecraft's raw console output too. */
+function toMinecraftLogEvent(line: { text: string; ts: number }): { label: string; cls: string; text: string; ts: string } {
+  return { label: 'LOG', cls: 'log', text: line.text, ts: new Date(line.ts).toTimeString().slice(0, 8) }
+}
 
 /** Same side effects the desktop Manager's own IPC profile-save handler applies
  *  (src/main/ipc/profiles.ts) - re-arming the backup/restart/dino-wipe schedules and the
  *  player-backup log watcher against whatever the save just changed. Every web dashboard
  *  route that calls saveProfile() must call this too, or an edit made there (e.g. toggling
  *  a schedule on, or changing its cron/time) silently has no effect until the Manager is
- *  next restarted or the same profile happens to get saved from the desktop UI too. */
-function applyProfileSideEffects(profile: ServerProfile): void {
+ *  next restarted or the same profile happens to get saved from the desktop UI too.
+ *
+ *  syncMods must only be true when the request body actually intended to change mods (i.e.
+ *  it has a `mods` key) - otherwise an unrelated save (any other Settings field, a schedule
+ *  toggle, ...) would re-write ActiveMods=/[ModInstaller] from the profile's last-known mod
+ *  list and clobber real pre-existing ini content that reconcileAseModsFromIni is meant to
+ *  pick up instead. Same reasoning as why ipc/profiles.ts's generic profilesSave handler
+ *  doesn't call syncAseModsToIni either - only ipc/mods.ts's dedicated modsSave handler does. */
+function applyProfileSideEffects(profile: ServerProfile, syncMods: boolean): void {
   applyBackupSchedule(profile)
   syncPlayerBackupWatch(profile)
   applyScheduledRestart(profile)
   applyScheduledDinoWipe(profile)
+  if (syncMods) syncAseModsToIni(profile)
 }
 
 let server: http.Server | https.Server | null = null
@@ -81,6 +191,27 @@ function getFaviconBuffer(): { buffer: Buffer; etag: string } | null {
     faviconCache = null
   }
   return faviconCache ? { buffer: faviconCache, etag: faviconETag } : null
+}
+
+// Per-game icons (shared/games.ts's GameDefinition.iconFileName), same read-once/ETag
+// caching as the favicon above. Keyed by the exact set of file names the registry knows
+// about rather than trusting the request path directly, so a crafted /game-icons/../../x
+// request can't be used to read arbitrary files off disk.
+const gameIconCache = new Map<string, { buffer: Buffer; etag: string } | null>()
+function getGameIconBuffer(fileName: string): { buffer: Buffer; etag: string } | null {
+  if (gameIconCache.has(fileName)) return gameIconCache.get(fileName) ?? null
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'games', fileName)
+    : path.join(process.cwd(), 'build/games', fileName)
+  let result: { buffer: Buffer; etag: string } | null = null
+  try {
+    const buffer = fs.readFileSync(iconPath)
+    result = { buffer, etag: `"${crypto.createHash('md5').update(buffer).digest('hex')}"` }
+  } catch {
+    result = null
+  }
+  gameIconCache.set(fileName, result)
+  return result
 }
 
 /** Event categories that can be individually hidden from the web dashboard's feed. */
@@ -120,7 +251,7 @@ function hasProfileAccess(auth: RequireRoleResult, profileId: string): boolean {
   return !auth.profileIds || auth.profileIds.length === 0 || auth.profileIds.includes(profileId)
 }
 
-function filterProfilesForAuth(auth: RequireRoleResult, profiles: ServerProfile[]): ServerProfile[] {
+function filterProfilesForAuth<T extends { id: string }>(auth: RequireRoleResult, profiles: T[]): T[] {
   if (auth.role === 'globalAdmin') return profiles
   if (!auth.profileIds || auth.profileIds.length === 0) return profiles
   const allowed = auth.profileIds
@@ -248,6 +379,26 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
+  const gameIconMatch = path.match(/^\/game-icons\/([^/]+)$/)
+  if (req.method === 'GET' && gameIconMatch) {
+    const fileName = decodeURIComponent(gameIconMatch[1])
+    const icon = KNOWN_GAME_ICON_FILE_NAMES.has(fileName) ? getGameIconBuffer(fileName) : null
+    if (!icon) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end('Not found')
+      return
+    }
+    if (req.headers['if-none-match'] === icon.etag) {
+      res.writeHead(304)
+      res.end()
+      return
+    }
+    const iconContentType = /\.jpe?g$/i.test(fileName) ? 'image/jpeg' : 'image/png'
+    res.writeHead(200, { 'Content-Type': iconContentType, 'Cache-Control': 'no-cache', ETag: icon.etag })
+    res.end(icon.buffer)
+    return
+  }
+
   if (req.method === 'GET' && path === '/api/whoami') {
     const auth = await requireRole(req, res, 'readonly')
     if (!auth) return
@@ -258,12 +409,19 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && path === '/api/servers') {
     const auth = await requireRole(req, res, 'readonly')
     if (!auth) return
-    const servers = filterProfilesForAuth(auth, sortProfilesForDisplay(listProfiles())).map((profile) => {
+    const settings = getSettings()
+    const collapsedGroups = new Set(settings.collapsedGroups)
+    const arkServers = filterProfilesForAuth(auth, sortProfilesForDisplay(listProfiles())).map((profile) => {
       const status = getStatus(profile.id)
+      const game = getGameDefinition(profile.game)
       return {
         id: profile.id,
         name: profile.name,
         group: profile.group.trim(),
+        // A group minimized on the desktop Manager's own Dashboard - the server itself stays
+        // fully manageable here (still listed in every server picker), but the Dashboard/
+        // Cluster Dashboard tabs' own card grids leave it out, matching the desktop.
+        groupCollapsed: collapsedGroups.has(profile.group.trim()),
         maxPlayers: profile.maxPlayers,
         state: status.state,
         players: status.players ?? [],
@@ -271,10 +429,41 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         memoryMB: status.memoryMB ?? null,
         startedAt: status.startedAt ?? null,
         gameVersion: getCachedGameVersion(profile.id),
-        statsEnabled: profile.statsEnabled
+        statsEnabled: profile.statsEnabled,
+        gameIconUrl: `/game-icons/${game.iconFileName}`,
+        gameDisplayName: game.displayName
       }
     })
-    sendJson(res, 200, servers)
+    const minecraftCollapsedGroups = new Set(settings.minecraftCollapsedGroups)
+    const minecraftServers = filterProfilesForAuth(auth, sortMinecraftProfilesForDisplay(listMinecraftProfiles())).map(
+      (profile) => {
+        const status = getMinecraftStatus(profile.id)
+        const maxPlayersRaw = Number(readMinecraftServerProperties(profile.installDir)['max-players'])
+        return {
+          id: profile.id,
+          name: profile.name,
+          group: profile.group.trim(),
+          groupCollapsed: minecraftCollapsedGroups.has(profile.group.trim()),
+          maxPlayers: Number.isFinite(maxPlayersRaw) && maxPlayersRaw > 0 ? maxPlayersRaw : 20,
+          state: status.state,
+          players: status.players ?? [],
+          cpu: status.cpu ?? null,
+          memoryMB: status.memoryMB ?? null,
+          startedAt: status.startedAt ?? null,
+          // The user-set target version, not a live-detected one (Minecraft servers have no
+          // SteamCMD-style installed-build-id check the way ARK's getCachedGameVersion reads) -
+          // still the most useful single "version" string to show for one of these.
+          gameVersion: profile.minecraftVersion || null,
+          // Only consumed client-side to pick a per-loader icon (see
+          // MC_SERVER_TYPE_ICON_URLS) where one exists - sparse by design, same as that map.
+          serverType: profile.serverType,
+          statsEnabled: undefined,
+          gameIconUrl: `/game-icons/${MINECRAFT_ICON_FILE_NAME}`,
+          gameDisplayName: 'Minecraft'
+        }
+      }
+    )
+    sendJson(res, 200, [...arkServers, ...minecraftServers])
     return
   }
 
@@ -282,8 +471,16 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && eventsMatch) {
     const auth = await requireRole(req, res, 'readonly')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(eventsMatch[1]))
-    sendJson(res, 200, profile && hasProfileAccess(auth, profile.id) ? readLogBacklog(profile.installDir, getDisabledLabels()) : [])
+    const found = findAnyServer(decodeURIComponent(eventsMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 200, [])
+      return
+    }
+    if (found.kind === 'minecraft') {
+      sendJson(res, 200, getMinecraftConsoleBacklog(found.profile.id).map(toMinecraftLogEvent))
+      return
+    }
+    sendJson(res, 200, readLogBacklog(found.profile.installDir, getDisabledLabels()))
     return
   }
 
@@ -291,8 +488,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && streamMatch) {
     const auth = await requireRole(req, res, 'readonly')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(streamMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(streamMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
       res.end('Unknown server')
       return
@@ -303,11 +500,36 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       Connection: 'keep-alive'
     })
     res.write('\n')
+
+    if (found.kind === 'minecraft') {
+      // Minecraft's own console (minecraftProcess.ts) is an in-memory line buffer/event
+      // emitter, not a log file to tail - no rotation-detection or baseline-read-position
+      // concerns the way ARK's own watchLogFile needs. 'reset' still matters the same way,
+      // just hung off the server actually (re)starting rather than a log file's inode
+      // changing, since the previous session's lines shouldn't linger once a fresh one begins.
+      const profileId = found.profile.id
+      function onLine(lineProfileId: string, line: { text: string; ts: number }): void {
+        if (lineProfileId !== profileId) return
+        res.write(`data: ${JSON.stringify(toMinecraftLogEvent(line))}\n\n`)
+      }
+      function onStatus(status: { profileId: string; state: string }): void {
+        if (status.profileId !== profileId || status.state !== 'starting') return
+        res.write('event: reset\ndata: {}\n\n')
+      }
+      minecraftConsoleEvents.on('line', onLine)
+      minecraftServerEvents.on('status', onStatus)
+      req.on('close', () => {
+        minecraftConsoleEvents.off('line', onLine)
+        minecraftServerEvents.off('status', onStatus)
+      })
+      return
+    }
+
     // Captured into their own consts so the nested function declarations below (whose
     // closures TypeScript can't narrow the same way it narrows inline callbacks) don't
     // need to re-check profile for undefined on every use.
-    const profileId = profile.id
-    const installDir = profile.installDir
+    const profileId = found.profile.id
+    const installDir = found.profile.installDir
 
     let caches = createLogEventCaches()
 
@@ -454,12 +676,27 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && playersMatch) {
     const auth = await requireRole(req, res, 'readonly')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(playersMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(playersMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 200, [])
       return
     }
-    sendRconCommand(profile, 'ListPlayers').then((result) => {
+    if (found.kind === 'minecraft') {
+      // Minecraft's own `list` command has no per-player id the way ARK's ListPlayers does
+      // (see parsePlayerListWithIds) - just names, wrapped into the same {name, id} shape
+      // with id left empty so the client's existing player-list rendering (which only ever
+      // displays the name) needs no changes to show these too.
+      sendMinecraftRconCommand(found.profile.installDir, 'list').then((result) => {
+        const names = result.ok && result.response ? parseMinecraftPlayerList(result.response).players : []
+        sendJson(
+          res,
+          200,
+          names.map((name) => ({ name, id: '' }))
+        )
+      })
+      return
+    }
+    sendRconCommand(found.profile, 'ListPlayers').then((result) => {
       sendJson(res, 200, result.ok && result.response ? parsePlayerListWithIds(result.response) : [])
     })
     return
@@ -469,13 +706,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && startMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(startMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(startMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
     try {
-      doStartServer(profile)
+      if (found.kind === 'minecraft') doStartMinecraftServer(found.profile)
+      else doStartServer(found.profile)
       sendJson(res, 200, { ok: true })
     } catch (err) {
       sendJson(res, 400, { ok: false, error: (err as Error).message })
@@ -496,12 +734,21 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && stopMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(stopMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
-    const { saved } = await doStopServerConfirmSave(profile)
+    if (found.kind === 'minecraft') {
+      // No separate SaveWorld/DoExit handshake to phase a response around the way ARK's own
+      // stopServerPhased needs - Minecraft's "stop" command already saves and exits on its
+      // own (see minecraftProcess.ts's stopServer), so there's no meaningful `saved` outcome
+      // to report back the way ARK's doStopServerConfirmSave has.
+      await doStopMinecraftServer(found.profile)
+      sendJson(res, 200, { ok: true })
+      return
+    }
+    const { saved } = await doStopServerConfirmSave(found.profile)
     sendJson(res, 200, { ok: true, saved })
     return
   }
@@ -510,12 +757,16 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && restartMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(restartMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(restartMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
-    const { saved } = await doRestartServerConfirmSave(profile)
+    if (found.kind === 'minecraft') {
+      sendJson(res, 400, { ok: false, error: 'Restart is not available for Minecraft servers yet - use Stop then Start.' })
+      return
+    }
+    const { saved } = await doRestartServerConfirmSave(found.profile)
     sendJson(res, 200, { ok: true, saved })
     return
   }
@@ -524,12 +775,18 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && updateMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(updateMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(updateMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
-    doUpdateServer(profile).catch((err: Error) => console.error(`Web dashboard update failed for ${profile.name}:`, err.message))
+    if (found.kind === 'minecraft') {
+      sendJson(res, 400, { ok: false, error: 'This Manager has no auto-update mechanism for Minecraft servers.' })
+      return
+    }
+    doUpdateServer(found.profile).catch((err: Error) =>
+      console.error(`Web dashboard update failed for ${found.profile.name}:`, err.message)
+    )
     sendJson(res, 200, { ok: true })
     return
   }
@@ -538,13 +795,17 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && stopUpdateRestartMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profile = listProfiles().find((p) => p.id === decodeURIComponent(stopUpdateRestartMatch[1]))
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(stopUpdateRestartMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
-    doStopUpdateRestart(profile).catch((err: Error) =>
-      console.error(`Web dashboard stop+update+restart failed for ${profile.name}:`, err.message)
+    if (found.kind === 'minecraft') {
+      sendJson(res, 400, { ok: false, error: 'This Manager has no auto-update mechanism for Minecraft servers.' })
+      return
+    }
+    doStopUpdateRestart(found.profile).catch((err: Error) =>
+      console.error(`Web dashboard stop+update+restart failed for ${found.profile.name}:`, err.message)
     )
     sendJson(res, 200, { ok: true })
     return
@@ -554,9 +815,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'POST' && rconMatch) {
     const auth = await requireRole(req, res, 'moderator')
     if (!auth) return
-    const profileId = decodeURIComponent(rconMatch[1])
-    const profile = listProfiles().find((p) => p.id === profileId)
-    if (!profile || !hasProfileAccess(auth, profile.id)) {
+    const found = findAnyServer(decodeURIComponent(rconMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
       sendJson(res, 404, { ok: false, error: 'Unknown server' })
       return
     }
@@ -567,7 +827,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           sendJson(res, 400, { ok: false, error: 'Empty command' })
           return
         }
-        const result = await sendRconCommand(profile, command)
+        if (found.kind === 'minecraft') {
+          // Live stdin is the primary channel (same as the desktop Console tab's own command
+          // box) - RCON is only the fallback for a server re-adopted from a previous Manager
+          // session, with no live process handle to write to (see sendStdinCommand's own doc
+          // comment in minecraftProcess.ts).
+          if (sendMinecraftStdinCommand(found.profile.id, command)) {
+            sendJson(res, 200, { ok: true })
+            return
+          }
+          const result = await sendMinecraftRconCommand(found.profile.installDir, command)
+          sendJson(res, 200, result)
+          return
+        }
+        const result = await sendRconCommand(found.profile, command)
         sendJson(res, 200, result)
       })
       .catch(() => sendJson(res, 400, { ok: false, error: 'Invalid request body' }))
@@ -736,10 +1009,423 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         // tabs can already do to this same profile via profiles.save.
         const updated = saveProfile({ ...profile, ...body, id: profile.id } as ServerProfile)
         const saved = updated.find((p) => p.id === profile.id)
-        if (saved) applyProfileSideEffects(saved)
+        if (saved) applyProfileSideEffects(saved, typeof body === 'object' && body !== null && 'mods' in body)
         sendJson(res, 200, { ok: true, profile: saved })
       })
       .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  // CurseForge key presence only - never the key itself - so the Mods tab's client JS can
+  // show/hide the search section the same way the desktop app's ModsTab does, without any
+  // route needing to leak the actual secret.
+  if (req.method === 'GET' && path === '/api/arkmods/status') {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    sendJson(res, 200, { hasCurseForgeKey: getSettings().curseforgeApiKey.trim().length > 0 })
+    return
+  }
+
+  const arkModsSearchMatch = path.match(/^\/api\/servers\/([^/]+)\/mods\/search$/)
+  if (req.method === 'GET' && arkModsSearchMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(arkModsSearchMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    const query = url.searchParams.get('q') ?? ''
+    const hits = await searchArkMods(query)
+    sendJson(res, 200, hits)
+    return
+  }
+
+  const arkModsInfoMatch = path.match(/^\/api\/servers\/([^/]+)\/mods\/info$/)
+  if (req.method === 'POST' && arkModsInfoMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = listProfiles().find((p) => p.id === decodeURIComponent(arkModsInfoMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then(async (body) => {
+        const modIds = typeof body === 'object' && body !== null && Array.isArray((body as { modIds?: unknown }).modIds)
+          ? ((body as { modIds: unknown[] }).modIds.filter((id): id is string => typeof id === 'string'))
+          : []
+        const info = await getArkModsInfo(modIds)
+        sendJson(res, 200, info)
+      })
+      .catch((err: Error) => sendJson(res, 400, { error: err.message }))
+    return
+  }
+
+  // ---- Minecraft-specific remote control: separate route names (mc-startsettings/
+  // mc-serversettings/mc-mods/mc-backups/mc-management) from their ARK counterparts above
+  // (profile/mods/backups/servermanagement), same "one route per game's own shape" precedent
+  // as /profile itself - mirrors the desktop Manager's own separate MinecraftServerDetail tab
+  // set (Start Settings/Server Settings/Mods/Backup/Server Management) rather than trying to
+  // force a MinecraftProfile through ARK's ServerProfile-shaped routes. Role tiers per tab
+  // match what the web dashboard's own sidebar shows a moderator: Start Settings and Mods stay
+  // admin+ only (same tier as ARK's Settings/Mods); Server Settings, Backup, and Server
+  // Management are moderator+ (Backup's restore/delete still admin+, matching ARK's own
+  // backups/restore and backups/delete routes above).
+
+  // Feeds MC Start Settings' own Minecraft-version/loader-version pickers - same
+  // window.api.minecraft.install.listVersions/listLoaderVersions functions the desktop app's
+  // Install dialog and Start Settings tab call directly over IPC (both run in the main
+  // process already, no IPC boundary there); the web dashboard needs these as plain HTTP
+  // routes instead. Not server-scoped (no /api/servers/:id prefix) - the picker only needs a
+  // serverType (and, for the second one, a minecraftVersion), not which server is selected.
+  const mcInstallVersionsMatch = path === '/api/mc-install/versions'
+  if (req.method === 'GET' && mcInstallVersionsMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const serverType = url.searchParams.get('serverType') as MinecraftInstallableType | null
+    if (!serverType) {
+      sendJson(res, 400, { error: 'serverType is required' })
+      return
+    }
+    try {
+      sendJson(res, 200, await listInstallableMinecraftVersions(serverType))
+    } catch (err) {
+      sendJson(res, 502, { error: (err as Error).message })
+    }
+    return
+  }
+
+  const mcInstallLoaderVersionsMatch = path === '/api/mc-install/loaderversions'
+  if (req.method === 'GET' && mcInstallLoaderVersionsMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const serverType = url.searchParams.get('serverType') as MinecraftInstallableType | null
+    const minecraftVersion = url.searchParams.get('minecraftVersion')
+    if (!serverType || !minecraftVersion) {
+      sendJson(res, 400, { error: 'serverType and minecraftVersion are required' })
+      return
+    }
+    try {
+      sendJson(res, 200, await listInstallableLoaderVersions(serverType, minecraftVersion))
+    } catch (err) {
+      sendJson(res, 502, { error: (err as Error).message })
+    }
+    return
+  }
+
+  const mcStartSettingsMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-startsettings$/)
+  if (req.method === 'GET' && mcStartSettingsMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcStartSettingsMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    sendJson(res, 200, profile)
+    return
+  }
+  if (req.method === 'POST' && mcStartSettingsMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcStartSettingsMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const updated = saveMinecraftProfile({ ...profile, ...body, id: profile.id } as MinecraftProfile)
+        const saved = updated.find((p) => p.id === profile.id)
+        sendJson(res, 200, { ok: true, profile: saved })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const mcServerSettingsMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-serversettings$/)
+  if (req.method === 'GET' && mcServerSettingsMatch) {
+    const auth = await requireRole(req, res, 'moderator')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcServerSettingsMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    sendJson(res, 200, readMinecraftServerProperties(profile.installDir))
+    return
+  }
+  if (req.method === 'POST' && mcServerSettingsMatch) {
+    const auth = await requireRole(req, res, 'moderator')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcServerSettingsMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const updates: Record<string, string> = {}
+        for (const [key, value] of Object.entries(body)) {
+          if (typeof value === 'string') updates[key] = value
+        }
+        upsertMinecraftServerPropertiesKeys(profile.installDir, updates)
+        sendJson(res, 200, { ok: true, properties: readMinecraftServerProperties(profile.installDir) })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const MC_MANAGEMENT_FIELDS = [
+    'startOnManagerLaunch',
+    'scheduledRestartEnabled',
+    'scheduledRestartTime',
+    'scheduledRestartDays',
+    'scheduledRestartStartAfter'
+  ] as const
+  function pickMcManagementFields(profile: MinecraftProfile): Record<string, unknown> {
+    const picked: Record<string, unknown> = {}
+    for (const field of MC_MANAGEMENT_FIELDS) picked[field] = profile[field]
+    return picked
+  }
+
+  const mcManagementMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-management$/)
+  if (req.method === 'GET' && mcManagementMatch) {
+    const auth = await requireRole(req, res, 'moderator')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcManagementMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    sendJson(res, 200, pickMcManagementFields(profile))
+    return
+  }
+  if (req.method === 'POST' && mcManagementMatch) {
+    const auth = await requireRole(req, res, 'moderator')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcManagementMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const picked: Record<string, unknown> = {}
+        for (const field of MC_MANAGEMENT_FIELDS) {
+          if (field in body) picked[field] = body[field]
+        }
+        const updated = saveMinecraftProfile({ ...profile, ...picked, id: profile.id } as MinecraftProfile)
+        const saved = updated.find((p) => p.id === profile.id)
+        sendJson(res, 200, { ok: true, profile: saved && pickMcManagementFields(saved) })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const mcBackupLogMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-backups\/log$/)
+  if (req.method === 'GET' && mcBackupLogMatch) {
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
+    const profileId = decodeURIComponent(mcBackupLogMatch[1])
+    sendJson(res, 200, hasProfileAccess(auth, profileId) ? getMinecraftBackupLog(profileId) : [])
+    return
+  }
+
+  const mcBackupRestoreMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-backups\/restore$/)
+  if (req.method === 'POST' && mcBackupRestoreMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcBackupRestoreMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const filePath = typeof body.filePath === 'string' ? body.filePath : ''
+        if (!filePath) {
+          sendJson(res, 400, { ok: false, error: 'Missing filePath' })
+          return
+        }
+        restoreMinecraftBackup(profile, filePath)
+        sendJson(res, 200, { ok: true })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const mcBackupDeleteMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-backups\/delete$/)
+  if (req.method === 'POST' && mcBackupDeleteMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    if (!hasProfileAccess(auth, decodeURIComponent(mcBackupDeleteMatch[1]))) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const filePath = typeof body.filePath === 'string' ? body.filePath : ''
+        if (!filePath) {
+          sendJson(res, 400, { ok: false, error: 'Missing filePath' })
+          return
+        }
+        deleteMinecraftBackup(filePath)
+        sendJson(res, 200, { ok: true })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const mcBackupsMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-backups$/)
+  if (req.method === 'GET' && mcBackupsMatch) {
+    const auth = await requireRole(req, res, 'readonly')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcBackupsMatch[1]))
+    sendJson(res, 200, profile && hasProfileAccess(auth, profile.id) ? listMinecraftBackups(profile) : [])
+    return
+  }
+  if (req.method === 'POST' && mcBackupsMatch) {
+    const auth = await requireRole(req, res, 'moderator')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcBackupsMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    try {
+      const entry = await createMinecraftBackup(profile)
+      sendJson(res, 200, { ok: true, entry })
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: (err as Error).message })
+    }
+    return
+  }
+
+  const mcModsSearchMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-mods\/search$/)
+  if (req.method === 'GET' && mcModsSearchMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcModsSearchMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    try {
+      const ecosystem = (url.searchParams.get('ecosystem') as MinecraftModEcosystem) || 'mods'
+      const hits = await searchMinecraftMods(profile, url.searchParams.get('q') ?? '', ecosystem)
+      sendJson(res, 200, hits)
+    } catch (err) {
+      sendJson(res, 400, { error: (err as Error).message })
+    }
+    return
+  }
+
+  const mcModsUpdateCheckMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-mods\/updatecheck$/)
+  if (req.method === 'GET' && mcModsUpdateCheckMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcModsUpdateCheckMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    try {
+      sendJson(res, 200, await checkMinecraftModUpdates(profile))
+    } catch (err) {
+      sendJson(res, 400, { error: (err as Error).message })
+    }
+    return
+  }
+
+  const mcModsInstallMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-mods\/install$/)
+  if (req.method === 'POST' && mcModsInstallMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcModsInstallMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then(async (body) => {
+        const source = body.source as MinecraftModSource
+        const projectId = typeof body.projectId === 'string' ? body.projectId : ''
+        const ecosystem = (body.ecosystem as MinecraftModEcosystem) || 'mods'
+        const { profile: updated, result } = await installMinecraftMod(profile, source, projectId, ecosystem)
+        sendJson(res, 200, { ok: true, installedMods: updated.installedMods, result })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const mcModsRemoveMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-mods\/remove$/)
+  if (req.method === 'POST' && mcModsRemoveMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcModsRemoveMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const projectId = typeof body.projectId === 'string' ? body.projectId : ''
+        const updated = removeMinecraftMod(profile, projectId)
+        sendJson(res, 200, { ok: true, installedMods: updated.installedMods })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const mcModsEnabledMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-mods\/enabled$/)
+  if (req.method === 'POST' && mcModsEnabledMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcModsEnabledMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const projectId = typeof body.projectId === 'string' ? body.projectId : ''
+        const updated = setMinecraftModEnabled(profile, projectId, body.enabled === true)
+        sendJson(res, 200, { ok: true, installedMods: updated.installedMods })
+      })
+      .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
+    return
+  }
+
+  const mcModsRescanMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-mods\/rescan$/)
+  if (req.method === 'POST' && mcModsRescanMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcModsRescanMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    try {
+      const { profile: updated, result } = await scanForInstalledMods(profile)
+      sendJson(res, 200, { ok: true, installedMods: updated.installedMods, result })
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: (err as Error).message })
+    }
+    return
+  }
+
+  const mcModsMatch = path.match(/^\/api\/servers\/([^/]+)\/mc-mods$/)
+  if (req.method === 'GET' && mcModsMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const profile = getMinecraftProfile(decodeURIComponent(mcModsMatch[1]))
+    if (!profile || !hasProfileAccess(auth, profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    sendJson(res, 200, profile.installedMods)
     return
   }
 
@@ -800,7 +1486,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         }
         const updated = saveProfile({ ...profile, ...patch, id: profile.id } as ServerProfile)
         const saved = updated.find((p) => p.id === profile.id)
-        if (saved) applyProfileSideEffects(saved)
+        // Server Management's field whitelist never includes 'mods', so this save never needs
+        // to touch the ini.
+        if (saved) applyProfileSideEffects(saved, false)
         sendJson(res, 200, { ok: true, profile: saved && pickServerManagementFields(saved) })
       })
       .catch((err: Error) => sendJson(res, 400, { ok: false, error: err.message }))
@@ -823,7 +1511,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method === 'GET' && path === '/api/maps') {
     const auth = await requireRole(req, res, 'admin')
     if (!auth) return
-    sendJson(res, 200, { maps: listMaps(), customMaps: listCustomMaps() })
+    // Web Dashboard's Settings tab editing isn't wired up for a second game yet (desktop-only
+    // for now - see shared/games.ts) - always ARK: Survival Ascended's list here regardless
+    // of which server is selected, same as before this param existed.
+    const game = (url.searchParams.get('game') as GameId) ?? 'ark-ascended'
+    sendJson(res, 200, { maps: listMaps(game), customMaps: listCustomMaps() })
     return
   }
 
@@ -997,6 +1689,16 @@ const DASHBOARD_HTML = `<!doctype html>
   #token-gate-error { color: var(--danger); font-size: 0.85rem; min-height: 1.1em; }
   #sidebar { width: 190px; flex-shrink: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 16px 10px; gap: 4px; overflow-y: auto; }
   #sidebar h1 { font-size: 0.95rem; margin: 0 6px 12px; }
+  /* The ARK/Minecraft switch - its own small group at the top of the sidebar, visually
+     separate (a divider below it) from whatever page nav follows, since it toggles which
+     entire .nav-group is shown rather than navigating within one - same component and same
+     styling as the desktop Manager's own GameSwitch (src/renderer/src/App.tsx). */
+  .app-sidebar-game-switch { display: flex; gap: 4px; padding: 0 6px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .app-sidebar-game-switch button { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; border: 1px solid var(--border); border-radius: 6px; padding: 6px; background: transparent; }
+  .app-sidebar-game-switch button img { width: 28px; height: 28px; object-fit: contain; opacity: 0.55; }
+  .app-sidebar-game-switch button.active { border-color: var(--accent); background: rgba(79, 140, 255, 0.15); color: var(--text); }
+  .app-sidebar-game-switch button.active img { opacity: 1; }
+  .nav-group { display: flex; flex-direction: column; gap: 4px; }
   .nav-btn { text-align: left; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 9px 10px; font-size: 0.88rem; }
   .nav-btn:hover { border-color: var(--border); }
   .nav-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -1072,6 +1774,7 @@ const DASHBOARD_HTML = `<!doctype html>
   #cluster-console-sidecol { overflow-y: auto; }
   .server-card-mobile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
   .server-card-mobile-header { display: flex; align-items: center; gap: 8px; }
+  .server-card-mobile-game-icon { width: 18px; height: 18px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
   .server-card-mobile-header h3 { margin: 0; flex: 1; font-size: 0.98rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .server-card-mobile-menu-btn { flex-shrink: 0; padding: 6px 11px; font-size: 1.1rem; line-height: 1; }
   .server-card-mobile-stats { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
@@ -1202,6 +1905,20 @@ const DASHBOARD_HTML = `<!doctype html>
   .data-table tbody tr.selectable { cursor: pointer; }
   .data-table td.mod-disabled-row { color: var(--muted); }
   .playerbackup-select-col { width: 28px; }
+  .ark-mod-icon { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+  .server-type-icon-large { width: 28px; height: 28px; border-radius: 5px; object-fit: cover; flex-shrink: 0; align-self: center; }
+  .server-type-icon { width: 16px; height: 16px; border-radius: 3px; object-fit: cover; flex-shrink: 0; }
+  .mc-mods-browse-heading { display: flex; align-items: center; gap: 6px; }
+  .ark-mod-name-cell { display: flex; align-items: center; gap: 8px; }
+  .ark-mod-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ark-mod-search-results { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-height: 260px; overflow-y: auto; }
+  .ark-mod-search-result { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
+  .ark-mod-search-result-info { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 2px; }
+  .ark-mod-search-result-name { font-weight: 600; }
+  .ark-mod-search-result-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; }
+  .ark-mod-search-result-downloads { font-size: 0.78rem; flex-shrink: 0; }
+  .mods-grid-actions { display: flex; gap: 4px; white-space: nowrap; }
+  .mods-grid-actions button { padding: 4px 8px; font-size: 0.8rem; }
   .log-output { flex: 1; overflow: auto; font-size: 0.8rem; font-family: Consolas, Menlo, monospace; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 0; }
   @media (max-width: 700px) {
     /* The desktop layout is a fixed-viewport "app" (body: height:100vh + overflow:hidden)
@@ -1215,6 +1932,8 @@ const DASHBOARD_HTML = `<!doctype html>
     body { flex-direction: column; height: auto; min-height: 100vh; overflow: visible; }
     #sidebar { width: auto; flex-direction: row; border-right: none; border-bottom: 1px solid var(--border); padding: 8px 10px; overflow-x: auto; }
     #sidebar h1 { display: none; }
+    .app-sidebar-game-switch { flex-shrink: 0; padding: 0 8px 0 0; margin-bottom: 0; border-bottom: none; border-right: 1px solid var(--border); }
+    .nav-group { flex-direction: row; }
     .nav-btn { flex-shrink: 0; }
     .nav-logout { margin-top: 0; margin-left: auto; }
     #main-area { overflow: visible; }
@@ -1259,6 +1978,11 @@ const DASHBOARD_HTML = `<!doctype html>
     .admin-tab-content, .settings-form { overflow-y: visible; }
     .settings-grid2 { grid-template-columns: 1fr; }
     .data-table { font-size: 0.78rem; }
+    /* A fixed 320px form plus its own 28px padding on each side needs 376px to fit without
+       overflow - wider than several real phones (iPhone SE/older/budget Android are 320-
+       360px), which would otherwise force horizontal scrolling on the very first screen a
+       mobile viewer with "Require access token" on ever sees. */
+    #token-gate form { width: auto; max-width: 320px; padding: 20px; }
   }
 </style>
 </head>
@@ -1273,17 +1997,38 @@ const DASHBOARD_HTML = `<!doctype html>
 </div>
 <nav id="sidebar">
   <h1>Bober Manager</h1>
-  <button id="nav-dashboard" class="nav-btn" type="button">Dashboard</button>
-  <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
-  <hr class="nav-sep" />
-  <button id="nav-console" class="nav-btn" type="button">Console</button>
-  <button id="nav-analytics" class="nav-btn" type="button">Analytics</button>
-  <button id="nav-settings" class="nav-btn" type="button">Settings</button>
-  <button id="nav-mods" class="nav-btn" type="button">Mods</button>
-  <button id="nav-backup" class="nav-btn" type="button">Backup</button>
-  <button id="nav-mapmanagement" class="nav-btn" type="button">Map Management</button>
-  <button id="nav-servermanagement" class="nav-btn" type="button">Server Management</button>
-  <button id="nav-updatelog" class="nav-btn" type="button">Update Log</button>
+  <div id="game-switch" class="app-sidebar-game-switch">
+    <button id="game-switch-ark" type="button" title="ARK: Survival Evolved / Ascended">
+      <img src="/game-icons/ark-evolved.png" alt="ARK" />
+    </button>
+    <button id="game-switch-minecraft" type="button" title="Minecraft">
+      <img src="/game-icons/minecraft.png" alt="Minecraft" />
+    </button>
+  </div>
+  <div id="nav-group-ark" class="nav-group">
+    <button id="nav-dashboard" class="nav-btn" type="button">Dashboard</button>
+    <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
+    <hr class="nav-sep" />
+    <button id="nav-console" class="nav-btn" type="button">Console</button>
+    <button id="nav-analytics" class="nav-btn" type="button">Analytics</button>
+    <button id="nav-settings" class="nav-btn" type="button">Settings</button>
+    <button id="nav-mods" class="nav-btn" type="button">Mods</button>
+    <button id="nav-backup" class="nav-btn" type="button">Backup</button>
+    <button id="nav-mapmanagement" class="nav-btn" type="button">Map Management</button>
+    <button id="nav-servermanagement" class="nav-btn" type="button">Server Management</button>
+    <button id="nav-updatelog" class="nav-btn" type="button">Update Log</button>
+  </div>
+  <div id="nav-group-minecraft" class="nav-group">
+    <button id="nav-mcdashboard" class="nav-btn" type="button">Minecraft Servers</button>
+    <hr class="nav-sep" />
+    <button id="nav-mc-console" class="nav-btn" type="button">Console</button>
+    <button id="nav-mc-startsettings" class="nav-btn" type="button">MC Start Settings</button>
+    <button id="nav-mc-serversettings" class="nav-btn" type="button">MC Server Settings</button>
+    <button id="nav-mc-mods" class="nav-btn" type="button">MC Mods</button>
+    <button id="nav-mc-plugins" class="nav-btn" type="button">MC Plugins</button>
+    <button id="nav-mc-backup" class="nav-btn" type="button">MC Backup</button>
+    <button id="nav-mc-management" class="nav-btn" type="button">MC Server Management</button>
+  </div>
 </nav>
 <div id="main-area">
   <section id="view-dashboard" class="view">
@@ -1610,16 +2355,33 @@ const DASHBOARD_HTML = `<!doctype html>
       <div id="mods-content" class="admin-tab-content">
         <p class="empty-state">
           Mod IDs, applied in this order. Enabled mods are passed via -mods= at the next start, unless Passive is
-          checked (-passivemods= instead). Dev appends -dev to the ID. Changes save immediately - restart the
-          server to apply them.
+          checked (-passivemods= instead). Dev appends -dev to the ID. Name shows each mod's real icon/name
+          resolved from CurseForge once a CurseForge API key is configured. Changes save immediately - restart
+          the server to apply them.
         </p>
+        <section id="mods-search-section" class="settings-section" style="display: none">
+          <h3>Search CurseForge</h3>
+          <p id="mods-search-nokey" class="empty-state" style="display: none">
+            Set a CurseForge API key in Settings (General) to search for mods by name here instead of typing a
+            numeric id by hand.
+          </p>
+          <div id="mods-search-ui" style="display: none">
+            <p class="empty-state">Find a mod by name and add it below - its id and name are filled in for you.</p>
+            <div class="form-actions">
+              <input id="mods-search-query" placeholder="Search ARK: Survival Ascended mods..." />
+              <button id="btn-mods-search" type="button">Search</button>
+            </div>
+            <p id="mods-search-error" class="error-message" style="display: none"></p>
+            <div id="mods-search-results" class="ark-mod-search-results"></div>
+          </div>
+        </section>
         <div class="form-actions">
           <input id="mods-new-id" placeholder="Mod ID" />
           <button id="btn-mods-add" type="button">Add</button>
         </div>
         <table id="mods-table" class="data-table">
           <thead>
-            <tr><th>Enable</th><th>Passive</th><th>Dev</th><th>Name</th><th>Mod ID</th><th></th></tr>
+            <tr><th>Enable</th><th>Passive</th><th>Dev</th><th>Mod ID</th><th>Name</th><th></th></tr>
           </thead>
           <tbody id="mods-table-body"></tbody>
         </table>
@@ -1727,6 +2489,287 @@ const DASHBOARD_HTML = `<!doctype html>
         </p>
         <pre id="updatelog-output" class="log-output"></pre>
       </div>
+    </main>
+  </section>
+  <section id="view-mcdashboard" class="view">
+    <header>
+      <h1>Minecraft Servers</h1>
+    </header>
+    <main>
+      <div id="mcdashboard-cards"></div>
+    </main>
+  </section>
+  <section id="view-mc-startsettings" class="view">
+    <header>
+      <h1>MC Start Settings</h1>
+      <select id="mc-startsettings-server-select" class="server-picker"></select>
+    </header>
+    <main>
+      <p id="mc-startsettings-no-server" class="empty-state">No Minecraft server selected - choose one above.</p>
+      <form id="mc-startsettings-content" class="settings-form" onsubmit="return false;">
+        <section class="settings-section">
+          <h3>Server</h3>
+          <label>
+            Name
+            <input id="mcss-name" />
+          </label>
+          <label>
+            Server type
+            <div class="form-actions">
+              <select id="mcss-servertype">
+                <option value="vanilla">Vanilla</option>
+                <option value="paper">Paper</option>
+                <option value="spigot">Spigot</option>
+                <option value="fabric">Fabric</option>
+                <option value="forge">Forge</option>
+                <option value="neoforge">NeoForge</option>
+                <option value="spongevanilla">SpongeVanilla</option>
+                <option value="spongeforge">SpongeForge</option>
+                <option value="unknown">Unknown</option>
+              </select>
+              <img id="mcss-servertype-icon" class="server-type-icon-large" alt="" style="display: none" />
+            </div>
+          </label>
+          <label>
+            Minecraft version
+            <select id="mcss-version"></select>
+          </label>
+          <p id="mcss-version-loading" class="empty-state" style="display: none">Loading versions...</p>
+          <p id="mcss-version-error" class="error-message" style="display: none"></p>
+          <label id="mcss-loaderversion-row">
+            Loader / build version
+            <select id="mcss-loaderversion"></select>
+          </label>
+          <p id="mcss-loaderversion-loading" class="empty-state" style="display: none">Loading loader/build versions...</p>
+          <p id="mcss-loaderversion-error" class="error-message" style="display: none"></p>
+          <p class="empty-state">Required by the Mods tab to find compatible mods/plugins; the loader/build version is purely informational.</p>
+          <label>
+            Install directory
+            <input id="mcss-installdir" placeholder="C:\Minecraft\Server" />
+          </label>
+          <p class="empty-state">
+            server.properties (port, RCON, motd, max players, ...) and eula.txt live in this folder and are read
+            directly from there.
+          </p>
+        </section>
+        <section class="settings-section">
+          <h3>Launch</h3>
+          <label>
+            Launch mode
+            <select id="mcss-launchmode">
+              <option value="jar">Jar (vanilla / Fabric / Paper / Spigot)</option>
+              <option value="script">Launch script (modern Forge, or your own custom start script)</option>
+            </select>
+          </label>
+          <label id="mcss-jarfield-label">
+            Jar file name
+            <input id="mcss-jarfilename" placeholder="server.jar" />
+          </label>
+          <label id="mcss-scriptfield-label">
+            Script file name
+            <input id="mcss-scriptfilename" placeholder="run.bat" />
+          </label>
+          <div class="settings-grid2">
+            <label>
+              Min memory (MB)
+              <input id="mcss-minmemory" type="number" />
+            </label>
+            <label>
+              Max memory (MB)
+              <input id="mcss-maxmemory" type="number" />
+            </label>
+          </div>
+          <label>
+            Extra JVM arguments
+            <input id="mcss-extrajvmargs" placeholder="-XX:+UseG1GC" />
+          </label>
+          <label>
+            Extra program arguments
+            <input id="mcss-extraprogramargs" placeholder="nogui" />
+          </label>
+        </section>
+        <section class="settings-section">
+          <h3>Extra Settings</h3>
+          <label>
+            Dashboard group
+            <input id="mcss-group" placeholder="(none)" />
+          </label>
+          <label class="checkbox"><input id="mcss-hidden" type="checkbox" /> Hide from the main dashboard</label>
+        </section>
+        <p id="mc-startsettings-error" class="error-message" style="display: none"></p>
+      </form>
+    </main>
+  </section>
+  <section id="view-mc-serversettings" class="view">
+    <header>
+      <h1>MC Server Settings</h1>
+      <select id="mc-serversettings-server-select" class="server-picker"></select>
+    </header>
+    <main>
+      <p id="mc-serversettings-no-server" class="empty-state">No Minecraft server selected - choose one above.</p>
+      <div id="mc-serversettings-content" class="admin-tab-content">
+        <p class="empty-state">
+          Editing server.properties directly. Minecraft only re-reads it at startup - a change made here takes
+          effect the next time this server starts, not live.
+        </p>
+        <div id="mc-serversettings-fields"></div>
+        <p id="mc-serversettings-error" class="error-message" style="display: none"></p>
+      </div>
+    </main>
+  </section>
+  <section id="view-mc-mods" class="view">
+    <header>
+      <h1>MC Mods</h1>
+      <select id="mc-mods-server-select" class="server-picker"></select>
+    </header>
+    <main>
+      <p id="mc-mods-no-server" class="empty-state">No Minecraft server selected - choose one above.</p>
+      <p id="mc-mods-unsupported" class="empty-state" style="display: none">This server type has no "mods" ecosystem - set Server type in Start Settings to a loader that does (Forge/NeoForge/Fabric, or SpongeForge's own underlying Forge layer).</p>
+      <div id="mc-mods-content" class="admin-tab-content">
+        <p class="empty-state">
+          Mods are searched and installed from Modrinth, plus CurseForge too once a CurseForge API key is
+          configured - set this server's Minecraft version and server type in Start Settings first.
+        </p>
+        <section id="mc-mods-search-section" class="settings-section">
+          <h3 class="mc-mods-browse-heading">
+            <img id="mc-mods-browse-icon" class="server-type-icon" alt="" style="display: none" />
+            Search Modrinth / CurseForge
+          </h3>
+          <div class="form-actions">
+            <input id="mc-mods-search-query" placeholder="Search mods..." />
+            <button id="btn-mc-mods-search" type="button">Search</button>
+          </div>
+          <p id="mc-mods-search-error" class="error-message" style="display: none"></p>
+          <div id="mc-mods-search-results" class="ark-mod-search-results"></div>
+        </section>
+        <div class="form-actions">
+          <button id="btn-mc-mods-rescan" type="button">Rescan folder</button>
+          <button id="btn-mc-mods-updatecheck" type="button">Check for updates</button>
+        </div>
+        <table id="mc-mods-table" class="data-table">
+          <thead>
+            <tr><th>Enable</th><th>Name</th><th>Source</th><th>Version</th><th></th></tr>
+          </thead>
+          <tbody id="mc-mods-table-body"></tbody>
+        </table>
+        <p id="mc-mods-error" class="error-message" style="display: none"></p>
+      </div>
+    </main>
+  </section>
+  <section id="view-mc-plugins" class="view">
+    <header>
+      <h1>MC Plugins</h1>
+      <select id="mc-plugins-server-select" class="server-picker"></select>
+    </header>
+    <main>
+      <p id="mc-plugins-no-server" class="empty-state">No Minecraft server selected - choose one above.</p>
+      <p id="mc-plugins-unsupported" class="empty-state" style="display: none">This server type has no "plugins" ecosystem - set Server type in Start Settings to a loader that does (Paper/Spigot/SpongeVanilla, or SpongeForge's own Sponge layer).</p>
+      <div id="mc-plugins-content" class="admin-tab-content">
+        <p class="empty-state">
+          Plugins are searched and installed from Modrinth, plus CurseForge too once a CurseForge API key is
+          configured - set this server's Minecraft version and server type in Start Settings first.
+        </p>
+        <section id="mc-plugins-search-section" class="settings-section">
+          <h3 class="mc-mods-browse-heading">
+            <img id="mc-plugins-browse-icon" class="server-type-icon" alt="" style="display: none" />
+            Search Modrinth / CurseForge
+          </h3>
+          <div class="form-actions">
+            <input id="mc-plugins-search-query" placeholder="Search plugins..." />
+            <button id="btn-mc-plugins-search" type="button">Search</button>
+          </div>
+          <p id="mc-plugins-search-error" class="error-message" style="display: none"></p>
+          <div id="mc-plugins-search-results" class="ark-mod-search-results"></div>
+        </section>
+        <div class="form-actions">
+          <button id="btn-mc-plugins-rescan" type="button">Rescan folder</button>
+          <button id="btn-mc-plugins-updatecheck" type="button">Check for updates</button>
+        </div>
+        <table id="mc-plugins-table" class="data-table">
+          <thead>
+            <tr><th>Enable</th><th>Name</th><th>Source</th><th>Version</th><th></th></tr>
+          </thead>
+          <tbody id="mc-plugins-table-body"></tbody>
+        </table>
+        <p id="mc-plugins-error" class="error-message" style="display: none"></p>
+      </div>
+    </main>
+  </section>
+  <section id="view-mc-backup" class="view">
+    <header>
+      <h1>MC Backup</h1>
+      <select id="mc-backup-server-select" class="server-picker"></select>
+    </header>
+    <main>
+      <p id="mc-backup-no-server" class="empty-state">No Minecraft server selected - choose one above.</p>
+      <div id="mc-backup-content" class="admin-tab-content">
+        <section id="mc-backup-settings-section" class="settings-section">
+          <h3>Backup Settings</h3>
+          <label>
+            Backup directory
+            <input id="mc-backup-dir" />
+          </label>
+          <label>
+            Backups to keep
+            <input id="mc-backup-maxbackups" type="number" min="1" />
+          </label>
+          <label class="checkbox">
+            <input id="mc-backup-schedule-enabled" type="checkbox" /> Enable scheduled automatic backups
+          </label>
+          <label>
+            Backup schedule (cron expression)
+            <input id="mc-backup-schedule-cron" placeholder="every 6 hours: 0 */6 * * *" />
+          </label>
+          <p id="mc-backup-settings-error" class="error-message" style="display: none"></p>
+        </section>
+        <div class="form-actions">
+          <button id="btn-mc-backup-create">Create backup now</button>
+          <button id="btn-mc-backup-refresh" type="button">Refresh</button>
+        </div>
+        <div class="content-row">
+          <section class="panel backup-table-panel">
+            <h3>World Backups</h3>
+            <table id="mc-backup-table">
+              <thead>
+                <tr><th>File Name</th><th>Size</th><th>Creation Time</th><th></th></tr>
+              </thead>
+              <tbody id="mc-backup-table-body"></tbody>
+            </table>
+          </section>
+          <aside class="panel backup-log-panel">
+            <h3>Backup Process Log</h3>
+            <div id="mc-backup-log"></div>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </section>
+  <section id="view-mc-management" class="view">
+    <header>
+      <h1>MC Server Management</h1>
+      <select id="mc-management-server-select" class="server-picker"></select>
+    </header>
+    <main>
+      <p id="mc-management-no-server" class="empty-state">No Minecraft server selected - choose one above.</p>
+      <form id="mc-management-content" class="settings-form" onsubmit="return false;">
+        <section class="settings-section">
+          <h3>Startup</h3>
+          <label class="checkbox">
+            <input id="mcm-startonlaunch" type="checkbox" /> Start this server when the Manager starts
+          </label>
+        </section>
+        <section class="settings-section">
+          <h3>Scheduled Restart</h3>
+          <div class="form-actions">
+            <label class="checkbox"><input id="mcm-restart-enabled" type="checkbox" /> Shutdown server at:</label>
+            <input id="mcm-restart-time" type="time" />
+          </div>
+          <div id="mcm-restart-days" class="settings-days-row"></div>
+          <label class="checkbox"><input id="mcm-restart-startafter" type="checkbox" /> Start server after shutdown</label>
+          <p id="mcm-restart-countdown" class="empty-state">Next shutdown in: --:--:--:--</p>
+        </section>
+        <p id="mc-management-error" class="error-message" style="display: none"></p>
+      </form>
     </main>
   </section>
 </div>
@@ -1981,6 +3024,30 @@ function initDashboard(resolvedRole) {
     applySideColCollapsed();
   });
 
+  // The ARK/Minecraft switch - its own small icon-button pair at the top of the sidebar,
+  // toggling which entire .nav-group (and which game's servers show up anywhere else on the
+  // page) is active, same component/behavior as the desktop Manager's own GameSwitch
+  // (src/renderer/src/App.tsx) rather than mixing both games' nav into one combined list.
+  var gameSwitchArkBtn = document.getElementById('game-switch-ark');
+  var gameSwitchMinecraftBtn = document.getElementById('game-switch-minecraft');
+  var navGroupArkEl = document.getElementById('nav-group-ark');
+  var navGroupMinecraftEl = document.getElementById('nav-group-minecraft');
+  var gameMode = 'ark';
+  function selectGameMode(mode) {
+    gameMode = mode;
+    gameSwitchArkBtn.classList.toggle('active', mode === 'ark');
+    gameSwitchMinecraftBtn.classList.toggle('active', mode === 'minecraft');
+    navGroupArkEl.style.display = mode === 'ark' ? '' : 'none';
+    navGroupMinecraftEl.style.display = mode === 'minecraft' ? '' : 'none';
+    // Always lands on that mode's own "home" view - there's no view that makes sense to stay
+    // on across a mode switch (an ARK-shaped view's content would be left showing under the
+    // Minecraft nav, or vice versa), same as the desktop Manager always remounting onto that
+    // mode's own Dashboard when GameSwitch changes.
+    selectView(mode === 'ark' ? 'cluster' : 'mcdashboard');
+  }
+  gameSwitchArkBtn.addEventListener('click', function () { selectGameMode('ark'); });
+  gameSwitchMinecraftBtn.addEventListener('click', function () { selectGameMode('minecraft'); });
+
   var navDashboardBtn = document.getElementById('nav-dashboard');
   var navClusterBtn = document.getElementById('nav-cluster');
   var navConsoleBtn = document.getElementById('nav-console');
@@ -1991,6 +3058,27 @@ function initDashboard(resolvedRole) {
   var navMapManagementBtn = document.getElementById('nav-mapmanagement');
   var navServerManagementBtn = document.getElementById('nav-servermanagement');
   var navUpdateLogBtn = document.getElementById('nav-updatelog');
+  var navMcDashboardBtn = document.getElementById('nav-mcdashboard');
+  // Reuses the exact same shared Console view (SSE stream/RCON/player list) ARK's own
+  // "Console" button already points at - rather than a second implementation, since it
+  // already dispatches correctly by game server-side (see findAnyServer). Only its own nav
+  // button lives in the Minecraft group, so it stays reachable while gameMode hides the ARK
+  // one.
+  var navMcConsoleBtn = document.getElementById('nav-mc-console');
+  var navMcStartSettingsBtn = document.getElementById('nav-mc-startsettings');
+  var navMcServerSettingsBtn = document.getElementById('nav-mc-serversettings');
+  var navMcModsBtn = document.getElementById('nav-mc-mods');
+  var navMcPluginsBtn = document.getElementById('nav-mc-plugins');
+  var navMcBackupBtn = document.getElementById('nav-mc-backup');
+  var navMcManagementBtn = document.getElementById('nav-mc-management');
+  var viewMcDashboardEl = document.getElementById('view-mcdashboard');
+  var mcdashboardCardsEl = document.getElementById('mcdashboard-cards');
+  var viewMcStartSettingsEl = document.getElementById('view-mc-startsettings');
+  var viewMcServerSettingsEl = document.getElementById('view-mc-serversettings');
+  var viewMcModsEl = document.getElementById('view-mc-mods');
+  var viewMcPluginsEl = document.getElementById('view-mc-plugins');
+  var viewMcBackupEl = document.getElementById('view-mc-backup');
+  var viewMcManagementEl = document.getElementById('view-mc-management');
   var viewDashboardEl = document.getElementById('view-dashboard');
   var dashboardCardsEl = document.getElementById('dashboard-cards');
   var viewClusterEl = document.getElementById('view-cluster');
@@ -2063,6 +3151,20 @@ function initDashboard(resolvedRole) {
   var adminNavBtns = [navSettingsBtn, navModsBtn, navMapManagementBtn, navUpdateLogBtn];
   var moderatorNavBtns = [navServerManagementBtn];
 
+  // Minecraft section - separate from ARK's own servers/tabs entirely (its own nav group, its
+  // own server pickers further down), mirroring the desktop Manager's completely separate
+  // "Minecraft Servers" page rather than mixing Minecraft profiles into ARK's Dashboard/
+  // Cluster Dashboard or its per-server tab dropdown. Role tiers: MC Start Settings and MC
+  // Mods are admin+ (same tier as ARK's Settings/Mods); MC Server Settings/MC Backup/MC
+  // Server Management are moderator+ (per the role's own definition) - "Minecraft Servers"
+  // and Console (shared with ARK's own Console button - see navMcConsoleBtn) have no tier,
+  // same as Cluster Dashboard. Role gating itself happens in
+  // updateServerScopedNavVisibility() below, alongside the same per-server-view visibility
+  // ARK's own tabs get - a one-time hide here would never un-hide for a sufficient role once
+  // a view change later recomputed things.
+  var mcAdminNavBtns = [navMcStartSettingsBtn, navMcModsBtn, navMcPluginsBtn];
+  var mcModeratorNavBtns = [navMcServerSettingsBtn, navMcBackupBtn, navMcManagementBtn];
+
   // The eight per-server tabs (Console/Analytics/Backup/the admin-only/moderator+ ones) only
   // belong in the sidebar while you're actually looking at one of them - on Dashboard or
   // Cluster Dashboard they'd just be dead weight for a server that isn't even on screen
@@ -2070,6 +3172,13 @@ function initDashboard(resolvedRole) {
   // SERVER_SCOPED_VIEWS, rather than a one-time reveal that used to stick around for the
   // rest of the page's session even after navigating back to an overview tab.
   var SERVER_SCOPED_VIEWS = ['console', 'analytics', 'backup', 'settings', 'mods', 'mapmanagement', 'servermanagement', 'updatelog'];
+  // Minecraft's own per-server tabs - same "only while looking at one of them" treatment as
+  // SERVER_SCOPED_VIEWS above (added after a user report that the whole Minecraft nav group
+  // showed these even from the "Minecraft Servers" overview, with no server selected at all -
+  // unlike every ARK per-server tab, which already hid itself the same way). 'console' isn't
+  // repeated here since it's shared with ARK's own entry in SERVER_SCOPED_VIEWS; navMcConsoleBtn
+  // just mirrors navConsoleBtn's own visibility below instead of needing a separate check.
+  var MC_SERVER_SCOPED_VIEWS = ['mc-startsettings', 'mc-serversettings', 'mc-mods', 'mc-plugins', 'mc-backup', 'mc-management'];
   function updateServerScopedNavVisibility() {
     var show = SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1;
     navConsoleBtn.style.display = show ? '' : 'none';
@@ -2077,6 +3186,11 @@ function initDashboard(resolvedRole) {
     navBackupBtn.style.display = show && role !== 'readonly' ? '' : 'none';
     adminNavBtns.forEach(function (btn) { btn.style.display = show && (!role || canAdmin) ? '' : 'none'; });
     moderatorNavBtns.forEach(function (btn) { btn.style.display = show && (!role || canOperate) ? '' : 'none'; });
+
+    var showMc = activeView === 'console' || MC_SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1;
+    navMcConsoleBtn.style.display = showMc ? '' : 'none';
+    mcAdminNavBtns.forEach(function (btn) { btn.style.display = showMc && (!role || canAdmin) ? '' : 'none'; });
+    mcModeratorNavBtns.forEach(function (btn) { btn.style.display = showMc && (!role || canOperate) ? '' : 'none'; });
   }
   if (role && !canOperate) {
     startBtn.style.display = 'none';
@@ -2117,6 +3231,21 @@ function initDashboard(resolvedRole) {
     navMapManagementBtn.classList.toggle('active', activeView === 'mapmanagement');
     navServerManagementBtn.classList.toggle('active', activeView === 'servermanagement');
     navUpdateLogBtn.classList.toggle('active', activeView === 'updatelog');
+    navMcDashboardBtn.classList.toggle('active', activeView === 'mcdashboard');
+    navMcConsoleBtn.classList.toggle('active', activeView === 'console');
+    navMcStartSettingsBtn.classList.toggle('active', activeView === 'mc-startsettings');
+    navMcServerSettingsBtn.classList.toggle('active', activeView === 'mc-serversettings');
+    navMcModsBtn.classList.toggle('active', activeView === 'mc-mods');
+    navMcPluginsBtn.classList.toggle('active', activeView === 'mc-plugins');
+    navMcBackupBtn.classList.toggle('active', activeView === 'mc-backup');
+    navMcManagementBtn.classList.toggle('active', activeView === 'mc-management');
+    viewMcDashboardEl.classList.toggle('active', activeView === 'mcdashboard');
+    viewMcStartSettingsEl.classList.toggle('active', activeView === 'mc-startsettings');
+    viewMcServerSettingsEl.classList.toggle('active', activeView === 'mc-serversettings');
+    viewMcModsEl.classList.toggle('active', activeView === 'mc-mods');
+    viewMcPluginsEl.classList.toggle('active', activeView === 'mc-plugins');
+    viewMcBackupEl.classList.toggle('active', activeView === 'mc-backup');
+    viewMcManagementEl.classList.toggle('active', activeView === 'mc-management');
     viewDashboardEl.classList.toggle('active', activeView === 'dashboard');
     viewClusterEl.classList.toggle('active', activeView === 'cluster');
     viewConsoleEl.classList.toggle('active', activeView === 'console');
@@ -2127,7 +3256,7 @@ function initDashboard(resolvedRole) {
     viewMapManagementEl.classList.toggle('active', activeView === 'mapmanagement');
     viewServerManagementEl.classList.toggle('active', activeView === 'servermanagement');
     viewUpdateLogEl.classList.toggle('active', activeView === 'updatelog');
-    if (activeView === 'dashboard') renderDashboardCards(latestServers);
+    if (activeView === 'dashboard') renderDashboardCards(latestServers.filter(isArkServerEntry));
     if (activeView === 'analytics') loadAnalyticsView();
     if (activeView === 'backup') loadBackupView();
     if (activeView === 'settings') loadSettingsView();
@@ -2135,6 +3264,13 @@ function initDashboard(resolvedRole) {
     if (activeView === 'mapmanagement') loadMapManagementView();
     if (activeView === 'servermanagement') loadServerManagementView();
     if (activeView === 'updatelog') loadUpdateLogView();
+    if (activeView === 'mcdashboard') renderMcDashboardCards(latestServers.filter(isMcServerEntry));
+    if (activeView === 'mc-startsettings') loadMcStartSettingsView();
+    if (activeView === 'mc-serversettings') loadMcServerSettingsView();
+    if (activeView === 'mc-mods') loadMcModsView();
+    if (activeView === 'mc-plugins') loadMcPluginsView();
+    if (activeView === 'mc-backup') loadMcBackupView();
+    if (activeView === 'mc-management') loadMcManagementView();
   }
 
   function selectView(view) {
@@ -2151,6 +3287,14 @@ function initDashboard(resolvedRole) {
   navMapManagementBtn.addEventListener('click', function () { selectView('mapmanagement'); });
   navServerManagementBtn.addEventListener('click', function () { selectView('servermanagement'); });
   navUpdateLogBtn.addEventListener('click', function () { selectView('updatelog'); });
+  navMcDashboardBtn.addEventListener('click', function () { selectView('mcdashboard'); });
+  navMcConsoleBtn.addEventListener('click', function () { selectView('console'); });
+  navMcStartSettingsBtn.addEventListener('click', function () { selectView('mc-startsettings'); });
+  navMcServerSettingsBtn.addEventListener('click', function () { selectView('mc-serversettings'); });
+  navMcModsBtn.addEventListener('click', function () { selectView('mc-mods'); });
+  navMcPluginsBtn.addEventListener('click', function () { selectView('mc-plugins'); });
+  navMcBackupBtn.addEventListener('click', function () { selectView('mc-backup'); });
+  navMcManagementBtn.addEventListener('click', function () { selectView('mc-management'); });
 
   // ---- Cluster stats chart (desktop only) ----------------------------------------------
   // Same 1m/5m/15m/1h/6h/12h/24h/All time scales and persistent, server-downsampled history
@@ -2336,7 +3480,7 @@ function initDashboard(resolvedRole) {
       statsScale = scaleFromButton(btn);
       saveStoredScale(statsScale);
       updateTimeScaleButtons();
-      renderClusterCards(latestServers);
+      renderClusterCards(latestServers.filter(isArkServerEntry));
     });
   });
 
@@ -2423,7 +3567,11 @@ function initDashboard(resolvedRole) {
   // has; the desktop-only stats chart (same persistent store + 6h/12h/24h/All scales as
   // the Manager) is fetched per group from /api/groups/:group/stats and swapped in once it
   // resolves, so a slow/failed fetch never blocks the totals from updating.
-  function renderClusterCards(servers) {
+  function renderClusterCards(allServers) {
+    // A group minimized on the desktop Manager's own Dashboard is left out here too - the
+    // server itself stays fully manageable (still in every server picker), just not counted
+    // into this aggregate view.
+    var servers = allServers.filter(function (s) { return !s.groupCollapsed; });
     if (clusterTimeScaleEl) clusterTimeScaleEl.style.display = servers.length > 0 ? '' : 'none';
     var byGroup = {};
     var order = [];
@@ -2515,6 +3663,21 @@ function initDashboard(resolvedRole) {
   var clusterConsoleServers = [];
   var clusterEs = null;
   var latestServers = [];
+  // Every admin-tab view below that's genuinely ARK-shaped (Settings, Analytics, Map
+  // Management, Update Log - plus ARK's own Mods/Backup/Server Management, which now have
+  // real Minecraft-shaped counterparts of their own: MC Mods/MC Backup/MC Server Management,
+  // in their own always-visible sidebar section further down) checks this before loading, and
+  // shows a plain "not available" message instead of fetching/rendering data shaped for a
+  // ServerProfile against what's actually a MinecraftProfile - Console/Dashboard/Cluster
+  // Dashboard/start-stop/RCON-equivalent already work for both (see webDashboard.ts's own
+  // /api/servers and findAnyServer on the server side).
+  function isMinecraftServer(id) {
+    var s = latestServers.find(function (s) { return s.id === id; });
+    return !!s && s.gameDisplayName === 'Minecraft';
+  }
+  function isArkServerEntry(s) { return s.gameDisplayName !== 'Minecraft'; }
+  function isMcServerEntry(s) { return s.gameDisplayName === 'Minecraft'; }
+  var MINECRAFT_VIEW_UNAVAILABLE_TEXT = 'Not available for Minecraft servers yet - only Console/start/stop currently work here.';
   // Tracks every server's last-seen state for as long as this tab stays open (not tied to
   // the console being open) - mirrors the desktop Manager's module-scope lastKnownStates
   // map, so a transition that happens while you're on a different tab still gets caught
@@ -2666,12 +3829,14 @@ function initDashboard(resolvedRole) {
 
     addAction('Start', 'ok', server.state !== 'stopped', function () { clusterServerAction(server.id, 'start'); });
     addAction('Stop', 'danger', server.state !== 'running', function () { clusterServerAction(server.id, 'stop'); });
-    addAction('Restart', 'warn', server.state !== 'running', function () { clusterServerAction(server.id, 'restart'); });
-    addAction('Update', 'info', server.state !== 'stopped', function () { clusterServerAction(server.id, 'update'); });
-    addAction('Update Restart', 'cyan', false, function () {
-      if (!confirm('Stop this server, update it via SteamCMD, then start it back up?')) return;
-      clusterServerAction(server.id, 'stop-update-restart');
-    });
+    if (server.gameDisplayName !== 'Minecraft') {
+      addAction('Restart', 'warn', server.state !== 'running', function () { clusterServerAction(server.id, 'restart'); });
+      addAction('Update', 'info', server.state !== 'stopped', function () { clusterServerAction(server.id, 'update'); });
+      addAction('Update Restart', 'cyan', false, function () {
+        if (!confirm('Stop this server, update it via SteamCMD, then start it back up?')) return;
+        clusterServerAction(server.id, 'stop-update-restart');
+      });
+    }
 
     document.body.appendChild(menu);
     contextMenuEl = menu;
@@ -2694,11 +3859,17 @@ function initDashboard(resolvedRole) {
 
     var header = document.createElement('div');
     header.className = 'server-card-mobile-header';
+    var gameIcon = document.createElement('img');
+    gameIcon.className = 'server-card-mobile-game-icon';
+    gameIcon.src = server.gameIconUrl;
+    gameIcon.alt = '';
+    gameIcon.title = server.gameDisplayName;
     var name = document.createElement('h3');
     name.textContent = server.name;
     var state = document.createElement('span');
     state.className = 'cluster-card-state state-' + server.state;
     state.textContent = server.state;
+    header.appendChild(gameIcon);
     header.appendChild(name);
     header.appendChild(state);
     if (!role || canOperate) {
@@ -2747,13 +3918,15 @@ function initDashboard(resolvedRole) {
   // mobile column, and grouped like the Settings map dropdown/server pickers - a run of
   // consecutive same-group servers (servers already arrive pre-sorted ungrouped-first-then-
   // alphabetical-by-group) becomes one labeled grid section.
-  function renderDashboardCards(servers) {
-    dashboardCardsEl.innerHTML = '';
+  function renderServerCardsGrid(containerEl, allServers, emptyText) {
+    // Same minimized-group exclusion as renderClusterCards above.
+    var servers = allServers.filter(function (s) { return !s.groupCollapsed; });
+    containerEl.innerHTML = '';
     if (servers.length === 0) {
       var empty = document.createElement('p');
       empty.className = 'empty-state';
-      empty.textContent = 'No servers yet.';
-      dashboardCardsEl.appendChild(empty);
+      empty.textContent = emptyText;
+      containerEl.appendChild(empty);
       return;
     }
     var openGroupName = null;
@@ -2773,10 +3946,21 @@ function initDashboard(resolvedRole) {
         openGroupGrid = document.createElement('div');
         openGroupGrid.className = 'dashboard-group-grid';
         section.appendChild(openGroupGrid);
-        dashboardCardsEl.appendChild(section);
+        containerEl.appendChild(section);
       }
       openGroupGrid.appendChild(buildServerCardMobile(server));
     });
+  }
+
+  function renderDashboardCards(allServers) {
+    renderServerCardsGrid(dashboardCardsEl, allServers, 'No servers yet.');
+  }
+
+  // Minecraft's own Dashboard-equivalent list - same card/grouping as ARK's Dashboard above,
+  // just fed only Minecraft servers (see isMcServerEntry) and its own container, so the two
+  // games' servers never mix into one list the way they briefly did before this tab existed.
+  function renderMcDashboardCards(allServers) {
+    renderServerCardsGrid(mcdashboardCardsEl, allServers, 'No Minecraft servers yet. Add one in the Manager.');
   }
 
   function renderClusterConsoleCards(servers) {
@@ -3271,6 +4455,13 @@ function initDashboard(resolvedRole) {
   function loadBackupView() {
     var id = currentId;
     if (!id) {
+      backupNoServerEl.textContent = 'No server selected - choose one above.';
+      backupNoServerEl.style.display = '';
+      backupContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      backupNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       backupNoServerEl.style.display = '';
       backupContentEl.classList.remove('active');
       return;
@@ -3507,6 +4698,13 @@ function initDashboard(resolvedRole) {
   function loadAnalyticsView() {
     var id = currentId;
     if (!id) {
+      analyticsNoServerEl.textContent = 'No server selected - choose one above.';
+      analyticsNoServerEl.style.display = '';
+      analyticsContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      analyticsNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       analyticsNoServerEl.style.display = '';
       analyticsContentEl.classList.remove('active');
       return;
@@ -3564,6 +4762,13 @@ function initDashboard(resolvedRole) {
   function loadUpdateLogView() {
     var id = currentId;
     if (!id) {
+      updatelogNoServerEl.textContent = 'No server selected - choose one above.';
+      updatelogNoServerEl.style.display = '';
+      updatelogContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      updatelogNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       updatelogNoServerEl.style.display = '';
       updatelogContentEl.classList.remove('active');
       return;
@@ -3582,6 +4787,1069 @@ function initDashboard(resolvedRole) {
     if (activeView === 'updatelog' && currentId) loadUpdateLogView();
   }, 4000);
 
+  // ======================================================================================
+  // Minecraft-specific tabs - separate from every ARK tab above (own routes: mc-startsettings/
+  // mc-serversettings/mc-mods/mc-backups/mc-management, own server pickers further down, own
+  // always-visible sidebar section) since a MinecraftProfile has a genuinely different shape
+  // from ServerProfile - see shared/minecraft.ts's own top-of-file comment. Mirrors the
+  // desktop Manager's own MinecraftServerDetail tab set (Start Settings/Server Settings/Mods/
+  // Backup/Server Management) rather than trying to force these through ARK's own routes/
+  // views above, the way Settings/Mods/Backup/Server Management's "not available for
+  // Minecraft servers yet" placeholders used to be the only option.
+  // ======================================================================================
+
+  // -- MC Start Settings -----------------------------------------------------------------
+  var mcStartSettingsServerSelectEl = document.getElementById('mc-startsettings-server-select');
+  var mcStartSettingsNoServerEl = document.getElementById('mc-startsettings-no-server');
+  var mcStartSettingsContentEl = document.getElementById('mc-startsettings-content');
+  var mcStartSettingsErrorEl = document.getElementById('mc-startsettings-error');
+  var mcssName = document.getElementById('mcss-name');
+  var mcssServerType = document.getElementById('mcss-servertype');
+  var mcssServerTypeIcon = document.getElementById('mcss-servertype-icon');
+  // Sparse by design - only the types with a real icon asset are listed (served the same way
+  // as Minecraft's own game icon, see KNOWN_GAME_ICON_FILE_NAMES on the server side); any other
+  // type just shows no icon, exactly as before any of these existed.
+  var MC_SERVER_TYPE_ICON_URLS = {
+    vanilla: '/game-icons/vanilla.png',
+    paper: '/game-icons/paper.png',
+    fabric: '/game-icons/fabric.png',
+    forge: '/game-icons/forge.png',
+    neoforge: '/game-icons/neoforge.png',
+    spigot: '/game-icons/spigot.jpg',
+    spongevanilla: '/game-icons/sponge.png',
+    spongeforge: '/game-icons/sponge.png'
+  };
+  function updateMcssServerTypeIcon() {
+    var url = MC_SERVER_TYPE_ICON_URLS[mcssServerType.value];
+    mcssServerTypeIcon.src = url || '';
+    mcssServerTypeIcon.style.display = url ? '' : 'none';
+  }
+  mcssServerType.addEventListener('change', updateMcssServerTypeIcon);
+  var mcssVersion = document.getElementById('mcss-version');
+  var mcssVersionLoadingEl = document.getElementById('mcss-version-loading');
+  var mcssVersionErrorEl = document.getElementById('mcss-version-error');
+  var mcssLoaderVersionRowEl = document.getElementById('mcss-loaderversion-row');
+  var mcssLoaderVersion = document.getElementById('mcss-loaderversion');
+  var mcssLoaderVersionLoadingEl = document.getElementById('mcss-loaderversion-loading');
+  var mcssLoaderVersionErrorEl = document.getElementById('mcss-loaderversion-error');
+  // Vanilla/Spigot publish exactly one artifact per Minecraft version - no separate loader/
+  // build version to additionally choose, same reasoning as supportsLoaderVersionSelection in
+  // shared/minecraftInstall.ts (duplicated here rather than imported - this client script has
+  // no module imports at all, see its own top-of-file comment).
+  function mcssSupportsLoaderVersion(serverType) {
+    return serverType !== 'vanilla' && serverType !== 'spigot';
+  }
+  /** Clears and repopulates a version select from a list of {id, label, recommended}
+   *  options, keeping whatever selectedValue already was even if it isn't (or isn't yet) in
+   *  the live list - a server set up before these pickers existed, or on a version the live
+   *  source has since dropped, would otherwise just silently lose its own value. */
+  function populateMcVersionSelect(selectEl, options, selectedValue, starRecommended) {
+    selectEl.innerHTML = '';
+    var blankOpt = document.createElement('option');
+    blankOpt.value = '';
+    blankOpt.textContent = '(not set)';
+    selectEl.appendChild(blankOpt);
+    var hasSelected = !selectedValue;
+    options.forEach(function (o) {
+      var opt = document.createElement('option');
+      opt.value = o.id;
+      opt.textContent = (starRecommended && o.recommended) ? ('★ ' + o.label) : o.label;
+      selectEl.appendChild(opt);
+      if (o.id === selectedValue) hasSelected = true;
+    });
+    if (selectedValue && !hasSelected) {
+      var customOpt = document.createElement('option');
+      customOpt.value = selectedValue;
+      customOpt.textContent = selectedValue;
+      selectEl.insertBefore(customOpt, blankOpt.nextSibling);
+    }
+    selectEl.value = selectedValue || '';
+  }
+  function loadMcssLoaderVersionOptions() {
+    var serverType = mcssServerType.value;
+    var mcVersion = mcssVersion.value;
+    var selected = mcStartSettingsProfile ? (mcStartSettingsProfile.loaderVersion || '') : '';
+    if (!mcssSupportsLoaderVersion(serverType) || !mcVersion) {
+      mcssLoaderVersionRowEl.style.display = 'none';
+      mcssLoaderVersion.innerHTML = '';
+      mcssLoaderVersionLoadingEl.style.display = 'none';
+      mcssLoaderVersionErrorEl.style.display = 'none';
+      return;
+    }
+    mcssLoaderVersionRowEl.style.display = '';
+    mcssLoaderVersionErrorEl.style.display = 'none';
+    mcssLoaderVersionLoadingEl.style.display = '';
+    fetch('/api/mc-install/loaderversions?serverType=' + encodeURIComponent(serverType) + '&minecraftVersion=' + encodeURIComponent(mcVersion))
+      .then(function (r) { return r.json(); })
+      .then(function (options) {
+        mcssLoaderVersionLoadingEl.style.display = 'none';
+        populateMcVersionSelect(mcssLoaderVersion, options, selected, true);
+      })
+      .catch(function () {
+        mcssLoaderVersionLoadingEl.style.display = 'none';
+        mcssLoaderVersionErrorEl.textContent = 'Failed to load loader/build versions';
+        mcssLoaderVersionErrorEl.style.display = '';
+      });
+  }
+  function loadMcssVersionOptions() {
+    var serverType = mcssServerType.value;
+    var selected = mcStartSettingsProfile ? mcStartSettingsProfile.minecraftVersion : '';
+    mcssVersionErrorEl.style.display = 'none';
+    mcssVersionLoadingEl.style.display = '';
+    fetch('/api/mc-install/versions?serverType=' + encodeURIComponent(serverType))
+      .then(function (r) { return r.json(); })
+      .then(function (options) {
+        mcssVersionLoadingEl.style.display = 'none';
+        populateMcVersionSelect(mcssVersion, options, selected, false);
+        loadMcssLoaderVersionOptions();
+      })
+      .catch(function () {
+        mcssVersionLoadingEl.style.display = 'none';
+        mcssVersionErrorEl.textContent = 'Failed to load versions';
+        mcssVersionErrorEl.style.display = '';
+      });
+  }
+  var mcssInstallDir = document.getElementById('mcss-installdir');
+  var mcssLaunchMode = document.getElementById('mcss-launchmode');
+  var mcssJarFileName = document.getElementById('mcss-jarfilename');
+  var mcssScriptFileName = document.getElementById('mcss-scriptfilename');
+  var mcssJarFieldLabel = document.getElementById('mcss-jarfield-label');
+  var mcssScriptFieldLabel = document.getElementById('mcss-scriptfield-label');
+  var mcssMinMemory = document.getElementById('mcss-minmemory');
+  var mcssMaxMemory = document.getElementById('mcss-maxmemory');
+  var mcssExtraJvmArgs = document.getElementById('mcss-extrajvmargs');
+  var mcssExtraProgramArgs = document.getElementById('mcss-extraprogramargs');
+  var mcssGroup = document.getElementById('mcss-group');
+  var mcssHidden = document.getElementById('mcss-hidden');
+  var mcStartSettingsProfile = null;
+
+  function showMcStartSettingsError(message) {
+    mcStartSettingsErrorEl.textContent = message || '';
+    mcStartSettingsErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function saveMcStartSettingsField(field, value) {
+    if (!currentId || !mcStartSettingsProfile) return;
+    var id = currentId;
+    var body = {};
+    body[field] = value;
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-startsettings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showMcStartSettingsError(result.error || 'Save failed'); return; }
+        if (id !== currentId) return;
+        mcStartSettingsProfile = result.profile;
+        renderMcStartSettingsForm();
+      })
+      .catch(function () { showMcStartSettingsError('Request failed'); });
+  }
+
+  function renderMcStartSettingsForm() {
+    var p = mcStartSettingsProfile;
+    mcssName.value = p.name;
+    mcssServerType.value = p.serverType;
+    updateMcssServerTypeIcon();
+    loadMcssVersionOptions();
+    mcssInstallDir.value = p.installDir;
+    mcssLaunchMode.value = p.launchMode;
+    mcssJarFileName.value = p.jarFileName;
+    mcssScriptFileName.value = p.scriptFileName;
+    mcssJarFieldLabel.style.display = p.launchMode === 'jar' ? '' : 'none';
+    mcssScriptFieldLabel.style.display = p.launchMode === 'script' ? '' : 'none';
+    mcssMinMemory.value = p.minMemoryMB;
+    mcssMaxMemory.value = p.maxMemoryMB;
+    mcssExtraJvmArgs.value = p.extraJvmArgs;
+    mcssExtraProgramArgs.value = p.extraProgramArgs;
+    mcssGroup.value = p.group;
+    mcssHidden.checked = !!p.hidden;
+  }
+
+  function loadMcStartSettingsView() {
+    var id = currentId;
+    if (!id || !isMinecraftServer(id)) {
+      mcStartSettingsNoServerEl.style.display = '';
+      mcStartSettingsContentEl.classList.remove('active');
+      return;
+    }
+    showMcStartSettingsError('');
+    mcStartSettingsNoServerEl.style.display = 'none';
+    mcStartSettingsContentEl.classList.add('active');
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-startsettings')
+      .then(function (r) { return r.json(); })
+      .then(function (profile) {
+        if (id !== currentId) return;
+        mcStartSettingsProfile = profile;
+        renderMcStartSettingsForm();
+      });
+  }
+
+  mcssName.addEventListener('change', function () { saveMcStartSettingsField('name', mcssName.value); });
+  mcssServerType.addEventListener('change', function () {
+    saveMcStartSettingsField('serverType', mcssServerType.value);
+    loadMcssVersionOptions();
+  });
+  mcssVersion.addEventListener('change', function () {
+    saveMcStartSettingsField('minecraftVersion', mcssVersion.value);
+    loadMcssLoaderVersionOptions();
+  });
+  mcssLoaderVersion.addEventListener('change', function () { saveMcStartSettingsField('loaderVersion', mcssLoaderVersion.value); });
+  mcssInstallDir.addEventListener('change', function () { saveMcStartSettingsField('installDir', mcssInstallDir.value); });
+  mcssLaunchMode.addEventListener('change', function () {
+    saveMcStartSettingsField('launchMode', mcssLaunchMode.value);
+    mcssJarFieldLabel.style.display = mcssLaunchMode.value === 'jar' ? '' : 'none';
+    mcssScriptFieldLabel.style.display = mcssLaunchMode.value === 'script' ? '' : 'none';
+  });
+  mcssJarFileName.addEventListener('change', function () { saveMcStartSettingsField('jarFileName', mcssJarFileName.value); });
+  mcssScriptFileName.addEventListener('change', function () { saveMcStartSettingsField('scriptFileName', mcssScriptFileName.value); });
+  mcssMinMemory.addEventListener('change', function () { saveMcStartSettingsField('minMemoryMB', Number(mcssMinMemory.value)); });
+  mcssMaxMemory.addEventListener('change', function () { saveMcStartSettingsField('maxMemoryMB', Number(mcssMaxMemory.value)); });
+  mcssExtraJvmArgs.addEventListener('change', function () { saveMcStartSettingsField('extraJvmArgs', mcssExtraJvmArgs.value); });
+  mcssExtraProgramArgs.addEventListener('change', function () { saveMcStartSettingsField('extraProgramArgs', mcssExtraProgramArgs.value); });
+  mcssGroup.addEventListener('change', function () { saveMcStartSettingsField('group', mcssGroup.value); });
+  mcssHidden.addEventListener('change', function () { saveMcStartSettingsField('hidden', mcssHidden.checked); });
+
+  // -- MC Server Settings -----------------------------------------------------------------
+  var mcServerSettingsServerSelectEl = document.getElementById('mc-serversettings-server-select');
+  var mcServerSettingsNoServerEl = document.getElementById('mc-serversettings-no-server');
+  var mcServerSettingsContentEl = document.getElementById('mc-serversettings-content');
+  var mcServerSettingsFieldsEl = document.getElementById('mc-serversettings-fields');
+  var mcServerSettingsErrorEl = document.getElementById('mc-serversettings-error');
+  var mcServerSettingsForm = null;
+
+  // Same field set as the desktop Manager's own Minecraft Server Settings tab
+  // (MinecraftServerDetail/ServerSettingsTab.tsx), kept as plain data here (this client
+  // script has no module imports, unlike the desktop's React components) rather than
+  // duplicating a field list per input type.
+  var MC_PROPERTIES_SECTIONS = [
+    {
+      title: 'Gameplay',
+      fields: [
+        { key: 'spawn-animals', type: 'bool', label: 'Spawn animals', default: true },
+        { key: 'spawn-monsters', type: 'bool', label: 'Spawn monsters', default: true },
+        { key: 'spawn-npcs', type: 'bool', label: 'Spawn npcs', default: true },
+        { key: 'hardcore', type: 'bool', label: 'Hardcore mode', hint: 'If enabled, players will be set to spectator mode if they die.', default: false },
+        { key: 'allow-nether', type: 'bool', label: 'Nether world', hint: 'Allows players to travel to the Nether.', default: true },
+        { key: 'pvp', type: 'bool', label: 'PVP', hint: 'Players will be able to kill each other.', default: true },
+        { key: 'allow-flight', type: 'bool', label: 'Flight', hint: 'Allows users to use flight on your server while in Survival mode, if they have a mod that provides flight.', default: false },
+        { key: 'force-gamemode', type: 'bool', label: 'Force Gamemode', hint: 'Force players to join in the default game mode.', default: false },
+        { key: 'difficulty', type: 'select', label: 'Difficulty', default: 'easy', options: ['peaceful', 'easy', 'normal', 'hard'] },
+        { key: 'gamemode', type: 'select', label: 'Gamemode', default: 'survival', options: ['survival', 'creative', 'adventure', 'spectator'] },
+        { key: 'view-distance', type: 'number', label: 'View Distance', default: 10 }
+      ]
+    },
+    {
+      title: 'Appearance',
+      fields: [
+        { key: 'motd', type: 'text', label: 'Motd', default: 'A Minecraft Server' },
+        { key: 'resource-pack', type: 'text', label: 'Resource Pack URL' },
+        { key: 'resource-pack-sha1', type: 'text', label: 'Resource Pack SHA1' }
+      ]
+    },
+    {
+      title: 'World',
+      fields: [
+        { key: 'generate-structures', type: 'bool', label: 'Generate Structures', hint: 'Defines whether structures (such as villages, mineshafts, strongholds, ...) will be generated.', default: true },
+        { key: 'enable-command-block', type: 'bool', label: 'Command Blocks', default: false },
+        { key: 'level-name', type: 'text', label: 'World Name', default: 'world' },
+        { key: 'max-world-size', type: 'number', label: 'Max World Size', default: 29999984 },
+        { key: 'max-build-height', type: 'number', label: 'Max Build Height', default: 256 },
+        { key: 'level-seed', type: 'text', label: 'Level Seed' },
+        { key: 'level-type', type: 'text', label: 'Level Type', default: 'default' },
+        { key: 'generator-settings', type: 'text', label: 'Flat Generator Settings', default: '{}' }
+      ]
+    },
+    {
+      title: 'Networking',
+      fields: [
+        { key: 'online-mode', type: 'bool', label: 'Online Mode', hint: 'Requires a valid Minecraft account to connect. Turn off only for an offline/cracked server.', default: true },
+        { key: 'white-list', type: 'bool', label: 'Whitelisting', hint: 'When enabled, users not on the whitelist will be unable to connect. Intended for private servers.', default: false },
+        { key: 'prevent-proxy-connections', type: 'bool', label: 'Prevent Proxy', hint: 'Prevents users from using vpns or proxies.', default: false },
+        { key: 'snooper-enabled', type: 'bool', label: 'Snooper', hint: 'Sets whether the server sends snoop data regularly to snoop.minecraft.net.', default: true },
+        { key: 'enable-rcon', type: 'bool', label: 'Rcon', hint: 'Enables remote access to the server console.', default: false },
+        { key: 'enable-query', type: 'bool', label: 'Query', hint: 'Enables GameSpy4 protocol server listener. Used to get information about server.', default: false },
+        { key: 'rcon.password', type: 'text', label: 'Rcon Password' },
+        { key: 'rcon.port', type: 'number', label: 'Rcon Port', default: 25575 },
+        { key: 'query.port', type: 'number', label: 'Query Port', default: 25565 },
+        { key: 'server-port', type: 'number', label: 'Server Port', default: 25565 },
+        { key: 'max-players', type: 'number', label: 'Player Limit', default: 20 },
+        { key: 'max-tick-time', type: 'number', label: 'Max Tick Time', default: 60000 },
+        { key: 'network-compression-threshold', type: 'number', label: 'Network Compression Threshold', default: 256 }
+      ]
+    },
+    {
+      title: 'Miscellaneous',
+      fields: [
+        { key: 'op-permission-level', type: 'select', label: 'OP Permission level', default: '4', options: ['1', '2', '3', '4'] },
+        { key: 'player-idle-timeout', type: 'number', label: 'Idle Timeout Kick', default: 0 }
+      ]
+    }
+  ];
+
+  function mcPropValue(field) {
+    var raw = mcServerSettingsForm[field.key];
+    if (field.type === 'bool') return raw === undefined ? field.default : raw === 'true';
+    if (field.type === 'number') {
+      var n = Number(raw);
+      return raw !== undefined && isFinite(n) ? n : field.default;
+    }
+    return raw !== undefined ? raw : (field.default !== undefined ? field.default : '');
+  }
+
+  function showMcServerSettingsError(message) {
+    mcServerSettingsErrorEl.textContent = message || '';
+    mcServerSettingsErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function saveMcPropertyField(key, value) {
+    if (!currentId) return;
+    var id = currentId;
+    var body = {};
+    body[key] = String(value);
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-serversettings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showMcServerSettingsError(result.error || 'Save failed'); return; }
+        if (id !== currentId) return;
+        mcServerSettingsForm = result.properties;
+        renderMcServerSettingsFields();
+      })
+      .catch(function () { showMcServerSettingsError('Request failed'); });
+  }
+
+  function renderMcServerSettingsFields() {
+    mcServerSettingsFieldsEl.innerHTML = '';
+    MC_PROPERTIES_SECTIONS.forEach(function (section) {
+      var sectionEl = document.createElement('section');
+      sectionEl.className = 'settings-section';
+      var h3 = document.createElement('h3');
+      h3.textContent = section.title;
+      sectionEl.appendChild(h3);
+      section.fields.forEach(function (field) {
+        if (field.type === 'bool') {
+          var wrap = document.createElement('div');
+          var boolLabel = document.createElement('label');
+          boolLabel.className = 'checkbox';
+          var boolInput = document.createElement('input');
+          boolInput.type = 'checkbox';
+          boolInput.checked = mcPropValue(field);
+          boolInput.addEventListener('change', function () { saveMcPropertyField(field.key, boolInput.checked ? 'true' : 'false'); });
+          boolLabel.appendChild(boolInput);
+          boolLabel.appendChild(document.createTextNode(field.label));
+          wrap.appendChild(boolLabel);
+          if (field.hint) {
+            var hint = document.createElement('p');
+            hint.className = 'empty-state';
+            hint.textContent = field.hint;
+            wrap.appendChild(hint);
+          }
+          sectionEl.appendChild(wrap);
+          return;
+        }
+        var label = document.createElement('label');
+        label.appendChild(document.createTextNode(field.label));
+        if (field.type === 'select') {
+          var select = document.createElement('select');
+          field.options.forEach(function (opt) {
+            var optEl = document.createElement('option');
+            optEl.value = opt;
+            optEl.textContent = opt;
+            select.appendChild(optEl);
+          });
+          select.value = mcPropValue(field);
+          select.addEventListener('change', function () { saveMcPropertyField(field.key, select.value); });
+          label.appendChild(select);
+        } else {
+          var input = document.createElement('input');
+          input.type = field.type === 'number' ? 'number' : 'text';
+          input.value = mcPropValue(field);
+          input.addEventListener('change', function () { saveMcPropertyField(field.key, input.value); });
+          label.appendChild(input);
+        }
+        sectionEl.appendChild(label);
+      });
+      mcServerSettingsFieldsEl.appendChild(sectionEl);
+    });
+  }
+
+  function loadMcServerSettingsView() {
+    var id = currentId;
+    if (!id || !isMinecraftServer(id)) {
+      mcServerSettingsNoServerEl.style.display = '';
+      mcServerSettingsContentEl.classList.remove('active');
+      return;
+    }
+    showMcServerSettingsError('');
+    mcServerSettingsNoServerEl.style.display = 'none';
+    mcServerSettingsContentEl.classList.add('active');
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-serversettings')
+      .then(function (r) { return r.json(); })
+      .then(function (properties) {
+        if (id !== currentId) return;
+        mcServerSettingsForm = properties;
+        renderMcServerSettingsFields();
+      });
+  }
+
+  // -- MC Mods / MC Plugins -------------------------------------------------------------------
+  // Two fully independent instances of the exact same controller, one per ecosystem - not two
+  // tabs that happen to share a label. SpongeForge genuinely has both at once (its own Sponge-
+  // plugin layer, and the Forge-mod layer it actually runs on), each with its own search/
+  // install/installed-list; every other type only ever has one of the two populated (the
+  // other instance's "unsupported" message shows instead - see mcServerSupportsEcosystem).
+  // Mirrors shared/minecraftMods.ts's minecraftServerSupportsEcosystem (duplicated here, same
+  // reasoning as every other small lookup in this client script - no module imports at all,
+  // see its own top-of-file comment).
+  var MC_ECOSYSTEM_SERVER_TYPES = {
+    mods: ['forge', 'neoforge', 'fabric', 'spongeforge'],
+    plugins: ['paper', 'spigot', 'spongevanilla', 'spongeforge']
+  };
+  function mcServerSupportsEcosystem(serverType, ecosystem) {
+    return MC_ECOSYSTEM_SERVER_TYPES[ecosystem].indexOf(serverType) !== -1;
+  }
+  // Only this instance's own slice of a server's installedMods - an entry whose own
+  // ecosystem tag couldn't be determined (scanForInstalledMods' best-effort case) is shown
+  // in every ecosystem tab the server type offers rather than hidden from all of them, same
+  // reasoning as ModsTab.tsx's own installedModsFor on the desktop side.
+  function mcModsForEcosystem(mods, ecosystem) {
+    return (mods || []).filter(function (m) { return m.ecosystem === undefined || m.ecosystem === ecosystem; });
+  }
+
+  function createMcModEcosystemView(ecosystem, ids) {
+    var noun = ecosystem === 'mods' ? 'mod' : 'plugin';
+    var serverSelectEl = document.getElementById(ids.serverSelect);
+    var noServerEl = document.getElementById(ids.noServer);
+    var unsupportedEl = document.getElementById(ids.unsupported);
+    var contentEl = document.getElementById(ids.content);
+    var browseIcon = document.getElementById(ids.browseIcon);
+    var searchQueryInput = document.getElementById(ids.searchQuery);
+    var btnSearch = document.getElementById(ids.btnSearch);
+    var searchErrorEl = document.getElementById(ids.searchError);
+    var searchResultsEl = document.getElementById(ids.searchResults);
+    var btnRescan = document.getElementById(ids.btnRescan);
+    var btnUpdateCheck = document.getElementById(ids.btnUpdateCheck);
+    var tableBody = document.getElementById(ids.tableBody);
+    var errorEl = document.getElementById(ids.error);
+
+    var installedMods = [];
+    var searchResults = [];
+    var searched = false;
+    var updateInfo = {};
+
+    function showError(message) {
+      errorEl.textContent = message || '';
+      errorEl.style.display = message ? '' : 'none';
+    }
+    function showSearchError(message) {
+      searchErrorEl.textContent = message || '';
+      searchErrorEl.style.display = message ? '' : 'none';
+    }
+
+    function renderTable() {
+      tableBody.innerHTML = '';
+      if (installedMods.length === 0) {
+        var emptyRow = document.createElement('tr');
+        var emptyCell = document.createElement('td');
+        emptyCell.colSpan = 5;
+        emptyCell.className = 'empty-state';
+        emptyCell.textContent = 'No ' + noun + 's installed yet.';
+        emptyRow.appendChild(emptyCell);
+        tableBody.appendChild(emptyRow);
+        return;
+      }
+      installedMods.forEach(function (mod) {
+        var row = document.createElement('tr');
+
+        var enableCell = document.createElement('td');
+        var enableInput = document.createElement('input');
+        enableInput.type = 'checkbox';
+        enableInput.checked = !!mod.enabled;
+        enableInput.addEventListener('change', function () {
+          fetch('/api/servers/' + encodeURIComponent(currentId) + '/mc-mods/enabled', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: mod.projectId, enabled: enableInput.checked })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (result) {
+              if (!result.ok) { showError(result.error || 'Save failed'); return; }
+              installedMods = mcModsForEcosystem(result.installedMods, ecosystem);
+              renderTable();
+            })
+            .catch(function () { showError('Request failed'); });
+        });
+        enableCell.appendChild(enableInput);
+        row.appendChild(enableCell);
+
+        var nameCell = document.createElement('td');
+        nameCell.className = 'ark-mod-name-cell';
+        if (mod.iconUrl) {
+          var icon = document.createElement('img');
+          icon.src = mod.iconUrl;
+          icon.alt = '';
+          icon.className = 'ark-mod-icon';
+          icon.addEventListener('error', function () { icon.style.display = 'none'; });
+          nameCell.appendChild(icon);
+        }
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'ark-mod-title';
+        nameSpan.title = mod.title;
+        nameSpan.textContent = mod.title;
+        nameCell.appendChild(nameSpan);
+        row.appendChild(nameCell);
+
+        var sourceCell = document.createElement('td');
+        sourceCell.textContent = mod.source === 'unknown' ? 'Unidentified' : mod.source;
+        if (mod.alsoOn && mod.alsoOn.length > 0) sourceCell.textContent += ' (also on ' + mod.alsoOn.join(', ') + ')';
+        row.appendChild(sourceCell);
+
+        var versionCell = document.createElement('td');
+        versionCell.textContent = mod.versionNumber || '-';
+        var info = updateInfo[mod.projectId];
+        if (info && info.updateAvailable) {
+          var badge = document.createElement('span');
+          badge.className = 'status-message';
+          badge.textContent = ' (update: ' + (info.latestVersionNumber || 'available') + ')';
+          versionCell.appendChild(badge);
+        }
+        row.appendChild(versionCell);
+
+        var actionsCell = document.createElement('td');
+        if (mod.source !== 'unknown' && info && info.updateAvailable) {
+          var updateBtn = document.createElement('button');
+          updateBtn.type = 'button';
+          updateBtn.textContent = 'Update';
+          updateBtn.addEventListener('click', function () { void installMod(mod.source, mod.projectId); });
+          actionsCell.appendChild(updateBtn);
+        }
+        var removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'danger';
+        removeBtn.textContent = 'Remove';
+        removeBtn.addEventListener('click', function () {
+          fetch('/api/servers/' + encodeURIComponent(currentId) + '/mc-mods/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: mod.projectId })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (result) {
+              if (!result.ok) { showError(result.error || 'Remove failed'); return; }
+              installedMods = mcModsForEcosystem(result.installedMods, ecosystem);
+              renderTable();
+            })
+            .catch(function () { showError('Request failed'); });
+        });
+        actionsCell.appendChild(removeBtn);
+        row.appendChild(actionsCell);
+
+        tableBody.appendChild(row);
+      });
+    }
+
+    function renderSearchResults() {
+      searchResultsEl.innerHTML = '';
+      if (searchResults.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'empty-state';
+        empty.textContent = searched ? 'No results.' : ('Search above to find ' + noun + 's to install.');
+        searchResultsEl.appendChild(empty);
+        return;
+      }
+      searchResults.forEach(function (r) {
+        var row = document.createElement('div');
+        row.className = 'ark-mod-search-result';
+        if (r.iconUrl) {
+          var icon = document.createElement('img');
+          icon.src = r.iconUrl;
+          icon.alt = '';
+          icon.className = 'ark-mod-icon';
+          icon.addEventListener('error', function () { icon.style.display = 'none'; });
+          row.appendChild(icon);
+        }
+        var info = document.createElement('div');
+        info.className = 'ark-mod-search-result-info';
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'ark-mod-search-result-name';
+        nameSpan.textContent = r.title + ' (' + r.source + ')';
+        var summarySpan = document.createElement('span');
+        summarySpan.className = 'empty-state ark-mod-search-result-summary';
+        summarySpan.title = r.description || '';
+        summarySpan.textContent = r.description || '';
+        info.appendChild(nameSpan);
+        info.appendChild(summarySpan);
+        row.appendChild(info);
+        var downloadsSpan = document.createElement('span');
+        downloadsSpan.className = 'empty-state ark-mod-search-result-downloads';
+        downloadsSpan.textContent = (r.downloads || 0).toLocaleString() + ' downloads';
+        row.appendChild(downloadsSpan);
+        var addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.disabled = !!r.installed;
+        addBtn.textContent = r.installed ? 'Installed' : 'Install';
+        addBtn.addEventListener('click', function () { void installMod(r.source, r.projectId); });
+        row.appendChild(addBtn);
+        searchResultsEl.appendChild(row);
+      });
+    }
+
+    function installMod(source, projectId) {
+      if (!currentId) return;
+      showError('');
+      return fetch('/api/servers/' + encodeURIComponent(currentId) + '/mc-mods/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: source, projectId: projectId, ecosystem: ecosystem })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (result) {
+          if (!result.ok) { showError(result.error || 'Install failed'); return; }
+          installedMods = mcModsForEcosystem(result.installedMods, ecosystem);
+          renderTable();
+          renderSearchResults();
+          if (result.result && result.result.optionalDependenciesSkipped && result.result.optionalDependenciesSkipped.length > 0) {
+            showToast(result.result.optionalDependenciesSkipped.length + ' optional dependenc' + (result.result.optionalDependenciesSkipped.length === 1 ? 'y' : 'ies') + ' skipped - install by hand if needed.');
+          }
+        })
+        .catch(function () { showError('Request failed'); });
+    }
+
+    function runSearch() {
+      var query = searchQueryInput.value.trim();
+      if (!query || !currentId) return;
+      var id = currentId;
+      btnSearch.disabled = true;
+      btnSearch.textContent = 'Searching...';
+      showSearchError('');
+      fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods/search?q=' + encodeURIComponent(query) + '&ecosystem=' + ecosystem)
+        .then(function (r) { return r.json(); })
+        .then(function (results) {
+          searched = true;
+          if (id !== currentId) return;
+          if (results && results.error) { showSearchError(results.error); searchResults = []; }
+          else searchResults = results || [];
+          renderSearchResults();
+        })
+        .catch(function () { if (id === currentId) showSearchError('Search failed'); })
+        .finally(function () {
+          btnSearch.disabled = false;
+          btnSearch.textContent = 'Search';
+        });
+    }
+
+    btnSearch.addEventListener('click', runSearch);
+    searchQueryInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
+    });
+
+    btnRescan.addEventListener('click', function () {
+      if (!currentId) return;
+      var id = currentId;
+      btnRescan.disabled = true;
+      btnRescan.textContent = 'Rescanning...';
+      fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods/rescan', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (result) {
+          if (!result.ok) { showError(result.error || 'Rescan failed'); return; }
+          if (id !== currentId) return;
+          installedMods = mcModsForEcosystem(result.installedMods, ecosystem);
+          renderTable();
+          showToast(result.result && result.result.adopted.length > 0 ? 'Recognized ' + result.result.adopted.length + ' file(s).' : 'No new files found.');
+        })
+        .catch(function () { showError('Request failed'); })
+        .finally(function () {
+          btnRescan.disabled = false;
+          btnRescan.textContent = 'Rescan folder';
+        });
+    });
+
+    btnUpdateCheck.addEventListener('click', function () {
+      if (!currentId) return;
+      var id = currentId;
+      btnUpdateCheck.disabled = true;
+      btnUpdateCheck.textContent = 'Checking...';
+      fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods/updatecheck')
+        .then(function (r) { return r.json(); })
+        .then(function (results) {
+          if (id !== currentId) return;
+          updateInfo = {};
+          (results || []).forEach(function (r) { updateInfo[r.projectId] = r; });
+          renderTable();
+        })
+        .catch(function () { showError('Update check failed'); })
+        .finally(function () {
+          btnUpdateCheck.disabled = false;
+          btnUpdateCheck.textContent = 'Check for updates';
+        });
+    });
+
+    function load() {
+      var id = currentId;
+      if (!id || !isMinecraftServer(id)) {
+        noServerEl.style.display = '';
+        unsupportedEl.style.display = 'none';
+        contentEl.classList.remove('active');
+        return;
+      }
+      var server = latestServers.find(function (s) { return s.id === id; });
+      if (!server || !mcServerSupportsEcosystem(server.serverType, ecosystem)) {
+        noServerEl.style.display = 'none';
+        unsupportedEl.style.display = '';
+        contentEl.classList.remove('active');
+        return;
+      }
+      showError('');
+      showSearchError('');
+      noServerEl.style.display = 'none';
+      unsupportedEl.style.display = 'none';
+      contentEl.classList.add('active');
+      var iconUrl = MC_SERVER_TYPE_ICON_URLS[server.serverType];
+      browseIcon.src = iconUrl || '';
+      browseIcon.style.display = iconUrl ? '' : 'none';
+      searched = false;
+      searchResults = [];
+      searchQueryInput.value = '';
+      updateInfo = {};
+      renderSearchResults();
+      fetch('/api/servers/' + encodeURIComponent(id) + '/mc-mods')
+        .then(function (r) { return r.json(); })
+        .then(function (mods) {
+          if (id !== currentId) return;
+          installedMods = mcModsForEcosystem(mods, ecosystem);
+          renderTable();
+        });
+    }
+
+    return { load: load };
+  }
+
+  var mcModsView = createMcModEcosystemView('mods', {
+    serverSelect: 'mc-mods-server-select',
+    noServer: 'mc-mods-no-server',
+    unsupported: 'mc-mods-unsupported',
+    content: 'mc-mods-content',
+    browseIcon: 'mc-mods-browse-icon',
+    searchQuery: 'mc-mods-search-query',
+    btnSearch: 'btn-mc-mods-search',
+    searchError: 'mc-mods-search-error',
+    searchResults: 'mc-mods-search-results',
+    btnRescan: 'btn-mc-mods-rescan',
+    btnUpdateCheck: 'btn-mc-mods-updatecheck',
+    tableBody: 'mc-mods-table-body',
+    error: 'mc-mods-error'
+  });
+  var mcPluginsView = createMcModEcosystemView('plugins', {
+    serverSelect: 'mc-plugins-server-select',
+    noServer: 'mc-plugins-no-server',
+    unsupported: 'mc-plugins-unsupported',
+    content: 'mc-plugins-content',
+    browseIcon: 'mc-plugins-browse-icon',
+    searchQuery: 'mc-plugins-search-query',
+    btnSearch: 'btn-mc-plugins-search',
+    searchError: 'mc-plugins-search-error',
+    searchResults: 'mc-plugins-search-results',
+    btnRescan: 'btn-mc-plugins-rescan',
+    btnUpdateCheck: 'btn-mc-plugins-updatecheck',
+    tableBody: 'mc-plugins-table-body',
+    error: 'mc-plugins-error'
+  });
+  function loadMcModsView() { mcModsView.load(); }
+  function loadMcPluginsView() { mcPluginsView.load(); }
+  // Looked up again here (cheap, idempotent) for MC_SERVER_PICKERS further below - the actual
+  // <select> elements live inside createMcModEcosystemView's own closures, not as globals.
+  var mcModsServerSelectEl = document.getElementById('mc-mods-server-select');
+  var mcPluginsServerSelectEl = document.getElementById('mc-plugins-server-select');
+
+  // -- MC Backup ----------------------------------------------------------------------------
+  var mcBackupServerSelectEl = document.getElementById('mc-backup-server-select');
+  var mcBackupNoServerEl = document.getElementById('mc-backup-no-server');
+  var mcBackupContentEl = document.getElementById('mc-backup-content');
+  var mcBackupSettingsSectionEl = document.getElementById('mc-backup-settings-section');
+  var mcBackupDirInput = document.getElementById('mc-backup-dir');
+  var mcBackupMaxBackupsInput = document.getElementById('mc-backup-maxbackups');
+  var mcBackupScheduleEnabledInput = document.getElementById('mc-backup-schedule-enabled');
+  var mcBackupScheduleCronInput = document.getElementById('mc-backup-schedule-cron');
+  var mcBackupSettingsErrorEl = document.getElementById('mc-backup-settings-error');
+  var btnMcBackupCreate = document.getElementById('btn-mc-backup-create');
+  var btnMcBackupRefresh = document.getElementById('btn-mc-backup-refresh');
+  var mcBackupTableBody = document.getElementById('mc-backup-table-body');
+  var mcBackupLogEl = document.getElementById('mc-backup-log');
+  if (role && !canOperate) btnMcBackupCreate.style.display = 'none';
+  if (role && !canAdmin) mcBackupSettingsSectionEl.style.display = 'none';
+
+  function showMcBackupSettingsError(message) {
+    mcBackupSettingsErrorEl.textContent = message || '';
+    mcBackupSettingsErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function saveMcBackupSettingsField(field, value) {
+    if (!currentId) return;
+    var id = currentId;
+    var body = {};
+    body[field] = value;
+    showMcBackupSettingsError('');
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-startsettings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showMcBackupSettingsError(result.error || 'Save failed'); return; }
+        if (id !== currentId) return;
+        loadMcBackupView();
+      })
+      .catch(function () { showMcBackupSettingsError('Request failed'); });
+  }
+
+  mcBackupDirInput.addEventListener('change', function () { saveMcBackupSettingsField('backupDir', mcBackupDirInput.value); });
+  mcBackupMaxBackupsInput.addEventListener('change', function () { saveMcBackupSettingsField('maxBackups', Number(mcBackupMaxBackupsInput.value)); });
+  mcBackupScheduleEnabledInput.addEventListener('change', function () { saveMcBackupSettingsField('backupScheduleEnabled', mcBackupScheduleEnabledInput.checked); });
+  mcBackupScheduleCronInput.addEventListener('change', function () { saveMcBackupSettingsField('backupSchedule', mcBackupScheduleCronInput.value); });
+
+  function mcBackupAction(actionPath, filePath) {
+    return fetch('/api/servers/' + encodeURIComponent(currentId) + actionPath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath: filePath })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showToast('Error: ' + result.error); return; }
+        loadMcBackupView();
+      })
+      .catch(function () { showToast('Request failed'); });
+  }
+
+  function renderMcBackupTable(backups) {
+    mcBackupTableBody.innerHTML = '';
+    if (backups.length === 0) {
+      var emptyRow = document.createElement('tr');
+      var emptyCell = document.createElement('td');
+      emptyCell.colSpan = 4;
+      emptyCell.className = 'empty-state';
+      emptyCell.textContent = 'No backups yet.';
+      emptyRow.appendChild(emptyCell);
+      mcBackupTableBody.appendChild(emptyRow);
+      return;
+    }
+    backups.forEach(function (b) {
+      var row = document.createElement('tr');
+      var nameCell = document.createElement('td');
+      nameCell.textContent = b.fileName;
+      var sizeCell = document.createElement('td');
+      sizeCell.textContent = formatBackupSize(b.sizeBytes);
+      var timeCell = document.createElement('td');
+      timeCell.textContent = new Date(b.createdAt).toLocaleString();
+
+      var actionsCell = document.createElement('td');
+      actionsCell.className = 'backup-row-actions';
+      if (!role || canAdmin) {
+        var restoreBtn = document.createElement('button');
+        restoreBtn.type = 'button';
+        restoreBtn.textContent = 'Restore';
+        restoreBtn.addEventListener('click', function () {
+          if (!confirm('Restore ' + b.fileName + '? This overwrites the current world.')) return;
+          void mcBackupAction('/mc-backups/restore', b.filePath);
+        });
+        var deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.addEventListener('click', function () {
+          if (!confirm('Delete ' + b.fileName + '?')) return;
+          void mcBackupAction('/mc-backups/delete', b.filePath);
+        });
+        actionsCell.appendChild(restoreBtn);
+        actionsCell.appendChild(deleteBtn);
+      }
+
+      row.appendChild(nameCell);
+      row.appendChild(sizeCell);
+      row.appendChild(timeCell);
+      row.appendChild(actionsCell);
+      mcBackupTableBody.appendChild(row);
+    });
+  }
+
+  function renderMcBackupLog(entries) {
+    mcBackupLogEl.innerHTML = '';
+    if (entries.length === 0) {
+      var empty = document.createElement('p');
+      empty.className = 'empty-state';
+      empty.textContent = 'No backup activity yet.';
+      mcBackupLogEl.appendChild(empty);
+      return;
+    }
+    entries.forEach(function (entry) {
+      var line = document.createElement('div');
+      line.className = 'backup-log-line' + (entry.level === 'error' ? ' error' : '');
+      var time = document.createElement('span');
+      time.className = 'backup-log-time';
+      time.textContent = new Date(entry.timestamp).toLocaleTimeString();
+      line.appendChild(time);
+      line.appendChild(document.createTextNode(entry.message));
+      mcBackupLogEl.appendChild(line);
+    });
+    mcBackupLogEl.scrollTop = mcBackupLogEl.scrollHeight;
+  }
+
+  function loadMcBackupView() {
+    var id = currentId;
+    if (!id || !isMinecraftServer(id)) {
+      mcBackupNoServerEl.style.display = '';
+      mcBackupContentEl.classList.remove('active');
+      return;
+    }
+    showMcBackupSettingsError('');
+    mcBackupNoServerEl.style.display = 'none';
+    mcBackupContentEl.classList.add('active');
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-startsettings')
+      .then(function (r) { return r.json(); })
+      .then(function (profile) {
+        if (id !== currentId || !profile || !profile.id) return;
+        mcBackupDirInput.value = profile.backupDir || '';
+        mcBackupMaxBackupsInput.value = profile.maxBackups;
+        mcBackupScheduleEnabledInput.checked = !!profile.backupScheduleEnabled;
+        mcBackupScheduleCronInput.value = profile.backupSchedule || '';
+        mcBackupScheduleCronInput.disabled = !profile.backupScheduleEnabled;
+      })
+      .catch(function () {});
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-backups')
+      .then(function (r) { return r.json(); })
+      .then(function (backups) { if (id === currentId) renderMcBackupTable(backups); });
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-backups/log')
+      .then(function (r) { return r.json(); })
+      .then(function (entries) { if (id === currentId) renderMcBackupLog(entries); });
+  }
+
+  btnMcBackupCreate.addEventListener('click', function () {
+    if (!currentId) return;
+    btnMcBackupCreate.disabled = true;
+    btnMcBackupCreate.textContent = 'Creating...';
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/mc-backups', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) showToast('Error: ' + result.error);
+        loadMcBackupView();
+      })
+      .catch(function () { showToast('Request failed'); })
+      .finally(function () {
+        btnMcBackupCreate.disabled = false;
+        btnMcBackupCreate.textContent = 'Create backup now';
+      });
+  });
+
+  btnMcBackupRefresh.addEventListener('click', function () { loadMcBackupView(); });
+
+  setInterval(function () {
+    if (activeView !== 'mc-backup' || !currentId) return;
+    var id = currentId;
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-backups/log')
+      .then(function (r) { return r.json(); })
+      .then(function (entries) { if (id === currentId) renderMcBackupLog(entries); });
+  }, 5000);
+
+  // -- MC Server Management ----------------------------------------------------------------
+  var mcManagementServerSelectEl = document.getElementById('mc-management-server-select');
+  var mcManagementNoServerEl = document.getElementById('mc-management-no-server');
+  var mcManagementContentEl = document.getElementById('mc-management-content');
+  var mcManagementErrorEl = document.getElementById('mc-management-error');
+  var mcmStartOnLaunch = document.getElementById('mcm-startonlaunch');
+  var mcmRestartEnabled = document.getElementById('mcm-restart-enabled');
+  var mcmRestartTime = document.getElementById('mcm-restart-time');
+  var mcmRestartDaysEl = document.getElementById('mcm-restart-days');
+  var mcmRestartStartAfter = document.getElementById('mcm-restart-startafter');
+  var mcmRestartCountdownEl = document.getElementById('mcm-restart-countdown');
+  var mcManagementProfile = null;
+
+  function showMcManagementError(message) {
+    mcManagementErrorEl.textContent = message || '';
+    mcManagementErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function saveMcManagementField(field, value) {
+    if (!currentId || !mcManagementProfile) return;
+    var id = currentId;
+    var body = {};
+    body[field] = value;
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-management', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showMcManagementError(result.error || 'Save failed'); return; }
+        if (id !== currentId) return;
+        mcManagementProfile = result.profile;
+        renderMcManagementForm();
+      })
+      .catch(function () { showMcManagementError('Request failed'); });
+  }
+
+  function updateMcmCountdown() {
+    if (!mcManagementProfile) return;
+    var now = new Date();
+    var next = mcManagementProfile.scheduledRestartEnabled
+      ? computeNextOccurrence(now, mcManagementProfile.scheduledRestartTime, mcManagementProfile.scheduledRestartDays)
+      : null;
+    mcmRestartCountdownEl.textContent = 'Next shutdown in: ' + (next ? formatCountdown(next.getTime() - now.getTime()) : '--:--:--:--');
+  }
+
+  setInterval(function () {
+    if (activeView === 'mc-management') updateMcmCountdown();
+  }, 1000);
+
+  function renderMcManagementForm() {
+    var p = mcManagementProfile;
+    mcmStartOnLaunch.checked = !!p.startOnManagerLaunch;
+    mcmRestartEnabled.checked = !!p.scheduledRestartEnabled;
+    mcmRestartTime.value = p.scheduledRestartTime || '00:00';
+    mcmRestartTime.disabled = !p.scheduledRestartEnabled;
+    mcmRestartStartAfter.checked = !!p.scheduledRestartStartAfter;
+    mcmRestartStartAfter.disabled = !p.scheduledRestartEnabled;
+    buildDayCheckboxes(mcmRestartDaysEl, p.scheduledRestartDays || [], function (day, checked) {
+      var days = (p.scheduledRestartDays || []).slice();
+      var idx = days.indexOf(day);
+      if (checked && idx === -1) days.push(day);
+      if (!checked && idx !== -1) days.splice(idx, 1);
+      days.sort(function (a, b) { return a - b; });
+      saveMcManagementField('scheduledRestartDays', days);
+    });
+    updateMcmCountdown();
+  }
+
+  function loadMcManagementView() {
+    var id = currentId;
+    if (!id || !isMinecraftServer(id)) {
+      mcManagementNoServerEl.style.display = '';
+      mcManagementContentEl.classList.remove('active');
+      return;
+    }
+    showMcManagementError('');
+    mcManagementNoServerEl.style.display = 'none';
+    mcManagementContentEl.classList.add('active');
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mc-management')
+      .then(function (r) { return r.json(); })
+      .then(function (profile) {
+        if (id !== currentId) return;
+        mcManagementProfile = profile;
+        renderMcManagementForm();
+      });
+  }
+
+  mcmStartOnLaunch.addEventListener('change', function () { saveMcManagementField('startOnManagerLaunch', mcmStartOnLaunch.checked); });
+  mcmRestartEnabled.addEventListener('change', function () { saveMcManagementField('scheduledRestartEnabled', mcmRestartEnabled.checked); });
+  mcmRestartTime.addEventListener('change', function () { saveMcManagementField('scheduledRestartTime', mcmRestartTime.value); });
+  mcmRestartStartAfter.addEventListener('change', function () { saveMcManagementField('scheduledRestartStartAfter', mcmRestartStartAfter.checked); });
+
   // -- Mods ---------------------------------------------------------------------------
   var modsServerSelectEl = document.getElementById('mods-server-select');
   var modsNoServerEl = document.getElementById('mods-no-server');
@@ -3590,11 +5858,53 @@ function initDashboard(resolvedRole) {
   var btnModsAdd = document.getElementById('btn-mods-add');
   var modsTableBody = document.getElementById('mods-table-body');
   var modsErrorEl = document.getElementById('mods-error');
+  var modsSearchSectionEl = document.getElementById('mods-search-section');
+  var modsSearchNoKeyEl = document.getElementById('mods-search-nokey');
+  var modsSearchUiEl = document.getElementById('mods-search-ui');
+  var modsSearchQueryInput = document.getElementById('mods-search-query');
+  var btnModsSearch = document.getElementById('btn-mods-search');
+  var modsSearchErrorEl = document.getElementById('mods-search-error');
+  var modsSearchResultsEl = document.getElementById('mods-search-results');
   var currentMods = [];
+  // ARK: Survival Evolved's mod ids are a Steam Workshop namespace, not CurseForge - the
+  // search/icon/resolved-name additions below only ever make sense for ARK: Survival
+  // Ascended, same gating as the desktop app's own ModsTab (isEvolved there).
+  var currentModsIsEvolved = false;
+  var currentArkInfo = {};
+  var modsSearched = false;
 
   function showModsError(message) {
     modsErrorEl.textContent = message || '';
     modsErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function showModsSearchError(message) {
+    modsSearchErrorEl.textContent = message || '';
+    modsSearchErrorEl.style.display = message ? '' : 'none';
+  }
+
+  // Looks up a real name/icon for every mod id currently in the list (typed by hand, or
+  // added via search below) so the table can show it next to every row - re-fetched after
+  // every save, same as the desktop app's own background enrichment effect.
+  function refreshArkModsInfo() {
+    if (currentModsIsEvolved || currentMods.length === 0) {
+      currentArkInfo = {};
+      renderModsTable();
+      return;
+    }
+    var id = currentId;
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mods/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modIds: currentMods.map(function (m) { return m.id; }) })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (info) {
+        if (id !== currentId) return;
+        currentArkInfo = info || {};
+        renderModsTable();
+      })
+      .catch(function () { renderModsTable(); });
   }
 
   function saveMods(next) {
@@ -3610,7 +5920,8 @@ function initDashboard(resolvedRole) {
         if (!result.ok) { showModsError(result.error || 'Save failed'); return; }
         if (id !== currentId) return;
         currentMods = result.profile.mods || [];
-        renderModsTable();
+        refreshArkModsInfo();
+        renderModsSearchResults(); // re-render so just-added rows switch from "Add" to "Added"
       })
       .catch(function () { showModsError('Request failed'); });
   }
@@ -3649,24 +5960,76 @@ function initDashboard(resolvedRole) {
       row.appendChild(checkboxCell('passive'));
       row.appendChild(checkboxCell('dev'));
 
-      var nameCell = document.createElement('td');
-      var nameInput = document.createElement('input');
-      nameInput.value = mod.name || '';
-      nameInput.placeholder = 'Optional label';
-      nameInput.addEventListener('change', function () {
-        var updatedMod = Object.assign({}, mod, { name: nameInput.value || undefined });
-        var next = currentMods.slice();
-        next[index] = updatedMod;
-        saveMods(next);
-      });
-      nameCell.appendChild(nameInput);
-      row.appendChild(nameCell);
-
       var idCell = document.createElement('td');
       idCell.textContent = mod.id + (mod.dev ? '-dev' : '');
       row.appendChild(idCell);
 
+      var nameCell = document.createElement('td');
+      nameCell.className = 'ark-mod-name-cell';
+      if (currentModsIsEvolved) {
+        var nameInput = document.createElement('input');
+        nameInput.value = mod.name || '';
+        nameInput.placeholder = 'Optional label';
+        nameInput.addEventListener('change', function () {
+          var updatedMod = Object.assign({}, mod, { name: nameInput.value || undefined });
+          var next = currentMods.slice();
+          next[index] = updatedMod;
+          saveMods(next);
+        });
+        nameCell.appendChild(nameInput);
+      } else {
+        var info = currentArkInfo[mod.id];
+        if (info && info.iconUrl) {
+          var icon = document.createElement('img');
+          icon.src = info.iconUrl;
+          icon.alt = '';
+          icon.className = 'ark-mod-icon';
+          icon.addEventListener('error', function () { icon.style.display = 'none'; });
+          nameCell.appendChild(icon);
+        }
+        var resolved = (info && info.name) || mod.name;
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'ark-mod-title' + (resolved ? '' : ' muted');
+        nameSpan.title = resolved || '';
+        nameSpan.textContent = resolved || '—';
+        nameCell.appendChild(nameSpan);
+      }
+      row.appendChild(nameCell);
+
       var actionsCell = document.createElement('td');
+      actionsCell.className = 'mods-grid-actions';
+
+      function moveModBtn(label, title, disabled, onClick) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.title = title;
+        btn.disabled = disabled;
+        btn.addEventListener('click', onClick);
+        return btn;
+      }
+
+      actionsCell.appendChild(moveModBtn('⤒', 'Move to top of list', index === 0, function () {
+        var next = currentMods.slice();
+        var moved = next.splice(index, 1)[0];
+        next.unshift(moved);
+        saveMods(next);
+      }));
+      actionsCell.appendChild(moveModBtn('↑', 'Move up', index === 0, function () {
+        var next = currentMods.slice();
+        var tmp = next[index - 1];
+        next[index - 1] = next[index];
+        next[index] = tmp;
+        saveMods(next);
+      }));
+      actionsCell.appendChild(moveModBtn('↓', 'Move down', index === currentMods.length - 1, function () {
+        var next = currentMods.slice();
+        var tmp = next[index + 1];
+        next[index + 1] = next[index];
+        next[index] = tmp;
+        saveMods(next);
+      }));
+
       var removeBtn = document.createElement('button');
       removeBtn.type = 'button';
       removeBtn.className = 'danger';
@@ -3681,22 +6044,131 @@ function initDashboard(resolvedRole) {
     });
   }
 
+  // Renders the CurseForge search-results list (separate from renderModsTable, which renders
+  // the server's own mod list above it) - takes no args, re-reading modsSearchResults/
+  // modsSearched state, so it can be called again after a save to flip a freshly-added
+  // result's button from "Add" to "Added" without re-searching.
+  var modsSearchResults = [];
+  function renderModsSearchResults() {
+    modsSearchResultsEl.innerHTML = '';
+    if (modsSearchResults.length === 0) {
+      var empty = document.createElement('p');
+      empty.className = 'empty-state';
+      empty.textContent = modsSearched ? 'No results.' : 'Search above to find mods to add.';
+      modsSearchResultsEl.appendChild(empty);
+      return;
+    }
+    modsSearchResults.forEach(function (r) {
+      var row = document.createElement('div');
+      row.className = 'ark-mod-search-result';
+      if (r.iconUrl) {
+        var icon = document.createElement('img');
+        icon.src = r.iconUrl;
+        icon.alt = '';
+        icon.className = 'ark-mod-icon';
+        icon.addEventListener('error', function () { icon.style.display = 'none'; });
+        row.appendChild(icon);
+      }
+      var info = document.createElement('div');
+      info.className = 'ark-mod-search-result-info';
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'ark-mod-search-result-name';
+      nameSpan.textContent = r.name;
+      var summarySpan = document.createElement('span');
+      summarySpan.className = 'empty-state ark-mod-search-result-summary';
+      summarySpan.title = r.summary || '';
+      summarySpan.textContent = r.summary || '';
+      info.appendChild(nameSpan);
+      info.appendChild(summarySpan);
+      row.appendChild(info);
+      var downloadsSpan = document.createElement('span');
+      downloadsSpan.className = 'empty-state ark-mod-search-result-downloads';
+      downloadsSpan.textContent = (r.downloads || 0).toLocaleString() + ' downloads';
+      row.appendChild(downloadsSpan);
+      var added = currentMods.some(function (m) { return m.id === r.id; });
+      var addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.disabled = added;
+      addBtn.textContent = added ? 'Added' : 'Add';
+      addBtn.addEventListener('click', function () {
+        if (currentMods.some(function (m) { return m.id === r.id; })) return;
+        saveMods(currentMods.concat([{ id: r.id, name: r.name, enabled: true, passive: false, dev: false }]));
+      });
+      row.appendChild(addBtn);
+      modsSearchResultsEl.appendChild(row);
+    });
+  }
+
+  function runModsSearch() {
+    var query = modsSearchQueryInput.value.trim();
+    if (!query || !currentId) return;
+    var id = currentId;
+    btnModsSearch.disabled = true;
+    btnModsSearch.textContent = 'Searching...';
+    showModsSearchError('');
+    fetch('/api/servers/' + encodeURIComponent(id) + '/mods/search?q=' + encodeURIComponent(query))
+      .then(function (r) { return r.json(); })
+      .then(function (results) {
+        modsSearched = true;
+        if (id !== currentId) return;
+        modsSearchResults = results || [];
+        renderModsSearchResults();
+      })
+      .catch(function () {
+        if (id !== currentId) return;
+        showModsSearchError('Search failed');
+      })
+      .finally(function () {
+        btnModsSearch.disabled = false;
+        btnModsSearch.textContent = 'Search';
+      });
+  }
+
+  btnModsSearch.addEventListener('click', runModsSearch);
+  modsSearchQueryInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); runModsSearch(); }
+  });
+
   function loadModsView() {
     var id = currentId;
     if (!id) {
+      modsNoServerEl.textContent = 'No server selected - choose one above.';
+      modsNoServerEl.style.display = '';
+      modsContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      modsNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       modsNoServerEl.style.display = '';
       modsContentEl.classList.remove('active');
       return;
     }
     showModsError('');
+    showModsSearchError('');
     modsNoServerEl.style.display = 'none';
     modsContentEl.classList.add('active');
+    modsSearched = false;
+    modsSearchResults = [];
+    modsSearchQueryInput.value = '';
+    renderModsSearchResults();
     fetch('/api/servers/' + encodeURIComponent(id) + '/profile')
       .then(function (r) { return r.json(); })
       .then(function (profile) {
         if (id !== currentId) return;
         currentMods = profile.mods || [];
-        renderModsTable();
+        currentModsIsEvolved = profile.game === 'ark-evolved';
+        modsSearchSectionEl.style.display = currentModsIsEvolved ? 'none' : '';
+        if (!currentModsIsEvolved) {
+          fetch('/api/arkmods/status')
+            .then(function (r) { return r.json(); })
+            .then(function (result) {
+              if (id !== currentId) return;
+              var hasKey = !!(result && result.hasCurseForgeKey);
+              modsSearchNoKeyEl.style.display = hasKey ? 'none' : '';
+              modsSearchUiEl.style.display = hasKey ? '' : 'none';
+            });
+        }
+        refreshArkModsInfo();
       });
   }
 
@@ -3759,6 +6231,13 @@ function initDashboard(resolvedRole) {
   function loadMapManagementView() {
     var id = currentId;
     if (!id) {
+      mapmanagementNoServerEl.textContent = 'No server selected - choose one above.';
+      mapmanagementNoServerEl.style.display = '';
+      mapmanagementContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      mapmanagementNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       mapmanagementNoServerEl.style.display = '';
       mapmanagementContentEl.classList.remove('active');
       return;
@@ -3981,6 +6460,13 @@ function initDashboard(resolvedRole) {
   function loadServerManagementView() {
     var id = currentId;
     if (!id) {
+      smNoServerEl.textContent = 'No server selected - choose one above.';
+      smNoServerEl.style.display = '';
+      smContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      smNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       smNoServerEl.style.display = '';
       smContentEl.classList.remove('active');
       return;
@@ -4151,6 +6637,13 @@ function initDashboard(resolvedRole) {
   function loadSettingsView() {
     var id = currentId;
     if (!id) {
+      settingsNoServerEl.textContent = 'No server selected - choose one above.';
+      settingsNoServerEl.style.display = '';
+      settingsContentEl.classList.remove('active');
+      return;
+    }
+    if (isMinecraftServer(id)) {
+      settingsNoServerEl.textContent = MINECRAFT_VIEW_UNAVAILABLE_TEXT;
       settingsNoServerEl.style.display = '';
       settingsContentEl.classList.remove('active');
       return;
@@ -4345,10 +6838,13 @@ function initDashboard(resolvedRole) {
     lines.appendChild(uptimeLine);
 
     statusEl.appendChild(lines);
+    var isMinecraft = s.gameDisplayName === 'Minecraft';
     startBtn.disabled = s.state !== 'stopped';
     stopBtn.disabled = s.state !== 'running';
-    restartBtn.disabled = s.state !== 'running';
-    stopUpdateRestartBtn.disabled = s.state === 'updating';
+    restartBtn.disabled = isMinecraft || s.state !== 'running';
+    restartBtn.style.display = isMinecraft ? 'none' : '';
+    stopUpdateRestartBtn.disabled = isMinecraft || s.state === 'updating';
+    stopUpdateRestartBtn.style.display = isMinecraft ? 'none' : '';
   }
 
   function postServerAction(action) {
@@ -4389,12 +6885,27 @@ function initDashboard(resolvedRole) {
     updatelogServerSelectEl
   ];
 
+  // Minecraft's own per-server tabs get their own picker list, populated from Minecraft
+  // servers only (see populateServerPickers below) - kept separate from SERVER_PICKERS above
+  // rather than mixed in, same "Minecraft and ARK servers never share one dropdown" separation
+  // as the Dashboard-equivalent list views (renderDashboardCards/renderMcDashboardCards).
+  // Both arrays still sync to the one shared currentId (syncServerPickers below) - a picker
+  // simply shows no selection if currentId isn't one of its own options.
+  var MC_SERVER_PICKERS = [
+    mcStartSettingsServerSelectEl,
+    mcServerSettingsServerSelectEl,
+    mcModsServerSelectEl,
+    mcPluginsServerSelectEl,
+    mcBackupServerSelectEl,
+    mcManagementServerSelectEl
+  ];
+
   // servers arrives already ordered ungrouped-first-then-alphabetical-by-group (server-side
   // sortProfilesForDisplay), so a run of consecutive same-group entries can just be wrapped in
   // one optgroup as it's encountered - same idea as populateSettingsMapOptions' Official/Custom
   // optgroups, but grouped by each server's own Dashboard group instead of a fixed pair.
-  function populateServerPickers(servers) {
-    SERVER_PICKERS.forEach(function (picker) {
+  function populatePickerGroup(pickers, servers) {
+    pickers.forEach(function (picker) {
       picker.innerHTML = '';
       var openGroupName = null;
       var openGroupEl = null;
@@ -4420,12 +6931,18 @@ function initDashboard(resolvedRole) {
     });
   }
 
+  function populateServerPickers(servers) {
+    populatePickerGroup(SERVER_PICKERS, servers);
+    populatePickerGroup(MC_SERVER_PICKERS, servers.filter(isMcServerEntry));
+  }
+
   function syncServerPickers() {
     if (!currentId) return;
     SERVER_PICKERS.forEach(function (picker) { picker.value = currentId; });
+    MC_SERVER_PICKERS.forEach(function (picker) { picker.value = currentId; });
   }
 
-  SERVER_PICKERS.forEach(function (picker) {
+  SERVER_PICKERS.concat(MC_SERVER_PICKERS).forEach(function (picker) {
     picker.addEventListener('change', function () { selectServer(picker.value); });
   });
 
@@ -4441,6 +6958,12 @@ function initDashboard(resolvedRole) {
     if (activeView === 'mapmanagement') loadMapManagementView();
     if (activeView === 'servermanagement') loadServerManagementView();
     if (activeView === 'updatelog') loadUpdateLogView();
+    if (activeView === 'mc-startsettings') loadMcStartSettingsView();
+    if (activeView === 'mc-serversettings') loadMcServerSettingsView();
+    if (activeView === 'mc-mods') loadMcModsView();
+    if (activeView === 'mc-plugins') loadMcPluginsView();
+    if (activeView === 'mc-backup') loadMcBackupView();
+    if (activeView === 'mc-management') loadMcManagementView();
     consoleEl.innerHTML = '';
     if (es) { es.close(); es = null; }
     loadPlayers();
@@ -4475,12 +6998,14 @@ function initDashboard(resolvedRole) {
       if (currentId && !servers.some(function (s) { return s.id === currentId; })) {
         currentId = null;
         if (SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1) selectView('cluster');
+        if (MC_SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1) selectView('mcdashboard');
       }
       syncServerPickers();
       renderStatus(servers.find(function (s) { return s.id === currentId; }));
       renderAnalyticsStatus();
-      renderClusterCards(servers);
-      if (activeView === 'dashboard') renderDashboardCards(servers);
+      renderClusterCards(servers.filter(isArkServerEntry));
+      if (activeView === 'dashboard') renderDashboardCards(servers.filter(isArkServerEntry));
+      if (activeView === 'mcdashboard') renderMcDashboardCards(servers.filter(isMcServerEntry));
       refreshClusterConsoleServers();
     });
   }
@@ -4511,7 +7036,10 @@ function initDashboard(resolvedRole) {
   // into the Backup view) touches has been declared above - calling it any earlier throws
   // on the not-yet-assigned backup-view elements and aborts the rest of this script,
   // including loadServers() below, leaving the page stuck on "no server selected" forever.
-  applyActiveView();
+  // selectGameMode('ark') also applies the initial sidebar state (which .nav-group shows)
+  // and, via selectView inside it, the initial activeView/applyActiveView() call - ARK is
+  // the default landing mode, same as the desktop Manager's own GameSwitch defaulting to it.
+  selectGameMode('ark');
   loadServers();
   loadLabelSettings();
   setInterval(loadServers, 5000);

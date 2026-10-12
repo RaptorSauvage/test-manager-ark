@@ -10,12 +10,13 @@ interface LegacyProfileFields {
   serverPlatform?: 'PC' | 'ALL'
   /** Removed - RCON/admin password is now always read live from GameUserSettings.ini */
   rconPassword?: string
-  /** Removed - ARK:SA doesn't use a separate query port */
-  queryPort?: number
   /** Removed - the SavedArks location is always ShooterGame/Saved/SavedArks */
   savedArksSubPath?: string
   /** Removed - folded into the separate, independent scheduled dino wipe instead */
   scheduledRestartDestroyWildDinosAfter?: boolean
+  /** Removed - GameUserSettings.ini's SessionSettings.SessionName already covers this (same
+   *  as ARK: Survival Ascended), so the launch-arg duplicate was unnecessary. */
+  sessionName?: string
 }
 
 /**
@@ -41,14 +42,22 @@ interface LegacyProfileFields {
  * - `clusterLogArchiveMaxSizeMB` is new and defaults to 10
  * - `statsEnabled` is new and defaults to false
  * - `steamBetaEnabled`/`steamBetaName` are new and default to false/''
+ * - `game` is new; every profile predating multi-game support is ARK: Survival Ascended,
+ *   so it backfills to 'ark-ascended'
+ * - `queryPort` is new and defaults to 27015 (ARK: Survival Evolved's default; unused by
+ *   any game whose GameDefinition.usesQueryPort is false)
+ * - `serverPassword` is new and defaults to '' (no join password)
+ * - `sessionName` was added then removed again before release - dropped from any profile
+ *   that still has it on disk
+ * - `autoManageMods` is new and defaults to false (ARK: Survival Evolved only)
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
     activeMods,
     rconPassword: _rconPassword,
-    queryPort: _queryPort,
     savedArksSubPath: _savedArksSubPath,
     scheduledRestartDestroyWildDinosAfter: _scheduledRestartDestroyWildDinosAfter,
+    sessionName: _sessionName,
     ...rest
   } = raw
   const sourceMods: Array<Partial<ServerMod> & { id: string }> = Array.isArray(rest.mods)
@@ -67,6 +76,9 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
 
   return {
     ...rest,
+    game: rest.game ?? 'ark-ascended',
+    // ARK: Survival Evolved's own default (see shared/games.ts) - unused by any other game.
+    queryPort: rest.queryPort ?? 27015,
     mods,
     backupScheduleEnabled,
     clusterEnabled: rest.clusterEnabled ?? false,
@@ -82,6 +94,8 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     forceRespawnDinos: rest.forceRespawnDinos ?? false,
     noSound: rest.noSound ?? false,
     maxDinoLevel: rest.maxDinoLevel ?? '',
+    serverPassword: rest.serverPassword ?? '',
+    autoManageMods: rest.autoManageMods ?? false,
     moddedMapEnabled: rest.moddedMapEnabled ?? false,
     moddedMapId: rest.moddedMapId ?? '',
     playerProfileBackupEnabled: rest.playerProfileBackupEnabled ?? false,

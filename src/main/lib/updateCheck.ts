@@ -2,11 +2,10 @@ import { spawn } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
 import type { LatestBuildIdCache } from '@shared/types'
+import { type GameId, getGameDefinition, listGameDefinitions } from '@shared/games'
 import { getSettings } from '../store'
 
-const ARK_ASA_DEDICATED_SERVER_APP_ID = '2430930'
-
-let cache: LatestBuildIdCache = { buildId: null, checkedAt: null, error: null }
+let cache: Partial<Record<GameId, LatestBuildIdCache>> = {}
 let pollTimer: NodeJS.Timeout | null = null
 
 /**
@@ -25,13 +24,13 @@ export function parseLatestPublicBuildId(appInfoOutput: string): string | null {
 }
 
 /**
- * Asks SteamCMD (anonymous login, no download) for app 2430930's current public-branch
- * build id - the same id `getInstalledBuildId` reads out of an install's own manifest once
- * it's actually installed, so the two are directly comparable for an "update available"
- * check without ever hitting a third-party site like SteamDB (fragile to scrape, and not
- * an endpoint Valve documents/supports for this).
+ * Asks SteamCMD (anonymous login, no download) for `game`'s current public-branch build id -
+ * the same id `getInstalledBuildId` reads out of an install's own manifest once it's actually
+ * installed, so the two are directly comparable for an "update available" check without ever
+ * hitting a third-party site like SteamDB (fragile to scrape, and not an endpoint Valve
+ * documents/supports for this).
  */
-export function checkLatestBuildId(steamCmdPath: string): Promise<string> {
+export function checkLatestBuildId(steamCmdPath: string, game: GameId): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!steamCmdPath.trim() || !fs.existsSync(steamCmdPath)) {
       reject(new Error('SteamCMD path is not set or does not exist - set it in Settings first.'))
@@ -44,7 +43,7 @@ export function checkLatestBuildId(steamCmdPath: string): Promise<string> {
       '+app_info_update',
       '1',
       '+app_info_print',
-      ARK_ASA_DEDICATED_SERVER_APP_ID,
+      getGameDefinition(game).steamAppId,
       '+quit'
     ]
     const child = spawn(steamCmdPath, args, {
@@ -72,21 +71,30 @@ export function checkLatestBuildId(steamCmdPath: string): Promise<string> {
   })
 }
 
-export function getLatestBuildIdCache(): LatestBuildIdCache {
-  return cache
+export function getLatestBuildIdCache(game: GameId): LatestBuildIdCache {
+  return cache[game] ?? { buildId: null, checkedAt: null, error: null }
 }
 
-async function pollOnce(): Promise<void> {
+async function pollOnceForGame(game: GameId): Promise<void> {
   try {
-    const buildId = await checkLatestBuildId(getSettings().steamCmdPath)
-    cache = { buildId, checkedAt: Date.now(), error: null }
+    const buildId = await checkLatestBuildId(getSettings().steamCmdPath, game)
+    cache[game] = { buildId, checkedAt: Date.now(), error: null }
   } catch (err) {
-    cache = { ...cache, checkedAt: Date.now(), error: (err as Error).message }
+    cache[game] = { ...getLatestBuildIdCache(game), checkedAt: Date.now(), error: (err as Error).message }
   }
 }
 
-/** Starts polling SteamCMD for the latest ARK:SA dedicated server build id, immediately and
- *  then every `intervalMs` (default 30 minutes). Returns a function that stops polling. */
+async function pollOnce(): Promise<void> {
+  await Promise.all(
+    listGameDefinitions()
+      .filter((g) => g.usesSteamCmd && g.supportsUpdateCheck)
+      .map((g) => pollOnceForGame(g.id))
+  )
+}
+
+/** Starts polling SteamCMD for every SteamCMD-based game's latest dedicated server build id,
+ *  immediately and then every `intervalMs` (default 30 minutes). Returns a function that
+ *  stops polling. */
 export function startUpdateCheckPolling(intervalMs = 30 * 60 * 1000): () => void {
   void pollOnce()
   pollTimer = setInterval(() => void pollOnce(), intervalMs)

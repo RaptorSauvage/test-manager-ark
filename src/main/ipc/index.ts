@@ -5,6 +5,7 @@ import { registerModsHandlers } from './mods'
 import { registerBackupHandlers } from './backup'
 import { registerPlayerBackupHandlers } from './playerBackup'
 import { registerDialogHandlers } from './dialog'
+import { registerArkModsHandlers } from './arkMods'
 import { registerSettingsHandlers } from './settings'
 import { registerWebDashboardAccessTokensHandlers } from './webDashboardAccessTokens'
 import { registerWebDashboardApiKeysHandlers } from './webDashboardApiKeys'
@@ -19,26 +20,37 @@ import { registerMapManagementHandlers } from './mapManagement'
 import { registerGroupConsoleHandlers } from './groupConsole'
 import { registerManagerLogHandlers } from './managerLog'
 import { registerStatsHistoryHandlers } from './statsHistory'
+import { registerMinecraftHandlers } from './minecraft'
+import { registerMinecraftBackupHandlers } from './minecraftBackup'
+import { registerMinecraftModsHandlers } from './minecraftMods'
+import { registerMinecraftInstallHandlers } from './minecraftInstall'
+import { registerDiscordBotHandlers } from './discordBot'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers(mainWindow.webContents)
   registerServerProcessHandlers(mainWindow.webContents)
   registerModsHandlers()
+  registerArkModsHandlers()
   registerBackupHandlers(mainWindow.webContents)
   registerPlayerBackupHandlers()
   registerDialogHandlers(mainWindow)
   registerSettingsHandlers()
   registerWebDashboardAccessTokensHandlers()
   registerWebDashboardApiKeysHandlers()
-  registerSteamcmdInstallHandlers(mainWindow.webContents)
+  registerDiscordBotHandlers()
+  registerSteamcmdInstallHandlers(mainWindow)
   registerMapsHandlers()
   registerCustomMapsHandlers()
   registerDataDirHandlers()
   registerOfficialServerStatusHandlers()
-  registerSystemHandlers()
+  registerSystemHandlers(mainWindow)
   registerAppUpdateHandlers(mainWindow.webContents)
   registerMapManagementHandlers()
   registerGroupConsoleHandlers(mainWindow.webContents)
   registerManagerLogHandlers(mainWindow.webContents)
   registerStatsHistoryHandlers()
+  registerMinecraftHandlers(mainWindow.webContents)
+  registerMinecraftBackupHandlers(mainWindow.webContents)
+  registerMinecraftModsHandlers()
+  registerMinecraftInstallHandlers()
 }

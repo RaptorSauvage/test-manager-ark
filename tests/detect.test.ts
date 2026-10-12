@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { isValidArkInstall, detectProfileFields, uniqueProfileName } from '../src/main/lib/detect'
+import { isValidArkInstall, detectGameFromInstall, detectProfileFields, uniqueProfileName } from '../src/main/lib/detect'
 
 describe('uniqueProfileName', () => {
   it('returns the base name when it is not taken', () => {
@@ -31,14 +31,40 @@ describe('install detection', () => {
   })
 
   it('reports an invalid install when no server executable is present', () => {
-    expect(isValidArkInstall(tmpDir)).toBe(false)
+    expect(isValidArkInstall(tmpDir, 'ark-ascended')).toBe(false)
   })
 
   it('reports a valid install once the Windows executable exists', () => {
     const binDir = path.join(tmpDir, 'ShooterGame', 'Binaries', 'Win64')
     fs.mkdirSync(binDir, { recursive: true })
     fs.writeFileSync(path.join(binDir, 'ArkAscendedServer.exe'), '')
-    expect(isValidArkInstall(tmpDir)).toBe(true)
+    expect(isValidArkInstall(tmpDir, 'ark-ascended')).toBe(true)
+  })
+
+  it('does not mistake an ark-evolved install for an ark-ascended one, and vice versa', () => {
+    const binDir = path.join(tmpDir, 'ShooterGame', 'Binaries', 'Win64')
+    fs.mkdirSync(binDir, { recursive: true })
+    fs.writeFileSync(path.join(binDir, 'ShooterGameServer.exe'), '')
+    expect(isValidArkInstall(tmpDir, 'ark-evolved')).toBe(true)
+    expect(isValidArkInstall(tmpDir, 'ark-ascended')).toBe(false)
+  })
+
+  it('detectGameFromInstall returns null when no known executable is present', () => {
+    expect(detectGameFromInstall(tmpDir)).toBeNull()
+  })
+
+  it('detectGameFromInstall recognizes an ark-ascended install', () => {
+    const binDir = path.join(tmpDir, 'ShooterGame', 'Binaries', 'Win64')
+    fs.mkdirSync(binDir, { recursive: true })
+    fs.writeFileSync(path.join(binDir, 'ArkAscendedServer.exe'), '')
+    expect(detectGameFromInstall(tmpDir)).toBe('ark-ascended')
+  })
+
+  it('detectGameFromInstall recognizes an ark-evolved install', () => {
+    const binDir = path.join(tmpDir, 'ShooterGame', 'Binaries', 'Win64')
+    fs.mkdirSync(binDir, { recursive: true })
+    fs.writeFileSync(path.join(binDir, 'ShooterGameServer.exe'), '')
+    expect(detectGameFromInstall(tmpDir)).toBe('ark-evolved')
   })
 
   it('detects the map from the SavedArks folder and mods from the ini', () => {

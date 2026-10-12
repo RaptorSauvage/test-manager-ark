@@ -89,7 +89,18 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
               Restart automatically after killing it
             </label>
           </div>
-          <p className="empty-state">Kills the server if it's still stuck Starting past the timeout above.</p>
+          <p className="empty-state">
+            Kills the server if it's still stuck Starting past the timeout above.
+            {form.game === 'ark-evolved' && (
+              <>
+                {' '}
+                For ARK: Survival Evolved, it also keeps watching once the server is running: if its own log file
+                (<code>ShooterGame.log</code>) goes completely quiet for the same timeout - not even the usual
+                periodic engine/save activity a healthy server logs on its own - that&apos;s treated as a frozen
+                world tick and killed the same way.
+              </>
+            )}
+          </p>
         </div>
 
         <div className="schedule-subsection">

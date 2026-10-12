@@ -14,6 +14,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     moddedMapId: '',
     gamePort: 7777,
     rconPort: 27020,
+    queryPort: 27015,
     serverPlatform: 'PC',
     maxPlayers: 70,
     backupDir: '',
@@ -31,7 +32,10 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     rconTribeLog: false,
     forceRespawnDinos: false,
     noSound: false,
+    game: 'ark-ascended',
     maxDinoLevel: '',
+    serverPassword: '',
+    autoManageMods: false,
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',
@@ -106,11 +110,15 @@ describe('migrateProfile', () => {
     expect(migrateProfile(legacy).serverPlatform).toBe('PC')
   })
 
-  it('drops the removed rconPassword/queryPort fields from legacy profiles', () => {
-    const legacy = baseProfile({ rconPassword: 'old-secret', queryPort: 27015 })
+  it('drops the removed rconPassword field from legacy profiles', () => {
+    const legacy = baseProfile({ rconPassword: 'old-secret' })
     const migrated = migrateProfile(legacy)
     expect('rconPassword' in migrated).toBe(false)
-    expect('queryPort' in migrated).toBe(false)
+  })
+
+  it('backfills queryPort to 27015 on profiles saved before multi-game support existed', () => {
+    const legacy = baseProfile({ queryPort: undefined })
+    expect(migrateProfile(legacy).queryPort).toBe(27015)
   })
 
   it('drops the removed savedArksSubPath field from legacy profiles', () => {
@@ -150,6 +158,22 @@ describe('migrateProfile', () => {
     expect(migrateProfile(legacy).maxDinoLevel).toBe('')
   })
 
+  it('backfills serverPassword to blank on profiles saved before it existed', () => {
+    const legacy = baseProfile({ serverPassword: undefined })
+    expect(migrateProfile(legacy).serverPassword).toBe('')
+  })
+
+  it('backfills autoManageMods to false on profiles saved before it existed', () => {
+    const legacy = baseProfile({ autoManageMods: undefined })
+    expect(migrateProfile(legacy).autoManageMods).toBe(false)
+  })
+
+  it('drops the removed sessionName field from profiles that still have it on disk', () => {
+    const legacy = baseProfile({ sessionName: 'My Genesis Server' })
+    const migrated = migrateProfile(legacy)
+    expect('sessionName' in migrated).toBe(false)
+  })
+
   it('backfills moddedMapEnabled/moddedMapId on profiles saved before they existed', () => {
     const legacy = baseProfile({ moddedMapEnabled: undefined, moddedMapId: undefined })
     const migrated = migrateProfile(legacy)
@@ -175,5 +199,10 @@ describe('migrateProfile', () => {
   it('defaults startOnManagerLaunch to false on profiles saved before it existed', () => {
     const legacy = baseProfile({ startOnManagerLaunch: undefined })
     expect(migrateProfile(legacy).startOnManagerLaunch).toBe(false)
+  })
+
+  it("backfills game to 'ark-ascended' on profiles saved before multi-game support existed", () => {
+    const legacy = baseProfile({ game: undefined })
+    expect(migrateProfile(legacy).game).toBe('ark-ascended')
   })
 })

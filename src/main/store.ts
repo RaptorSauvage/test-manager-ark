@@ -1,7 +1,9 @@
 import { EventEmitter } from 'node:events'
 import Store from 'electron-store'
 import type { ServerProfile, AppSettings, WebDashboardAccessToken, WebDashboardApiKey } from '@shared/types'
+import type { MinecraftProfile } from '@shared/minecraft'
 import { migrateProfile } from './lib/profileMigration'
+import { migrateMinecraftProfile } from './lib/minecraftProfileMigration'
 import { reorderProfiles } from './lib/reorder'
 import { stripWrappingQuotes } from './lib/pathSanitize'
 import { migrateLegacyRole } from './lib/auth'
@@ -14,8 +16,12 @@ import { migrateLegacyRole } from './lib/auth'
  *  to the renderer as IPC.profilesChanged. */
 export const profileEvents = new EventEmitter()
 
+/** Same idea as profileEvents, for Minecraft profiles - see ipc/minecraft.ts. */
+export const minecraftProfileEvents = new EventEmitter()
+
 interface StoreSchema {
   profiles: ServerProfile[]
+  minecraftProfiles: MinecraftProfile[]
   settings: AppSettings
   /** profileId -> OS pid, so a re-launched app can find a server that's still running. */
   runningPids: Record<string, number>
@@ -23,6 +29,12 @@ interface StoreSchema {
    *  a re-launched app can still compute an accurate uptime for a server it re-adopts
    *  instead of one that resets to "just started". */
   runningStartedAt: Record<string, number>
+  /** Same idea as runningPids/runningStartedAt above, for Minecraft profiles - see
+   *  minecraftProcess.ts's adoptPersistedMinecraftProcesses. Kept as its own pair of keys
+   *  (not merged into the ARK ones) since profile ids aren't namespaced by game and could
+   *  theoretically collide between an ARK profile and a Minecraft one. */
+  minecraftRunningPids: Record<string, number>
+  minecraftRunningStartedAt: Record<string, number>
   /** Web dashboard browser access tokens - only touched from the Manager's own Settings
    *  screen. */
   webDashboardAccessTokens: WebDashboardAccessToken[]
@@ -35,11 +47,20 @@ interface StoreSchema {
    *  code did) would keep silently promoting every freshly-created Admin token to Global
    *  Admin forever, which is exactly backwards. */
   webDashboardRolesMigrated: boolean
+  /** Set once migrateProfile()'s backfills (game, and every other field added since a given
+   *  profile was first saved) have actually been written back to disk, rather than only
+   *  ever applied in-memory on read (the general pattern `listProfiles()` still also does
+   *  on every call, unconditionally - this flag just controls the one-time persisted write,
+   *  purely so config.json reflects reality without waiting on a profile happening to be
+   *  edited). Unlike the role flag above, re-running this would be harmless (migrateProfile
+   *  is idempotent), but there's no reason to pay for a write on every single read either. */
+  profilesMigratedToDisk: boolean
 }
 
 const store = new Store<StoreSchema>({
   defaults: {
     profiles: [],
+    minecraftProfiles: [],
     settings: {
       steamCmdPath: '',
       dataDir: '',
@@ -48,17 +69,48 @@ const store = new Store<StoreSchema>({
       webDashboardHost: '127.0.0.1',
       webDashboardDisabledLabels: [],
       launchOnStartup: false,
+      closeToTrayEnabled: false,
       webDashboardAuthEnabled: false,
       serverAutoStartStaggerSeconds: 10,
       iniLockEnabled: true,
       statsHistoryMaxSizeMB: 1024,
-      statsHistoryMaxAgeHours: 24
+      statsHistoryMaxAgeHours: 24,
+      showServerConsoleWindow: true,
+      groupOrder: [],
+      collapsedGroups: [],
+      minecraftGroupOrder: [],
+      minecraftCollapsedGroups: [],
+      curseforgeApiKey: '',
+      discordBotEnabled: false,
+      discordBotToken: '',
+      discordBotDevGuildId: '',
+      discordBotStatusChannelId: '',
+      discordBotRefreshSeconds: 60,
+      discordBotStatusEmbedTitle: '🦖 Statut ARK: Survival Ascended',
+      discordBotStatusEmbedDescription: '',
+      discordBotStatusEmbedColor: '9B59B6',
+      discordBotArkCheckEnabled: true,
+      discordBotMcStatusChannelId: '',
+      discordBotMcRefreshSeconds: 60,
+      discordBotMcStatusEmbedTitle: '⛏️ Statut Minecraft',
+      discordBotMcStatusEmbedDescription: '',
+      discordBotMcStatusEmbedColor: '9B59B6',
+      discordBotMcCheckEnabled: true,
+      discordBotMaintenanceWhitelistIds: [],
+      discordBotManagerWhitelistIds: [],
+      discordBotCurseforgeModuleEnabled: true,
+      discordBotCurseforgeDefaultModIds: [],
+      discordBotCurseforgeCheckIntervalMinutes: 10,
+      discordBotApiKeyId: ''
     },
     runningPids: {},
     runningStartedAt: {},
+    minecraftRunningPids: {},
+    minecraftRunningStartedAt: {},
     webDashboardAccessTokens: [],
     webDashboardApiKeys: [],
-    webDashboardRolesMigrated: false
+    webDashboardRolesMigrated: false,
+    profilesMigratedToDisk: false
   }
 })
 
@@ -75,7 +127,17 @@ function migrateStoredRolesOnce(): void {
   store.set('webDashboardRolesMigrated', true)
 }
 
+/** Persists migrateProfile()'s backfilled fields (game, etc.) back to disk exactly once,
+ *  so config.json stops lagging behind what the app actually uses in memory - see the
+ *  profilesMigratedToDisk doc comment above. */
+function migrateProfilesToDiskOnce(): void {
+  if (store.get('profilesMigratedToDisk')) return
+  store.set('profiles', store.get('profiles').map(migrateProfile))
+  store.set('profilesMigratedToDisk', true)
+}
+
 export function listProfiles(): ServerProfile[] {
+  migrateProfilesToDiskOnce()
   return store.get('profiles').map(migrateProfile)
 }
 
@@ -115,6 +177,34 @@ export function deleteProfile(id: string): ServerProfile[] {
   return profiles
 }
 
+export function listMinecraftProfiles(): MinecraftProfile[] {
+  return (store.get('minecraftProfiles') ?? []).map(migrateMinecraftProfile)
+}
+
+export function getMinecraftProfile(id: string): MinecraftProfile | undefined {
+  return listMinecraftProfiles().find((p) => p.id === id)
+}
+
+export function saveMinecraftProfile(profile: MinecraftProfile): MinecraftProfile[] {
+  const sanitized: MinecraftProfile = { ...profile, installDir: stripWrappingQuotes(profile.installDir) }
+  const profiles = listMinecraftProfiles()
+  const idx = profiles.findIndex((p) => p.id === sanitized.id)
+  if (idx >= 0) profiles[idx] = sanitized
+  else profiles.push(sanitized)
+  store.set('minecraftProfiles', profiles)
+  minecraftProfileEvents.emit('changed', profiles)
+  return profiles
+}
+
+export function deleteMinecraftProfile(id: string): MinecraftProfile[] {
+  const profiles = listMinecraftProfiles().filter((p) => p.id !== id)
+  store.set('minecraftProfiles', profiles)
+  setMinecraftRunningPid(id, null)
+  setMinecraftRunningStartedAt(id, null)
+  minecraftProfileEvents.emit('changed', profiles)
+  return profiles
+}
+
 export function getSettings(): AppSettings {
   // Cast to Partial: settings saved before dataDir existed won't actually have it at
   // runtime, even though the stored type says otherwise.
@@ -127,11 +217,39 @@ export function getSettings(): AppSettings {
     webDashboardHost: '127.0.0.1',
     webDashboardDisabledLabels: [],
     launchOnStartup: false,
+    closeToTrayEnabled: false,
     webDashboardAuthEnabled: false,
     serverAutoStartStaggerSeconds: 10,
     iniLockEnabled: true,
     statsHistoryMaxSizeMB: 1024,
     statsHistoryMaxAgeHours: 24,
+    showServerConsoleWindow: true,
+    groupOrder: [],
+    collapsedGroups: [],
+    minecraftGroupOrder: [],
+    minecraftCollapsedGroups: [],
+    curseforgeApiKey: '',
+    discordBotEnabled: false,
+    discordBotToken: '',
+    discordBotDevGuildId: '',
+    discordBotStatusChannelId: '',
+    discordBotRefreshSeconds: 60,
+    discordBotStatusEmbedTitle: '🦖 Statut ARK: Survival Ascended',
+    discordBotStatusEmbedDescription: '',
+    discordBotStatusEmbedColor: '9B59B6',
+    discordBotArkCheckEnabled: true,
+    discordBotMcStatusChannelId: '',
+    discordBotMcRefreshSeconds: 60,
+    discordBotMcStatusEmbedTitle: '⛏️ Statut Minecraft',
+    discordBotMcStatusEmbedDescription: '',
+    discordBotMcStatusEmbedColor: '9B59B6',
+    discordBotMcCheckEnabled: true,
+    discordBotMaintenanceWhitelistIds: [],
+    discordBotManagerWhitelistIds: [],
+    discordBotCurseforgeModuleEnabled: true,
+    discordBotCurseforgeDefaultModIds: [],
+    discordBotCurseforgeCheckIntervalMinutes: 10,
+    discordBotApiKeyId: '',
     ...settings
   }
 }
@@ -185,14 +303,35 @@ export function getRunningPids(): Record<string, number> {
   return store.get('runningPids') ?? {}
 }
 
-export function setRunningPid(profileId: string, pid: number | null): void {
-  const pids = getRunningPids()
-  if (pid === null) {
-    delete pids[profileId]
-  } else {
-    pids[profileId] = pid
+// setRunningPid/setRunningStartedAt are best-effort persistence, purely so a running server
+// can be re-adopted after a Manager restart (see serverProcess.ts's
+// adoptPersistedProcesses) - losing that on a disk hiccup means one server doesn't
+// re-adopt cleanly next launch, a minor problem. Every real call site, though, calls one of
+// these immediately before emitStatus(), the one call that actually updates the renderer's
+// own view of a server's state - a real report on Windows showed a disk-level write failure
+// (a raw libuv "UNKNOWN: unknown error, write") throwing out of electron-store's own set()
+// here, which skipped the emitStatus() call right after it entirely, leaving a server stuck
+// showing as running in the UI long after it had actually stopped (or, symmetrically, never
+// showing as started). Wrapped here, once, rather than at every call site, so nothing that
+// calls these two functions needs to know or care that persisting this is allowed to fail.
+function setPersistedRunningState(setter: () => void): void {
+  try {
+    setter()
+  } catch (err) {
+    console.error('Failed to persist running-process bookkeeping (non-fatal):', (err as Error).message)
   }
-  store.set('runningPids', pids)
+}
+
+export function setRunningPid(profileId: string, pid: number | null): void {
+  setPersistedRunningState(() => {
+    const pids = getRunningPids()
+    if (pid === null) {
+      delete pids[profileId]
+    } else {
+      pids[profileId] = pid
+    }
+    store.set('runningPids', pids)
+  })
 }
 
 export function getRunningStartedAt(): Record<string, number> {
@@ -200,11 +339,45 @@ export function getRunningStartedAt(): Record<string, number> {
 }
 
 export function setRunningStartedAt(profileId: string, startedAt: number | null): void {
-  const startedAtByProfile = getRunningStartedAt()
-  if (startedAt === null) {
-    delete startedAtByProfile[profileId]
-  } else {
-    startedAtByProfile[profileId] = startedAt
-  }
-  store.set('runningStartedAt', startedAtByProfile)
+  setPersistedRunningState(() => {
+    const startedAtByProfile = getRunningStartedAt()
+    if (startedAt === null) {
+      delete startedAtByProfile[profileId]
+    } else {
+      startedAtByProfile[profileId] = startedAt
+    }
+    store.set('runningStartedAt', startedAtByProfile)
+  })
+}
+
+export function getMinecraftRunningPids(): Record<string, number> {
+  return store.get('minecraftRunningPids') ?? {}
+}
+
+export function setMinecraftRunningPid(profileId: string, pid: number | null): void {
+  setPersistedRunningState(() => {
+    const pids = getMinecraftRunningPids()
+    if (pid === null) {
+      delete pids[profileId]
+    } else {
+      pids[profileId] = pid
+    }
+    store.set('minecraftRunningPids', pids)
+  })
+}
+
+export function getMinecraftRunningStartedAt(): Record<string, number> {
+  return store.get('minecraftRunningStartedAt') ?? {}
+}
+
+export function setMinecraftRunningStartedAt(profileId: string, startedAt: number | null): void {
+  setPersistedRunningState(() => {
+    const startedAtByProfile = getMinecraftRunningStartedAt()
+    if (startedAt === null) {
+      delete startedAtByProfile[profileId]
+    } else {
+      startedAtByProfile[profileId] = startedAt
+    }
+    store.set('minecraftRunningStartedAt', startedAtByProfile)
+  })
 }

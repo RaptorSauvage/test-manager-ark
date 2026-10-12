@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ServerProfile, WebDashboardAccessTokenSummary, WebDashboardRole } from '@shared/types'
+import { confirmAction } from '../lib/confirmAction'
 
 const ROLE_LABELS: Record<WebDashboardRole, string> = {
   globalAdmin: 'Global Admin',
@@ -167,7 +168,7 @@ export default function AccessTokensSection(): JSX.Element {
   }
 
   async function handleDelete(id: string, targetLabel: string): Promise<void> {
-    if (!confirm(`Delete access token "${targetLabel}"? Any browser using it will be logged out immediately.`)) return
+    if (!confirmAction(`Delete access token "${targetLabel}"? Any browser using it will be logged out immediately.`)) return
     setError('')
     try {
       setTokens(await window.api.webDashboardAccessTokens.delete(id))

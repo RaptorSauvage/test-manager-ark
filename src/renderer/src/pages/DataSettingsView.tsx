@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react'
 import type { AppSettings, AppUpdateStatus } from '@shared/types'
+import { listGameDefinitions } from '@shared/games'
 import AccessTokensSection from './AccessTokensSection'
 import ApiKeysSection from './ApiKeysSection'
+import { GAME_ICONS } from '../lib/gameIcons'
 
 interface DataSettingsViewProps {
   onBack: () => void
 }
 
-type SettingsTabKey = 'general' | 'webDashboard' | 'accessTokens' | 'updates'
+type SettingsTabKey = 'general' | 'webDashboard' | 'accessTokens' | 'discordBot' | 'updates'
 
 const SETTINGS_TABS: Array<{ key: SettingsTabKey; label: string }> = [
   { key: 'general', label: 'General' },
   { key: 'webDashboard', label: 'Web Dashboard' },
   { key: 'accessTokens', label: 'Access Tokens' },
+  { key: 'discordBot', label: 'Discord Bot' },
   { key: 'updates', label: 'Updates' }
 ]
 
@@ -45,11 +48,39 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     webDashboardHost: '127.0.0.1',
     webDashboardDisabledLabels: [],
     launchOnStartup: false,
+    closeToTrayEnabled: false,
     webDashboardAuthEnabled: false,
     serverAutoStartStaggerSeconds: 10,
     iniLockEnabled: true,
     statsHistoryMaxSizeMB: 1024,
-    statsHistoryMaxAgeHours: 24
+    statsHistoryMaxAgeHours: 24,
+    showServerConsoleWindow: true,
+    groupOrder: [],
+    collapsedGroups: [],
+    minecraftGroupOrder: [],
+    minecraftCollapsedGroups: [],
+    curseforgeApiKey: '',
+    discordBotEnabled: false,
+    discordBotToken: '',
+    discordBotDevGuildId: '',
+    discordBotStatusChannelId: '',
+    discordBotRefreshSeconds: 60,
+    discordBotStatusEmbedTitle: '🦖 Statut ARK: Survival Ascended',
+    discordBotStatusEmbedDescription: '',
+    discordBotStatusEmbedColor: '9B59B6',
+    discordBotArkCheckEnabled: true,
+    discordBotMcStatusChannelId: '',
+    discordBotMcRefreshSeconds: 60,
+    discordBotMcStatusEmbedTitle: '⛏️ Statut Minecraft',
+    discordBotMcStatusEmbedDescription: '',
+    discordBotMcStatusEmbedColor: '9B59B6',
+    discordBotMcCheckEnabled: true,
+    discordBotMaintenanceWhitelistIds: [],
+    discordBotManagerWhitelistIds: [],
+    discordBotCurseforgeModuleEnabled: true,
+    discordBotCurseforgeDefaultModIds: [],
+    discordBotCurseforgeCheckIntervalMinutes: 10,
+    discordBotApiKeyId: ''
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
   const [status, setStatus] = useState('')
@@ -61,16 +92,36 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
   const [localIps, setLocalIps] = useState<string[]>([])
   const [appVersion, setAppVersion] = useState('')
   const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus>({ state: 'idle' })
+  const [discordBotStatus, setDiscordBotStatus] = useState<{ running: boolean; error: string | null }>({
+    running: false,
+    error: null
+  })
+  const [discordBotWhitelistInput, setDiscordBotWhitelistInput] = useState('')
+  const [discordBotManagerWhitelistInput, setDiscordBotManagerWhitelistInput] = useState('')
+  const [discordBotModIdsInput, setDiscordBotModIdsInput] = useState('')
 
   useEffect(() => {
-    window.api.settings.get().then(setSettings)
+    window.api.settings.get().then((s) => {
+      setSettings(s)
+      setDiscordBotWhitelistInput(s.discordBotMaintenanceWhitelistIds.join(', '))
+      setDiscordBotManagerWhitelistInput(s.discordBotManagerWhitelistIds.join(', '))
+      setDiscordBotModIdsInput(s.discordBotCurseforgeDefaultModIds.join(', '))
+    })
     window.api.dataDir.getDefault().then(setDefaultDataDir)
     window.api.webDashboard.getStatus().then(setWebDashboardStatus)
     window.api.webDashboard.getLocalIps().then(setLocalIps)
     window.api.appUpdate.getVersion().then(setAppVersion)
     window.api.appUpdate.getStatus().then(setAppUpdateStatus)
+    window.api.discordBot.status().then(setDiscordBotStatus)
     return window.api.appUpdate.onStatusChanged(setAppUpdateStatus)
   }, [])
+
+  function parseIdList(value: string): string[] {
+    return value
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
+  }
 
   const appUpdateBusy = appUpdateStatus.state === 'checking' || appUpdateStatus.state === 'available' || appUpdateStatus.state === 'downloading'
 
@@ -80,11 +131,18 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
   }
 
   async function save(): Promise<void> {
-    const saved = await window.api.settings.save(settings)
+    const toSave: AppSettings = {
+      ...settings,
+      discordBotMaintenanceWhitelistIds: parseIdList(discordBotWhitelistInput),
+      discordBotManagerWhitelistIds: parseIdList(discordBotManagerWhitelistInput),
+      discordBotCurseforgeDefaultModIds: parseIdList(discordBotModIdsInput)
+    }
+    const saved = await window.api.settings.save(toSave)
     setSettings(saved)
     setStatus('Saved')
     setTimeout(() => setStatus(''), 2000)
     setWebDashboardStatus(await window.api.webDashboard.getStatus())
+    setDiscordBotStatus(await window.api.discordBot.status())
   }
 
   const isLan = settings.webDashboardHost.trim() !== '' && settings.webDashboardHost.trim() !== '127.0.0.1'
@@ -104,7 +162,7 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
       </nav>
 
       <div className="app-settings-view">
-        {(tab === 'general' || tab === 'webDashboard') && (
+        {(tab === 'general' || tab === 'webDashboard' || tab === 'discordBot') && (
           <form
             className="app-settings-form"
             onSubmit={(e) => {
@@ -180,8 +238,22 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                     />
                     Start Manager when you log into Windows
                   </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.closeToTrayEnabled}
+                      onChange={(e) => setSettings({ ...settings, closeToTrayEnabled: e.target.checked })}
+                    />
+                    Keep running in the background when the window is closed
+                  </label>
+                  <p className="empty-state">
+                    With this on, closing the window hides it to a system tray icon instead of quitting - every
+                    managed server, the web dashboard, and the Discord bot all keep running. Click the tray icon to
+                    reopen the window, or use its right-click menu&apos;s <strong>Quit</strong> to actually exit the
+                    app.
+                  </p>
                   <label>
-                    Delay between auto-started servers (seconds)
+                    Minimum delay between servers starting (seconds)
                     <input
                       type="number"
                       min={0}
@@ -190,8 +262,12 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                     />
                   </label>
                   <p className="empty-state">
-                    Wait between each profile with &quot;Start this server when the Manager starts&quot; enabled
-                    (Server Management tab), so monitoring is ready before each one starts.
+                    Applies to every ARK server start, not just &quot;Start this server when the Manager starts&quot;
+                    (Server Management tab) - manual Start/Restart, the Dashboard&apos;s bulk Start All/Restart All,
+                    a scheduled restart, or an auto-restart all wait their turn too if another server started less
+                    than this long ago. Several ARK servers loading their map at the exact same time can starve
+                    each other out badly enough that some never finish starting at all - this keeps that from
+                    happening without you needing to space out your own clicks.
                   </p>
                   <label className="checkbox">
                     <input
@@ -204,6 +280,57 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                   <p className="empty-state">
                     Makes <code>GameUserSettings.ini</code>/<code>Game.ini</code> read-only while that server runs,
                     as a guard against editing it by accident.
+                  </p>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.showServerConsoleWindow}
+                      onChange={(e) => setSettings({ ...settings, showServerConsoleWindow: e.target.checked })}
+                    />
+                    Show the server&apos;s own console/debug window
+                  </label>
+                  <p className="empty-state">
+                    Both games open their own small-font console window (Windows only) the moment a server starts -
+                    there&apos;s no launch flag to resize or suppress it. Unchecking this hides that window
+                    entirely; the server itself is unaffected, and its own log file keeps updating either way.
+                    Takes effect on the next start.
+                  </p>
+                </section>
+
+                <section className="cluster-section">
+                  <h3>Games</h3>
+                  <div className="games-list">
+                    {listGameDefinitions().map((game) => (
+                      <div className="games-list-item" key={game.id}>
+                        <img src={GAME_ICONS[game.iconFileName]} alt="" className="games-list-icon" />
+                        <span>{game.displayName}</span>
+                        <span className={game.status === 'available' ? 'status-ok' : 'muted'}>
+                          {game.status === 'available' ? 'Available' : 'Coming soon'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="empty-state">Multi-game support is in progress.</p>
+                </section>
+
+                <section className="cluster-section">
+                  <h3>Integrations</h3>
+                  <label>
+                    CurseForge API key
+                    <input
+                      type="password"
+                      value={settings.curseforgeApiKey}
+                      onChange={(e) => setSettings({ ...settings, curseforgeApiKey: e.target.value })}
+                      placeholder="Paste your CurseForge API key here"
+                    />
+                  </label>
+                  <p className="empty-state">
+                    Lets the Minecraft Mods tab also search/install from CurseForge, alongside Modrinth (which needs
+                    no key at all). Get a free one at{' '}
+                    <strong>console.curseforge.com</strong> - sign in with a CurseForge/Overwolf account, open{' '}
+                    <strong>API Keys</strong> in the left sidebar, click <strong>Generate new API key</strong>, give
+                    it any name, and agree to the non-commercial terms. The key shown there is what goes here. Leave
+                    empty to skip CurseForge entirely - Modrinth search still works either way.
                   </p>
                 </section>
               </>
@@ -293,6 +420,279 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                   </p>
                 )}
               </section>
+            )}
+
+            {tab === 'discordBot' && (
+              <>
+                <section className="cluster-section">
+                  <h3>Discord Bot</h3>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.discordBotEnabled}
+                      onChange={(e) => setSettings({ ...settings, discordBotEnabled: e.target.checked })}
+                    />
+                    Enable the Discord bot integration
+                  </label>
+                  <p className="empty-state">
+                    Runs the bot (status embeds, /start /stop /restart /update, RCON commands, scheduled DinoWipe,
+                    CurseForge mod-update notifications) as its own process, supervised by the Manager - it talks to
+                    this same Manager purely over the Web Dashboard API below, so <strong>enable the web dashboard
+                    first</strong>. A crash in the bot never affects server management, and vice versa.
+                  </p>
+                  {!settings.webDashboardEnabled && settings.discordBotEnabled && (
+                    <p className="error-message">
+                      The web dashboard is disabled - the bot has nothing to talk to. Enable it in the Web Dashboard
+                      tab.
+                    </p>
+                  )}
+                  <label>
+                    Bot token
+                    <input
+                      type="password"
+                      value={settings.discordBotToken}
+                      onChange={(e) => setSettings({ ...settings, discordBotToken: e.target.value })}
+                      placeholder="Discord Developer Portal > your app > Bot > Reset Token"
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                  <label>
+                    Dev guild id (optional)
+                    <input
+                      value={settings.discordBotDevGuildId}
+                      onChange={(e) => setSettings({ ...settings, discordBotDevGuildId: e.target.value })}
+                      placeholder="Syncs slash commands instantly to this one Discord server while testing"
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                  {settings.discordBotEnabled && (
+                    <p className={discordBotStatus.error ? 'error-message' : 'empty-state'}>
+                      {discordBotStatus.error
+                        ? `Bot error: ${discordBotStatus.error}`
+                        : discordBotStatus.running
+                          ? 'Bot process running.'
+                          : 'Not running yet - save to start it.'}{' '}
+                      <button
+                        type="button"
+                        onClick={() => void window.api.discordBot.restart().then(setDiscordBotStatus)}
+                      >
+                        Restart bot
+                      </button>{' '}
+                      {discordBotStatus.running && (
+                        <button
+                          type="button"
+                          onClick={() => void window.api.discordBot.stop().then(setDiscordBotStatus)}
+                        >
+                          Stop bot
+                        </button>
+                      )}
+                    </p>
+                  )}
+                  {!settings.discordBotEnabled && discordBotStatus.running && (
+                    <p className="empty-state">
+                      Bot process still running from before this checkbox was turned off - save to actually stop it,
+                      or stop it right away:{' '}
+                      <button
+                        type="button"
+                        onClick={() => void window.api.discordBot.stop().then(setDiscordBotStatus)}
+                      >
+                        Stop bot
+                      </button>
+                    </p>
+                  )}
+                </section>
+
+                <section className="cluster-section">
+                  <h3>ARK cluster status</h3>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.discordBotArkCheckEnabled}
+                      onChange={(e) => setSettings({ ...settings, discordBotArkCheckEnabled: e.target.checked })}
+                      disabled={!settings.discordBotEnabled}
+                    />
+                    Enable ARK status (/status, /statusserveur)
+                  </label>
+                  <div className="settings-grid">
+                    <label>
+                      Status channel id
+                      <input
+                        value={settings.discordBotStatusChannelId}
+                        onChange={(e) => setSettings({ ...settings, discordBotStatusChannelId: e.target.value })}
+                        placeholder="Discord channel id (optional)"
+                        disabled={!settings.discordBotEnabled}
+                      />
+                    </label>
+                    <label>
+                      Refresh interval (seconds)
+                      <input
+                        type="number"
+                        min={10}
+                        value={settings.discordBotRefreshSeconds}
+                        onChange={(e) => setSettings({ ...settings, discordBotRefreshSeconds: Number(e.target.value) })}
+                        disabled={!settings.discordBotEnabled}
+                      />
+                    </label>
+                  </div>
+                  <p className="empty-state">
+                    Leave the channel id empty to skip the auto-refreshed embed - <code>/status</code> and{' '}
+                    <code>/statusserveur</code> still work on demand either way.
+                  </p>
+                  <label>
+                    Embed title
+                    <input
+                      value={settings.discordBotStatusEmbedTitle}
+                      onChange={(e) => setSettings({ ...settings, discordBotStatusEmbedTitle: e.target.value })}
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                  <label>
+                    Embed description (optional, supports Discord markdown)
+                    <input
+                      value={settings.discordBotStatusEmbedDescription}
+                      onChange={(e) => setSettings({ ...settings, discordBotStatusEmbedDescription: e.target.value })}
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                  <label>
+                    Embed color (hex)
+                    <input
+                      value={settings.discordBotStatusEmbedColor}
+                      onChange={(e) => setSettings({ ...settings, discordBotStatusEmbedColor: e.target.value })}
+                      placeholder="9B59B6"
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                </section>
+
+                <section className="cluster-section">
+                  <h3>Minecraft cluster status</h3>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.discordBotMcCheckEnabled}
+                      onChange={(e) => setSettings({ ...settings, discordBotMcCheckEnabled: e.target.checked })}
+                      disabled={!settings.discordBotEnabled}
+                    />
+                    Enable Minecraft status (/statusmc)
+                  </label>
+                  <div className="settings-grid">
+                    <label>
+                      Status channel id
+                      <input
+                        value={settings.discordBotMcStatusChannelId}
+                        onChange={(e) => setSettings({ ...settings, discordBotMcStatusChannelId: e.target.value })}
+                        placeholder="Discord channel id (optional, different from the ARK one)"
+                        disabled={!settings.discordBotEnabled}
+                      />
+                    </label>
+                    <label>
+                      Refresh interval (seconds)
+                      <input
+                        type="number"
+                        min={10}
+                        value={settings.discordBotMcRefreshSeconds}
+                        onChange={(e) => setSettings({ ...settings, discordBotMcRefreshSeconds: Number(e.target.value) })}
+                        disabled={!settings.discordBotEnabled}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    Embed title
+                    <input
+                      value={settings.discordBotMcStatusEmbedTitle}
+                      onChange={(e) => setSettings({ ...settings, discordBotMcStatusEmbedTitle: e.target.value })}
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                  <label>
+                    Embed description (optional)
+                    <input
+                      value={settings.discordBotMcStatusEmbedDescription}
+                      onChange={(e) => setSettings({ ...settings, discordBotMcStatusEmbedDescription: e.target.value })}
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                  <label>
+                    Embed color (hex)
+                    <input
+                      value={settings.discordBotMcStatusEmbedColor}
+                      onChange={(e) => setSettings({ ...settings, discordBotMcStatusEmbedColor: e.target.value })}
+                      placeholder="9B59B6"
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                </section>
+
+                <section className="cluster-section">
+                  <h3>Access control</h3>
+                  <label>
+                    Admin whitelist (Discord user ids, comma-separated)
+                    <input
+                      value={discordBotWhitelistInput}
+                      onChange={(e) => setDiscordBotWhitelistInput(e.target.value)}
+                      placeholder="123456789012345678, 987654321098765432"
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                  <p className="empty-state">
+                    Required for /maintenance, /maintenancemc, /botmaintenance, /check, /schedule, /dinowipe,
+                    /saveworld, /adminchat, /adminchatall, /rcon, /rconall, /setchannel, /addmod, /removemod - empty
+                    means nobody can use them.
+                  </p>
+                  <label>
+                    Manager whitelist (Discord user ids, comma-separated)
+                    <input
+                      value={discordBotManagerWhitelistInput}
+                      onChange={(e) => setDiscordBotManagerWhitelistInput(e.target.value)}
+                      placeholder="123456789012345678"
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                  <p className="empty-state">
+                    Separate, smaller list for /start /stop /restart /update /updaterestart only - anyone already in
+                    the admin whitelist above has access automatically.
+                  </p>
+                </section>
+
+                <section className="cluster-section">
+                  <h3>CurseForge mod-update notifications</h3>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.discordBotCurseforgeModuleEnabled}
+                      onChange={(e) => setSettings({ ...settings, discordBotCurseforgeModuleEnabled: e.target.checked })}
+                      disabled={!settings.discordBotEnabled}
+                    />
+                    Enable (/setchannel, /addmod, /removemod, /listmods, /testmod)
+                  </label>
+                  <p className="empty-state">
+                    Reuses the CurseForge API key from the General tab - no separate key needed here. Leave that key
+                    empty to keep this module off.
+                  </p>
+                  <label>
+                    Default mod ids (comma-separated, optional)
+                    <input
+                      value={discordBotModIdsInput}
+                      onChange={(e) => setDiscordBotModIdsInput(e.target.value)}
+                      placeholder="12345, 67890"
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                  <label>
+                    Check interval (minutes)
+                    <input
+                      type="number"
+                      min={1}
+                      value={settings.discordBotCurseforgeCheckIntervalMinutes}
+                      onChange={(e) =>
+                        setSettings({ ...settings, discordBotCurseforgeCheckIntervalMinutes: Number(e.target.value) })
+                      }
+                      disabled={!settings.discordBotEnabled}
+                    />
+                  </label>
+                </section>
+              </>
             )}
 
             <div className="form-actions">

@@ -39,7 +39,8 @@ import {
   getStatus,
   emitStatus,
   findListeningPid,
-  handleUnexpectedExit
+  handleUnexpectedExit,
+  __resetServerSpawnQueueForTests
 } from '../src/main/lib/serverProcess'
 import { sendRconCommand as mockSendRconCommand } from '../src/main/lib/rcon'
 
@@ -84,7 +85,10 @@ function makeProfile(id: string, rconPort: number): ServerProfile {
     rconTribeLog: false,
     forceRespawnDinos: false,
     noSound: false,
+    game: 'ark-ascended',
     maxDinoLevel: '',
+    serverPassword: '',
+    autoManageMods: false,
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',
@@ -109,6 +113,7 @@ beforeEach(() => {
   setFakeChild(new FakeChildProcess())
   mockExec.mockReset()
   vi.mocked(mockSendRconCommand).mockReset()
+  __resetServerSpawnQueueForTests()
 })
 
 describe('findListeningPid', () => {

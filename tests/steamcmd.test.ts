@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildUpdateArgs,
   describeSteamCmdExitCode,
@@ -29,6 +29,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     moddedMapId: '',
     gamePort: 7777,
     rconPort: 27020,
+    queryPort: 27015,
     serverPlatform: 'PC',
     maxPlayers: 70,
     backupDir: '',
@@ -47,7 +48,10 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     rconTribeLog: false,
     forceRespawnDinos: false,
     noSound: false,
+    game: 'ark-ascended',
     maxDinoLevel: '',
+    serverPassword: '',
+    autoManageMods: false,
     extraArgs: '',
     scheduledRestartEnabled: false,
     scheduledRestartTime: '00:00',
@@ -71,7 +75,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
 
 describe('buildUpdateArgs', () => {
   it('targets the ARK:SA dedicated server app id with anonymous login and validation', () => {
-    const args = buildUpdateArgs('/servers/my-ark')
+    const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended')
     expect(args).toEqual([
       '+force_install_dir',
       '/servers/my-ark',
@@ -84,8 +88,14 @@ describe('buildUpdateArgs', () => {
     ])
   })
 
+  it('targets the ARK:SE dedicated server app id for an ark-evolved profile', () => {
+    const args = buildUpdateArgs('/servers/my-ark', 'ark-evolved')
+    expect(args).toContain('376030')
+    expect(args).not.toContain('2430930')
+  })
+
   it('inserts -beta <name> right before validate when a beta branch is enabled', () => {
-    const args = buildUpdateArgs('/servers/my-ark', { enabled: true, name: 'testing' })
+    const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended', { enabled: true, name: 'testing' })
     expect(args).toEqual([
       '+force_install_dir',
       '/servers/my-ark',
@@ -101,18 +111,18 @@ describe('buildUpdateArgs', () => {
   })
 
   it('trims the beta branch name', () => {
-    const args = buildUpdateArgs('/servers/my-ark', { enabled: true, name: '  testing  ' })
+    const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended', { enabled: true, name: '  testing  ' })
     expect(args).toContain('testing')
     expect(args).not.toContain('  testing  ')
   })
 
   it('omits -beta when the beta toggle is off, even with a name set', () => {
-    const args = buildUpdateArgs('/servers/my-ark', { enabled: false, name: 'testing' })
+    const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended', { enabled: false, name: 'testing' })
     expect(args).not.toContain('-beta')
   })
 
   it('omits -beta when enabled but the name is blank/whitespace-only', () => {
-    const args = buildUpdateArgs('/servers/my-ark', { enabled: true, name: '   ' })
+    const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended', { enabled: true, name: '   ' })
     expect(args).not.toContain('-beta')
   })
 })
@@ -140,9 +150,15 @@ describe('getSteamCmdContentLogPath', () => {
 })
 
 describe('getAppManifestPath', () => {
-  it('points at steamapps/appmanifest_2430930.acf inside the install directory', () => {
-    expect(getAppManifestPath('/servers/my-ark')).toBe(
+  it('points at steamapps/appmanifest_2430930.acf inside the install directory for ark-ascended', () => {
+    expect(getAppManifestPath('/servers/my-ark', 'ark-ascended')).toBe(
       path.join('/servers/my-ark', 'steamapps', 'appmanifest_2430930.acf')
+    )
+  })
+
+  it('points at steamapps/appmanifest_376030.acf inside the install directory for ark-evolved', () => {
+    expect(getAppManifestPath('/servers/my-ark', 'ark-evolved')).toBe(
+      path.join('/servers/my-ark', 'steamapps', 'appmanifest_376030.acf')
     )
   })
 })
@@ -185,7 +201,7 @@ describe('getInstalledBuildId', () => {
   it('returns null when the install has no manifest yet', () => {
     const installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ark-buildid-test-'))
     try {
-      expect(getInstalledBuildId(installDir)).toBeNull()
+      expect(getInstalledBuildId(installDir, 'ark-ascended')).toBeNull()
     } finally {
       fs.rmSync(installDir, { recursive: true, force: true })
     }
@@ -196,10 +212,33 @@ describe('getInstalledBuildId', () => {
     try {
       fs.mkdirSync(path.join(installDir, 'steamapps'), { recursive: true })
       fs.writeFileSync(
-        getAppManifestPath(installDir),
+        getAppManifestPath(installDir, 'ark-ascended'),
         '"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"buildid"\t\t"18742069"\n}\n'
       )
-      expect(getInstalledBuildId(installDir)).toBe('18742069')
+      expect(getInstalledBuildId(installDir, 'ark-ascended')).toBe('18742069')
+    } finally {
+      fs.rmSync(installDir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns null instead of throwing when the disk read itself fails', () => {
+    // Polled by the Dashboard/Analytics tab to show Install-vs-Update state - a real report
+    // on Windows showed a disk-level read failure here crashing the IPC handler that asked.
+    const installDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ark-buildid-test-'))
+    try {
+      fs.mkdirSync(path.join(installDir, 'steamapps'), { recursive: true })
+      fs.writeFileSync(
+        getAppManifestPath(installDir, 'ark-ascended'),
+        '"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"buildid"\t\t"18742069"\n}\n'
+      )
+      const spy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+        throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
+      })
+      try {
+        expect(getInstalledBuildId(installDir, 'ark-ascended')).toBeNull()
+      } finally {
+        spy.mockRestore()
+      }
     } finally {
       fs.rmSync(installDir, { recursive: true, force: true })
     }

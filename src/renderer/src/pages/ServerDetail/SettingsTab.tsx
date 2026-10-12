@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { MapDefinition, ServerProfile } from '@shared/types'
+import { type GameId, getGameDefinition, listGameDefinitions } from '@shared/games'
 
 interface SettingsTabProps {
   profile: ServerProfile
@@ -14,17 +15,45 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   const [refreshingMaps, setRefreshingMaps] = useState(false)
   const [customMaps, setCustomMaps] = useState<MapDefinition[]>([])
   const [refreshingCustomMaps, setRefreshingCustomMaps] = useState(false)
+  const [launchPreview, setLaunchPreview] = useState<{ executable: string; args: string[] } | null>(null)
+  const [launchPreviewError, setLaunchPreviewError] = useState('')
+  const [copyStatus, setCopyStatus] = useState('')
+  const gameDef = getGameDefinition(form.game)
 
   useEffect(() => {
-    void refreshMaps()
+    void refreshMaps(form.game)
     void refreshCustomMaps()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [form.game])
 
-  async function refreshMaps(): Promise<void> {
+  // Recomputes what startServer would actually run - reflects unsaved edits too, since it's
+  // driven by `form` rather than the last-saved profile. Debounced so fast typing (e.g. in
+  // Extra launch arguments) doesn't fire an IPC round-trip per keystroke.
+  useEffect(() => {
+    let cancelled = false
+    const timer = setTimeout(() => {
+      window.api.server
+        .previewLaunchCommand(form)
+        .then((preview) => {
+          if (!cancelled) {
+            setLaunchPreview(preview)
+            setLaunchPreviewError('')
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) setLaunchPreviewError((err as Error).message)
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [form])
+
+  async function refreshMaps(game: GameId): Promise<void> {
     setRefreshingMaps(true)
     try {
-      setMaps(await window.api.maps.list())
+      setMaps(await window.api.maps.list(game))
     } finally {
       setRefreshingMaps(false)
     }
@@ -51,6 +80,15 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
     void persist(next)
   }
 
+  // Clears the map - the previous game's map ids aren't valid for the new one (e.g. ARK:
+  // Survival Ascended's "TheIsland_WP" vs ARK: Survival Evolved's "TheIsland") - and the map
+  // list itself refetches for the new game via the effect above watching form.game.
+  function changeGame(game: GameId): void {
+    const next = { ...form, game, map: '' }
+    setForm(next)
+    void persist(next)
+  }
+
   async function browseClusterDir(): Promise<void> {
     const dir = await window.api.dialog.selectDirectory()
     if (dir) update('clusterDirOverride', dir)
@@ -68,6 +106,13 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
     } catch (err) {
       setFormError((err as Error).message)
     }
+  }
+
+  async function copyLaunchCommand(): Promise<void> {
+    if (!launchPreview) return
+    await navigator.clipboard.writeText([launchPreview.executable, ...launchPreview.args].join(' '))
+    setCopyStatus('Copied')
+    setTimeout(() => setCopyStatus(''), 2000)
   }
 
   async function exportProfile(): Promise<void> {
@@ -88,9 +133,33 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
       <section className="cluster-section">
         <h3>Server</h3>
         <label>
+          Game
+          <select value={form.game} onChange={(e) => changeGame(e.target.value as GameId)}>
+            {listGameDefinitions()
+              .filter((g) => g.status === 'available')
+              .map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.displayName}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label>
           Name
           <input value={form.name} onChange={(e) => update('name', e.target.value)} />
         </label>
+        {form.game === 'ark-evolved' && (
+          <>
+            <label>
+              Server Password
+              <input value={form.serverPassword} onChange={(e) => update('serverPassword', e.target.value)} />
+            </label>
+            <p className="empty-state">
+              Join/connect password, distinct from the RCON admin password - passed as ServerPassword=, required for
+              ARK: Survival Evolved. Leave blank for no password.
+            </p>
+          </>
+        )}
         <label>
           Install directory
           <div className="path-input-row">
@@ -121,16 +190,28 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
               onChange={(e) => update('rconPort', Number(e.target.value))}
             />
           </label>
-          <label>
-            Server Platform
-            <select
-              value={form.serverPlatform}
-              onChange={(e) => update('serverPlatform', e.target.value as ServerProfile['serverPlatform'])}
-            >
-              <option value="PC">PC</option>
-              <option value="ALL">ALL</option>
-            </select>
-          </label>
+          {gameDef.usesQueryPort && (
+            <label>
+              Query port
+              <input
+                type="number"
+                value={form.queryPort}
+                onChange={(e) => update('queryPort', Number(e.target.value))}
+              />
+            </label>
+          )}
+          {form.game === 'ark-ascended' && (
+            <label>
+              Server Platform
+              <select
+                value={form.serverPlatform}
+                onChange={(e) => update('serverPlatform', e.target.value as ServerProfile['serverPlatform'])}
+              >
+                <option value="PC">PC</option>
+                <option value="ALL">ALL</option>
+              </select>
+            </label>
+          )}
           <label>
             Max Players
             <input
@@ -173,7 +254,7 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
               <button
                 type="button"
                 onClick={() => {
-                  void refreshMaps()
+                  void refreshMaps(form.game)
                   void refreshCustomMaps()
                 }}
                 disabled={refreshingMaps || refreshingCustomMaps}
@@ -270,10 +351,22 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           <input type="checkbox" checked={form.noSound} onChange={(e) => update('noSound', e.target.checked)} />
           No Sound
         </label>
-        <label>
-          Max Dino Level
-          <input value={form.maxDinoLevel} onChange={(e) => update('maxDinoLevel', e.target.value)} />
-        </label>
+        {form.game === 'ark-ascended' && (
+          <label>
+            Max Dino Level
+            <input value={form.maxDinoLevel} onChange={(e) => update('maxDinoLevel', e.target.value)} />
+          </label>
+        )}
+        {form.game === 'ark-evolved' && (
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={form.autoManageMods}
+              onChange={(e) => update('autoManageMods', e.target.checked)}
+            />
+            Auto Manage Mod
+          </label>
+        )}
         <label>
           Dashboard group
           <input
@@ -337,6 +430,33 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
             disabled={!form.clusterEnabled}
           />
         </label>
+      </section>
+      <section className="cluster-section">
+        <h3>Debug</h3>
+        <label>
+          Launch command
+          <div className="path-input-row">
+            <textarea
+              className="launch-command-preview"
+              readOnly
+              rows={3}
+              value={
+                launchPreviewError
+                  ? launchPreviewError
+                  : launchPreview
+                    ? [launchPreview.executable, ...launchPreview.args].join(' ')
+                    : 'Computing...'
+              }
+            />
+            <button type="button" onClick={() => void copyLaunchCommand()} disabled={!launchPreview}>
+              {copyStatus || 'Copy'}
+            </button>
+          </div>
+        </label>
+        <p className="empty-state">
+          Exactly what Start would run right now, including unsaved edits above - useful for diagnosing a server that
+          won't launch.
+        </p>
       </section>
       {formError && <p className="error-message">{formError}</p>}
     </form>

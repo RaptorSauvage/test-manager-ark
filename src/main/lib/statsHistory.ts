@@ -87,36 +87,47 @@ function maybeTrimByAge(now: number): void {
  * by clusterLogArchive.ts and managerLog.ts.
  */
 export function recordStatSample(profileId: string, sample: StatSample): void {
-  const logPath = getStatsHistoryPath()
-  fs.mkdirSync(path.dirname(logPath), { recursive: true })
   const entry: StoredStatSample = { profileId, ...sample }
-  fs.appendFileSync(logPath, JSON.stringify(entry) + '\n')
-  // Keeps the cache warm without re-reading the file - only meaningful once something has
-  // actually loaded it once; if nothing has queried yet there's nothing to keep in sync,
-  // and the eventual first read picks up everything written so far straight from disk.
-  if (cachedSamples) cachedSamples.push(entry)
-  maybeTrimByAge(entry.time)
-
-  const maxBytes = Math.max(1, getSettings().statsHistoryMaxSizeMB) * 1024 * 1024
-  const { size } = fs.statSync(logPath)
-  if (size <= maxBytes) return
-
-  const buffer = Buffer.alloc(maxBytes)
-  const fd = fs.openSync(logPath, 'r')
   try {
-    fs.readSync(fd, buffer, 0, maxBytes, size - maxBytes)
-  } finally {
-    fs.closeSync(fd)
+    const logPath = getStatsHistoryPath()
+    fs.mkdirSync(path.dirname(logPath), { recursive: true })
+    fs.appendFileSync(logPath, JSON.stringify(entry) + '\n')
+    // Keeps the cache warm without re-reading the file - only meaningful once something has
+    // actually loaded it once; if nothing has queried yet there's nothing to keep in sync,
+    // and the eventual first read picks up everything written so far straight from disk.
+    if (cachedSamples) cachedSamples.push(entry)
+    maybeTrimByAge(entry.time)
+
+    const maxBytes = Math.max(1, getSettings().statsHistoryMaxSizeMB) * 1024 * 1024
+    const { size } = fs.statSync(logPath)
+    if (size <= maxBytes) return
+
+    const buffer = Buffer.alloc(maxBytes)
+    const fd = fs.openSync(logPath, 'r')
+    try {
+      fs.readSync(fd, buffer, 0, maxBytes, size - maxBytes)
+    } finally {
+      fs.closeSync(fd)
+    }
+    let text = buffer.toString('utf-8')
+    const firstNewline = text.indexOf('\n')
+    if (firstNewline >= 0) text = text.slice(firstNewline + 1)
+    fs.writeFileSync(logPath, text)
+    // The trim above rewrote the file, dropping whichever oldest lines no longer fit - the
+    // cache (if any) no longer matches it. Rather than replaying the same trim in memory,
+    // just drop it; the next read reloads fresh from the now-trimmed file. Trimming only ever
+    // happens once the file is already at its size cap, so this full reload is rare.
+    cachedSamples = null
+  } catch (err) {
+    // Best-effort persistence, attempted every ~5s per running profile with stats enabled
+    // (see monitor.ts's tick()), which isn't awaited/caught by its caller - a disk-level
+    // failure here must never throw back out of this function. A real report on Windows
+    // showed exactly that (a raw libuv "UNKNOWN: unknown error, write"): an unwritable
+    // stats-history.jsonl turned into an unhandled promise rejection flooding the console
+    // every 5 seconds, once per running server, instead of just quietly failing to record
+    // that one sample.
+    console.error(`Failed to record a stats sample for ${profileId}:`, (err as Error).message)
   }
-  let text = buffer.toString('utf-8')
-  const firstNewline = text.indexOf('\n')
-  if (firstNewline >= 0) text = text.slice(firstNewline + 1)
-  fs.writeFileSync(logPath, text)
-  // The trim above rewrote the file, dropping whichever oldest lines no longer fit - the
-  // cache (if any) no longer matches it. Rather than replaying the same trim in memory,
-  // just drop it; the next read reloads fresh from the now-trimmed file. Trimming only ever
-  // happens once the file is already at its size cap, so this full reload is rare.
-  cachedSamples = null
 }
 
 /** Callers only ever .filter()/.map() this into a new array, never mutate it in place, so
@@ -129,8 +140,23 @@ function readAllSamples(): StoredStatSample[] {
     cachedSamples = []
     return cachedSamples
   }
+  let raw: string
+  try {
+    raw = fs.readFileSync(logPath, 'utf-8')
+  } catch (err) {
+    // A disk-level read failure must not crash whatever asked for this history - a real
+    // report on Windows showed exactly this throwing out of the stats-history:get IPC
+    // handler. Deliberately NOT caching [] here (unlike the "file doesn't exist yet" branch
+    // above) - that would look identical to "no history" to every future call too,
+    // permanently hiding real history once the disk recovers, and would make
+    // recordStatSample start accumulating into a wrongly-reset empty cache in the meantime.
+    // Returning [] just this once, uncached, means the very next call (e.g. the next 5s
+    // poll) retries the read fresh instead of being stuck on a stale empty result.
+    console.error('Failed to read stats history:', (err as Error).message)
+    return []
+  }
   const samples: StoredStatSample[] = []
-  for (const line of fs.readFileSync(logPath, 'utf-8').split('\n')) {
+  for (const line of raw.split('\n')) {
     if (!line.trim()) continue
     try {
       const parsed: unknown = JSON.parse(line)

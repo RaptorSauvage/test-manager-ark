@@ -23,6 +23,13 @@ describe('parseArkVersionFromLog', () => {
     expect(parseArkVersionFromLog('ARK Version:    92.28')).toBe('92.28')
   })
 
+  it('extracts the version from a real ARK: Survival Evolved log line (timestamp/thread prefix)', () => {
+    // Same regex, same log file (ShooterGame.log) as ARK: Survival Ascended - confirmed
+    // against a real ARK: Survival Evolved log line, so this needed no game-specific handling.
+    const content = '[2026.09.28-13.19.58:026][  0]ARK Version: 358.24'
+    expect(parseArkVersionFromLog(content)).toBe('358.24')
+  })
+
   it('returns null when the log has no such line', () => {
     expect(parseArkVersionFromLog('nothing relevant here')).toBeNull()
     expect(parseArkVersionFromLog('')).toBeNull()

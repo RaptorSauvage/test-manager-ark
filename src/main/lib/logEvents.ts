@@ -13,6 +13,15 @@ const RICHCOLOR_OPEN_RE = /<RichColor[^>]*>/g
 const RICHCOLOR_CLOSE_RE = /<\/>/g
 const INNER_TS_RE = /^\d{4}\.\d{2}\.\d{2}_\d{2}\.\d{2}\.\d{2}:\s*/
 const JOIN_LEFT_RE = /^(.*?)\s*\[UniqueNetId:\s*(\S+)\s+Platform:[^\]]*\]\s*(joined|left) this ARK!/
+// ARK: Survival Evolved's own join/leave wording has no [UniqueNetId: ... Platform: ...]
+// bracket at all - just "<Player> joined this ARK! (<SteamID64>) (TribeID: <id>)" (the
+// TribeID part is optional - a player not yet in any tribe won't have one). A real ASE log
+// also writes a second, earlier line for the same event with neither the Steam ID nor the
+// bracket ("<Player> joined this ARK!", inside an inner "YYYY.MM.DD_HH.MM.SS:"-prefixed
+// broadcast) - deliberately left unmatched by requiring the Steam ID here, the same way
+// "Frozen by ID" below is left out in favor of the "froze" line that follows it, so the two
+// don't produce a duplicate event for the one real join/leave.
+const JOIN_LEFT_ALT_RE = /^(.+?)\s+(joined|left) this ARK!\s*\((\d+)\)(?:\s*\(TribeID:\s*\d+\))?\s*$/
 const IP_LOOKUP_RE = /IP for incoming account\s+(\S+)\s*-\s*IP\s+(\S+)/
 const ADMINCMD_RE = /AdminCmd:\s*(.+?)\s*\(PlayerName:\s*([^,]+),/
 const CHAT_MSG_RE = /^(.+?)\s*\((.+?)\):\s*(.+)$/
@@ -26,6 +35,17 @@ interface LogEventCaches {
 
 export function createLogEventCaches(): LogEventCaches {
   return { ipCache: new Map(), playerCache: new Map() }
+}
+
+function buildJoinLeftEvent(player: string, accountId: string, action: string, caches: LogEventCaches, ts: string): LogEvent {
+  caches.playerCache.set(accountId, player)
+  const playerHl = `${PLAYER_NAME_OPEN}${player}${PLAYER_NAME_CLOSE}`
+  if (action === 'joined') {
+    const ip = caches.ipCache.get(accountId)
+    const ipPart = ip ? `, IP: ${ip}` : ''
+    return { label: 'JOIN', cls: 'join', text: `${playerHl} joined the server (ID: ${accountId}${ipPart})`, ts }
+  }
+  return { label: 'LEFT', cls: 'leave', text: `${playerHl} left the server`, ts }
 }
 
 function cleanArkText(raw: string): string {
@@ -54,14 +74,13 @@ export function parseLogLine(rawLine: string, caches: LogEventCaches): LogEvent 
   const jm = rest.match(JOIN_LEFT_RE)
   if (jm) {
     const [, player, accountId, action] = jm
-    caches.playerCache.set(accountId, player)
-    const playerHl = `${PLAYER_NAME_OPEN}${player}${PLAYER_NAME_CLOSE}`
-    if (action === 'joined') {
-      const ip = caches.ipCache.get(accountId)
-      const ipPart = ip ? `, IP: ${ip}` : ''
-      return { label: 'JOIN', cls: 'join', text: `${playerHl} joined the server (ID: ${accountId}${ipPart})`, ts }
-    }
-    return { label: 'LEFT', cls: 'leave', text: `${playerHl} left the server`, ts }
+    return buildJoinLeftEvent(player, accountId, action, caches, ts)
+  }
+
+  const jmAlt = rest.match(JOIN_LEFT_ALT_RE)
+  if (jmAlt) {
+    const [, player, action, accountId] = jmAlt
+    return buildJoinLeftEvent(player, accountId, action, caches, ts)
   }
 
   const cm = rest.match(CHAT_MSG_RE)
@@ -159,22 +178,33 @@ const BACKLOG_MAX_LINES = 60
 export function readFileTail(filePath: string, maxBytes: number): string {
   if (!fs.existsSync(filePath)) return ''
 
-  const size = fs.statSync(filePath).size
-  const readSize = Math.min(size, maxBytes)
-  const buffer = Buffer.alloc(readSize)
-  const fd = fs.openSync(filePath, 'r')
   try {
-    fs.readSync(fd, buffer, 0, readSize, size - readSize)
-  } finally {
-    fs.closeSync(fd)
-  }
+    const size = fs.statSync(filePath).size
+    const readSize = Math.min(size, maxBytes)
+    const buffer = Buffer.alloc(readSize)
+    const fd = fs.openSync(filePath, 'r')
+    try {
+      fs.readSync(fd, buffer, 0, readSize, size - readSize)
+    } finally {
+      fs.closeSync(fd)
+    }
 
-  let text = buffer.toString('utf-8')
-  if (readSize < size) {
-    const firstNewline = text.indexOf('\n')
-    if (firstNewline >= 0) text = text.slice(firstNewline + 1)
+    let text = buffer.toString('utf-8')
+    if (readSize < size) {
+      const firstNewline = text.indexOf('\n')
+      if (firstNewline >= 0) text = text.slice(firstNewline + 1)
+    }
+    return text
+  } catch (err) {
+    // A disk-level read failure must not crash whatever asked for this backlog - the
+    // desktop Console tab, the Web Dashboard's own console, and the Cluster Data group
+    // console all read through here (readLogBacklog below, and clusterLogArchive.ts's own
+    // reuse of this for its differently-formatted archive file). Same reasoning as every
+    // other read/write call this session already made resilient to a real report of Windows
+    // disk-level failures - '' here just means "nothing to show right now", not "empty log".
+    console.error(`Failed to read from ${filePath}:`, (err as Error).message)
+    return ''
   }
-  return text
 }
 
 /**

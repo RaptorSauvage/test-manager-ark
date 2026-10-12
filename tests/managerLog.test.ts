@@ -102,4 +102,48 @@ describe('managerLog', () => {
     const entries = readManagerLog()
     expect(entries.map((e) => e.taskId)).toEqual(['task-3', 'task-4'])
   })
+
+  it('never throws when the disk write itself fails - a real report on Windows had this crash every start/stop/kill', () => {
+    // logManagerEvent is called directly from doStartServer/doStopServer/doKillServer/... -
+    // if it threw, the actual action it's attached to would be reported as failed even when
+    // it had already succeeded (see the fix's own comment in managerLog.ts).
+    const spy = vi.spyOn(fs, 'appendFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, write'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(() => logManagerEvent('task-5', 'Stop — Test', 'Stopped')).not.toThrow()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('still emits the "log" event live even when persisting to disk fails', () => {
+    const spy = vi.spyOn(fs, 'appendFileSync').mockImplementation(() => {
+      throw new Error('disk full')
+    })
+    const seen: unknown[] = []
+    const listener = (entry: unknown): void => {
+      seen.push(entry)
+    }
+    managerLogEvents.on('log', listener)
+    try {
+      logManagerEvent('task-6', 'Kill — Test', 'Killed')
+      expect(seen).toHaveLength(1)
+    } finally {
+      managerLogEvents.off('log', listener)
+      spy.mockRestore()
+    }
+  })
+
+  it('returns an empty log instead of throwing when the disk read itself fails', () => {
+    logManagerEvent('task-7', 'Start — Test', 'Started')
+    const spy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
+    })
+    try {
+      expect(readManagerLog()).toEqual([])
+    } finally {
+      spy.mockRestore()
+    }
+  })
 })
