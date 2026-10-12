@@ -6,6 +6,7 @@ import { installManagedSteamCmd, getManagedSteamCmdStatus } from '../lib/steamcm
 import { readUpdateLog, steamcmdUpdateEvents } from '../lib/steamcmd'
 import { addFirewallRulesForSteamCmd } from '../lib/firewall'
 import { getLatestBuildIdCache } from '../lib/updateCheck'
+import { forceRefocus } from '../lib/windowFocus'
 
 export function registerSteamcmdInstallHandlers(mainWindow: BrowserWindow): void {
   const webContents = mainWindow.webContents
@@ -27,18 +28,13 @@ export function registerSteamcmdInstallHandlers(mainWindow: BrowserWindow): void
     // Start-Process -Verb RunAs (firewall.ts) pops a real native UAC prompt, same class of
     // OS-level modal as window.confirm()/the file pickers - Electron/Windows can fail to hand
     // keyboard focus back to the main window once it closes, silently freezing every text
-    // field afterward until it's explicitly refocused (see system.ts's appFocusWindow doc
-    // comment for the full story, including why webContents.focus() - not just
-    // mainWindow.focus() - is the part that actually matters). Refocus here
-    // unconditionally, success or failure/cancellation alike, the same way confirmAction()
-    // and dialog.ts's pickers already do.
+    // field afterward until it's explicitly refocused (see windowFocus.ts's own doc comment
+    // for the full story). Refocus here unconditionally, success or failure/cancellation
+    // alike, the same way confirmAction() and dialog.ts's pickers already do.
     try {
       await addFirewallRulesForSteamCmd(steamCmdPath)
     } finally {
-      if (!mainWindow.isDestroyed()) {
-        mainWindow.focus()
-        mainWindow.webContents.focus()
-      }
+      forceRefocus(mainWindow)
     }
   })
 
