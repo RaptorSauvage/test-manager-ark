@@ -29,31 +29,19 @@ export function registerProfileHandlers(webContents: WebContents): void {
   ipcMain.handle(IPC.profilesList, () => listProfiles())
 
   ipcMain.handle(IPC.profilesSave, (_event, profile: ServerProfile) => {
-    console.log(`[DIAG] profilesSave: start (${profile.id})`)
     const profiles = saveProfile(profile)
-    console.log('[DIAG] profilesSave: saveProfile done')
     applyBackupSchedule(profile)
-    console.log('[DIAG] profilesSave: applyBackupSchedule done')
     syncPlayerBackupWatch(profile)
-    console.log('[DIAG] profilesSave: syncPlayerBackupWatch done')
     applyScheduledRestart(profile)
-    console.log('[DIAG] profilesSave: applyScheduledRestart done')
     applyScheduledDinoWipe(profile)
-    console.log('[DIAG] profilesSave: applyScheduledDinoWipe done')
     return profiles
   })
 
   ipcMain.handle(IPC.profilesDelete, (_event, id: string) => {
-    console.log(`[DIAG] profilesDelete: start (${id})`)
     clearBackupSchedule(id)
-    console.log('[DIAG] profilesDelete: clearBackupSchedule done')
     clearScheduledRestart(id)
-    console.log('[DIAG] profilesDelete: clearScheduledRestart done')
     clearScheduledDinoWipe(id)
-    console.log('[DIAG] profilesDelete: clearScheduledDinoWipe done')
-    const result = deleteProfile(id)
-    console.log('[DIAG] profilesDelete: deleteProfile done')
-    return result
+    return deleteProfile(id)
   })
 
   ipcMain.handle(IPC.profilesReorder, (_event, orderedIds: string[]) => setProfileOrder(orderedIds))
@@ -154,16 +142,12 @@ export function registerProfileHandlers(webContents: WebContents): void {
   })
 
   ipcMain.handle(IPC.profilesMove, async (_event, profileId: string, destInstallDir: string, newName: string) => {
-    console.log(`[DIAG] profilesMove: start (${profileId} -> ${destInstallDir})`)
     const moved = await moveProfile(requireProfile(profileId), destInstallDir, newName)
-    console.log('[DIAG] profilesMove: moveProfile done')
     const profiles = saveProfile(moved)
-    console.log('[DIAG] profilesMove: saveProfile done')
     applyBackupSchedule(moved)
     syncPlayerBackupWatch(moved)
     applyScheduledRestart(moved)
     applyScheduledDinoWipe(moved)
-    console.log('[DIAG] profilesMove: schedules re-applied, returning')
     return { profile: moved, profiles }
   })
 }

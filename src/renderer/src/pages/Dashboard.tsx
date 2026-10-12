@@ -169,9 +169,7 @@ export default function Dashboard({
 
   async function handleDelete(id: string): Promise<void> {
     if (!confirmAction('Delete this server profile? This does not delete any files on disk.')) return
-    console.log(`[DIAG] handleDelete: calling profiles.delete(${id})`)
     const updated = await window.api.profiles.delete(id)
-    console.log('[DIAG] handleDelete: profiles.delete resolved')
     onProfilesChange(updated)
   }
 

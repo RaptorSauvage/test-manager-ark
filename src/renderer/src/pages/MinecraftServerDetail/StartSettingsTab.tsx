@@ -110,9 +110,7 @@ export default function StartSettingsTab({ profile, onProfileChange }: StartSett
       : loaderVersionOptions
 
   async function persist(next: MinecraftProfile): Promise<void> {
-    console.log(`[DIAG] MC persist: calling minecraft.profiles.save(${next.id})`)
     const updated = await window.api.minecraft.profiles.save(next)
-    console.log('[DIAG] MC persist: minecraft.profiles.save resolved')
     const saved = updated.find((p) => p.id === next.id)
     if (saved) onProfileChange(saved)
   }

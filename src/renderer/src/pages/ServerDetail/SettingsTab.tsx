@@ -69,9 +69,7 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
   }
 
   async function persist(next: ServerProfile): Promise<void> {
-    console.log(`[DIAG] persist: calling profiles.save(${next.id})`)
     const updated = await window.api.profiles.save(next)
-    console.log('[DIAG] persist: profiles.save resolved')
     const saved = updated.find((p) => p.id === next.id)
     if (saved) onProfileChange(saved)
   }

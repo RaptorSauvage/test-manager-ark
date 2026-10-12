@@ -3992,3 +3992,53 @@ async function findProfileIdByName(name) {
     window with the setting on hides it to the tray instead of quitting, that the tray
     icon's "Ouvrir" reopens the window, and that "Quitter" actually exits (including
     stopping the Discord bot/web dashboard along with the rest of the process).
+
+- **Fixed: renaming or deleting a server made every text field/checkbox in the app stop
+  responding, until a workaround was found** (user report: "quand je fais une action de
+  changement de nom de serveur ou de suppression, les paramètre à texte et à coché ne
+  fonctionne plus"). A real production bug, not a misreport - just a much harder one to
+  pin down than it first looked, because the obvious theories were all wrong:
+  - Not a main-process deadlock: a 2-second heartbeat logged straight to the terminal (a
+    throwaway diagnostic added specifically to test this) kept ticking the entire time the
+    app was "frozen," proving the main process's event loop was never blocked.
+  - Not a stuck IPC call either: once the user got DevTools open (the app disables
+    Electron's default menu, which is what normally wires up F12/Ctrl+Shift+I - had to add
+    `mainWindow.webContents.openDevTools({ mode: 'detach' })` in dev mode just to see the
+    renderer's own console at all) and found the Console panel's level filter was silently
+    hiding "5 hidden" messages, every diagnostic breadcrumb through the full
+    save/delete/move IPC round trip printed cleanly on both the main and renderer side -
+    the operation itself always completed successfully.
+  - The actual bug only showed up once the user ran `document.hasFocus()` live in that same
+    DevTools console right after a delete's `confirm()` dialog closed: `false`. The
+    renderer's own document had lost focus and never gotten it back - a known
+    Electron/Windows issue already partially addressed in this codebase
+    (`confirmAction.ts`/`dialog.ts`'s existing `mainWindow.focus()` calls), but evidently
+    not reliably enough. Manually alt-tabbing away and back fixed it every time; a plain
+    `mainWindow.focus()` + `mainWindow.webContents.focus()` call (tried first, see the
+    now-superseded focus-only commit on this branch) did not - consistent with Windows'
+    anti-focus-stealing protection, which can silently no-op `SetForegroundWindow` for a
+    background process reclaiming focus on its own, even over its own window.
+  - **`src/main/lib/windowFocus.ts`** (new): `forceRefocus(mainWindow)` calls
+    `mainWindow.minimize()` + `mainWindow.restore()` (or just `restore()` if already
+    minimized) before `focus()`/`webContents.focus()` - forcing the same genuine OS-level
+    foreground transition alt-tabbing does, rather than asking Windows nicely via a plain
+    `.focus()` call it's free to ignore.
+  - **`src/main/ipc/system.ts`**, **`src/main/ipc/dialog.ts`**, **`src/main/ipc/steamcmdInstall.ts`**:
+    all three existing refocus-after-a-native-dialog call sites (`appFocusWindow` behind
+    `confirmAction()`, the file/folder picker dialogs, the SteamCMD firewall UAC prompt)
+    now call the shared `forceRefocus()` instead of each duplicating a plain `.focus()`.
+  - Renaming a server turned out not to be a separate cause - editing the Name field itself
+    never calls any native dialog - it just surfaced the *already*-broken focus state left
+    over from an earlier Delete in the same session, which is why the user saw both
+    actions "break" typing.
+  - **Diagnostic trail, since this took several rounds to actually pin down**: a
+    2-second main-process heartbeat + step-by-step `[DIAG]` logging through every
+    `profiles.save`/`delete`/`move`/`copy` IPC handler (both ARK and, once the user
+    mentioned testing both games, the equivalent Minecraft handlers/renderer call sites
+    too) + an auto-opened detached DevTools window in dev mode - all added temporarily
+    across several commits on this branch and fully removed again once
+    `document.hasFocus()` gave the real answer.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged -
+    no automated test can drive real OS-level window focus), and `npm run build` all pass.
+    The user confirmed live, after pulling this exact fix, that deleting a server no longer
+    leaves any field unresponsive ("c'est fix !").

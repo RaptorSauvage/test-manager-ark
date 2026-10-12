@@ -52,12 +52,6 @@ process.on('unhandledRejection', (reason) => {
   console.error('Unhandled promise rejection in main process:', reason)
 })
 
-// TEMPORARY diagnostic for the rename/delete freeze report - if this stops printing, the
-// main process's own event loop is fully blocked (a true deadlock/sync hang); if it keeps
-// printing while the app still looks frozen, the hang is somewhere else (the renderer, or a
-// single stuck IPC call that doesn't block anything else). Remove once the freeze is found.
-setInterval(() => console.log('[DIAG] main process heartbeat', new Date().toISOString()), 2000)
-
 // No File/Edit/View/Window/Help needed for this app - it's not a document editor, and this
 // bar was never intentionally set up, just Electron's unremoved default.
 Menu.setApplicationMenu(null)
@@ -113,15 +107,6 @@ function createWindow(): void {
   })
 
   mainWindow.once('ready-to-show', () => mainWindow.show())
-
-  // TEMPORARY diagnostic for the rename/delete freeze report - the app removes Electron's
-  // default application menu below (Menu.setApplicationMenu(null)), which is also what
-  // normally wires up the F12/Ctrl+Shift+I DevTools shortcut, so there was no way to see the
-  // renderer's own console (where the [DIAG] logs in SettingsTab.tsx/Dashboard.tsx/
-  // ProfileManagementView.tsx print) without this. Detached so it stays usable even if the
-  // main window itself ends up stuck. Remove alongside the other [DIAG] instrumentation once
-  // the freeze is found.
-  if (!app.isPackaged) mainWindow.webContents.openDevTools({ mode: 'detach' })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     void shell.openExternal(details.url)
