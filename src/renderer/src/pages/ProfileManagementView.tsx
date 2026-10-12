@@ -44,10 +44,12 @@ export default function ProfileManagementView({
     setStatus('')
     setBusy(true)
     try {
+      console.log(`[DIAG] submit: calling profiles.${action}(${selected.id})`)
       const result =
         action === 'copy'
           ? await window.api.profiles.copy(selected.id, destInstallDir, newName)
           : await window.api.profiles.move(selected.id, destInstallDir, newName)
+      console.log(`[DIAG] submit: profiles.${action} resolved`)
       onProfilesChange(result.profiles)
       setStatus(
         action === 'copy'
