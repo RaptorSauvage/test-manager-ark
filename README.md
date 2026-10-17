@@ -4198,3 +4198,29 @@ async function findProfileIdByName(name) {
     as before - discord.js's Client/TextChannel/Message are heavy to mock) and the user
     hasn't yet confirmed in their real server that a Settings save (which restarts the bot)
     no longer posts a duplicate status message.
+
+- **Added a single-instance lock, after a real report of two instances running at once**
+  (Chromium "Unable to move the cache: Accès refusé" / "Gpu Cache Creation failed" errors
+  in the log, which turned out to be two Electron processes fighting over the same userData
+  folder - confirmed by the user checking Task Manager). "Close to tray" (added earlier this
+  session) made this much easier to hit than before: the window hiding instead of quitting
+  means a background instance can keep running invisibly, so re-launching (e.g. `npm run
+  dev` again, for another round of testing) silently starts a second, fully independent
+  instance - including a second Discord bot child process connected to the same token at
+  the same time, which could easily reintroduce the duplicate-status-message problem fixed
+  above from a completely different angle.
+  - **`src/main/index.ts`**: `app.requestSingleInstanceLock()` is checked first, before
+    anything else in the file runs - a failed lock means another instance already holds it,
+    so this one calls `process.exit(0)` immediately (a hard synchronous exit, not
+    `app.quit()`, specifically so none of this file's side effects - adopting persisted
+    server processes, starting the web dashboard, spawning the Discord bot - run even once
+    in a doomed second instance before a scheduled quit would have taken effect). On the
+    surviving first instance, `app.on('second-instance', ...)` now shows/focuses its window
+    whenever a second launch is attempted - the same `showAndFocusMainWindow()` helper the
+    tray's "Ouvrir"/click handler already used, now shared by both via a new
+    `mainWindowRef` instead of each capturing its own closure over the window.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1082 tests, unchanged -
+    this is pure Electron app-lifecycle wiring with no isolated unit to test), and
+    `npm run build` all pass. **Not yet verified**: needs the user to confirm that launching
+    a second instance now just brings the first one's window to the front instead of
+    actually starting a second process.

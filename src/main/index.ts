@@ -40,6 +40,23 @@ import { startMinecraftMonitoring } from './lib/minecraftMonitor'
 import { applyMinecraftScheduledRestart } from './lib/minecraftScheduledActions'
 import { applyMinecraftBackupSchedule, registerMinecraftBackupScheduleWatcher } from './lib/minecraftBackupSchedule'
 
+// Electron apps that only hide (not quit) when their window closes - see "close to tray"
+// below - make it very easy to end up with a second instance running invisibly in the
+// background without realizing the first one is still alive (confirmed as a real report:
+// Chromium GPU cache errors from two processes fighting over the same userData folder, and
+// two Discord bot child processes connected to the same token at once). requestSingleInstanceLock
+// makes a second launch immediately quit itself and instead signal the first instance (via
+// 'second-instance' below) to show/focus its window - must run before anything else that
+// could matter if this turns out to be the second instance.
+// A hard, synchronous exit rather than app.quit() - nothing (no window, no IPC, no server
+// processes) has been set up yet in this doomed second instance, and app.quit() only
+// schedules a quit, which would let the rest of this file's side effects (adopting
+// persisted server processes, starting the web dashboard, spawning the Discord bot...) run
+// at least once before it actually took effect.
+if (!app.requestSingleInstanceLock()) {
+  process.exit(0)
+}
+
 // Network hiccups (RCON connection resets, SteamCMD downloads, etc.) can surface
 // as errors/rejections that slip past local try/catch - e.g. rcon-client re-emits
 // socket errors on its own EventEmitter, which crashes the whole process by
@@ -71,27 +88,29 @@ app.on('before-quit', () => {
 })
 
 let tray: Tray | null = null
+// Tracks the one window this single-instance-locked app ever has, so a second launch
+// attempt (see 'second-instance' below) and the tray's own "Ouvrir" can both reach it.
+let mainWindowRef: BrowserWindow | null = null
 
-function createTray(mainWindow: BrowserWindow): void {
+function showAndFocusMainWindow(): void {
+  if (!mainWindowRef || mainWindowRef.isDestroyed()) return
+  mainWindowRef.show()
+  mainWindowRef.focus()
+}
+
+app.on('second-instance', showAndFocusMainWindow)
+
+function createTray(): void {
   tray = new Tray(iconPath)
   tray.setToolTip('Bober Server Manager')
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      {
-        label: 'Ouvrir Bober Server Manager',
-        click: () => {
-          mainWindow.show()
-          mainWindow.focus()
-        }
-      },
+      { label: 'Ouvrir Bober Server Manager', click: showAndFocusMainWindow },
       { type: 'separator' },
       { label: 'Quitter', click: () => app.quit() }
     ])
   )
-  tray.on('click', () => {
-    mainWindow.show()
-    mainWindow.focus()
-  })
+  tray.on('click', showAndFocusMainWindow)
 }
 
 function createWindow(): void {
@@ -105,6 +124,7 @@ function createWindow(): void {
       sandbox: false
     }
   })
+  mainWindowRef = mainWindow
 
   mainWindow.once('ready-to-show', () => mainWindow.show())
 
@@ -125,7 +145,7 @@ function createWindow(): void {
     mainWindow.hide()
   })
 
-  if (!tray) createTray(mainWindow)
+  if (!tray) createTray()
 
   registerIpcHandlers(mainWindow)
 
