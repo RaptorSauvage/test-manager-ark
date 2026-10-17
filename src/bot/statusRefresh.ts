@@ -4,10 +4,51 @@ import { refreshServerCache, arkServers, minecraftServers } from './serverCache'
 import { queryEosStatus, queryOfficialNetworkStatus, queryAwsStatus, queryCloudflareStatus, queryXboxStatus, queryMinecraftAuthStatus } from './externalStatus'
 import { buildStatusEmbed, buildMinecraftStatusEmbed } from './statusEmbeds'
 import { getArkMaintenance, isBotMaintenanceMode } from './maintenanceState'
+import {
+  getPersistedStatusMessageId,
+  setPersistedStatusMessageId,
+  getPersistedMcStatusMessageId,
+  setPersistedMcStatusMessageId
+} from './statusMessageState'
 import { log } from './logging'
 
 let statusMessage: Message | null = null
 let mcStatusMessage: Message | null = null
+
+/** Reacquires the real status message across a bot restart (statusMessage/mcStatusMessage
+ *  above are in-memory only and reset to null every restart - see statusMessageState.ts's own
+ *  doc comment for why that used to cause duplicate messages). Tries the exact persisted id
+ *  first (precise, no guessing); only falls back to scanning the last 20 messages for one of
+ *  the bot's own embeds if there's no persisted id yet (upgrading from before this existed) or
+ *  the persisted message was deleted - and persists whatever it finds/creates either way, so
+ *  this guessing is at most a one-time cost per channel. */
+async function reacquireStatusMessage(
+  channel: TextChannel,
+  client: Client,
+  getPersistedId: () => string | null,
+  setPersistedId: (id: string | null) => void
+): Promise<Message | null> {
+  const persistedId = getPersistedId()
+  if (persistedId) {
+    try {
+      return await channel.messages.fetch(persistedId)
+    } catch {
+      // Deleted, or the channel changed - fall through to the history search below.
+    }
+  }
+  try {
+    const history = await channel.messages.fetch({ limit: 20 })
+    const found = history.find((m) => m.author.id === client.user?.id && m.embeds.length > 0) ?? null
+    if (found) setPersistedId(found.id)
+    return found
+  } catch {
+    log.warn(
+      `Impossible de lire l'historique du salon ${channel.id} ` +
+        "(permission 'Lire l'historique des messages' manquante). Un nouveau message sera créé à la place."
+    )
+    return null
+  }
+}
 
 /** Port of `update_bot_presence` - the bot's own Discord activity text, independent of
  *  whichever channel embeds are posted to. */
@@ -57,15 +98,7 @@ export async function refreshStatusMessage(client: Client, config: DiscordBotCon
   const embed = buildStatusEmbed(arkServers(servers), [eos[0], aws[0], cloudflare[0], official[0]], config)
 
   if (!statusMessage) {
-    try {
-      const history = await channel.messages.fetch({ limit: 20 })
-      statusMessage = history.find((m) => m.author.id === client.user?.id && m.embeds.length > 0) ?? null
-    } catch {
-      log.warn(
-        `Impossible de lire l'historique du salon statusChannelId=${config.statusChannelId} ` +
-          "(permission 'Lire l'historique des messages' manquante). Un nouveau message sera créé à la place."
-      )
-    }
+    statusMessage = await reacquireStatusMessage(channel, client, getPersistedStatusMessageId, setPersistedStatusMessageId)
   }
 
   try {
@@ -73,10 +106,12 @@ export async function refreshStatusMessage(client: Client, config: DiscordBotCon
       await statusMessage.edit({ embeds: [embed] })
     } else {
       statusMessage = await channel.send({ embeds: [embed] })
+      setPersistedStatusMessageId(statusMessage.id)
     }
   } catch (err) {
     try {
       statusMessage = await channel.send({ embeds: [embed] })
+      setPersistedStatusMessageId(statusMessage.id)
     } catch {
       log.warn(
         `Impossible d'envoyer/éditer le message dans statusChannelId=${config.statusChannelId} ` +
@@ -117,15 +152,7 @@ export async function refreshMinecraftStatusMessage(client: Client, config: Disc
   const embed = buildMinecraftStatusEmbed(servers, [xbox[0], cloudflare[0], aws[0], mcAuth[0]], config)
 
   if (!mcStatusMessage) {
-    try {
-      const history = await channel.messages.fetch({ limit: 20 })
-      mcStatusMessage = history.find((m) => m.author.id === client.user?.id && m.embeds.length > 0) ?? null
-    } catch {
-      log.warn(
-        `Impossible de lire l'historique du salon mcStatusChannelId=${config.mcStatusChannelId} ` +
-          "(permission 'Lire l'historique des messages' manquante). Un nouveau message sera créé à la place."
-      )
-    }
+    mcStatusMessage = await reacquireStatusMessage(channel, client, getPersistedMcStatusMessageId, setPersistedMcStatusMessageId)
   }
 
   try {
@@ -133,10 +160,12 @@ export async function refreshMinecraftStatusMessage(client: Client, config: Disc
       await mcStatusMessage.edit({ embeds: [embed] })
     } else {
       mcStatusMessage = await channel.send({ embeds: [embed] })
+      setPersistedMcStatusMessageId(mcStatusMessage.id)
     }
   } catch (err) {
     try {
       mcStatusMessage = await channel.send({ embeds: [embed] })
+      setPersistedMcStatusMessageId(mcStatusMessage.id)
     } catch {
       log.warn(
         `Impossible d'envoyer/éditer le message dans mcStatusChannelId=${config.mcStatusChannelId} ` +

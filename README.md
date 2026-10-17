@@ -4154,3 +4154,47 @@ async function findProfileIdByName(name) {
   - **Verified**: `npm run typecheck`, the full `npx vitest run` (1076 tests, unchanged),
     and `npm run build` all pass. The user confirmed live ("c'est fix") that closing the
     window now hides it to the tray as intended.
+
+- **Merged `multi-game-support` into `claude/ark-ascended-server-control-a03zpe`** (the
+  default branch) - 105 commits, 210 files, bringing multi-game support, the Discord bot,
+  the web dashboard's Minecraft views/mobile work, close-to-tray, and the rest of this
+  session's fixes off the feature branch. One conflict (`README.md`, both branches had
+  appended their own entries past a shared point) resolved by keeping both histories.
+  Verified post-merge: `npm install`, `npm run typecheck`, the full `npx vitest run` (1076
+  tests), and `npm run build` all pass clean.
+
+- **Fixed: the Discord bot posted a brand new status message instead of editing the
+  existing one, spamming the channel** (user report: "il refait de nouveau message pour
+  les status discord au lieu de les éditer de temps en temps"). Root cause:
+  `statusRefresh.ts`'s `statusMessage`/`mcStatusMessage` were in-memory only, reset to
+  `null` on every bot restart - and the bot restarts far more often than a crash/manual
+  restart would suggest, since `discordBot.ts`'s `startDiscordBot` always stops and
+  re-spawns it on every single Settings save. On restart, with no memory of the real
+  message, it fell back to scanning the channel's last 20 messages for one of the bot's
+  own embeds - which silently created a *new* message (instead of finding the real one)
+  whenever that search missed: the status embed had scrolled past the last 20 messages
+  (other channel activity), or multiple stale candidates from earlier misses confused the
+  `.find()`. Each miss both spammed the channel and made the next restart's search even
+  more likely to miss again.
+  - **`src/bot/statusMessageState.ts`** (new): persists the ARK/Minecraft status message
+    ids to `status_messages.json` in the bot's own state dir, mirroring
+    `maintenanceState.ts`'s disabled-servers persistence pattern exactly
+    (`initStatusMessageState(stateDir)` loads it at startup, `setPersisted*MessageId`
+    writes through on every change). `src/bot/index.ts` calls `initStatusMessageState`
+    right alongside the existing `initMaintenanceState`.
+  - **`src/bot/statusRefresh.ts`**: new `reacquireStatusMessage()` helper tries the exact
+    persisted id first via `channel.messages.fetch(id)` - precise, no guessing - and only
+    falls back to the old 20-message history scan if there's no persisted id yet
+    (upgrading from before this existed) or the persisted message was deleted; whatever it
+    finds that way gets persisted too, so the guessing is at most a one-time cost per
+    channel from here on. Both `refreshStatusMessage`/`refreshMinecraftStatusMessage` now
+    persist the id immediately whenever they create a message, in both the normal "no
+    message yet" path and the edit-failed-so-send-a-replacement fallback path.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1082 tests - 6 new ones
+    in `tests/discordBotStatusMessageState.test.ts`, following the same
+    survives-a-simulated-restart/malformed-file/independent-ids pattern as
+    `discordBotMaintenanceState.test.ts`), and `npm run build` all pass. **Not yet
+    verified**: `statusRefresh.ts` itself has no test coverage (predates this fix, same gap
+    as before - discord.js's Client/TextChannel/Message are heavy to mock) and the user
+    hasn't yet confirmed in their real server that a Settings save (which restarts the bot)
+    no longer posts a duplicate status message.

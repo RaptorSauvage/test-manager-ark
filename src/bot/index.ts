@@ -5,6 +5,7 @@ import { refreshStatusMessage, refreshMinecraftStatusMessage } from './statusRef
 import { checkSchedules } from './schedule'
 import { checkCurseforgeUpdates } from './curseforgeCheck'
 import { initMaintenanceState } from './maintenanceState'
+import { initStatusMessageState } from './statusMessageState'
 import type { SlashCommand } from './commands/types'
 import { statusCommands } from './commands/statusCommands'
 import { maintenanceCommands } from './commands/maintenanceCommands'
@@ -15,6 +16,7 @@ import { curseforgeCommands } from './commands/curseforgeCommands'
 
 const config = loadConfig()
 initMaintenanceState(config.stateDir)
+initStatusMessageState(config.stateDir)
 
 const allCommands: SlashCommand[] = [
   ...statusCommands,
