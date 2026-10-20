@@ -4303,6 +4303,47 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added a centralized player ban list** (third of the user-approved batch, "Joueurs"
+  category). ARK's own `BanPlayer`/`UnbanPlayer` RCON commands only ever touch one server's
+  own local ban file, so banning someone who hops between servers in a cluster meant
+  repeating it everywhere by hand. This merges every ban into one id-keyed list instead -
+  ban once per server from either surface and it shows up as a single row listing every
+  server it applies to. Minecraft isn't covered (different ban command/id shape entirely) -
+  ARK-only for now.
+  - **`shared/types.ts`**: new `BannedPlayer` type (`id`, `name`, `reason`, `bannedAt`,
+    `profileIds: string[]`); `IPC.playerBansList`/`playerBansBan`/`playerBansUnban` channels;
+    `Api.playerBans`'s three new methods.
+  - **`src/main/store.ts`**: new `playerBans: BannedPlayer[]` schema field (default `[]`).
+    `listPlayerBans()` reads it; `recordPlayerBan(playerId, playerName, reason, profileId)`
+    either updates an existing row's name/reason/timestamp and appends `profileId` to its
+    `profileIds` (if not already there) or creates a new row; `removePlayerBanProfile(playerId,
+    profileId)` strips that one profile id out and drops the row entirely once its
+    `profileIds` is empty - an unban on the last remaining server removes the player from the
+    list, not just from that server.
+  - **`src/main/ipc/playerBans.ts`** (new): `list` returns the store list as-is; `ban`/`unban`
+    send the real RCON command (`BanPlayer`/`UnbanPlayer`) via `sendRconCommand` first and only
+    update the store on success, so a row never claims a ban the server didn't actually apply.
+  - **`src/main/lib/webDashboard.ts`**: new `POST /api/servers/:id/ban` route (ARK only,
+    `moderator`+ like Kick), right after the existing `/rcon` route - sends `BanPlayer <id>`
+    and records it via `recordPlayerBan` on success. The player context menu's `showContextMenu`
+    function gets a new "Ban" button next to the existing "Kick" one, gated behind the same
+    `canOperate` check the Kick button already uses (`moderator`/`admin`/`globalAdmin`) - prompts
+    for an optional reason (`prompt()`, Cancel aborts without calling the API) then posts to the
+    new route and toasts the result.
+  - **`src/renderer/src/pages/PlayerBansView.tsx`** (new): desktop management screen - since
+    there's no live player list anywhere in the desktop app (only the web dashboard has one),
+    banning here means typing in a player id by hand and picking one or more servers to send
+    `BanPlayer` to; the table below lists every current ban with a per-server unban button.
+  - **`src/renderer/src/App.tsx`** / **`Dashboard.tsx`**: new `showPlayerBans` state at the same
+    top-level tier as Settings/What's New (reachable from either game mode, though the feature
+    itself is ARK-only), and a "Player Bans" button next to "Profile Management" in the ARK
+    Dashboard's header.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1093 tests - 2 new ones in
+    `tests/store.test.ts` covering the cross-server merge and the row disappearing once its last
+    profile is unbanned), and `npm run build` all pass. **Not yet verified**: needs the user to
+    confirm a real ban/unban round trip from both the desktop Player Bans screen and the web
+    dashboard's right-click menu.
+
 - **Added a "What's New" page in the app** (second of the user-approved batch) - a
   non-technical, curated changelog shown inside the Manager itself, distinct from this
   README (which documents every change in full engineering/file-by-file detail for whoever

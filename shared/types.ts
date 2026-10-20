@@ -399,6 +399,25 @@ export interface WebDashboardAccessToken {
 export type WebDashboardAccessTokenSummary = Omit<WebDashboardAccessToken, 'secretHash'>
 
 /**
+ * A centralized ban entry (ARK only for now - `BanPlayer`/`UnbanPlayer` via RCON, keyed by
+ * Steam/EOS id) - ARK itself only ever writes a ban to the one server it was issued on, each
+ * server keeping its own separate list with no awareness of the others. This is the Manager's
+ * own merged view across every server it's actually been applied to, so banning on one server
+ * (or several at once) and reviewing/undoing it later doesn't mean hunting through each
+ * server's own banlist individually.
+ */
+export interface BannedPlayer {
+  /** Steam/EOS id - what ARK's BanPlayer/UnbanPlayer/KickPlayer commands actually take. */
+  id: string
+  /** Last known in-game name - purely a label, ARK's own ban list only ever keys by id. */
+  name: string
+  reason: string
+  bannedAt: number
+  /** Which ARK server profiles this id has actually been banned on. */
+  profileIds: string[]
+}
+
+/**
  * A programmatic credential for the web dashboard's HTTP API - meant for scripts/bots
  * that can't drive a login form/session cookie the way a browser does. Presented as
  * `Authorization: Bearer ark_<id>_<secret>`; `id` is looked up directly (not scanned) and
@@ -586,6 +605,10 @@ export const IPC = {
   webDashboardApiKeysCreate: 'web-dashboard-api-keys:create',
   webDashboardApiKeysUpdate: 'web-dashboard-api-keys:update',
   webDashboardApiKeysDelete: 'web-dashboard-api-keys:delete',
+
+  playerBansList: 'player-bans:list',
+  playerBansBan: 'player-bans:ban',
+  playerBansUnban: 'player-bans:unban',
 
   discordBotStatus: 'discord-bot:status',
   discordBotRestart: 'discord-bot:restart',
@@ -924,6 +947,17 @@ export interface Api {
      *  the key's own secret. */
     update: (id: string, updates: { label?: string; role?: WebDashboardRole }) => Promise<WebDashboardApiKeySummary[]>
     delete: (id: string) => Promise<WebDashboardApiKeySummary[]>
+  }
+  playerBans: {
+    list: () => Promise<BannedPlayer[]>
+    /** Sends BanPlayer over RCON to the given profile, then records/extends the
+     *  centralized entry for this id (creating one if this is the first time it's been
+     *  banned anywhere). Throws (rather than updating the list) if the RCON command itself
+     *  failed, same as every other sendRconCommand-backed action in the app. */
+    ban: (profileId: string, playerId: string, playerName: string, reason: string) => Promise<BannedPlayer[]>
+    /** Sends UnbanPlayer over RCON to the given profile, then removes that profile from the
+     *  entry (dropping the entry entirely once no profile is left). */
+    unban: (profileId: string, playerId: string) => Promise<BannedPlayer[]>
   }
   discordBot: {
     status: () => Promise<{ running: boolean; error: string | null }>

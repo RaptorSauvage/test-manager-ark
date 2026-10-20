@@ -148,6 +148,12 @@ const api: Api = {
       ipcRenderer.invoke(IPC.webDashboardApiKeysUpdate, id, updates),
     delete: (id: string) => ipcRenderer.invoke(IPC.webDashboardApiKeysDelete, id)
   },
+  playerBans: {
+    list: () => ipcRenderer.invoke(IPC.playerBansList),
+    ban: (profileId: string, playerId: string, playerName: string, reason: string) =>
+      ipcRenderer.invoke(IPC.playerBansBan, profileId, playerId, playerName, reason),
+    unban: (profileId: string, playerId: string) => ipcRenderer.invoke(IPC.playerBansUnban, profileId, playerId)
+  },
   discordBot: {
     status: () => ipcRenderer.invoke(IPC.discordBotStatus),
     restart: () => ipcRenderer.invoke(IPC.discordBotRestart),

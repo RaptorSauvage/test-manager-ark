@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-20',
+    title: 'Centralized player bans',
+    details: [
+      'New "Player Bans" screen (ARK only) - ban a player id across any of your servers from one place, and see every ban merged into one list instead of checking each server separately.',
+      'On the web dashboard, right-clicking a connected player now offers "Ban" next to "Kick", with an optional reason.'
+    ]
+  },
+  {
+    date: '2026-10-20',
     title: 'Cluster backup export/import',
     details: [
       'Settings > General > "Cluster Backup" - export every ARK/Minecraft profile plus your Settings into one file, for migrating to another PC or keeping a snapshot.',

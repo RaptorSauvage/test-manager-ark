@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import Store from 'electron-store'
-import type { ServerProfile, AppSettings, WebDashboardAccessToken, WebDashboardApiKey } from '@shared/types'
+import type { ServerProfile, AppSettings, WebDashboardAccessToken, WebDashboardApiKey, BannedPlayer } from '@shared/types'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { migrateProfile } from './lib/profileMigration'
 import { migrateMinecraftProfile } from './lib/minecraftProfileMigration'
@@ -40,6 +40,8 @@ interface StoreSchema {
   webDashboardAccessTokens: WebDashboardAccessToken[]
   /** Web dashboard API keys - only touched from the Manager's own Settings screen. */
   webDashboardApiKeys: WebDashboardApiKey[]
+  /** Centralized ban list - see BannedPlayer's own doc comment (shared/types.ts). */
+  playerBans: BannedPlayer[]
   /** Set once the pre-4-tier-role migration (legacy 'admin' -> globalAdmin, 'operator' ->
    *  moderator) has actually been written back to the two lists above. Must run at most
    *  once, ever: 'admin' is now also the current, intentional value for the new scoped
@@ -109,6 +111,7 @@ const store = new Store<StoreSchema>({
     minecraftRunningStartedAt: {},
     webDashboardAccessTokens: [],
     webDashboardApiKeys: [],
+    playerBans: [],
     webDashboardRolesMigrated: false,
     profilesMigratedToDisk: false
   }
@@ -297,6 +300,39 @@ export function deleteWebDashboardApiKey(id: string): WebDashboardApiKey[] {
   const keys = listWebDashboardApiKeys().filter((k) => k.id !== id)
   store.set('webDashboardApiKeys', keys)
   return keys
+}
+
+export function listPlayerBans(): BannedPlayer[] {
+  return store.get('playerBans') ?? []
+}
+
+/** Records that `playerId` has now been banned on `profileId` too - upserts an existing
+ *  entry (adding the profile id if not already present, refreshing name/reason/bannedAt)
+ *  rather than creating a duplicate per server, since the whole point is one merged view
+ *  across every server a given id has actually been banned on. */
+export function recordPlayerBan(playerId: string, playerName: string, reason: string, profileId: string): BannedPlayer[] {
+  const bans = listPlayerBans()
+  const existing = bans.find((b) => b.id === playerId)
+  if (existing) {
+    existing.name = playerName
+    existing.reason = reason
+    existing.bannedAt = Date.now()
+    if (!existing.profileIds.includes(profileId)) existing.profileIds.push(profileId)
+  } else {
+    bans.push({ id: playerId, name: playerName, reason, bannedAt: Date.now(), profileIds: [profileId] })
+  }
+  store.set('playerBans', bans)
+  return bans
+}
+
+/** Removes `profileId` from `playerId`'s entry - and the entry entirely once no profile is
+ *  left on it, rather than leaving a dangling ban that no longer applies anywhere. */
+export function removePlayerBanProfile(playerId: string, profileId: string): BannedPlayer[] {
+  const bans = listPlayerBans()
+    .map((b) => (b.id === playerId ? { ...b, profileIds: b.profileIds.filter((id) => id !== profileId) } : b))
+    .filter((b) => b.profileIds.length > 0)
+  store.set('playerBans', bans)
+  return bans
 }
 
 export function getRunningPids(): Record<string, number> {

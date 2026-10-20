@@ -17,7 +17,8 @@ import {
   listWebDashboardApiKeys,
   listMinecraftProfiles,
   getMinecraftProfile,
-  saveMinecraftProfile
+  saveMinecraftProfile,
+  recordPlayerBan
 } from '../store'
 import { getStatus, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
@@ -841,6 +842,40 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           return
         }
         const result = await sendRconCommand(found.profile, command)
+        sendJson(res, 200, result)
+      })
+      .catch(() => sendJson(res, 400, { ok: false, error: 'Invalid request body' }))
+    return
+  }
+
+  // ARK only - BanPlayer's a real RCON command there (same as Kick above, a thin wrapper
+  // around sendRconCommand), but it also records the ban into the centralized list (see
+  // BannedPlayer's own doc comment) so it shows up in the desktop app's own Player Bans
+  // view merged with whatever it's already been banned on elsewhere, not just this server.
+  const banMatch = path.match(/^\/api\/servers\/([^/]+)\/ban$/)
+  if (req.method === 'POST' && banMatch) {
+    const auth = await requireRole(req, res, 'moderator')
+    if (!auth) return
+    const found = findAnyServer(decodeURIComponent(banMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    if (found.kind === 'minecraft') {
+      sendJson(res, 400, { ok: false, error: 'Banning is only supported for ARK servers.' })
+      return
+    }
+    readJsonBody(req)
+      .then(async (body) => {
+        const playerId = typeof body.playerId === 'string' ? body.playerId.trim() : ''
+        const playerName = typeof body.playerName === 'string' ? body.playerName.trim() : ''
+        const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
+        if (!playerId) {
+          sendJson(res, 400, { ok: false, error: 'Missing playerId' })
+          return
+        }
+        const result = await sendRconCommand(found.profile, `BanPlayer ${playerId}`)
+        if (result.ok) recordPlayerBan(playerId, playerName || playerId, reason, found.profile.id)
         sendJson(res, 200, result)
       })
       .catch(() => sendJson(res, 400, { ok: false, error: 'Invalid request body' }))
@@ -2949,6 +2984,28 @@ function initDashboard(resolvedRole) {
         });
       });
       menu.appendChild(kickBtn);
+
+      var banBtn = document.createElement('button');
+      banBtn.className = 'danger';
+      banBtn.textContent = 'Ban';
+      banBtn.addEventListener('click', function () {
+        if (!currentId) return;
+        if (!confirm('Ban ' + player.name + '?')) return;
+        var reason = prompt('Reason for banning ' + player.name + '? (optional)', '');
+        if (reason === null) return;
+        fetch('/api/servers/' + encodeURIComponent(currentId) + '/ban', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerId: player.id, playerName: player.name, reason: reason })
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (result) {
+            if (result && result.ok) showToast('Banned ' + player.name);
+            else showToast('Ban failed: ' + (result && result.error ? result.error : 'unknown error'));
+          })
+          .catch(function () { showToast('Ban failed'); });
+      });
+      menu.appendChild(banBtn);
     }
 
     document.body.appendChild(menu);

@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import Store from 'electron-store'
-import { setRunningPid, setRunningStartedAt, getRunningPids, getRunningStartedAt } from '../src/main/store'
+import {
+  setRunningPid,
+  setRunningStartedAt,
+  getRunningPids,
+  getRunningStartedAt,
+  listPlayerBans,
+  recordPlayerBan,
+  removePlayerBanProfile
+} from '../src/main/store'
 
 describe('setRunningPid/setRunningStartedAt', () => {
   it('persists normally when nothing goes wrong', () => {
@@ -25,5 +33,27 @@ describe('setRunningPid/setRunningStartedAt', () => {
     } finally {
       spy.mockRestore()
     }
+  })
+})
+
+describe('listPlayerBans/recordPlayerBan/removePlayerBanProfile', () => {
+  it('merges bans for the same player id across servers into one row', () => {
+    recordPlayerBan('steam-resilience-1', 'Griefer', 'raiding spawn', 'profile-a')
+    recordPlayerBan('steam-resilience-1', 'Griefer', 'raiding spawn', 'profile-b')
+    const bans = listPlayerBans()
+    const ban = bans.find((b) => b.id === 'steam-resilience-1')
+    expect(ban?.profileIds).toEqual(['profile-a', 'profile-b'])
+
+    removePlayerBanProfile('steam-resilience-1', 'profile-a')
+    removePlayerBanProfile('steam-resilience-1', 'profile-b')
+    expect(listPlayerBans().some((b) => b.id === 'steam-resilience-1')).toBe(false)
+  })
+
+  it('drops the ban entirely once its last profile is unbanned', () => {
+    recordPlayerBan('steam-resilience-2', 'Lonely', 'test', 'profile-only')
+    expect(listPlayerBans().some((b) => b.id === 'steam-resilience-2')).toBe(true)
+
+    removePlayerBanProfile('steam-resilience-2', 'profile-only')
+    expect(listPlayerBans().some((b) => b.id === 'steam-resilience-2')).toBe(false)
   })
 })
