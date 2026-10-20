@@ -55,4 +55,27 @@ export function registerDialogHandlers(mainWindow: BrowserWindow): void {
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
   })
+
+  ipcMain.handle(IPC.dialogSaveClusterBundleFile, async () => {
+    const date = new Date().toISOString().slice(0, 10)
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export cluster backup',
+      defaultPath: `bober-cluster-backup-${date}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    refocus(mainWindow)
+    if (result.canceled || !result.filePath) return null
+    return result.filePath
+  })
+
+  ipcMain.handle(IPC.dialogSelectClusterBundleFile, async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      title: 'Import cluster backup',
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    refocus(mainWindow)
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
 }

@@ -4,6 +4,7 @@ import { listGameDefinitions } from '@shared/games'
 import AccessTokensSection from './AccessTokensSection'
 import ApiKeysSection from './ApiKeysSection'
 import { GAME_ICONS } from '../lib/gameIcons'
+import { confirmAction } from '../lib/confirmAction'
 
 interface DataSettingsViewProps {
   onBack: () => void
@@ -99,6 +100,10 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
   const [discordBotWhitelistInput, setDiscordBotWhitelistInput] = useState('')
   const [discordBotManagerWhitelistInput, setDiscordBotManagerWhitelistInput] = useState('')
   const [discordBotModIdsInput, setDiscordBotModIdsInput] = useState('')
+  const [includeSettingsOnImport, setIncludeSettingsOnImport] = useState(false)
+  const [clusterBackupBusy, setClusterBackupBusy] = useState(false)
+  const [clusterBackupStatus, setClusterBackupStatus] = useState('')
+  const [clusterBackupError, setClusterBackupError] = useState('')
 
   useEffect(() => {
     window.api.settings.get().then((s) => {
@@ -143,6 +148,47 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     setTimeout(() => setStatus(''), 2000)
     setWebDashboardStatus(await window.api.webDashboard.getStatus())
     setDiscordBotStatus(await window.api.discordBot.status())
+  }
+
+  async function exportClusterBackup(): Promise<void> {
+    setClusterBackupError('')
+    setClusterBackupStatus('')
+    const filePath = await window.api.dialog.saveClusterBundleFile()
+    if (!filePath) return
+    setClusterBackupBusy(true)
+    try {
+      await window.api.cluster.export(filePath)
+      setClusterBackupStatus('Backup exported.')
+      setTimeout(() => setClusterBackupStatus(''), 3000)
+    } catch (err) {
+      setClusterBackupError((err as Error).message)
+    } finally {
+      setClusterBackupBusy(false)
+    }
+  }
+
+  async function importClusterBackup(): Promise<void> {
+    setClusterBackupError('')
+    setClusterBackupStatus('')
+    const filePath = await window.api.dialog.selectClusterBundleFile()
+    if (!filePath) return
+    const warning = includeSettingsOnImport
+      ? 'Import this cluster backup? Every ARK/Minecraft profile in it will be added as new profiles, and your current Settings will be replaced with the ones from the backup.'
+      : 'Import this cluster backup? Every ARK/Minecraft profile in it will be added as new profiles (Settings are left untouched).'
+    if (!confirmAction(warning)) return
+    setClusterBackupBusy(true)
+    try {
+      const result = await window.api.cluster.import(filePath, { includeSettings: includeSettingsOnImport })
+      if (result.settingsReplaced) setSettings(result.settings)
+      setClusterBackupStatus(
+        `Imported ${result.addedProfileCount} ARK and ${result.addedMinecraftProfileCount} Minecraft profile(s)` +
+          (result.settingsReplaced ? ', Settings replaced.' : '.')
+      )
+    } catch (err) {
+      setClusterBackupError((err as Error).message)
+    } finally {
+      setClusterBackupBusy(false)
+    }
   }
 
   const isLan = settings.webDashboardHost.trim() !== '' && settings.webDashboardHost.trim() !== '127.0.0.1'
@@ -226,6 +272,40 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                     </div>
                   </label>
                   <p className="empty-state">Opens this app&apos;s own data folder (profiles, settings, config.json).</p>
+                </section>
+
+                <section className="cluster-section">
+                  <h3>Cluster Backup</h3>
+                  <p className="empty-state">
+                    Exports every ARK and Minecraft profile, plus these Settings, into a single JSON file - for
+                    migrating to another machine or just keeping a snapshot. Only the Manager&apos;s own
+                    configuration is included, not the actual server files themselves (install directories still
+                    point at wherever they lived when exported).
+                  </p>
+                  <div className="form-actions">
+                    <button type="button" onClick={() => void exportClusterBackup()} disabled={clusterBackupBusy}>
+                      Export cluster backup
+                    </button>
+                    <button type="button" onClick={() => void importClusterBackup()} disabled={clusterBackupBusy}>
+                      Import cluster backup
+                    </button>
+                  </div>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={includeSettingsOnImport}
+                      onChange={(e) => setIncludeSettingsOnImport(e.target.checked)}
+                    />
+                    Also replace my current Settings with the ones from the backup
+                  </label>
+                  <p className="empty-state">
+                    Imported profiles are always added as new profiles (never overwrite an existing one, renamed on
+                    a name collision) - safe to import more than once. Settings are left untouched unless the box
+                    above is checked, since replacing them overwrites things like your Discord bot token and web
+                    dashboard ports.
+                  </p>
+                  {clusterBackupStatus && <p className="status-message">{clusterBackupStatus}</p>}
+                  {clusterBackupError && <p className="error-message">{clusterBackupError}</p>}
                 </section>
 
                 <section className="cluster-section">

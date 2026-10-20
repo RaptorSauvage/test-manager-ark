@@ -25,6 +25,7 @@ import { registerMinecraftBackupHandlers } from './minecraftBackup'
 import { registerMinecraftModsHandlers } from './minecraftMods'
 import { registerMinecraftInstallHandlers } from './minecraftInstall'
 import { registerDiscordBotHandlers } from './discordBot'
+import { registerClusterHandlers } from './cluster'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers(mainWindow.webContents)
@@ -53,4 +54,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerMinecraftBackupHandlers(mainWindow.webContents)
   registerMinecraftModsHandlers()
   registerMinecraftInstallHandlers()
+  registerClusterHandlers()
 }

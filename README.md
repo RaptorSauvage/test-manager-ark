@@ -4251,3 +4251,54 @@ async function findProfileIdByName(name) {
     user to confirm the search box behaves correctly on their real cluster (filters as
     expected, auto-expands matching groups, clears back to normal when emptied) in both ARK
     and Minecraft mode.
+
+- **Added cluster backup export/import** (first of a batch the user approved after a
+  "compare with AMP/Pterodactyl/Nitrado-style panels" brainstorm). Bundles every ARK and
+  Minecraft profile plus the Manager's own Settings into a single JSON file - for migrating
+  to another machine or just keeping a full snapshot, rather than exporting profiles one at
+  a time (the existing per-profile export/import this reuses the migration/rename logic
+  from). Only the Manager's own configuration travels, not the actual server files (an
+  imported profile's `installDir` still points wherever it lived when exported).
+  - **`shared/types.ts`**: new `ClusterBundle` (`version`, `exportedAt`, `profiles`,
+    `minecraftProfiles`, `settings`) and `ClusterImportResult` types; `IPC.clusterExport`/
+    `clusterImport` and `dialogSaveClusterBundleFile`/`dialogSelectClusterBundleFile`
+    channels; `Api.cluster`/`Api.dialog`'s two new methods.
+  - **`src/main/lib/clusterExport.ts`** (new): `serializeClusterBundle()` gathers
+    `listProfiles()`/`listMinecraftProfiles()`/`getSettings()` into one pretty-printed JSON
+    blob. `parseClusterBundle(fileContent, existingNames, existingMinecraftNames)` validates
+    the shape, then runs each profile through the exact same per-profile treatment
+    `profileExport.ts`'s `parseImportedProfile` already does (its own `migrateProfile`/
+    `migrateMinecraftProfile`, a fresh `randomUUID()`, and `uniqueProfileName` against a
+    running set that grows as it goes - so two colliding imported profiles both get
+    suffixed, not just the one colliding with something already there) - ARK and Minecraft
+    name collisions are tracked completely independently, matching how the two games never
+    share a name-uniqueness pool anywhere else in the app either. Settings pass through
+    unvalidated; the caller decides whether to actually apply them.
+  - **`src/main/ipc/cluster.ts`** (new): `clusterExport` just writes the serialized bundle
+    to the chosen path. `clusterImport` parses it, `saveProfile`/`saveMinecraftProfile`s
+    every profile in it (plus `applyBackupSchedule`/`applyScheduledRestart`/
+    `applyScheduledDinoWipe` per ARK profile and the Minecraft equivalents - the same
+    side-effects `profilesImportFromFile`/`minecraftProfilesSave` already apply to a single
+    imported/saved profile), and only touches Settings (`saveSettings` + the same
+    `applyWebDashboardSettings`/`applyDiscordBotSettings`/`applyLaunchOnStartup`/
+    `applyIniLockSetting` calls `settings.ts`'s own save handler makes) when the caller
+    opted in via `includeSettings`.
+  - **`src/main/ipc/dialog.ts`**: two new dialogs (`Export cluster backup` with a dated
+    default filename `bober-cluster-backup-YYYY-MM-DD.json`, `Import cluster backup`),
+    both refocusing the window afterward like every other dialog here already does.
+  - **`src/renderer/src/pages/DataSettingsView.tsx`**: new "Cluster Backup" section (General
+    tab, right after "Server profiles") - Export/Import buttons, a checkbox ("Also replace
+    my current Settings with the ones from the backup", unchecked by default - profiles
+    always import, but overwriting live settings like the Discord bot token or web
+    dashboard port is opt-in and `confirmAction`-gated), and a status/error line. Doesn't
+    need to manually refresh `App.tsx`'s profile lists after an import - `saveProfile`/
+    `saveMinecraftProfile`'s existing `profileEvents`/`minecraftProfileEvents` broadcast
+    (built for the web dashboard's HTTP API edits to show up live in this window) already
+    covers it for free.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1091 tests - 9 new ones in
+    `tests/clusterExport.test.ts` covering invalid JSON/wrong shape, migration + fresh ids,
+    independent ARK/Minecraft name-collision handling including two colliding imports
+    against each other not just an existing name, settings passed through unchanged, and the
+    exportedAt fallback), and `npm run build` all pass. **Not yet verified**: needs the user
+    to confirm a real export/import round trip (profiles show up correctly, no accidental
+    collisions, Settings only change when the checkbox was on).

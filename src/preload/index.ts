@@ -40,7 +40,14 @@ const api: Api = {
     selectDirectory: () => ipcRenderer.invoke(IPC.dialogSelectDirectory),
     selectFile: () => ipcRenderer.invoke(IPC.dialogSelectFile),
     saveProfileFile: (defaultName: string) => ipcRenderer.invoke(IPC.dialogSaveProfileFile, defaultName),
-    selectProfileFile: () => ipcRenderer.invoke(IPC.dialogSelectProfileFile)
+    selectProfileFile: () => ipcRenderer.invoke(IPC.dialogSelectProfileFile),
+    saveClusterBundleFile: () => ipcRenderer.invoke(IPC.dialogSaveClusterBundleFile),
+    selectClusterBundleFile: () => ipcRenderer.invoke(IPC.dialogSelectClusterBundleFile)
+  },
+  cluster: {
+    export: (filePath: string) => ipcRenderer.invoke(IPC.clusterExport, filePath),
+    import: (filePath: string, options: { includeSettings: boolean }) =>
+      ipcRenderer.invoke(IPC.clusterImport, filePath, options)
   },
   server: {
     start: (profileId: string) => ipcRenderer.invoke(IPC.serverStart, profileId),

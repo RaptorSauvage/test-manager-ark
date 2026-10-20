@@ -660,7 +660,12 @@ export const IPC = {
 
   minecraftInstallListVersions: 'minecraft-install:list-versions',
   minecraftInstallListLoaderVersions: 'minecraft-install:list-loader-versions',
-  minecraftInstallRun: 'minecraft-install:run'
+  minecraftInstallRun: 'minecraft-install:run',
+
+  clusterExport: 'cluster:export',
+  clusterImport: 'cluster:import',
+  dialogSaveClusterBundleFile: 'dialog:save-cluster-bundle-file',
+  dialogSelectClusterBundleFile: 'dialog:select-cluster-bundle-file'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -668,6 +673,28 @@ export type IpcChannel = (typeof IPC)[keyof typeof IPC]
 export interface ImportResult {
   profile: ServerProfile
   profiles: ServerProfile[]
+}
+
+/** A whole-cluster backup file - every ARK and Minecraft profile plus the Manager's own
+ *  settings, bundled into one JSON file (see src/main/lib/clusterExport.ts). Meant for
+ *  migrating/restoring the Manager's own configuration, not the actual game server files
+ *  (installDir still points at wherever those lived on the machine the backup was made on -
+ *  same scope as the existing single-profile export/import, just for everything at once). */
+export interface ClusterBundle {
+  version: 1
+  exportedAt: string
+  profiles: ServerProfile[]
+  minecraftProfiles: MinecraftProfile[]
+  settings: AppSettings
+}
+
+export interface ClusterImportResult {
+  profiles: ServerProfile[]
+  minecraftProfiles: MinecraftProfile[]
+  settings: AppSettings
+  addedProfileCount: number
+  addedMinecraftProfileCount: number
+  settingsReplaced: boolean
 }
 
 /** A single classified, human-readable line parsed out of a server's ShooterGame.log. */
@@ -776,6 +803,12 @@ export interface Api {
     selectFile: () => Promise<string | null>
     saveProfileFile: (defaultName: string) => Promise<string | null>
     selectProfileFile: () => Promise<string | null>
+    saveClusterBundleFile: () => Promise<string | null>
+    selectClusterBundleFile: () => Promise<string | null>
+  }
+  cluster: {
+    export: (filePath: string) => Promise<void>
+    import: (filePath: string, options: { includeSettings: boolean }) => Promise<ClusterImportResult>
   }
   server: {
     start: (profileId: string) => Promise<ServerStatus>
