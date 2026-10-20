@@ -4303,6 +4303,61 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added player activity/playtime tracking** (fifth of the user-approved batch, "Joueurs"
+  category, and the last of that category - see the centralized ban list and the Discord join
+  alert above for the other two). Tracks how long each player's actually been connected,
+  merged across every ARK server, for a Dashboard/community-manager view of who's actually
+  playing rather than just who's online right now. ARK only, same scope reasoning as the two
+  features above it (the join/leave log line is ARK-specific).
+  - **`shared/types.ts`**: new `PlayerActivityRecord` (`id`, `name`, `totalPlaytimeMs`,
+    `sessionCount`, `lastSeenAt`, `profileIds`) - the aggregated, merged-across-servers total,
+    built only from *closed* sessions (a currently-connected player's in-progress session
+    doesn't count until they leave) - and `PlayerActivitySession` (`id`, `profileId`,
+    `playerId`, `playerName`, `joinedAt`, `leftAt`) - one closed session, kept as a capped
+    recent-activity log rather than an unbounded history. `IPC.playerActivityList`/
+    `playerActivitySessions` channels; `Api.playerActivity`'s two read-only methods. New
+    `AppSettings.playerActivityTrackingEnabled` field (off by default).
+  - **`src/main/store.ts`**: `playerActivity: Record<string, PlayerActivityRecord>` (keyed by
+    Steam/EOS id) and `playerSessions: PlayerActivitySession[]` (capped at 300, oldest trimmed
+    first) schema fields. `recordPlayerSession(profileId, playerId, playerName, joinedAt,
+    leftAt)` folds the session's duration into the player's aggregated record (creating one on
+    their first-ever session, clamping a negative duration to 0 rather than letting a clock
+    skew subtract from the total) and appends it to the capped log; `listPlayerActivity()`/
+    `listPlayerSessions(limit = 50)` read them back, the latter most-recent-first.
+  - **`src/main/lib/playerActivityWatch.ts`** (new): same serverEvents-driven lifecycle wiring
+    and global-Settings-toggle gating as `playerJoinAlertWatch.ts`, but tracks *open* sessions
+    instead of just matching a watchlist - a `Map<profileId, Map<uniqueNetId, {joinedAt,
+    playerName}>>` holds everyone currently connected per server; a `joined` event opens one
+    (restarting the clock rather than stacking a second if one was already open for that id -
+    covers a missed `left`, e.g. a crash), a `left` event closes the matching one and calls
+    `recordPlayerSession`. A `left` with nothing open (connected before this watch started) is
+    silently skipped rather than guessed; a session still open when the server stops is
+    dropped the same way, rather than timed against a leave that never actually happened.
+    `syncAllPlayerActivityWatches()` re-evaluates every running ARK profile at once.
+  - **`src/main/ipc/playerActivity.ts`** (new): two read-only handlers over the store
+    functions above - nothing to add/remove here, unlike every other player-list feature this
+    session has added, since this is collected data rather than user-managed entries.
+  - **`src/main/index.ts`**: `registerPlayerActivityWatch()` at startup, plus
+    `startPlayerActivityWatch(profile)` alongside the other player watchers for a server
+    that's already running when the Manager (re)starts.
+  - **`src/main/ipc/settings.ts`**: calls `syncAllPlayerActivityWatches()` right after saving
+    Settings, same immediate-effect reasoning as the Discord join alert above.
+  - **`src/renderer/src/pages/PlayerActivityView.tsx`** (new): read-only screen, two tables -
+    aggregated totals (sorted by total playtime, descending) and the last 50 sessions. No
+    form at all, unlike `PlayerBansView`/`WatchedPlayersSection` - there's nothing to create or
+    delete here.
+  - **`src/renderer/src/pages/Dashboard.tsx`** / **`App.tsx`**: new "Player Activity" button
+    next to "Player Bans" in the ARK Dashboard's header, and a `showPlayerActivity` top-level
+    screen state at the same tier as the rest.
+  - **`src/renderer/src/pages/DataSettingsView.tsx`**: new "Track player activity/playtime
+    (ARK)" checkbox in the General tab (not the Discord Bot tab - this works independently of
+    whether the bot's even enabled), right after "Show the server's own console/debug window".
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1101 tests - 3 new ones in
+    `tests/store.test.ts` covering cross-server total/session-count accumulation, the recent-
+    sessions log, and the negative-duration clamp), and `npm run build` all pass. **Not yet
+    verified**: needs the user to confirm real playtime actually accumulates correctly across
+    a join/leave cycle and across a Manager restart with a player still connected.
+
 - **Added a Discord alert when a watched player joins** (fourth of the user-approved batch,
   "Joueurs" category). Watch a list of names/ids in Settings and get pinged in a Discord
   channel the moment one of them joins any ARK server - previously the only way to know was

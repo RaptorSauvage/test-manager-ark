@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-20',
+    title: 'Player activity/playtime tracking',
+    details: [
+      'Settings > General > "Track player activity/playtime" - once on, the new "Player Activity" button on the Dashboard shows total playtime per player, merged across every ARK server, plus a recent-sessions log.',
+      'Off by default, and takes effect immediately on already-running servers once turned on.'
+    ]
+  },
+  {
+    date: '2026-10-20',
     title: 'Discord alert when a watched player joins',
     details: [
       'Settings > Discord Bot > "Player join alert" - pick a channel and add names/ids to watch, and the bot posts there the moment one of them joins any ARK server.',

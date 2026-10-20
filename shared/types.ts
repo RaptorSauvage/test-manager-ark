@@ -354,6 +354,10 @@ export interface AppSettings {
    *  running the watch until there's a channel to post to and at least one watched player. */
   discordBotPlayerAlertEnabled: boolean
   discordBotPlayerAlertChannelId: string
+  /** Player activity/playtime tracking (ARK only) - see playerActivityWatch.ts. Off by
+   *  default, same reasoning as every other opt-in background watcher in this app: no point
+   *  tailing every ARK server's log for this until someone actually wants the data. */
+  playerActivityTrackingEnabled: boolean
   /** Id of the Web Dashboard API key auto-provisioned for the bot's own use (see
    *  discordBot.ts) - only meaningful when webDashboardAuthEnabled is also on. Empty means
    *  none has been provisioned yet (or auth is off, so none is needed). Internal bookkeeping,
@@ -437,6 +441,34 @@ export interface WatchedPlayerAlert {
    *  watched) - never matched against, unlike value. */
   label: string
   createdAt: number
+}
+
+/**
+ * Aggregated playtime for one player (ARK only), merged across every server they've played
+ * on - keyed by Steam/EOS id, same merge-across-servers reasoning as BannedPlayer above.
+ * Built from closed sessions only (see PlayerActivitySession) - a player currently connected
+ * doesn't show their in-progress session's time here until they leave.
+ */
+export interface PlayerActivityRecord {
+  id: string
+  /** Last known in-game name - purely a label, like BannedPlayer.name. */
+  name: string
+  totalPlaytimeMs: number
+  sessionCount: number
+  lastSeenAt: number
+  profileIds: string[]
+}
+
+/** One closed join-to-leave session, kept as a capped recent-activity log (see
+ *  recordPlayerSession in store.ts for the cap) - mainly so the Player Activity screen can
+ *  show something more concrete than just a running total. */
+export interface PlayerActivitySession {
+  id: string
+  profileId: string
+  playerId: string
+  playerName: string
+  joinedAt: number
+  leftAt: number
 }
 
 /**
@@ -635,6 +667,9 @@ export const IPC = {
   watchedPlayersList: 'watched-players:list',
   watchedPlayersAdd: 'watched-players:add',
   watchedPlayersRemove: 'watched-players:remove',
+
+  playerActivityList: 'player-activity:list',
+  playerActivitySessions: 'player-activity:sessions',
 
   discordBotStatus: 'discord-bot:status',
   discordBotRestart: 'discord-bot:restart',
@@ -989,6 +1024,11 @@ export interface Api {
     list: () => Promise<WatchedPlayerAlert[]>
     add: (value: string, label: string) => Promise<WatchedPlayerAlert[]>
     remove: (id: string) => Promise<WatchedPlayerAlert[]>
+  }
+  playerActivity: {
+    list: () => Promise<PlayerActivityRecord[]>
+    /** Most recent sessions first, capped (see recordPlayerSession in store.ts). */
+    sessions: () => Promise<PlayerActivitySession[]>
   }
   discordBot: {
     status: () => Promise<{ running: boolean; error: string | null }>

@@ -6,6 +6,7 @@ import { applyDiscordBotSettings } from '../lib/discordBot'
 import { applyLaunchOnStartup } from '../lib/launchOnStartup'
 import { applyIniLockSetting } from '../lib/iniLock'
 import { syncAllPlayerJoinAlertWatches } from '../lib/playerJoinAlertWatch'
+import { syncAllPlayerActivityWatches } from '../lib/playerActivityWatch'
 
 export function registerSettingsHandlers(): void {
   ipcMain.handle(IPC.settingsGet, () => getSettings())
@@ -16,6 +17,7 @@ export function registerSettingsHandlers(): void {
     applyLaunchOnStartup(saved)
     applyIniLockSetting(saved.iniLockEnabled, listProfiles())
     syncAllPlayerJoinAlertWatches()
+    syncAllPlayerActivityWatches()
     return saved
   })
   ipcMain.handle(IPC.webDashboardStatus, () => getWebDashboardStatus())

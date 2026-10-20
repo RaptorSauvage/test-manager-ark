@@ -84,6 +84,7 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     discordBotCurseforgeCheckIntervalMinutes: 10,
     discordBotPlayerAlertEnabled: false,
     discordBotPlayerAlertChannelId: '',
+    playerActivityTrackingEnabled: false,
     discordBotApiKeyId: ''
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
@@ -377,6 +378,19 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                     there&apos;s no launch flag to resize or suppress it. Unchecking this hides that window
                     entirely; the server itself is unaffected, and its own log file keeps updating either way.
                     Takes effect on the next start.
+                  </p>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.playerActivityTrackingEnabled}
+                      onChange={(e) => setSettings({ ...settings, playerActivityTrackingEnabled: e.target.checked })}
+                    />
+                    Track player activity/playtime (ARK)
+                  </label>
+                  <p className="empty-state">
+                    Tracks how long each player's been connected, merged across every ARK server - see the
+                    &quot;Player Activity&quot; button on the Dashboard. Takes effect immediately on already-running
+                    servers, no restart needed.
                   </p>
                 </section>
 

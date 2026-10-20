@@ -28,6 +28,7 @@ import { registerDiscordBotHandlers } from './discordBot'
 import { registerClusterHandlers } from './cluster'
 import { registerPlayerBansHandlers } from './playerBans'
 import { registerWatchedPlayersHandlers } from './watchedPlayers'
+import { registerPlayerActivityHandlers } from './playerActivity'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers(mainWindow.webContents)
@@ -59,4 +60,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerClusterHandlers()
   registerPlayerBansHandlers()
   registerWatchedPlayersHandlers()
+  registerPlayerActivityHandlers()
 }

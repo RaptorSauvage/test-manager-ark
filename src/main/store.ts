@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { randomUUID } from 'node:crypto'
 import Store from 'electron-store'
 import type {
   ServerProfile,
@@ -6,7 +7,9 @@ import type {
   WebDashboardAccessToken,
   WebDashboardApiKey,
   BannedPlayer,
-  WatchedPlayerAlert
+  WatchedPlayerAlert,
+  PlayerActivityRecord,
+  PlayerActivitySession
 } from '@shared/types'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { migrateProfile } from './lib/profileMigration'
@@ -51,6 +54,10 @@ interface StoreSchema {
   playerBans: BannedPlayer[]
   /** Discord "player joined" alert watchlist - see WatchedPlayerAlert's own doc comment. */
   watchedPlayers: WatchedPlayerAlert[]
+  /** Aggregated per-player playtime, keyed by Steam/EOS id - see PlayerActivityRecord. */
+  playerActivity: Record<string, PlayerActivityRecord>
+  /** Capped recent-session log - see PlayerActivitySession and recordPlayerSession. */
+  playerSessions: PlayerActivitySession[]
   /** Set once the pre-4-tier-role migration (legacy 'admin' -> globalAdmin, 'operator' ->
    *  moderator) has actually been written back to the two lists above. Must run at most
    *  once, ever: 'admin' is now also the current, intentional value for the new scoped
@@ -114,6 +121,7 @@ const store = new Store<StoreSchema>({
       discordBotCurseforgeCheckIntervalMinutes: 10,
       discordBotPlayerAlertEnabled: false,
       discordBotPlayerAlertChannelId: '',
+      playerActivityTrackingEnabled: false,
       discordBotApiKeyId: ''
     },
     runningPids: {},
@@ -124,6 +132,8 @@ const store = new Store<StoreSchema>({
     webDashboardApiKeys: [],
     playerBans: [],
     watchedPlayers: [],
+    playerActivity: {},
+    playerSessions: [],
     webDashboardRolesMigrated: false,
     profilesMigratedToDisk: false
   }
@@ -266,6 +276,7 @@ export function getSettings(): AppSettings {
     discordBotCurseforgeCheckIntervalMinutes: 10,
     discordBotPlayerAlertEnabled: false,
     discordBotPlayerAlertChannelId: '',
+    playerActivityTrackingEnabled: false,
     discordBotApiKeyId: '',
     ...settings
   }
@@ -363,6 +374,47 @@ export function removeWatchedPlayer(id: string): WatchedPlayerAlert[] {
   const list = listWatchedPlayers().filter((p) => p.id !== id)
   store.set('watchedPlayers', list)
   return list
+}
+
+const MAX_PLAYER_SESSIONS = 300
+
+export function listPlayerActivity(): PlayerActivityRecord[] {
+  return Object.values(store.get('playerActivity') ?? {})
+}
+
+export function listPlayerSessions(limit = 50): PlayerActivitySession[] {
+  const sessions = store.get('playerSessions') ?? []
+  return sessions.slice(-limit).reverse()
+}
+
+/** Closes one join-to-leave session: folds its duration into the player's aggregated
+ *  PlayerActivityRecord (creating one on their first-ever session) and appends it to the
+ *  capped recent-session log, trimming from the front once it grows past the cap - the
+ *  aggregated totals are unaffected by that trim, only the recent-activity log is bounded. */
+export function recordPlayerSession(profileId: string, playerId: string, playerName: string, joinedAt: number, leftAt: number): void {
+  const durationMs = Math.max(0, leftAt - joinedAt)
+  const activity = store.get('playerActivity') ?? {}
+  const existing = activity[playerId]
+  if (existing) {
+    existing.name = playerName
+    existing.totalPlaytimeMs += durationMs
+    existing.sessionCount += 1
+    existing.lastSeenAt = leftAt
+    if (!existing.profileIds.includes(profileId)) existing.profileIds.push(profileId)
+  } else {
+    activity[playerId] = {
+      id: playerId,
+      name: playerName,
+      totalPlaytimeMs: durationMs,
+      sessionCount: 1,
+      lastSeenAt: leftAt,
+      profileIds: [profileId]
+    }
+  }
+  store.set('playerActivity', activity)
+
+  const sessions = [...(store.get('playerSessions') ?? []), { id: randomUUID(), profileId, playerId, playerName, joinedAt, leftAt }]
+  store.set('playerSessions', sessions.length > MAX_PLAYER_SESSIONS ? sessions.slice(sessions.length - MAX_PLAYER_SESSIONS) : sessions)
 }
 
 export function getRunningPids(): Record<string, number> {

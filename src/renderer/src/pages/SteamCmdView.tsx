@@ -48,6 +48,7 @@ export default function SteamCmdView({ onBack }: SteamCmdViewProps): JSX.Element
     discordBotCurseforgeCheckIntervalMinutes: 10,
     discordBotPlayerAlertEnabled: false,
     discordBotPlayerAlertChannelId: '',
+    playerActivityTrackingEnabled: false,
     discordBotApiKeyId: ''
   })
   const [status, setStatus] = useState('')

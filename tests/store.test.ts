@@ -10,7 +10,10 @@ import {
   removePlayerBanProfile,
   listWatchedPlayers,
   addWatchedPlayer,
-  removeWatchedPlayer
+  removeWatchedPlayer,
+  listPlayerActivity,
+  listPlayerSessions,
+  recordPlayerSession
 } from '../src/main/store'
 
 describe('setRunningPid/setRunningStartedAt', () => {
@@ -69,5 +72,37 @@ describe('listWatchedPlayers/addWatchedPlayer/removeWatchedPlayer', () => {
 
     removeWatchedPlayer('watch-resilience-1')
     expect(listWatchedPlayers().some((p) => p.id === 'watch-resilience-1')).toBe(false)
+  })
+})
+
+describe('listPlayerActivity/listPlayerSessions/recordPlayerSession', () => {
+  it('accumulates total playtime and session count across multiple sessions on different servers', () => {
+    const playerId = 'steam-activity-resilience-1'
+    const start = Date.now()
+    recordPlayerSession('profile-activity-a', playerId, 'Survivor', start, start + 60_000)
+    recordPlayerSession('profile-activity-b', playerId, 'Survivor', start, start + 30_000)
+
+    const record = listPlayerActivity().find((r) => r.id === playerId)
+    expect(record?.totalPlaytimeMs).toBe(90_000)
+    expect(record?.sessionCount).toBe(2)
+    expect(record?.profileIds).toEqual(['profile-activity-a', 'profile-activity-b'])
+  })
+
+  it('records a closed session into the recent-sessions log, most recent first', () => {
+    const playerId = 'steam-activity-resilience-2'
+    const start = Date.now()
+    recordPlayerSession('profile-activity-c', playerId, 'Newcomer', start, start + 5_000)
+
+    const sessions = listPlayerSessions()
+    expect(sessions[0]).toMatchObject({ profileId: 'profile-activity-c', playerId, playerName: 'Newcomer' })
+  })
+
+  it('never lets a negative duration (clock skew) subtract from the total', () => {
+    const playerId = 'steam-activity-resilience-3'
+    const start = Date.now()
+    recordPlayerSession('profile-activity-d', playerId, 'Confused', start, start - 10_000)
+
+    const record = listPlayerActivity().find((r) => r.id === playerId)
+    expect(record?.totalPlaytimeMs).toBe(0)
   })
 })

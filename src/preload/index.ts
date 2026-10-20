@@ -159,6 +159,10 @@ const api: Api = {
     add: (value: string, label: string) => ipcRenderer.invoke(IPC.watchedPlayersAdd, value, label),
     remove: (id: string) => ipcRenderer.invoke(IPC.watchedPlayersRemove, id)
   },
+  playerActivity: {
+    list: () => ipcRenderer.invoke(IPC.playerActivityList),
+    sessions: () => ipcRenderer.invoke(IPC.playerActivitySessions)
+  },
   discordBot: {
     status: () => ipcRenderer.invoke(IPC.discordBotStatus),
     restart: () => ipcRenderer.invoke(IPC.discordBotRestart),
