@@ -2,16 +2,17 @@ import { useEffect, useState } from 'react'
 import type { BannedPlayer, ServerProfile } from '@shared/types'
 import { confirmAction } from '../lib/confirmAction'
 
-interface PlayerBansViewProps {
+interface PlayerBansPanelProps {
   profiles: ServerProfile[]
-  onBack: () => void
 }
+
+const UNGROUPED_LABEL = 'Ungrouped'
 
 /** Centralized view of every player banned on any ARK server, merged across servers (one
  *  row per Steam/EOS id, not per server) - see BannedPlayer's own doc comment for why this
  *  exists: ARK itself never shares a ban list between servers, each one keeps its own.
  *  Minecraft isn't covered (different ban command/id shape entirely) - ARK-only for now. */
-export default function PlayerBansView({ profiles, onBack }: PlayerBansViewProps): JSX.Element {
+export default function PlayerBansPanel({ profiles }: PlayerBansPanelProps): JSX.Element {
   const [bans, setBans] = useState<BannedPlayer[]>([])
   const [playerId, setPlayerId] = useState('')
   const [playerName, setPlayerName] = useState('')
@@ -31,6 +32,23 @@ export default function PlayerBansView({ profiles, onBack }: PlayerBansViewProps
   function toggleTargetProfile(id: string): void {
     setTargetProfileIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]))
   }
+
+  const allSelected = profiles.length > 0 && targetProfileIds.length === profiles.length
+  function toggleAll(): void {
+    setTargetProfileIds(allSelected ? [] : profiles.map((p) => p.id))
+  }
+
+  // Ungrouped first (its own column), then every named group alphabetically - same ordering
+  // Dashboard.tsx uses for its own ungrouped-then-grouped server grid, minus the drag-reorder
+  // preference (this is a one-off picker, not a persisted layout).
+  const ungrouped = profiles.filter((p) => !p.group.trim())
+  const groupNames = Array.from(new Set(profiles.filter((p) => p.group.trim()).map((p) => p.group.trim()))).sort((a, b) =>
+    a.localeCompare(b)
+  )
+  const columns: Array<{ label: string; profiles: ServerProfile[] }> = [
+    ...(ungrouped.length > 0 ? [{ label: UNGROUPED_LABEL, profiles: ungrouped }] : []),
+    ...groupNames.map((name) => ({ label: name, profiles: profiles.filter((p) => p.group.trim() === name) }))
+  ]
 
   async function handleBan(): Promise<void> {
     setError('')
@@ -70,12 +88,7 @@ export default function PlayerBansView({ profiles, onBack }: PlayerBansViewProps
   }
 
   return (
-    <div className="server-detail">
-      <header className="server-detail-header">
-        <button onClick={onBack}>&larr; Back</button>
-        <h1>Player Bans</h1>
-      </header>
-
+    <>
       <section className="cluster-section">
         <h3>Ban a player</h3>
         <p className="empty-state">
@@ -87,22 +100,35 @@ export default function PlayerBansView({ profiles, onBack }: PlayerBansViewProps
           <input placeholder="Name (optional)" value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
           <input placeholder="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
         </div>
-        <div className="server-picker-menu" style={{ position: 'static', maxHeight: 160, overflowY: 'auto' }}>
-          {profiles.length === 0 ? (
-            <p className="empty-state">No ARK servers configured yet.</p>
-          ) : (
-            profiles.map((p) => (
-              <label key={p.id} className="checkbox server-picker-option">
-                <input
-                  type="checkbox"
-                  checked={targetProfileIds.includes(p.id)}
-                  onChange={() => toggleTargetProfile(p.id)}
-                />
-                {p.name}
-              </label>
-            ))
-          )}
-        </div>
+        {profiles.length === 0 ? (
+          <p className="empty-state">No ARK servers configured yet.</p>
+        ) : (
+          <>
+            <div className="form-actions">
+              <button type="button" onClick={toggleAll}>
+                {allSelected ? 'Deselect all' : 'All'}
+              </button>
+              <span className="empty-state">{targetProfileIds.length} of {profiles.length} selected</span>
+            </div>
+            <div className="ban-picker-columns">
+              {columns.map((column) => (
+                <div key={column.label} className="ban-picker-column">
+                  <h4>{column.label}</h4>
+                  {column.profiles.map((p) => (
+                    <label key={p.id} className="checkbox ban-picker-option">
+                      <input
+                        type="checkbox"
+                        checked={targetProfileIds.includes(p.id)}
+                        onChange={() => toggleTargetProfile(p.id)}
+                      />
+                      {p.name}
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
         <div className="form-actions">
           <button type="button" onClick={() => void handleBan()} disabled={busy}>
             Ban
@@ -154,6 +180,6 @@ export default function PlayerBansView({ profiles, onBack }: PlayerBansViewProps
           </table>
         )}
       </section>
-    </div>
+    </>
   )
 }

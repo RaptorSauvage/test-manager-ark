@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import cron, { type ScheduledTask } from 'node-cron'
-import type { ServerProfile } from '@shared/types'
+import type { ServerProfile, ScheduledRconCommand } from '@shared/types'
 import { buildDayOfWeekCron } from '@shared/scheduleTime'
 import { isRunning, startServer, stopServer, setUpdating } from './serverProcess'
 import { startMonitoring } from './monitor'
@@ -16,8 +16,12 @@ const restartTasks = new Map<string, ScheduledTask>()
 const dinoWipeTasks = new Map<string, ScheduledTask>()
 const maintenanceTasks = new Map<string, ScheduledTask>()
 // Keyed by `${profileId}::${entryId}`, not just profileId - unlike restart/dino wipe, a
-// profile can have any number of these at once.
+// profile can have any number of these at once. 'fixedTime' entries live in node-cron tasks
+// (rconCommandTasks); 'interval' entries are plain setInterval timers (rconIntervalTasks) -
+// different enough underlying primitives that they're not worth forcing into one Map.
+// 'timeless' entries never get an entry in either - nothing to schedule, by definition.
 const rconCommandTasks = new Map<string, ScheduledTask>()
+const rconIntervalTasks = new Map<string, ReturnType<typeof setInterval>>()
 
 /** Grace period between the server actually stopping and SteamCMD starting the update -
  *  gives the OS a moment to fully release the install directory's file handles (log file,
@@ -132,9 +136,31 @@ export function clearScheduledDinoWipe(profileId: string): void {
   }
 }
 
-/** Generic RCON command scheduler - any number of entries per profile, each on its own
- *  independent day/time schedule, same cron mechanism as the dino wipe schedule above but
- *  sending whatever command the entry was given instead of a hardcoded one. */
+/** Whether `entry.playerRequirement` allows a fire to actually go through right now. Checked
+ *  inside the fire callback (not at schedule-registration time), same as `isRunning` already
+ *  is for every trigger type here - the player count can only ever be known at the moment
+ *  the trigger actually goes off. */
+async function playerRequirementSatisfied(profile: ServerProfile, requirement: ScheduledRconCommand['playerRequirement']): Promise<boolean> {
+  if (requirement === 'always') return true
+  const players = await listPlayers(profile)
+  return requirement === 'onlyIfEmpty' ? players.length === 0 : players.length > 0
+}
+
+async function fireScheduledRconCommand(profile: ServerProfile, entry: ScheduledRconCommand): Promise<void> {
+  if (!isRunning(profile.id)) return
+  if (!(await playerRequirementSatisfied(profile, entry.playerRequirement))) return
+  const result = await sendRconCommand(profile, entry.command)
+  if (!result.ok) {
+    console.error(`Scheduled RCON command "${entry.label || entry.command}" failed for ${profile.name}:`, result.error)
+  }
+}
+
+/** Generic RCON command scheduler - any number of entries per profile, each with its own
+ *  trigger (MCSS-inspired, adapted to ARK): 'fixedTime' uses the same node-cron mechanism as
+ *  the dino wipe schedule above; 'interval' is a plain setInterval that keeps firing every
+ *  `intervalSeconds` for as long as the server's running (not a one-shot delay-after-start);
+ *  'timeless' is never scheduled at all - see runScheduledRconCommandNow for its only way to
+ *  actually fire. */
 export function applyScheduledRconCommands(profile: ServerProfile): void {
   clearScheduledRconCommands(profile.id)
 
@@ -143,16 +169,22 @@ export function applyScheduledRconCommands(profile: ServerProfile): void {
   // partial patch) can still reach here with this field missing at runtime despite the type.
   for (const entry of profile.scheduledRconCommands ?? []) {
     if (!entry.enabled || !entry.command.trim()) continue
+
+    if (entry.triggerType === 'interval') {
+      if (!entry.intervalSeconds || entry.intervalSeconds <= 0) continue
+      const timer = setInterval(() => {
+        void fireScheduledRconCommand(profile, entry)
+      }, entry.intervalSeconds * 1000)
+      rconIntervalTasks.set(`${profile.id}::${entry.id}`, timer)
+      continue
+    }
+
+    if (entry.triggerType === 'timeless') continue
+
     const cronExpr = buildDayOfWeekCron(entry.time, entry.days)
     if (!cronExpr || !cron.validate(cronExpr)) continue
-
     const task = cron.schedule(cronExpr, () => {
-      if (!isRunning(profile.id)) return
-      void sendRconCommand(profile, entry.command).then((result) => {
-        if (!result.ok) {
-          console.error(`Scheduled RCON command "${entry.label || entry.command}" failed for ${profile.name}:`, result.error)
-        }
-      })
+      void fireScheduledRconCommand(profile, entry)
     })
     rconCommandTasks.set(`${profile.id}::${entry.id}`, task)
   }
@@ -163,6 +195,11 @@ export function clearScheduledRconCommands(profileId: string): void {
     if (!key.startsWith(`${profileId}::`)) continue
     task.stop()
     rconCommandTasks.delete(key)
+  }
+  for (const [key, timer] of rconIntervalTasks) {
+    if (!key.startsWith(`${profileId}::`)) continue
+    clearInterval(timer)
+    rconIntervalTasks.delete(key)
   }
 }
 

@@ -9,8 +9,7 @@ import ServerDetail, { type TabKey } from './pages/ServerDetail'
 import SteamCmdView from './pages/SteamCmdView'
 import DataSettingsView from './pages/DataSettingsView'
 import ChangelogView from './pages/ChangelogView'
-import PlayerBansView from './pages/PlayerBansView'
-import PlayerActivityView from './pages/PlayerActivityView'
+import PlayersView from './pages/PlayersView'
 import ProfileManagementView from './pages/ProfileManagementView'
 import MinecraftDashboard from './pages/MinecraftDashboard'
 import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftServerDetail'
@@ -56,8 +55,7 @@ export default function App(): JSX.Element {
   const [showDataSettings, setShowDataSettings] = useState(false)
   const [showProfileManagement, setShowProfileManagement] = useState(false)
   const [showChangelog, setShowChangelog] = useState(false)
-  const [showPlayerBans, setShowPlayerBans] = useState(false)
-  const [showPlayerActivity, setShowPlayerActivity] = useState(false)
+  const [showPlayers, setShowPlayers] = useState(false)
   const [mainPage, setMainPage] = useState<MainPage>('dashboard')
   const [groupConsoleTarget, setGroupConsoleTarget] = useState<{ groupName: string; profileIds: string[] } | null>(
     null
@@ -173,12 +171,8 @@ export default function App(): JSX.Element {
     return <ChangelogView onBack={() => setShowChangelog(false)} />
   }
 
-  if (showPlayerBans) {
-    return <PlayerBansView profiles={profiles} onBack={() => setShowPlayerBans(false)} />
-  }
-
-  if (showPlayerActivity) {
-    return <PlayerActivityView profiles={profiles} onBack={() => setShowPlayerActivity(false)} />
+  if (showPlayers) {
+    return <PlayersView profiles={profiles} onBack={() => setShowPlayers(false)} />
   }
 
   if (gameMode === 'minecraft') {
@@ -300,8 +294,7 @@ export default function App(): JSX.Element {
             onOpenProfile={handleOpenProfile}
             onOpenSteamCmd={() => setShowSteamCmd(true)}
             onOpenProfileManagement={() => setShowProfileManagement(true)}
-            onOpenPlayerBans={() => setShowPlayerBans(true)}
-            onOpenPlayerActivity={() => setShowPlayerActivity(true)}
+            onOpenPlayers={() => setShowPlayers(true)}
           />
         )}
       </div>

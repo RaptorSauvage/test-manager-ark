@@ -1,4 +1,4 @@
-import type { ServerProfile, ServerMod } from '@shared/types'
+import type { ServerProfile, ServerMod, ScheduledRconCommand } from '@shared/types'
 
 interface LegacyProfileFields {
   activeMods?: string[]
@@ -31,7 +31,10 @@ interface LegacyProfileFields {
  *   `forceRespawnDinos`/`noSound`/`playerProfileBackupEnabled`/
  *   `playerProfileBackupMaxPerPlayer` are new and default to off/empty/70 players/20
  * - `scheduledRestart*`/`scheduledDinoWipe*` are new and default to off/00:00/no days
- * - `scheduledRconCommands` is new and defaults to an empty list
+ * - `scheduledRconCommands` is new and defaults to an empty list; each entry's own
+ *   `triggerType`/`intervalSeconds`/`playerRequirement` are newer still and backfill to
+ *   'fixedTime'/60/'always' - 'fixedTime' preserves exactly what every existing entry
+ *   already did (fire at `time` on `days`), so this migration never changes behavior
  * - `scheduledRestartOnlyIfEmpty` is new and defaults to false
  * - `scheduledMaintenance*` is new and defaults to off/00:00/no days
  * - `scheduledRestartDestroyWildDinosAfter` was dropped from the restart schedule -
@@ -112,7 +115,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     scheduledDinoWipeEnabled: rest.scheduledDinoWipeEnabled ?? false,
     scheduledDinoWipeTime: rest.scheduledDinoWipeTime ?? '00:00',
     scheduledDinoWipeDays: rest.scheduledDinoWipeDays ?? [],
-    scheduledRconCommands: rest.scheduledRconCommands ?? [],
+    scheduledRconCommands: (rest.scheduledRconCommands ?? []).map(migrateScheduledRconCommand),
     scheduledMaintenanceEnabled: rest.scheduledMaintenanceEnabled ?? false,
     scheduledMaintenanceTime: rest.scheduledMaintenanceTime ?? '00:00',
     scheduledMaintenanceDays: rest.scheduledMaintenanceDays ?? [],
@@ -127,5 +130,22 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     statsEnabled: rest.statsEnabled ?? false,
     steamBetaEnabled: rest.steamBetaEnabled ?? false,
     steamBetaName: rest.steamBetaName ?? ''
+  }
+}
+
+/** `triggerType`/`intervalSeconds`/`playerRequirement` postdate the original fixed-time-only
+ *  entry shape - 'fixedTime'/60/'always' for a legacy entry preserves its existing behavior
+ *  exactly (every prior entry only ever had a day/time schedule with no player gating). */
+function migrateScheduledRconCommand(raw: Partial<ScheduledRconCommand>): ScheduledRconCommand {
+  return {
+    id: raw.id ?? '',
+    label: raw.label ?? '',
+    command: raw.command ?? '',
+    triggerType: raw.triggerType ?? 'fixedTime',
+    time: raw.time ?? '00:00',
+    days: raw.days ?? [],
+    intervalSeconds: raw.intervalSeconds ?? 60,
+    playerRequirement: raw.playerRequirement ?? 'always',
+    enabled: raw.enabled ?? false
   }
 }

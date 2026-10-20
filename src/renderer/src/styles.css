@@ -272,6 +272,75 @@ label.checkbox {
   min-width: 0;
 }
 
+/* PlayersView's own small left sidebar (Bans/Activity) - same look as .app-sidebar's button
+   style but scoped to this one nested view instead of reusing .app-shell/.app-sidebar
+   directly, which set min-height: 100vh and would fight with this view's own header above
+   it for vertical space. */
+.players-view-body {
+  display: flex;
+  gap: 0;
+}
+
+.players-view-sidebar {
+  width: 140px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 0;
+}
+
+.players-view-sidebar button {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  padding: 10px 16px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.players-view-sidebar button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.players-view-sidebar button.active {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: rgba(79, 140, 255, 0.1);
+}
+
+.players-view-content {
+  flex: 1;
+  min-width: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+}
+
+.ban-picker-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin: 8px 0;
+}
+
+.ban-picker-column {
+  min-width: 160px;
+}
+
+.ban-picker-column h4 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.ban-picker-option {
+  display: block;
+  padding: 2px 0;
+}
+
 .cluster-data-list {
   display: flex;
   flex-direction: column;
@@ -1847,6 +1916,58 @@ label.checkbox {
   margin: 0;
   color: var(--ok);
   font-weight: 600;
+}
+
+.rcon-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+.rcon-entry + .rcon-entry {
+  border-top: 1px solid var(--border);
+}
+
+/* MCSS-inspired trigger-type picker (adapted to ARK) - three equal cards instead of a
+   dropdown, so the three choices and their one-line description are all visible at once
+   rather than hidden behind a click. */
+.rcon-trigger-cards {
+  display: flex;
+  gap: 8px;
+}
+
+.rcon-trigger-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  text-align: center;
+}
+
+.rcon-trigger-card strong {
+  font-size: 0.85rem;
+  color: inherit;
+}
+
+.rcon-trigger-card span {
+  font-size: 0.72rem;
+}
+
+.rcon-trigger-card:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.rcon-trigger-card.active {
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.1);
+  color: var(--text);
 }
 
 /* Wraps the "Add mod ID" row and the grid together so they share one left/right edge and move

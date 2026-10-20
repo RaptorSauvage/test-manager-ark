@@ -468,6 +468,18 @@ export interface WatchedPlayerAlert {
  * One entry of a server's generic RCON command scheduler (ARK only) - see
  * ServerProfile.scheduledRconCommands and scheduledActions.ts's own applyScheduledRconCommands.
  */
+/** MCSS-inspired trigger shape, adapted to ARK: 'fixedTime' fires at a day/time like the
+ *  Restart/Dino Wipe schedules; 'interval' repeats continuously every `intervalSeconds`
+ *  while the server's running (not a one-shot delay after start); 'timeless' never fires on
+ *  its own - the entry exists only to be triggered manually ("Run now"). */
+export type ScheduledRconTriggerType = 'fixedTime' | 'interval' | 'timeless'
+
+/** Gates a trigger on who's connected at fire time, same idea as
+ *  scheduledRestartOnlyIfEmpty but generalized to any of the three states a check could
+ *  care about, not just "empty". 'always' matches every prior entry's behavior (the default
+ *  for anything migrated from before this existed). */
+export type ScheduledRconPlayerRequirement = 'always' | 'onlyIfEmpty' | 'onlyIfPlayers'
+
 export interface ScheduledRconCommand {
   id: string
   /** Free-text label purely for display (e.g. "Nightly save") - the command itself is what
@@ -475,10 +487,15 @@ export interface ScheduledRconCommand {
   label: string
   /** Sent via RCON exactly as typed - whatever ARK's RCON console would accept. */
   command: string
-  /** 24h "HH:MM", same format as scheduledRestartTime/scheduledDinoWipeTime. */
+  triggerType: ScheduledRconTriggerType
+  /** 24h "HH:MM", same format as scheduledRestartTime/scheduledDinoWipeTime - only used
+   *  when triggerType is 'fixedTime'. */
   time: string
-  /** Days it fires on, 0=Sunday..6=Saturday. */
+  /** Days it fires on, 0=Sunday..6=Saturday - only used when triggerType is 'fixedTime'. */
   days: number[]
+  /** Only used when triggerType is 'interval'. */
+  intervalSeconds: number
+  playerRequirement: ScheduledRconPlayerRequirement
   enabled: boolean
 }
 

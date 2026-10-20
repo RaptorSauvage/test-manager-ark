@@ -14,8 +14,7 @@ interface DashboardProps {
   onOpenProfile: (id: string, tab?: TabKey) => void
   onOpenSteamCmd: () => void
   onOpenProfileManagement: () => void
-  onOpenPlayerBans: () => void
-  onOpenPlayerActivity: () => void
+  onOpenPlayers: () => void
 }
 
 export default function Dashboard({
@@ -24,8 +23,7 @@ export default function Dashboard({
   onOpenProfile,
   onOpenSteamCmd,
   onOpenProfileManagement,
-  onOpenPlayerBans,
-  onOpenPlayerActivity
+  onOpenPlayers
 }: DashboardProps): JSX.Element {
   const statuses = useServerStatuses(profiles.map((p) => p.id))
   const visibleProfiles = profiles.filter((p) => !p.hidden)
@@ -415,8 +413,7 @@ export default function Dashboard({
         <div className="dashboard-header-actions">
           <button onClick={onOpenSteamCmd}>SteamCMD</button>
           <button onClick={onOpenProfileManagement}>Profile Management</button>
-          <button onClick={onOpenPlayerBans}>Player Bans</button>
-          <button onClick={onOpenPlayerActivity}>Player Activity</button>
+          <button onClick={onOpenPlayers}>Players</button>
           <button onClick={() => void handleImport()} disabled={importing}>
             {importing ? 'Scanning...' : 'Import existing server'}
           </button>

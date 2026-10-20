@@ -4303,6 +4303,83 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Merged the Players screens, redesigned the ban picker, and overhauled the RCON
+  scheduler's trigger** (user feedback on the batch above, after seeing it in `npm run dev` -
+  not part of the original approved list, three related UI requests addressed together).
+  - **Merged "Player Bans" + "Player Activity" into one "Players" screen.** They were two
+    separate top-level buttons/screens; now one "Players" button opens a screen with its own
+    small left sidebar (Bans/Activity) to switch between them, since both are ARK-only and
+    both operate on the same profile list.
+    - **`src/renderer/src/pages/PlayerBansView.tsx`** / **`PlayerActivityView.tsx`**: deleted,
+      replaced by **`PlayerBansPanel.tsx`** / **`PlayerActivityPanel.tsx`** - the same content,
+      minus the `onBack`/header wrapper (now owned by the container below) and minus the
+      `onBack` prop entirely.
+    - **`src/renderer/src/pages/PlayersView.tsx`** (new): the container - header with Back,
+      then a `.players-view-body` flex row (`.players-view-sidebar` + `.players-view-content`)
+      switching between the two panels via local `useState`, not a route/top-level screen each.
+    - **`src/renderer/src/App.tsx`** / **`Dashboard.tsx`**: `showPlayerBans`/
+      `showPlayerActivity` collapsed into one `showPlayers` state; the Dashboard header's two
+      buttons collapsed into one "Players" button.
+    - **`src/renderer/src/styles.css`**: new `.players-view-body`/`.players-view-sidebar`/
+      `.players-view-content` rules - deliberately not a reuse of `.app-shell`/`.app-sidebar`
+      (those set `min-height: 100vh`, which would fight this nested view's own header above it
+      for vertical space), but visually matching `.app-sidebar`'s own button styling.
+  - **Redesigned the ban picker** (inside `PlayerBansPanel.tsx`). The server picker used to be
+    one long scrollable checkbox list; it's now columns of checkboxes grouped by each server's
+    Dashboard group (ungrouped servers get their own first column), same ungrouped-then-
+    alphabetical ordering `Dashboard.tsx`'s own server grid already uses, plus an "All"/
+    "Deselect all" toggle button and a "`N` of `M` selected" counter. New
+    `.ban-picker-columns`/`.ban-picker-column`/`.ban-picker-option` CSS rules (flex-wrap row of
+    columns, each a vertical list).
+  - **Overhauled the Scheduled RCON Commands trigger** (MCSS-inspired, adapted to ARK - kept
+    to enriching each entry's own trigger rather than rebuilding the whole feature as a
+    multi-job task system; Restart/Dino Wipe/Maintenance stay as they are). Each entry now
+    picks one of three trigger types instead of always being a day/time schedule, plus a
+    player-presence condition and a manual trigger:
+    - **`shared/types.ts`**: new `ScheduledRconTriggerType` (`'fixedTime' | 'interval' |
+      'timeless'`) and `ScheduledRconPlayerRequirement` (`'always' | 'onlyIfEmpty' |
+      'onlyIfPlayers'`) - the latter generalizes `scheduledRestartOnlyIfEmpty`'s own idea to a
+      three-way condition instead of a single boolean. `ScheduledRconCommand` gains
+      `triggerType`, `intervalSeconds` (used only when `triggerType` is `'interval'`), and
+      `playerRequirement`; `time`/`days` are now used only when `triggerType` is `'fixedTime'`.
+    - **`src/main/lib/profileMigration.ts`**: new `migrateScheduledRconCommand()` backfills
+      every existing entry to `triggerType: 'fixedTime'`, `intervalSeconds: 60`,
+      `playerRequirement: 'always'` - `'fixedTime'`/`'always'` is exactly what every entry
+      already did, so this migration never changes any existing entry's actual behavior.
+    - **`src/main/lib/scheduledActions.ts`**: `applyScheduledRconCommands` now branches on
+      `triggerType` - `'fixedTime'` keeps the existing `node-cron` mechanism; `'interval'` uses
+      a plain `setInterval(fn, intervalSeconds * 1000)` (a new `rconIntervalTasks` map,
+      parallel to the existing `rconCommandTasks` cron map - `clearScheduledRconCommands` now
+      clears both) that keeps firing for as long as the server's running, not a one-shot delay
+      after start; `'timeless'` schedules nothing at all. A new shared
+      `fireScheduledRconCommand(profile, entry)` (used by both trigger kinds) checks
+      `isRunning` then `playerRequirementSatisfied` (`'always'` skips the check entirely;
+      `'onlyIfEmpty'`/`'onlyIfPlayers'` call the same `listPlayers` the conditional restart
+      already uses) before actually sending the command.
+    - **`src/renderer/src/pages/ServerDetail/ServerManagementTab.tsx`**: "Scheduled RCON
+      Commands" moved out of the "Advanced Schedule" card into its own top-level
+      `.schedule-section` (its "own block", separate from Restart/Dino Wipe/Maintenance). Each
+      entry now shows three `.rcon-trigger-card` buttons (Fixed Time/Interval/Timeless,
+      MCSS-style) that swap in the relevant sub-fields below them (the existing
+      `ScheduleDaysPicker` for Fixed Time; an Enabled checkbox + "Every (seconds)" number input
+      for Interval; just an Enabled checkbox for Timeless, which has nothing else to configure),
+      a `playerRequirement` `<select>`, and a "Run now" button. "Run now" calls the existing
+      `window.api.groupConsole.sendRcon(profileId, command)` directly - deliberately bypassing
+      `playerRequirement` entirely (clicking it is already the user choosing to run it right
+      now, not waiting for the trigger's own condition) and is the only way a `'timeless'`
+      entry ever actually fires.
+    - **`src/renderer/src/styles.css`**: new `.rcon-entry`/`.rcon-trigger-cards`/
+      `.rcon-trigger-card` rules for the three-card trigger picker.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1171 tests - 16 in
+    `tests/scheduledRconCommands.test.ts` now split across fixedTime/timeless/interval
+    describe blocks, covering the three player-requirement outcomes, interval firing
+    repeatedly under fake timers and stopping on `clearScheduledRconCommands`, and a timeless
+    entry never scheduling anything; 2 new ones in `tests/profileMigration.test.ts` for the
+    per-entry backfill and its no-op on an already-current entry), and `npm run build` all
+    pass. **Not yet verified**: needs the user to confirm the merged Players screen, the
+    grouped ban picker, and all three RCON trigger types (including a real "Run now" and a
+    real Interval firing repeatedly) work correctly in `npm run dev`.
+
 - **Added config file edit history and diff** (third and last of the "Fichiers & config"
   category, and the last item of the entire user-approved batch - "compare with AMP/
   Pterodactyl/Nitrado-style panels" brainstorm → Fichiers & Config/Planification/Divers/

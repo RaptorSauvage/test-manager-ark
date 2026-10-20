@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-20',
+    title: 'Players screen merged, redesigned ban picker, RCON scheduler overhaul',
+    details: [
+      '"Player Bans" and "Player Activity" are now one "Players" screen with a sidebar to switch between them, instead of two separate buttons.',
+      'Banning a player now shows servers in columns grouped the same way the Dashboard groups them, plus an "All" button - instead of one long scrollable checkbox list.',
+      'Scheduled RCON Commands moved into its own block (Server Management tab) and gained a trigger type per command - Fixed Time (as before), Interval (repeats every N seconds while the server runs), or Timeless (manual only) - plus a player-requirement condition (always / only if empty / only if players online) and a "Run now" button.'
+    ]
+  },
+  {
+    date: '2026-10-20',
     title: 'Config edit history and diff',
     details: [
       'The raw .ini editor now keeps every previous version of a file you save - a "History" list under the editor shows each past save with "View diff" (colored line-by-line comparison against the current file) and "Restore" buttons.',

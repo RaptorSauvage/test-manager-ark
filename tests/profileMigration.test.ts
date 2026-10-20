@@ -210,4 +210,39 @@ describe('migrateProfile', () => {
     const legacy = baseProfile({ game: undefined })
     expect(migrateProfile(legacy).game).toBe('ark-ascended')
   })
+
+  it("backfills a legacy scheduledRconCommands entry's triggerType/intervalSeconds/playerRequirement, preserving its existing day/time schedule", () => {
+    const legacy = baseProfile({
+      scheduledRconCommands: [{ id: 'e1', label: 'Old entry', command: 'SaveWorld', time: '04:00', days: [1, 2], enabled: true }]
+    })
+    expect(migrateProfile(legacy).scheduledRconCommands).toEqual([
+      {
+        id: 'e1',
+        label: 'Old entry',
+        command: 'SaveWorld',
+        triggerType: 'fixedTime',
+        time: '04:00',
+        days: [1, 2],
+        intervalSeconds: 60,
+        playerRequirement: 'always',
+        enabled: true
+      }
+    ])
+  })
+
+  it('leaves an already-current scheduledRconCommands entry untouched', () => {
+    const entry = {
+      id: 'e1',
+      label: 'Current',
+      command: 'ServerChat hi',
+      triggerType: 'interval' as const,
+      time: '00:00',
+      days: [],
+      intervalSeconds: 120,
+      playerRequirement: 'onlyIfPlayers' as const,
+      enabled: true
+    }
+    const profile = baseProfile({ scheduledRconCommands: [entry] })
+    expect(migrateProfile(profile).scheduledRconCommands).toEqual([entry])
+  })
 })

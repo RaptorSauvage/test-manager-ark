@@ -1,6 +1,12 @@
 import { useState } from 'react'
-import type { ServerProfile, ScheduledRconCommand } from '@shared/types'
+import type { ServerProfile, ScheduledRconCommand, ScheduledRconTriggerType, ScheduledRconPlayerRequirement } from '@shared/types'
 import ScheduleDaysPicker from './ScheduleDaysPicker'
+
+const TRIGGER_CARDS: Array<{ value: ScheduledRconTriggerType; label: string; description: string }> = [
+  { value: 'fixedTime', label: 'Fixed Time', description: 'Run at a certain time' },
+  { value: 'interval', label: 'Interval', description: 'Repeat every few seconds' },
+  { value: 'timeless', label: 'Timeless', description: 'Manual only, via Run now' }
+]
 
 interface ServerManagementTabProps {
   profile: ServerProfile
@@ -10,6 +16,8 @@ interface ServerManagementTabProps {
 export default function ServerManagementTab({ profile, onProfileChange }: ServerManagementTabProps): JSX.Element {
   const [form, setForm] = useState<ServerProfile>(profile)
   const [error, setError] = useState('')
+  const [runningEntryId, setRunningEntryId] = useState<string | null>(null)
+  const [runResults, setRunResults] = useState<Record<string, string>>({})
 
   async function persist(next: ServerProfile): Promise<void> {
     setError('')
@@ -38,7 +46,17 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
   function addRconEntry(): void {
     update('scheduledRconCommands', [
       ...form.scheduledRconCommands,
-      { id: crypto.randomUUID(), label: '', command: '', time: '00:00', days: [], enabled: false }
+      {
+        id: crypto.randomUUID(),
+        label: '',
+        command: '',
+        triggerType: 'fixedTime',
+        time: '00:00',
+        days: [],
+        intervalSeconds: 60,
+        playerRequirement: 'always',
+        enabled: false
+      }
     ])
   }
 
@@ -47,6 +65,23 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
       'scheduledRconCommands',
       form.scheduledRconCommands.filter((entry) => entry.id !== id)
     )
+  }
+
+  // Bypasses the trigger and player-requirement checks entirely - clicking this is already
+  // the user explicitly deciding to run it right now, not waiting for its schedule. A
+  // 'timeless' entry has no other way to ever actually fire at all.
+  async function runRconEntryNow(entry: ScheduledRconCommand): Promise<void> {
+    if (!entry.command.trim()) return
+    setRunningEntryId(entry.id)
+    setRunResults((prev) => ({ ...prev, [entry.id]: '' }))
+    try {
+      const result = await window.api.groupConsole.sendRcon(form.id, entry.command)
+      setRunResults((prev) => ({ ...prev, [entry.id]: result.ok ? 'Sent.' : `Failed: ${result.error}` }))
+    } catch (err) {
+      setRunResults((prev) => ({ ...prev, [entry.id]: `Failed: ${(err as Error).message}` }))
+    } finally {
+      setRunningEntryId(null)
+    }
   }
 
   return (
@@ -209,46 +244,6 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
         </div>
 
         <div className="schedule-subsection">
-          <h4>Scheduled RCON Commands</h4>
-          {form.scheduledRconCommands.map((entry) => (
-            <div key={entry.id} className="schedule-picker">
-              <div className="schedule-picker-row">
-                <input
-                  placeholder="Label (optional)"
-                  value={entry.label}
-                  onChange={(e) => updateRconEntry(entry.id, { label: e.target.value })}
-                />
-                <input
-                  placeholder="RCON command, e.g. ServerChat Restart in 10 minutes"
-                  value={entry.command}
-                  onChange={(e) => updateRconEntry(entry.id, { command: e.target.value })}
-                />
-                <button type="button" className="btn-delete-backup" onClick={() => removeRconEntry(entry.id)}>
-                  Remove
-                </button>
-              </div>
-              <ScheduleDaysPicker
-                label="Run at:"
-                countdownLabel="Next run in:"
-                enabled={entry.enabled}
-                onEnabledChange={(value) => updateRconEntry(entry.id, { enabled: value })}
-                time={entry.time}
-                onTimeChange={(value) => updateRconEntry(entry.id, { time: value })}
-                days={entry.days}
-                onDaysChange={(days) => updateRconEntry(entry.id, { days })}
-              />
-            </div>
-          ))}
-          <button type="button" onClick={addRconEntry}>
-            Add scheduled command
-          </button>
-          <p className="empty-state">
-            Runs any RCON command on its own day/time schedule, independent of Restart/Dino Wipe above - e.g. a
-            <code>ServerChat</code> reminder or an extra <code>SaveWorld</code>.
-          </p>
-        </div>
-
-        <div className="schedule-subsection">
           <h4>Scheduled Maintenance (Stop → Backup → Update → Start)</h4>
           <ScheduleDaysPicker
             label="Run maintenance at:"
@@ -266,6 +261,124 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
             outcome (e.g. a failed backup still lets the update and restart happen).
           </p>
         </div>
+      </section>
+
+      <section className="schedule-section">
+        <h3>Scheduled RCON Commands</h3>
+        <p className="empty-state">
+          Runs any RCON command on its own trigger - independent of Restart/Dino Wipe/Maintenance above.
+        </p>
+        {form.scheduledRconCommands.map((entry) => (
+          <div key={entry.id} className="rcon-entry">
+            <div className="schedule-picker-row">
+              <input
+                placeholder="Label (optional)"
+                value={entry.label}
+                onChange={(e) => updateRconEntry(entry.id, { label: e.target.value })}
+              />
+              <input
+                placeholder="RCON command, e.g. ServerChat Restart in 10 minutes"
+                value={entry.command}
+                onChange={(e) => updateRconEntry(entry.id, { command: e.target.value })}
+              />
+            </div>
+
+            <div className="rcon-trigger-cards">
+              {TRIGGER_CARDS.map((card) => (
+                <button
+                  key={card.value}
+                  type="button"
+                  className={'rcon-trigger-card' + (entry.triggerType === card.value ? ' active' : '')}
+                  onClick={() => updateRconEntry(entry.id, { triggerType: card.value })}
+                >
+                  <strong>{card.label}</strong>
+                  <span>{card.description}</span>
+                </button>
+              ))}
+            </div>
+
+            {entry.triggerType === 'fixedTime' && (
+              <ScheduleDaysPicker
+                label="Run at:"
+                countdownLabel="Next run in:"
+                enabled={entry.enabled}
+                onEnabledChange={(value) => updateRconEntry(entry.id, { enabled: value })}
+                time={entry.time}
+                onTimeChange={(value) => updateRconEntry(entry.id, { time: value })}
+                days={entry.days}
+                onDaysChange={(days) => updateRconEntry(entry.id, { days })}
+              />
+            )}
+
+            {entry.triggerType === 'interval' && (
+              <div className="schedule-picker-row">
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={entry.enabled}
+                    onChange={(e) => updateRconEntry(entry.id, { enabled: e.target.checked })}
+                  />
+                  Enabled
+                </label>
+                <label>
+                  Every (seconds)
+                  <input
+                    type="number"
+                    min={1}
+                    value={entry.intervalSeconds}
+                    onChange={(e) => updateRconEntry(entry.id, { intervalSeconds: Math.max(1, Number(e.target.value)) })}
+                    disabled={!entry.enabled}
+                  />
+                </label>
+              </div>
+            )}
+
+            {entry.triggerType === 'timeless' && (
+              <div className="schedule-picker-row">
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={entry.enabled}
+                    onChange={(e) => updateRconEntry(entry.id, { enabled: e.target.checked })}
+                  />
+                  Enabled
+                </label>
+                <p className="empty-state">No automatic schedule - use &quot;Run now&quot; below.</p>
+              </div>
+            )}
+
+            <label>
+              Player requirement
+              <select
+                value={entry.playerRequirement}
+                onChange={(e) =>
+                  updateRconEntry(entry.id, { playerRequirement: e.target.value as ScheduledRconPlayerRequirement })
+                }
+              >
+                <option value="always">Always run, regardless of player count</option>
+                <option value="onlyIfEmpty">Only run when server is empty</option>
+                <option value="onlyIfPlayers">Only run when players are online</option>
+              </select>
+            </label>
+
+            <div className="form-actions">
+              <button
+                type="button"
+                onClick={() => void runRconEntryNow(entry)}
+                disabled={!entry.command.trim() || runningEntryId === entry.id}
+              >
+                {runningEntryId === entry.id ? 'Running...' : 'Run now'}
+              </button>
+              <button type="button" className="btn-delete-backup" onClick={() => removeRconEntry(entry.id)}>
+                Remove
+              </button>
+              {runResults[entry.id] && <span className="empty-state">{runResults[entry.id]}</span>}
+            </div>
+          </div>
+        ))}
+        <button type="button" onClick={addRconEntry}>
+          Add scheduled command
+        </button>
       </section>
 
       {error && <p className="error-message">{error}</p>}
