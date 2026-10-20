@@ -235,3 +235,14 @@ export function buildServerDetailEmbed(server: ManagerServerInfo, maintenance: M
   embed.addFields({ name: 'Liste des joueurs', value: playersFieldValue(server.players), inline: false })
   return embed
 }
+
+/** "Player joined" alert embed - sent to `config.playerAlertChannelId` whenever someone on
+ *  the Settings watchlist joins any ARK server, from the main process's own log tailing (see
+ *  playerJoinAlertWatch.ts) rather than anything RCON- or `/api/servers`-based here. */
+export function buildPlayerJoinAlertEmbed(serverName: string, playerName: string, uniqueNetId: string): EmbedBuilder {
+  return new EmbedBuilder()
+    .setTitle(`🔔 ${playerName} a rejoint ${serverName}`)
+    .setColor(0x2ecc71)
+    .setTimestamp()
+    .addFields({ name: 'Id (Steam/EOS)', value: uniqueNetId, inline: false })
+}

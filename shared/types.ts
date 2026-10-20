@@ -349,6 +349,11 @@ export interface AppSettings {
   discordBotCurseforgeModuleEnabled: boolean
   discordBotCurseforgeDefaultModIds: string[]
   discordBotCurseforgeCheckIntervalMinutes: number
+  /** The "player joined" alert (ARK only) - see WatchedPlayerAlert and
+   *  playerJoinAlertWatch.ts. Off by default, same reasoning as discordBotEnabled: no point
+   *  running the watch until there's a channel to post to and at least one watched player. */
+  discordBotPlayerAlertEnabled: boolean
+  discordBotPlayerAlertChannelId: string
   /** Id of the Web Dashboard API key auto-provisioned for the bot's own use (see
    *  discordBot.ts) - only meaningful when webDashboardAuthEnabled is also on. Empty means
    *  none has been provisioned yet (or auth is off, so none is needed). Internal bookkeeping,
@@ -415,6 +420,23 @@ export interface BannedPlayer {
   bannedAt: number
   /** Which ARK server profiles this id has actually been banned on. */
   profileIds: string[]
+}
+
+/**
+ * A player watched for the Discord "player join" alert (ARK only - see
+ * playerConnectionWatcher.ts, which this reuses). `value` is matched case-insensitively
+ * against either the joining player's in-game name or their Steam/EOS id, against every
+ * running ARK server at once - not scoped to one profile, since the point is to be notified
+ * no matter which server in the cluster that person joins.
+ */
+export interface WatchedPlayerAlert {
+  id: string
+  /** The in-game name or Steam/EOS id to watch for. */
+  value: string
+  /** Free-text label purely for display in the list (e.g. who this actually is/why they're
+   *  watched) - never matched against, unlike value. */
+  label: string
+  createdAt: number
 }
 
 /**
@@ -609,6 +631,10 @@ export const IPC = {
   playerBansList: 'player-bans:list',
   playerBansBan: 'player-bans:ban',
   playerBansUnban: 'player-bans:unban',
+
+  watchedPlayersList: 'watched-players:list',
+  watchedPlayersAdd: 'watched-players:add',
+  watchedPlayersRemove: 'watched-players:remove',
 
   discordBotStatus: 'discord-bot:status',
   discordBotRestart: 'discord-bot:restart',
@@ -958,6 +984,11 @@ export interface Api {
     /** Sends UnbanPlayer over RCON to the given profile, then removes that profile from the
      *  entry (dropping the entry entirely once no profile is left). */
     unban: (profileId: string, playerId: string) => Promise<BannedPlayer[]>
+  }
+  watchedPlayers: {
+    list: () => Promise<WatchedPlayerAlert[]>
+    add: (value: string, label: string) => Promise<WatchedPlayerAlert[]>
+    remove: (id: string) => Promise<WatchedPlayerAlert[]>
   }
   discordBot: {
     status: () => Promise<{ running: boolean; error: string | null }>

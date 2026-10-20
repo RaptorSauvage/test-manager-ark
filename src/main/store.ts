@@ -1,6 +1,13 @@
 import { EventEmitter } from 'node:events'
 import Store from 'electron-store'
-import type { ServerProfile, AppSettings, WebDashboardAccessToken, WebDashboardApiKey, BannedPlayer } from '@shared/types'
+import type {
+  ServerProfile,
+  AppSettings,
+  WebDashboardAccessToken,
+  WebDashboardApiKey,
+  BannedPlayer,
+  WatchedPlayerAlert
+} from '@shared/types'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { migrateProfile } from './lib/profileMigration'
 import { migrateMinecraftProfile } from './lib/minecraftProfileMigration'
@@ -42,6 +49,8 @@ interface StoreSchema {
   webDashboardApiKeys: WebDashboardApiKey[]
   /** Centralized ban list - see BannedPlayer's own doc comment (shared/types.ts). */
   playerBans: BannedPlayer[]
+  /** Discord "player joined" alert watchlist - see WatchedPlayerAlert's own doc comment. */
+  watchedPlayers: WatchedPlayerAlert[]
   /** Set once the pre-4-tier-role migration (legacy 'admin' -> globalAdmin, 'operator' ->
    *  moderator) has actually been written back to the two lists above. Must run at most
    *  once, ever: 'admin' is now also the current, intentional value for the new scoped
@@ -103,6 +112,8 @@ const store = new Store<StoreSchema>({
       discordBotCurseforgeModuleEnabled: true,
       discordBotCurseforgeDefaultModIds: [],
       discordBotCurseforgeCheckIntervalMinutes: 10,
+      discordBotPlayerAlertEnabled: false,
+      discordBotPlayerAlertChannelId: '',
       discordBotApiKeyId: ''
     },
     runningPids: {},
@@ -112,6 +123,7 @@ const store = new Store<StoreSchema>({
     webDashboardAccessTokens: [],
     webDashboardApiKeys: [],
     playerBans: [],
+    watchedPlayers: [],
     webDashboardRolesMigrated: false,
     profilesMigratedToDisk: false
   }
@@ -252,6 +264,8 @@ export function getSettings(): AppSettings {
     discordBotCurseforgeModuleEnabled: true,
     discordBotCurseforgeDefaultModIds: [],
     discordBotCurseforgeCheckIntervalMinutes: 10,
+    discordBotPlayerAlertEnabled: false,
+    discordBotPlayerAlertChannelId: '',
     discordBotApiKeyId: '',
     ...settings
   }
@@ -333,6 +347,22 @@ export function removePlayerBanProfile(playerId: string, profileId: string): Ban
     .filter((b) => b.profileIds.length > 0)
   store.set('playerBans', bans)
   return bans
+}
+
+export function listWatchedPlayers(): WatchedPlayerAlert[] {
+  return store.get('watchedPlayers') ?? []
+}
+
+export function addWatchedPlayer(entry: WatchedPlayerAlert): WatchedPlayerAlert[] {
+  const list = [...listWatchedPlayers(), entry]
+  store.set('watchedPlayers', list)
+  return list
+}
+
+export function removeWatchedPlayer(id: string): WatchedPlayerAlert[] {
+  const list = listWatchedPlayers().filter((p) => p.id !== id)
+  store.set('watchedPlayers', list)
+  return list
 }
 
 export function getRunningPids(): Record<string, number> {

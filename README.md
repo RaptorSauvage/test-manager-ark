@@ -4303,6 +4303,72 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added a Discord alert when a watched player joins** (fourth of the user-approved batch,
+  "Joueurs" category). Watch a list of names/ids in Settings and get pinged in a Discord
+  channel the moment one of them joins any ARK server - previously the only way to know was
+  watching the web dashboard's live player list yourself. ARK only (the join/leave log line
+  this reuses from `playerConnectionWatcher.ts` is ARK-specific - see `playerBackupWatch.ts`,
+  the only other consumer of that watcher, for the same scope).
+  - **`shared/types.ts`**: new `WatchedPlayerAlert` type (`id`, `value`, `label`, `createdAt`)
+    - `value` is matched case-insensitively against either the joining player's name or their
+    Steam/EOS id. `IPC.watchedPlayersList`/`watchedPlayersAdd`/`watchedPlayersRemove` channels;
+    `Api.watchedPlayers`'s three methods. New `AppSettings.discordBotPlayerAlertEnabled`/
+    `discordBotPlayerAlertChannelId` fields.
+  - **`shared/discordBot.ts`**: `DiscordBotConfig.playerAlertChannelId` - only set when the
+    feature's enabled, same as every other optional channel id already on this type.
+  - **`src/main/store.ts`**: new `watchedPlayers: WatchedPlayerAlert[]` schema field (default
+    `[]`) plus `listWatchedPlayers()`/`addWatchedPlayer()`/`removeWatchedPlayer()` - a plain
+    add/list/remove-by-id list, no merging logic needed (unlike `BannedPlayer` above, there's
+    nothing here to merge across servers in the first place).
+  - **`src/main/ipc/watchedPlayers.ts`** (new): thin CRUD handlers over the store functions -
+    `add` generates the `id`/`createdAt` here (`randomUUID()`, same as every other IPC-layer-
+    generated id in the app) rather than inside store.ts.
+  - **`src/main/lib/playerJoinAlertWatch.ts`** (new): mirrors `playerBackupWatch.ts`'s
+    serverEvents-driven start/stop-alongside-the-server-lifecycle wiring, but gated on a
+    global Settings toggle (`discordBotPlayerAlertEnabled`) rather than a per-profile field,
+    since there's no reason to pick and choose which servers in a cluster to watch - the
+    whole point is not having to guess which one the watched player will actually join.
+    `playerMatchesWatchlist(event, watchlist)` is kept as a standalone pure function (unit
+    tested on its own) rather than inlined into the watch callback, which instead calls
+    `listWatchedPlayers()` fresh on every join rather than snapshotting it at watch-start
+    time - so editing the list takes effect on the very next join with no restart needed.
+    `syncAllPlayerJoinAlertWatches()` re-evaluates every running ARK profile at once (called
+    from the Settings save handler) since the toggle lives in Settings, not per-profile.
+  - **`src/main/lib/discordBot.ts`**: `buildConfig` now sets `playerAlertChannelId`; new
+    `notifyPlayerJoin(serverName, playerName, uniqueNetId)` sends a plain fork IPC message to
+    the already-running bot child process (`child.send({ type: 'playerJoinAlert', ... })`) -
+    unlike every other field on `DiscordBotConfig`, a join can happen at any moment while the
+    bot's already up, so this can't wait for the config file the bot only ever reads once at
+    its own startup.
+  - **`src/bot/statusEmbeds.ts`**: new `buildPlayerJoinAlertEmbed(serverName, playerName,
+    uniqueNetId)` - a small embed, consistent with every other embed this file already builds.
+  - **`src/bot/index.ts`**: `process.on('message')` now also handles a `playerJoinAlert`
+    message type (alongside the existing `stop` one) - looks up `config.playerAlertChannelId`
+    in `client.channels.cache` (same lookup `statusRefresh.ts` already uses for its own
+    channels), warns to the log instead of crashing if the channel's missing/not text-based.
+  - **`src/main/index.ts`**: `registerPlayerJoinAlertWatch()` called once at startup, and
+    `startPlayerJoinAlertWatch(profile)` added alongside the existing
+    `startMonitoring`/`startPlayerBackupWatch` calls for a server already running when the
+    Manager (re)starts.
+  - **`src/main/ipc/settings.ts`**: calls `syncAllPlayerJoinAlertWatches()` right after saving
+    Settings, so toggling the feature on/off takes effect on already-running servers
+    immediately instead of only on their next restart.
+  - **`src/renderer/src/pages/WatchedPlayersSection.tsx`** (new): the watchlist's own
+    add/remove table, same `accounts-section`/`accounts-add-form`/`accounts-table` styling
+    `AccessTokensSection.tsx` already established - rendered standalone (own IPC, not part of
+    the Settings form/Save button) right under the Discord Bot tab's form, exactly where
+    `AccessTokensSection`/`ApiKeysSection` already render under the Access Tokens tab.
+  - **`src/renderer/src/pages/DataSettingsView.tsx`**: new "Player join alert (ARK only)"
+    section in the Discord Bot tab - an Enable checkbox and a channel id field, both disabled
+    until `discordBotEnabled` (and the checkbox itself) is on, same disabled-cascade pattern
+    every other sub-feature in this tab already uses.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1098 tests - 5 new ones:
+    4 in `tests/playerJoinAlertWatch.test.ts` for `playerMatchesWatchlist`'s name/id/case-
+    insensitive/no-match/empty-list behavior, 1 in `tests/store.test.ts` for the watchlist's
+    add/list/remove), and `npm run build` all pass. **Not yet verified**: needs the user to
+    confirm a real join from a watched player actually posts to the configured Discord
+    channel, and that toggling the feature mid-session (no restart) takes effect.
+
 - **Added a centralized player ban list** (third of the user-approved batch, "Joueurs"
   category). ARK's own `BanPlayer`/`UnbanPlayer` RCON commands only ever touch one server's
   own local ban file, so banning someone who hops between servers in a cluster meant

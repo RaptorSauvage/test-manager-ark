@@ -7,7 +7,10 @@ import {
   getRunningStartedAt,
   listPlayerBans,
   recordPlayerBan,
-  removePlayerBanProfile
+  removePlayerBanProfile,
+  listWatchedPlayers,
+  addWatchedPlayer,
+  removeWatchedPlayer
 } from '../src/main/store'
 
 describe('setRunningPid/setRunningStartedAt', () => {
@@ -55,5 +58,16 @@ describe('listPlayerBans/recordPlayerBan/removePlayerBanProfile', () => {
 
     removePlayerBanProfile('steam-resilience-2', 'profile-only')
     expect(listPlayerBans().some((b) => b.id === 'steam-resilience-2')).toBe(false)
+  })
+})
+
+describe('listWatchedPlayers/addWatchedPlayer/removeWatchedPlayer', () => {
+  it('adds, lists, and removes a watched player', () => {
+    const entry = { id: 'watch-resilience-1', value: 'SomeStreamer', label: 'Streamer de test', createdAt: Date.now() }
+    addWatchedPlayer(entry)
+    expect(listWatchedPlayers().some((p) => p.id === 'watch-resilience-1')).toBe(true)
+
+    removeWatchedPlayer('watch-resilience-1')
+    expect(listWatchedPlayers().some((p) => p.id === 'watch-resilience-1')).toBe(false)
   })
 })

@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-20',
+    title: 'Discord alert when a watched player joins',
+    details: [
+      'Settings > Discord Bot > "Player join alert" - pick a channel and add names/ids to watch, and the bot posts there the moment one of them joins any ARK server.',
+      'Matches either the in-game name or the Steam/EOS id, case-insensitively, across the whole cluster at once.'
+    ]
+  },
+  {
+    date: '2026-10-20',
     title: 'Centralized player bans',
     details: [
       'New "Player Bans" screen (ARK only) - ban a player id across any of your servers from one place, and see every ban merged into one list instead of checking each server separately.',

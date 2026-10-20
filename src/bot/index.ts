@@ -1,7 +1,8 @@
-import { Client, Events, GatewayIntentBits, REST, Routes } from 'discord.js'
+import { Client, Events, GatewayIntentBits, REST, Routes, TextChannel } from 'discord.js'
 import { loadConfig } from './config'
 import { log } from './logging'
 import { refreshStatusMessage, refreshMinecraftStatusMessage } from './statusRefresh'
+import { buildPlayerJoinAlertEmbed } from './statusEmbeds'
 import { checkSchedules } from './schedule'
 import { checkCurseforgeUpdates } from './curseforgeCheck'
 import { initMaintenanceState } from './maintenanceState'
@@ -115,7 +116,24 @@ function shutdown(): void {
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 process.on('message', (message: unknown) => {
-  if (typeof message === 'object' && message !== null && (message as { type?: string }).type === 'stop') shutdown()
+  if (typeof message !== 'object' || message === null) return
+  const type = (message as { type?: string }).type
+  if (type === 'stop') {
+    shutdown()
+    return
+  }
+  if (type === 'playerJoinAlert') {
+    const { serverName, playerName, uniqueNetId } = message as { serverName: string; playerName: string; uniqueNetId: string }
+    if (!config.playerAlertChannelId) return
+    const channel = client.channels.cache.get(config.playerAlertChannelId)
+    if (!channel || !(channel instanceof TextChannel)) {
+      log.warn(`Alerte joueur ignorée : le salon ${config.playerAlertChannelId} est introuvable ou n'est pas un salon textuel.`)
+      return
+    }
+    channel.send({ embeds: [buildPlayerJoinAlertEmbed(serverName, playerName, uniqueNetId)] }).catch((err: Error) => {
+      log.error(`Envoi de l'alerte joueur impossible : ${err.message}`)
+    })
+  }
 })
 
 client.login(config.discordToken).catch((err) => {

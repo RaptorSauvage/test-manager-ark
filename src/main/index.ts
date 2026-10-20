@@ -25,6 +25,7 @@ import { applyScheduledRestart, applyScheduledDinoWipe } from './lib/scheduledAc
 import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
 import { startMonitoring } from './lib/monitor'
 import { registerPlayerBackupWatch, startPlayerBackupWatch } from './lib/playerBackupWatch'
+import { registerPlayerJoinAlertWatch, startPlayerJoinAlertWatch } from './lib/playerJoinAlertWatch'
 import { startUpdateCheckPolling } from './lib/updateCheck'
 import { applyLaunchOnStartup } from './lib/launchOnStartup'
 import { doStartServer, doKillServer } from './lib/serverActions'
@@ -186,6 +187,7 @@ app.whenReady().then(() => {
   applyIniLockSetting(getSettings().iniLockEnabled, profiles)
 
   registerPlayerBackupWatch()
+  registerPlayerJoinAlertWatch()
   applyWebDashboardSettings(getSettings())
   void applyDiscordBotSettings(getSettings())
   applyLaunchOnStartup(getSettings())
@@ -198,6 +200,7 @@ app.whenReady().then(() => {
     if (isRunning(profile.id)) {
       startMonitoring(profile)
       startPlayerBackupWatch(profile)
+      startPlayerJoinAlertWatch(profile)
       startClusterLogArchiveWatch(profile)
     }
   }

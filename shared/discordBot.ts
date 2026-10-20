@@ -57,6 +57,12 @@ export interface DiscordBotConfig {
   minecraftGroupOrder: string[]
 
   curseforge: DiscordBotCurseForgeConfig
+
+  /** Channel the "player joined" alert posts to - see playerJoinAlertWatch.ts in the main
+   *  process, which matches join events against Settings' watched-player list and sends a
+   *  live IPC message (not part of this config file, since the match happens after the bot
+   *  is already running) rather than a slash command or poll. */
+  playerAlertChannelId?: string
 }
 
 export interface DiscordBotCurseForgeConfig {

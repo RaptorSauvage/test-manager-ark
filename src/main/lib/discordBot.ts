@@ -107,7 +107,8 @@ async function buildConfig(settings: AppSettings): Promise<DiscordBotConfig> {
       moduleEnabled: settings.discordBotCurseforgeModuleEnabled,
       defaultModIds: settings.discordBotCurseforgeDefaultModIds,
       checkIntervalMinutes: settings.discordBotCurseforgeCheckIntervalMinutes
-    }
+    },
+    playerAlertChannelId: settings.discordBotPlayerAlertEnabled ? settings.discordBotPlayerAlertChannelId || undefined : undefined
   }
 }
 
@@ -176,6 +177,17 @@ export async function applyDiscordBotSettings(settings: AppSettings): Promise<vo
 
 export function getDiscordBotStatus(): { running: boolean; error: string | null } {
   return { running: child !== null, error: lastError }
+}
+
+/** Live notification for the "player joined" alert (see playerJoinAlertWatch.ts) - sent as
+ *  a plain fork IPC message rather than going through the config file, since a join can
+ *  happen at any moment while the bot's already running, unlike everything else in
+ *  DiscordBotConfig which is only ever read once at the bot's own startup. A no-op if the
+ *  bot isn't currently running (nothing to send it to) - the watcher that calls this only
+ *  starts in the first place when the feature's enabled, but the bot process itself could
+ *  still be down (crashed, no token, etc.) independently of that. */
+export function notifyPlayerJoin(serverName: string, playerName: string, uniqueNetId: string): void {
+  child?.send?.({ type: 'playerJoinAlert', serverName, playerName, uniqueNetId })
 }
 
 export async function restartDiscordBot(): Promise<void> {

@@ -5,6 +5,7 @@ import { applyWebDashboardSettings, getWebDashboardStatus, getLocalNetworkIps } 
 import { applyDiscordBotSettings } from '../lib/discordBot'
 import { applyLaunchOnStartup } from '../lib/launchOnStartup'
 import { applyIniLockSetting } from '../lib/iniLock'
+import { syncAllPlayerJoinAlertWatches } from '../lib/playerJoinAlertWatch'
 
 export function registerSettingsHandlers(): void {
   ipcMain.handle(IPC.settingsGet, () => getSettings())
@@ -14,6 +15,7 @@ export function registerSettingsHandlers(): void {
     await applyDiscordBotSettings(saved)
     applyLaunchOnStartup(saved)
     applyIniLockSetting(saved.iniLockEnabled, listProfiles())
+    syncAllPlayerJoinAlertWatches()
     return saved
   })
   ipcMain.handle(IPC.webDashboardStatus, () => getWebDashboardStatus())

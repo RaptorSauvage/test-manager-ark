@@ -3,6 +3,7 @@ import type { AppSettings, AppUpdateStatus } from '@shared/types'
 import { listGameDefinitions } from '@shared/games'
 import AccessTokensSection from './AccessTokensSection'
 import ApiKeysSection from './ApiKeysSection'
+import WatchedPlayersSection from './WatchedPlayersSection'
 import { GAME_ICONS } from '../lib/gameIcons'
 import { confirmAction } from '../lib/confirmAction'
 
@@ -81,6 +82,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     discordBotCurseforgeModuleEnabled: true,
     discordBotCurseforgeDefaultModIds: [],
     discordBotCurseforgeCheckIntervalMinutes: 10,
+    discordBotPlayerAlertEnabled: false,
+    discordBotPlayerAlertChannelId: '',
     discordBotApiKeyId: ''
   })
   const [defaultDataDir, setDefaultDataDir] = useState('')
@@ -772,6 +775,28 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                     />
                   </label>
                 </section>
+
+                <section className="cluster-section">
+                  <h3>Player join alert (ARK only)</h3>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.discordBotPlayerAlertEnabled}
+                      onChange={(e) => setSettings({ ...settings, discordBotPlayerAlertEnabled: e.target.checked })}
+                      disabled={!settings.discordBotEnabled}
+                    />
+                    Enable - post to the channel below whenever a watched player joins any ARK server
+                  </label>
+                  <label>
+                    Channel id
+                    <input
+                      value={settings.discordBotPlayerAlertChannelId}
+                      onChange={(e) => setSettings({ ...settings, discordBotPlayerAlertChannelId: e.target.value })}
+                      placeholder="123456789012345678"
+                      disabled={!settings.discordBotEnabled || !settings.discordBotPlayerAlertEnabled}
+                    />
+                  </label>
+                </section>
               </>
             )}
 
@@ -781,6 +806,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
             </div>
           </form>
         )}
+
+        {tab === 'discordBot' && <WatchedPlayersSection />}
 
         {tab === 'accessTokens' && (
           <>
