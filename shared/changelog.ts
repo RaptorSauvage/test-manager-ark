@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-20',
+    title: 'Chained scheduled maintenance (Stop → Backup → Update → Start)',
+    details: [
+      'New "Scheduled Maintenance" section (Server Management tab) - one schedule that runs the whole chain automatically: stops the server, takes a backup, updates it via SteamCMD, then starts it back up.',
+      'Independent of the regular Restart schedule above it - a failed backup still lets the update and restart happen.'
+    ]
+  },
+  {
+    date: '2026-10-20',
     title: 'Conditional scheduled restart ("only if empty")',
     details: [
       'New checkbox on the scheduled Restart (Server Management tab): "Only if no players are connected" - a restart that comes due while anyone\'s online is skipped entirely and retried at the next scheduled occurrence, instead of kicking everyone off mid-session.'

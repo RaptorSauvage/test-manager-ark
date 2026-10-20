@@ -33,6 +33,7 @@ interface LegacyProfileFields {
  * - `scheduledRestart*`/`scheduledDinoWipe*` are new and default to off/00:00/no days
  * - `scheduledRconCommands` is new and defaults to an empty list
  * - `scheduledRestartOnlyIfEmpty` is new and defaults to false
+ * - `scheduledMaintenance*` is new and defaults to off/00:00/no days
  * - `scheduledRestartDestroyWildDinosAfter` was dropped from the restart schedule -
  *   folded into the separate, independent scheduled dino wipe instead
  * - `hidden` is new and defaults to false (shown on the dashboard)
@@ -112,6 +113,9 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     scheduledDinoWipeTime: rest.scheduledDinoWipeTime ?? '00:00',
     scheduledDinoWipeDays: rest.scheduledDinoWipeDays ?? [],
     scheduledRconCommands: rest.scheduledRconCommands ?? [],
+    scheduledMaintenanceEnabled: rest.scheduledMaintenanceEnabled ?? false,
+    scheduledMaintenanceTime: rest.scheduledMaintenanceTime ?? '00:00',
+    scheduledMaintenanceDays: rest.scheduledMaintenanceDays ?? [],
     startOnManagerLaunch: rest.startOnManagerLaunch ?? false,
     hidden: rest.hidden ?? false,
     group: rest.group ?? '',

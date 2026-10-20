@@ -7,12 +7,14 @@ import { isRunning, startServer, stopServer, setUpdating } from './serverProcess
 import { startMonitoring } from './monitor'
 import { updateServer, getUpdateLogPath } from './steamcmd'
 import { sendRconCommand, listPlayers } from './rcon'
+import { createBackup } from './backup'
 import { getSettings } from '../store'
 import { delay } from './delay'
 import { logManagerEvent, newTaskId } from './managerLog'
 
 const restartTasks = new Map<string, ScheduledTask>()
 const dinoWipeTasks = new Map<string, ScheduledTask>()
+const maintenanceTasks = new Map<string, ScheduledTask>()
 // Keyed by `${profileId}::${entryId}`, not just profileId - unlike restart/dino wipe, a
 // profile can have any number of these at once.
 const rconCommandTasks = new Map<string, ScheduledTask>()
@@ -161,5 +163,74 @@ export function clearScheduledRconCommands(profileId: string): void {
     if (!key.startsWith(`${profileId}::`)) continue
     task.stop()
     rconCommandTasks.delete(key)
+  }
+}
+
+/** Chained maintenance task: Stop → Backup → Update → Start, a single fixed pipeline (see
+ *  ServerProfile.scheduledMaintenanceEnabled's own doc comment for why this isn't built as
+ *  separately toggleable steps the way the restart schedule's own update/start options are).
+ *  A backup failure is logged but doesn't abort the chain - the update and restart matter
+ *  more than one missed backup, and createBackup already has its own retry-by-waiting-for-
+ *  the-next-scheduled-backup story via the regular backup schedule. */
+export async function runScheduledMaintenance(profile: ServerProfile): Promise<void> {
+  if (!isRunning(profile.id)) return
+
+  const taskId = newTaskId('scheduled-maintenance')
+  const taskLabel = `Scheduled Maintenance — ${profile.name}`
+
+  logManagerEvent(taskId, taskLabel, 'Stopping...')
+  await stopServer(profile)
+  logManagerEvent(taskId, taskLabel, 'Stopped')
+
+  logManagerEvent(taskId, taskLabel, 'Backing up...')
+  try {
+    await createBackup(profile)
+    logManagerEvent(taskId, taskLabel, 'Backup completed')
+  } catch (err) {
+    const message = (err as Error).message
+    console.error(`Scheduled maintenance backup failed for ${profile.name}:`, message)
+    logManagerEvent(taskId, taskLabel, `Backup failed: ${message}`, 'error')
+  }
+
+  setUpdating(profile.id, true)
+  try {
+    await delay(POST_STOP_UPDATE_DELAY_MS)
+    logManagerEvent(taskId, taskLabel, 'Updating...')
+    await updateServer(profile, getSettings().steamCmdPath, { skipInProgressGuard: true })
+    logScheduledUpdateOutcome(profile.id, 'Scheduled maintenance update completed successfully.')
+    logManagerEvent(taskId, taskLabel, 'Update completed')
+  } catch (err) {
+    const message = (err as Error).message
+    console.error(`Scheduled maintenance update failed for ${profile.name}:`, message)
+    logScheduledUpdateOutcome(profile.id, `Scheduled maintenance update failed: ${message}`)
+    logManagerEvent(taskId, taskLabel, `Update failed: ${message}`, 'error')
+  } finally {
+    setUpdating(profile.id, false)
+  }
+
+  logManagerEvent(taskId, taskLabel, 'Starting...')
+  startServer(profile)
+  startMonitoring(profile)
+  logManagerEvent(taskId, taskLabel, 'Started')
+}
+
+export function applyScheduledMaintenance(profile: ServerProfile): void {
+  clearScheduledMaintenance(profile.id)
+  if (!profile.scheduledMaintenanceEnabled) return
+
+  const cronExpr = buildDayOfWeekCron(profile.scheduledMaintenanceTime, profile.scheduledMaintenanceDays)
+  if (!cronExpr || !cron.validate(cronExpr)) return
+
+  const task = cron.schedule(cronExpr, () => {
+    void runScheduledMaintenance(profile)
+  })
+  maintenanceTasks.set(profile.id, task)
+}
+
+export function clearScheduledMaintenance(profileId: string): void {
+  const task = maintenanceTasks.get(profileId)
+  if (task) {
+    task.stop()
+    maintenanceTasks.delete(profileId)
   }
 }

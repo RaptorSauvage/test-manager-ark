@@ -132,6 +132,18 @@ export interface ServerProfile {
    *  run by hand (a ServerChat reminder, SaveWorld on its own cadence, etc). Any number of
    *  entries, each with its own command/time/days/enabled - see scheduledActions.ts. */
   scheduledRconCommands: ScheduledRconCommand[]
+  /** Chained maintenance task - independent of the restart/dino wipe/RCON schedules above:
+   *  at the configured time, stops the server, takes a backup (same createBackup() the
+   *  Backups tab's manual button and the cron backup schedule both already use), updates it
+   *  via SteamCMD, then starts it back up - a single fixed pipeline, not separately
+   *  toggleable steps like the restart schedule's "update after"/"start after" options,
+   *  since the whole point is running all four in that exact order. See
+   *  runScheduledMaintenance in scheduledActions.ts. */
+  scheduledMaintenanceEnabled: boolean
+  /** 24h "HH:MM" */
+  scheduledMaintenanceTime: string
+  /** Days it fires on, 0=Sunday..6=Saturday */
+  scheduledMaintenanceDays: number[]
   /** Anti-crash watchdog: when a server that was running is found stopped without ever
    *  passing through a deliberate `stopping`/`restarting` state first (i.e. a confirmed,
    *  unexpected crash - see handleUnexpectedExit in serverProcess.ts), restart it

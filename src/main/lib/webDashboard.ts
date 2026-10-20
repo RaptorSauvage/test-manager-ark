@@ -35,7 +35,12 @@ import {
 import { createBackup, listBackups, deleteBackup, restoreBackup, getBackupLog } from './backup'
 import { listPlayerBackupFolders, listPlayerBackups } from './playerBackup'
 import { getBackupScheduleStatus, applyBackupSchedule } from './schedule'
-import { applyScheduledRestart, applyScheduledDinoWipe, applyScheduledRconCommands } from './scheduledActions'
+import {
+  applyScheduledRestart,
+  applyScheduledDinoWipe,
+  applyScheduledRconCommands,
+  applyScheduledMaintenance
+} from './scheduledActions'
 import { syncPlayerBackupWatch } from './playerBackupWatch'
 import { syncAseModsToIni } from './gameConfigWrite'
 import { getCachedGameVersion } from './serverVersion'
@@ -162,6 +167,7 @@ function applyProfileSideEffects(profile: ServerProfile, syncMods: boolean): voi
   applyScheduledRestart(profile)
   applyScheduledDinoWipe(profile)
   applyScheduledRconCommands(profile)
+  applyScheduledMaintenance(profile)
   if (syncMods) syncAseModsToIni(profile)
 }
 

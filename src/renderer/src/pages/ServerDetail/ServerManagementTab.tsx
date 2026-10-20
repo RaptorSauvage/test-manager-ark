@@ -247,6 +247,25 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
             <code>ServerChat</code> reminder or an extra <code>SaveWorld</code>.
           </p>
         </div>
+
+        <div className="schedule-subsection">
+          <h4>Scheduled Maintenance (Stop → Backup → Update → Start)</h4>
+          <ScheduleDaysPicker
+            label="Run maintenance at:"
+            countdownLabel="Next maintenance in:"
+            enabled={form.scheduledMaintenanceEnabled}
+            onEnabledChange={(value) => update('scheduledMaintenanceEnabled', value)}
+            time={form.scheduledMaintenanceTime}
+            onTimeChange={(value) => update('scheduledMaintenanceTime', value)}
+            days={form.scheduledMaintenanceDays}
+            onDaysChange={(days) => update('scheduledMaintenanceDays', days)}
+          />
+          <p className="empty-state">
+            A single fixed pipeline, separate from the Restart schedule above: stops the server, takes a backup,
+            updates it via SteamCMD, then starts it back up - every step runs regardless of the others&apos;
+            outcome (e.g. a failed backup still lets the update and restart happen).
+          </p>
+        </div>
       </section>
 
       {error && <p className="error-message">{error}</p>}

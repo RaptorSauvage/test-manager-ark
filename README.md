@@ -4303,6 +4303,44 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added a chained scheduled maintenance task** (third and last of the "Planification"
+  category in the user-approved batch). The existing restart schedule already does Stop +
+  optional Update + optional Start, but as separately toggleable options on one schedule -
+  this adds a second, independent schedule that always runs the full pipeline, with a backup
+  step folded in: Stop → Backup → Update → Start, every time, in that exact order. The two
+  schedules are completely independent (a server can have both configured, firing at
+  different times for different purposes) rather than the backup step being bolted onto the
+  existing restart schedule as yet another checkbox.
+  - **`shared/types.ts`**: new `ServerProfile.scheduledMaintenanceEnabled`/
+    `scheduledMaintenanceTime`/`scheduledMaintenanceDays` fields - same shape as
+    `scheduledDinoWipe*`/`scheduledRestart*` above them.
+  - **`src/main/lib/profileMigration.ts`**: backfills them to off/00:00/no days.
+  - **`src/main/lib/scheduledActions.ts`**: `runScheduledMaintenance(profile)` - stops the
+    server, calls the same `createBackup()` the Backups tab's manual button and the cron
+    backup schedule already use (catching and logging a failure rather than letting it abort
+    the rest of the chain - the update and restart matter more than one missed backup),
+    updates via SteamCMD (same `setUpdating` lock + `POST_STOP_UPDATE_DELAY_MS` grace period
+    `runScheduledRestart` already uses, reused as-is), then starts the server back up -
+    always all four steps, never separately toggleable, since that's the entire point of a
+    "chained" task as opposed to the existing restart schedule's pick-your-own-steps design.
+    `applyScheduledMaintenance`/`clearScheduledMaintenance` wire it to its own `node-cron`
+    task, same mechanism as every other schedule in this file.
+  - **`src/main/ipc/profiles.ts`** / **`cluster.ts`** / **`src/main/lib/webDashboard.ts`** /
+    **`src/main/index.ts`**: `applyScheduledMaintenance`/`clearScheduledMaintenance` added at
+    every existing call site of the RCON scheduler added just above this (same five spots).
+  - **`src/renderer/src/pages/ServerDetail/ServerManagementTab.tsx`**: new "Scheduled
+    Maintenance (Stop → Backup → Update → Start)" subsection, reusing `ScheduleDaysPicker`
+    exactly like Restart/Dino Wipe/the RCON scheduler above it.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1114 tests - 4 new ones in
+    `tests/scheduledActions.test.ts` covering the not-running guard, the full stop→backup→
+    update→start order, the chain continuing when the backup step fails, and the update lock
+    being released even when the update itself throws), and `npm run build` all pass. Also
+    fixed the same two pre-existing test fixtures (`profileMigration.test.ts`,
+    `profileExport.test.ts`) the RCON scheduler's own entry above already needed to touch
+    once for its own new field - caught by `npm run typecheck`, not a silent gap. **Not yet
+    verified**: needs the user to confirm a real scheduled maintenance run actually goes
+    through all four steps in order against a live server.
+
 - **Added a conditional scheduled restart** (second of the "Planification" category in the
   user-approved batch). The existing scheduled restart always fires at its configured time
   regardless of who's online, kicking everyone off mid-session - this adds an opt-in "Only if

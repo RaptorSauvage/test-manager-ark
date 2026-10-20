@@ -8,9 +8,11 @@ import {
   applyScheduledRestart,
   applyScheduledDinoWipe,
   applyScheduledRconCommands,
+  applyScheduledMaintenance,
   clearScheduledRestart,
   clearScheduledDinoWipe,
-  clearScheduledRconCommands
+  clearScheduledRconCommands,
+  clearScheduledMaintenance
 } from '../lib/scheduledActions'
 import { detectGameFromInstall, detectProfileFields, uniqueProfileName } from '../lib/detect'
 import { serializeProfile, parseImportedProfile } from '../lib/profileExport'
@@ -37,6 +39,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     applyScheduledRestart(profile)
     applyScheduledDinoWipe(profile)
     applyScheduledRconCommands(profile)
+    applyScheduledMaintenance(profile)
     return profiles
   })
 
@@ -45,6 +48,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     clearScheduledRestart(id)
     clearScheduledDinoWipe(id)
     clearScheduledRconCommands(id)
+    clearScheduledMaintenance(id)
     return deleteProfile(id)
   })
 
@@ -62,6 +66,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     applyScheduledRestart(profile)
     applyScheduledDinoWipe(profile)
     applyScheduledRconCommands(profile)
+    applyScheduledMaintenance(profile)
     return { profile, profiles }
   })
 
@@ -122,6 +127,9 @@ export function registerProfileHandlers(webContents: WebContents): void {
       scheduledDinoWipeTime: '00:00',
       scheduledDinoWipeDays: [],
       scheduledRconCommands: [],
+      scheduledMaintenanceEnabled: false,
+      scheduledMaintenanceTime: '00:00',
+      scheduledMaintenanceDays: [],
       startOnManagerLaunch: false,
       hidden: false,
       group: '',
@@ -146,6 +154,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     applyScheduledRestart(copied)
     applyScheduledDinoWipe(copied)
     applyScheduledRconCommands(copied)
+    applyScheduledMaintenance(copied)
     return { profile: copied, profiles }
   })
 
@@ -157,6 +166,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     applyScheduledRestart(moved)
     applyScheduledDinoWipe(moved)
     applyScheduledRconCommands(moved)
+    applyScheduledMaintenance(moved)
     return { profile: moved, profiles }
   })
 }

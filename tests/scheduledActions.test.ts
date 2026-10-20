@@ -22,6 +22,7 @@ vi.mock('../src/main/lib/steamcmd', () => ({
   getUpdateLogPath: vi.fn(() => '/tmp/scheduled-actions-test-update.log')
 }))
 vi.mock('../src/main/lib/rcon', () => ({ sendRconCommand: vi.fn(), listPlayers: vi.fn().mockResolvedValue([]) }))
+vi.mock('../src/main/lib/backup', () => ({ createBackup: vi.fn().mockResolvedValue({}) }))
 vi.mock('../src/main/store', () => ({
   getSettings: vi.fn(() => ({ steamCmdPath: '/tmp/steamcmd' })),
   getProfile: vi.fn()
@@ -29,7 +30,7 @@ vi.mock('../src/main/store', () => ({
 vi.mock('../src/main/lib/managerLog', () => ({ logManagerEvent: vi.fn(), newTaskId: vi.fn(() => 'task-id') }))
 vi.mock('node:fs', () => ({ default: { mkdirSync: vi.fn(), appendFileSync: vi.fn() } }))
 
-import { runScheduledRestart } from '../src/main/lib/scheduledActions'
+import { runScheduledRestart, runScheduledMaintenance } from '../src/main/lib/scheduledActions'
 import { doStartServer } from '../src/main/lib/serverActions'
 import {
   isRunning as mockIsRunning,
@@ -39,6 +40,7 @@ import {
 } from '../src/main/lib/serverProcess'
 import { updateServer as mockUpdateServer } from '../src/main/lib/steamcmd'
 import { listPlayers as mockListPlayers } from '../src/main/lib/rcon'
+import { createBackup as mockCreateBackup } from '../src/main/lib/backup'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
   return {
@@ -185,5 +187,73 @@ describe('runScheduledRestart', () => {
 
     expect(mockListPlayers).not.toHaveBeenCalled()
     expect(mockStopServer).toHaveBeenCalledWith(profile)
+  })
+})
+
+describe('runScheduledMaintenance', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.mocked(mockIsRunning).mockReturnValue(true)
+    vi.mocked(mockCreateBackup).mockResolvedValue({} as never)
+    updatingProfiles.clear()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.clearAllMocks()
+    updatingProfiles.clear()
+  })
+
+  it('does nothing if the server is not actually running', async () => {
+    vi.mocked(mockIsRunning).mockReturnValue(false)
+    const profile = makeProfile()
+
+    await runScheduledMaintenance(profile)
+
+    expect(mockStopServer).not.toHaveBeenCalled()
+    expect(mockCreateBackup).not.toHaveBeenCalled()
+    expect(mockUpdateServer).not.toHaveBeenCalled()
+    expect(mockStartServer).not.toHaveBeenCalled()
+  })
+
+  it('runs stop, backup, update, and start in that order', async () => {
+    const profile = makeProfile()
+    const run = runScheduledMaintenance(profile)
+
+    await vi.waitFor(() => expect(mockStopServer).toHaveBeenCalledWith(profile))
+    await vi.waitFor(() => expect(mockCreateBackup).toHaveBeenCalledWith(profile))
+    expect(mockUpdateServer).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    await run
+
+    expect(mockUpdateServer).toHaveBeenCalledWith(profile, '/tmp/steamcmd', { skipInProgressGuard: true })
+    expect(mockStartServer).toHaveBeenCalledWith(profile)
+  })
+
+  it('still updates and starts even when the backup step fails', async () => {
+    vi.mocked(mockCreateBackup).mockRejectedValueOnce(new Error('No backup dir set'))
+    const profile = makeProfile()
+    const run = runScheduledMaintenance(profile)
+
+    await vi.waitFor(() => expect(mockCreateBackup).toHaveBeenCalled())
+    await vi.advanceTimersByTimeAsync(10_000)
+    await run
+
+    expect(mockUpdateServer).toHaveBeenCalledWith(profile, '/tmp/steamcmd', { skipInProgressGuard: true })
+    expect(mockStartServer).toHaveBeenCalledWith(profile)
+  })
+
+  it('releases the update lock even when the update itself throws', async () => {
+    vi.mocked(mockUpdateServer).mockRejectedValueOnce(new Error('SteamCMD not found'))
+    const profile = makeProfile()
+    const run = runScheduledMaintenance(profile)
+
+    await vi.waitFor(() => expect(mockStopServer).toHaveBeenCalled())
+    await vi.advanceTimersByTimeAsync(10_000)
+    await run
+
+    expect(mockIsUpdating(profile.id)).toBe(false)
+    expect(mockStartServer).toHaveBeenCalledWith(profile)
   })
 })
