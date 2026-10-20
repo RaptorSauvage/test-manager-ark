@@ -29,6 +29,7 @@ import { registerClusterHandlers } from './cluster'
 import { registerPlayerBansHandlers } from './playerBans'
 import { registerWatchedPlayersHandlers } from './watchedPlayers'
 import { registerPlayerActivityHandlers } from './playerActivity'
+import { registerFileBrowserHandlers } from './fileBrowser'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers(mainWindow.webContents)
@@ -61,4 +62,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerPlayerBansHandlers()
   registerWatchedPlayersHandlers()
   registerPlayerActivityHandlers()
+  registerFileBrowserHandlers()
 }

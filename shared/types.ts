@@ -3,6 +3,7 @@
 // of the IPC boundary drifting apart.
 
 import type { GameId } from './games'
+import type { DiffLine } from './textDiff'
 import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine, MinecraftPropertiesData } from './minecraft'
 import type {
   MinecraftModSource,
@@ -528,20 +529,40 @@ export interface PlayerActivitySession {
 }
 
 /**
- * A snapshot of a config file's content right before the web dashboard's raw .ini editor
- * overwrote it (see recordConfigFileHistory in store.ts and webDashboard.ts's POST
- * .../ini route) - only edits made through that editor are tracked; every other way a .ini
- * file gets written in this app (the structured Settings forms, mod toggles rewriting
- * ActiveMods=, etc.) goes through its own targeted key writes rather than a free-form
- * overwrite, so there's no single "previous full content" moment worth snapshotting there
- * the way there is for a raw edit.
+ * A snapshot of a config file's content right before the raw .ini editor (web dashboard or
+ * desktop Manager - see src/main/lib/fileBrowser.ts, shared between the two) overwrote it -
+ * only edits made through that editor are tracked; every other way a .ini file gets written
+ * in this app (the structured Settings forms, mod toggles rewriting ActiveMods=, etc.) goes
+ * through its own targeted key writes rather than a free-form overwrite, so there's no
+ * single "previous full content" moment worth snapshotting there the way there is for a raw
+ * edit.
  */
 export interface ConfigFileHistoryEntry {
   id: string
   profileId: string
-  /** Relative to the profile's installDir - same shape POST .../ini already takes. */
+  /** Relative to the profile's installDir - same shape the ini read/write calls take. */
   path: string
   content: string
+  savedAt: number
+}
+
+/** One entry of a file-browser directory listing - see FileBrowserListing/fileBrowser.ts. */
+export interface FileBrowserEntry {
+  name: string
+  isDir: boolean
+  size: number
+  mtime: number
+}
+
+export interface FileBrowserListing {
+  path: string
+  entries: FileBrowserEntry[]
+}
+
+/** `ConfigFileHistoryEntry` without `content`/`profileId` - what a history *list* actually
+ *  needs (see listIniHistory in fileBrowser.ts for why the full content isn't included). */
+export interface ConfigFileHistorySummary {
+  id: string
   savedAt: number
 }
 
@@ -744,6 +765,15 @@ export const IPC = {
 
   playerActivityList: 'player-activity:list',
   playerActivitySessions: 'player-activity:sessions',
+
+  fileBrowserList: 'file-browser:list',
+  fileBrowserOpen: 'file-browser:open',
+  fileBrowserDelete: 'file-browser:delete',
+  fileBrowserReadIni: 'file-browser:read-ini',
+  fileBrowserWriteIni: 'file-browser:write-ini',
+  fileBrowserIniHistory: 'file-browser:ini-history',
+  fileBrowserIniHistoryDiff: 'file-browser:ini-history-diff',
+  fileBrowserIniRestore: 'file-browser:ini-restore',
 
   discordBotStatus: 'discord-bot:status',
   discordBotRestart: 'discord-bot:restart',
@@ -1103,6 +1133,23 @@ export interface Api {
     list: () => Promise<PlayerActivityRecord[]>
     /** Most recent sessions first, capped (see recordPlayerSession in store.ts). */
     sessions: () => Promise<PlayerActivitySession[]>
+  }
+  /** Desktop mirror of the web dashboard's own Files tab - same underlying logic
+   *  (src/main/lib/fileBrowser.ts), exposed over IPC instead of HTTP. Every call can reject;
+   *  the renderer catches it like any other IPC call here, there's no {ok, error} wrapper the
+   *  way the HTTP routes need for a response body. */
+  fileBrowser: {
+    list: (profileId: string, relativePath: string) => Promise<FileBrowserListing>
+    /** Opens the file with its OS-associated app (Electron's shell.openPath) - the desktop
+     *  equivalent of the web dashboard's "Download" link, since there's no browser to
+     *  download through and the file's already right there on disk. */
+    open: (profileId: string, relativePath: string) => Promise<void>
+    delete: (profileId: string, relativePath: string) => Promise<void>
+    readIni: (profileId: string, relativePath: string) => Promise<string>
+    writeIni: (profileId: string, relativePath: string, content: string) => Promise<void>
+    iniHistory: (profileId: string, relativePath: string) => Promise<ConfigFileHistorySummary[]>
+    iniHistoryDiff: (profileId: string, entryId: string) => Promise<DiffLine[]>
+    iniRestore: (profileId: string, entryId: string) => Promise<void>
   }
   discordBot: {
     status: () => Promise<{ running: boolean; error: string | null }>

@@ -18,12 +18,8 @@ import {
   listMinecraftProfiles,
   getMinecraftProfile,
   saveMinecraftProfile,
-  recordPlayerBan,
-  listConfigFileHistory,
-  getConfigFileHistoryEntry,
-  recordConfigFileHistory
+  recordPlayerBan
 } from '../store'
-import { computeLineDiff } from '@shared/textDiff'
 import { getStatus, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches, readLogBacklog } from './logEvents'
@@ -37,7 +33,16 @@ import {
   doStopUpdateRestart
 } from './serverActions'
 import { createBackup, listBackups, deleteBackup, restoreBackup, getBackupLog } from './backup'
-import { resolveSafePath } from './pathSanitize'
+import {
+  listFileBrowserEntries,
+  resolveFileBrowserPath,
+  deleteFileBrowserFile,
+  readIniFile,
+  writeIniFile,
+  listIniHistory,
+  diffIniHistoryEntry,
+  restoreIniHistoryEntry
+} from './fileBrowser'
 import { listPlayerBackupFolders, listPlayerBackups } from './playerBackup'
 import { getBackupScheduleStatus, applyBackupSchedule } from './schedule'
 import {
@@ -292,32 +297,14 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(payload)
 }
 
-interface FileBrowserEntry {
-  name: string
-  isDir: boolean
-  size: number
-  mtime: number
-}
-
 /** Defined up here rather than inline in the route below because the request handler's own
  *  local `path` (the URL's pathname, see `const path = url.pathname` further down) shadows
- *  the `node:path` module import for the rest of that function's scope - these two helpers
- *  need the real one. */
-function listFileBrowserEntries(dirPath: string): FileBrowserEntry[] {
-  return fs.readdirSync(dirPath, { withFileTypes: true }).map((entry) => {
-    const stat = fs.statSync(path.join(dirPath, entry.name))
-    return { name: entry.name, isDir: entry.isDirectory(), size: stat.size, mtime: stat.mtimeMs }
-  })
-}
-
-/** Whether a path (relative or absolute) ends in `.ini`, case-insensitive - gates the raw
- *  .ini editor routes below so they can't double as a generic arbitrary-file-write
- *  primitive. */
-function isIniPath(p: string): boolean {
-  return /\.ini$/i.test(p)
-}
-
-/** Throws (caller sends 400) if `filePath` isn't a plain file - streams it as an attachment
+ *  the `node:path` module import for the rest of that function's scope - this one needs the
+ *  real one. The rest of the file-browser logic lives in fileBrowser.ts, shared with the
+ *  desktop Manager's own IPC handlers - this is HTTP-response-specific enough (streaming,
+ *  headers) that it stays here instead.
+ *
+ *  Throws (caller sends 400) if `filePath` isn't a plain file - streams it as an attachment
  *  otherwise. `filename*` covers a non-ASCII name properly; the plain `filename` fallback is
  *  just the same name with quotes stripped, for a client that ignores `filename*` entirely. */
 function sendFileDownload(res: http.ServerResponse, filePath: string): void {
@@ -960,12 +947,15 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
-  // File browser - admin-gated like every other route that can touch arbitrary files on
-  // disk (restore/delete backup above) rather than just moderator, since installDir can
-  // contain anything (save games, configs, logs) and resolveSafePath only guarantees the
-  // path stays inside installDir, not that everything in there is safe to hand out. ARK and
-  // Minecraft both have an installDir, so these use findAnyServer rather than ARK-only
-  // listProfiles() the way the ban/dino-wipe routes above do.
+  // File browser / raw .ini editor / config history - core logic lives in fileBrowser.ts,
+  // shared with the desktop Manager's own IPC handlers (ipc/fileBrowser.ts) so the two
+  // surfaces can never disagree on what's safe to read/write/delete. Admin-gated like every
+  // other route that can touch arbitrary files on disk (restore/delete backup above) rather
+  // than just moderator, since installDir can contain anything (save games, configs, logs)
+  // and resolveSafePath only guarantees the path stays inside installDir, not that
+  // everything in there is safe to hand out. ARK and Minecraft both have an installDir, so
+  // these use findAnyServer rather than ARK-only listProfiles() the way the ban/dino-wipe
+  // routes above do.
   const filesListMatch = path.match(/^\/api\/servers\/([^/]+)\/files$/)
   if (req.method === 'GET' && filesListMatch) {
     const auth = await requireRole(req, res, 'admin')
@@ -977,8 +967,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
     const relativePath = url.searchParams.get('path') ?? ''
     try {
-      const dirPath = resolveSafePath(found.profile.installDir, relativePath)
-      sendJson(res, 200, { path: relativePath, entries: listFileBrowserEntries(dirPath) })
+      sendJson(res, 200, listFileBrowserEntries(found.profile.installDir, relativePath))
     } catch (err) {
       sendJson(res, 400, { error: (err as Error).message })
     }
@@ -996,8 +985,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
     const relativePath = url.searchParams.get('path') ?? ''
     try {
-      const filePath = resolveSafePath(found.profile.installDir, relativePath)
-      sendFileDownload(res, filePath)
+      sendFileDownload(res, resolveFileBrowserPath(found.profile.installDir, relativePath))
     } catch (err) {
       sendJson(res, 400, { error: (err as Error).message })
     }
@@ -1021,13 +1009,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           return
         }
         try {
-          const filePath = resolveSafePath(found.profile.installDir, relativePath)
-          const stat = fs.statSync(filePath)
-          // Deliberately files only - a wrong click deleting one file is recoverable from a
-          // backup, a wrong click recursively deleting a whole folder (SavedArks, say) from
-          // a remote web UI is the kind of mistake this browser shouldn't make easy.
-          if (!stat.isFile()) throw new Error('Only files can be deleted here, not folders.')
-          fs.unlinkSync(filePath)
+          deleteFileBrowserFile(found.profile.installDir, relativePath)
           sendJson(res, 200, { ok: true })
         } catch (err) {
           sendJson(res, 400, { ok: false, error: (err as Error).message })
@@ -1037,12 +1019,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
-  // Raw .ini editor - same admin gate and resolveSafePath containment as the file browser
-  // routes above, plus its own extension check (case-insensitive) so this can't be turned
-  // into a generic arbitrary-file-write primitive beyond what it's actually for. Writing
-  // while iniLockEnabled has made the file read-only (see iniLock.ts) fails the same way any
-  // other write to a locked file would - fs surfaces that as a normal thrown error, caught
-  // and reported like any other failure here, not specially detected.
   const iniMatch = path.match(/^\/api\/servers\/([^/]+)\/ini$/)
   if (req.method === 'GET' && iniMatch) {
     const auth = await requireRole(req, res, 'admin')
@@ -1054,11 +1030,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
     const relativePath = url.searchParams.get('path') ?? ''
     try {
-      if (!isIniPath(relativePath)) throw new Error('Only .ini files can be opened here.')
-      const filePath = resolveSafePath(found.profile.installDir, relativePath)
-      const stat = fs.statSync(filePath)
-      if (!stat.isFile()) throw new Error('Not a file')
-      sendJson(res, 200, { content: fs.readFileSync(filePath, 'utf-8') })
+      sendJson(res, 200, { content: readIniFile(found.profile.installDir, relativePath) })
     } catch (err) {
       sendJson(res, 400, { error: (err as Error).message })
     }
@@ -1081,18 +1053,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           return
         }
         try {
-          if (!isIniPath(relativePath)) throw new Error('Only .ini files can be saved here.')
-          const filePath = resolveSafePath(found.profile.installDir, relativePath)
-          // Snapshot whatever's there right now before it's gone - a missing file (first
-          // edit ever, nothing to snapshot) is not an error, same as createBackup's own
-          // "nothing to lose" cases elsewhere in this app.
-          try {
-            const previous = fs.readFileSync(filePath, 'utf-8')
-            recordConfigFileHistory(found.profile.id, relativePath, previous)
-          } catch {
-            // No existing file (or unreadable) - nothing to snapshot, not fatal.
-          }
-          fs.writeFileSync(filePath, content, 'utf-8')
+          writeIniFile(found.profile.id, found.profile.installDir, relativePath, content)
           sendJson(res, 200, { ok: true })
         } catch (err) {
           sendJson(res, 400, { ok: false, error: (err as Error).message })
@@ -1102,11 +1063,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return
   }
 
-  // Config history/diff - every entry here was captured right before a raw .ini editor save
-  // overwrote that file (see the POST route above), keyed by profile+path. Admin-gated like
-  // the editor itself; nothing here ever writes to disk except /ini/restore, which is really
-  // just another .ini save under the hood (so it snapshots the current content too, the same
-  // way any other save would, before applying the restored one).
   const iniHistoryMatch = path.match(/^\/api\/servers\/([^/]+)\/ini\/history$/)
   if (req.method === 'GET' && iniHistoryMatch) {
     const auth = await requireRole(req, res, 'admin')
@@ -1117,11 +1073,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return
     }
     const relativePath = url.searchParams.get('path') ?? ''
-    // Only id/savedAt - the full content of every past revision would make this list
-    // response grow with every edit ever made; a specific revision's content is fetched
-    // separately below, only once something's actually selected.
-    const entries = listConfigFileHistory(found.profile.id, relativePath).map((e) => ({ id: e.id, savedAt: e.savedAt }))
-    sendJson(res, 200, entries)
+    sendJson(res, 200, listIniHistory(found.profile.id, relativePath))
     return
   }
 
@@ -1135,22 +1087,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return
     }
     const entryId = url.searchParams.get('id') ?? ''
-    const entry = getConfigFileHistoryEntry(entryId)
-    if (!entry || entry.profileId !== found.profile.id) {
-      sendJson(res, 404, { error: 'Unknown history entry' })
-      return
-    }
     try {
-      const filePath = resolveSafePath(found.profile.installDir, entry.path)
-      const current = fs.readFileSync(filePath, 'utf-8')
-      const diff = computeLineDiff(entry.content, current)
-      if (!diff) {
-        sendJson(res, 400, { error: 'This file is too large to diff.' })
-        return
-      }
-      sendJson(res, 200, { diff })
+      sendJson(res, 200, { diff: diffIniHistoryEntry(found.profile.id, found.profile.installDir, entryId) })
     } catch (err) {
-      sendJson(res, 400, { error: (err as Error).message })
+      const status = (err as Error).message === 'Unknown history entry' ? 404 : 400
+      sendJson(res, status, { error: (err as Error).message })
     }
     return
   }
@@ -1167,23 +1108,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     readJsonBody(req)
       .then((body) => {
         const entryId = typeof body.id === 'string' ? body.id : ''
-        const entry = getConfigFileHistoryEntry(entryId)
-        if (!entry || entry.profileId !== found.profile.id) {
-          sendJson(res, 404, { ok: false, error: 'Unknown history entry' })
-          return
-        }
         try {
-          const filePath = resolveSafePath(found.profile.installDir, entry.path)
-          try {
-            const previous = fs.readFileSync(filePath, 'utf-8')
-            recordConfigFileHistory(found.profile.id, entry.path, previous)
-          } catch {
-            // No existing file - nothing to snapshot, not fatal.
-          }
-          fs.writeFileSync(filePath, entry.content, 'utf-8')
+          restoreIniHistoryEntry(found.profile.id, found.profile.installDir, entryId)
           sendJson(res, 200, { ok: true })
         } catch (err) {
-          sendJson(res, 400, { ok: false, error: (err as Error).message })
+          const status = (err as Error).message === 'Unknown history entry' ? 404 : 400
+          sendJson(res, status, { ok: false, error: (err as Error).message })
         }
       })
       .catch(() => sendJson(res, 400, { ok: false, error: 'Invalid request body' }))
@@ -2226,7 +2156,25 @@ const DASHBOARD_HTML = `<!doctype html>
   .files-breadcrumb span.sep { color: var(--muted); margin: 0 2px; }
   .data-table td.files-name-cell { cursor: pointer; }
   .data-table td.files-name-cell:hover { text-decoration: underline; }
-  .files-ini-textarea { width: 100%; min-height: 360px; font-family: monospace; font-size: 0.85rem; margin-top: 8px; }
+  /* Notepad++-inspired: several files can be open at once, each its own tab, instead of the
+     editor always replacing the table for a single file with no way back to a previously
+     opened one short of re-browsing to it. */
+  .files-open-tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .files-open-tab { display: flex; align-items: center; background: var(--panel); border: 1px solid var(--border); border-bottom: none; border-radius: 6px 6px 0 0; overflow: hidden; }
+  .files-browse-tab { padding: 6px 12px; color: var(--muted); background: none; border: 1px solid var(--border); border-bottom: none; border-radius: 6px 6px 0 0; }
+  .files-open-tab.active, .files-browse-tab.active { background: var(--bg); border-color: var(--accent); color: var(--text); }
+  .files-open-tab-label { background: none; border: none; border-radius: 0; padding: 6px 4px 6px 12px; color: var(--muted); }
+  .files-open-tab.active .files-open-tab-label { color: var(--text); }
+  .files-open-tab-close { background: none; border: none; border-radius: 0; padding: 6px 10px 6px 4px; color: var(--muted); font-size: 1rem; line-height: 1; }
+  .files-open-tab-close:hover { color: var(--danger); }
+  .files-editor-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .files-editor-header h3 { margin: 0; font-size: 0.9rem; font-weight: 400; color: var(--muted); overflow-wrap: anywhere; }
+  /* Fills most of the viewport instead of a small fixed box - bigger and responsive to the
+     window size, per direct user feedback on the previous fixed-height textarea. */
+  .files-editor-body { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; height: 60vh; margin-top: 8px; }
+  .files-editor-gutter { flex-shrink: 0; padding: 8px 8px 8px 0; text-align: right; font-family: monospace; font-size: 0.85rem; line-height: 1.5; color: var(--muted); background: var(--panel); border-right: 1px solid var(--border); overflow: hidden; user-select: none; white-space: pre; }
+  .files-editor-textarea { flex: 1; min-width: 0; border: none; border-radius: 0; resize: none; padding: 8px 10px; font-family: monospace; font-size: 0.85rem; line-height: 1.5; background: var(--bg); color: var(--text); }
+  .files-editor-textarea:focus { outline: none; }
   .files-ini-history-list { list-style: none; padding: 0; margin: 8px 0; }
   .files-ini-history-list li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
   .files-ini-history-list li span { flex: 1; }
@@ -2762,6 +2710,7 @@ const DASHBOARD_HTML = `<!doctype html>
           Browses this server's own install directory - everything under it, not just configs. Deleting is limited
           to files (not folders) as a safety margin for a remote web UI.
         </p>
+        <div id="files-open-tabs" class="files-open-tabs" style="display: none"></div>
         <nav id="files-breadcrumb" class="files-breadcrumb"></nav>
         <p id="files-error" class="error-message" style="display: none"></p>
         <table id="files-table" class="data-table">
@@ -2769,12 +2718,17 @@ const DASHBOARD_HTML = `<!doctype html>
           <tbody id="files-table-body"></tbody>
         </table>
         <div id="files-ini-editor" style="display: none">
-          <h3 id="files-ini-editor-title"></h3>
-          <textarea id="files-ini-editor-textarea" class="files-ini-textarea"></textarea>
+          <div class="files-editor-header">
+            <h3 id="files-ini-editor-title"></h3>
+            <div class="form-actions">
+              <button id="btn-files-ini-save" type="button">Save</button>
+              <button id="btn-files-ini-cancel" type="button">Close</button>
+            </div>
+          </div>
           <p id="files-ini-editor-error" class="error-message" style="display: none"></p>
-          <div class="form-actions">
-            <button id="btn-files-ini-save" type="button">Save</button>
-            <button id="btn-files-ini-cancel" type="button">Cancel</button>
+          <div class="files-editor-body">
+            <div id="files-ini-gutter" class="files-editor-gutter"></div>
+            <textarea id="files-ini-editor-textarea" class="files-editor-textarea" spellcheck="false"></textarea>
           </div>
           <h4>History</h4>
           <p id="files-ini-history-empty" class="empty-state" style="display: none">No saved edits yet.</p>
@@ -6697,12 +6651,14 @@ function initDashboard(resolvedRole) {
   var filesServerSelectEl = document.getElementById('files-server-select');
   var filesNoServerEl = document.getElementById('files-no-server');
   var filesContentEl = document.getElementById('files-content');
+  var filesOpenTabsEl = document.getElementById('files-open-tabs');
   var filesBreadcrumbEl = document.getElementById('files-breadcrumb');
   var filesErrorEl = document.getElementById('files-error');
   var filesTableEl = document.getElementById('files-table');
   var filesTableBody = document.getElementById('files-table-body');
   var filesIniEditorEl = document.getElementById('files-ini-editor');
   var filesIniEditorTitleEl = document.getElementById('files-ini-editor-title');
+  var filesIniGutterEl = document.getElementById('files-ini-gutter');
   var filesIniTextareaEl = document.getElementById('files-ini-editor-textarea');
   var filesIniErrorEl = document.getElementById('files-ini-editor-error');
   var btnFilesIniSave = document.getElementById('btn-files-ini-save');
@@ -6712,7 +6668,12 @@ function initDashboard(resolvedRole) {
   var filesIniDiffEl = document.getElementById('files-ini-diff');
   var filesCurrentPath = '';
   var filesEntries = [];
-  var filesEditingPath = '';
+  // Notepad++-inspired: several .ini files can be open at once, each its own tab
+  // ({path, content, originalContent}), rather than the editor always replacing the table
+  // for a single file with no way back to a previously opened one short of re-browsing to
+  // it. filesActiveTabPath === null means "browsing the table", not "no tabs open".
+  var filesOpenTabs = [];
+  var filesActiveTabPath = null;
 
   function isIniFileName(name) { return /\.ini$/i.test(name); }
 
@@ -6721,11 +6682,79 @@ function initDashboard(resolvedRole) {
     filesIniErrorEl.style.display = message ? '' : 'none';
   }
 
-  function closeFilesIniEditor() {
-    filesEditingPath = '';
+  function findFilesOpenTab(entryPath) {
+    for (var i = 0; i < filesOpenTabs.length; i++) {
+      if (filesOpenTabs[i].path === entryPath) return filesOpenTabs[i];
+    }
+    return null;
+  }
+
+  function renderFilesIniGutter() {
+    var lineCount = filesIniTextareaEl.value.split('\\n').length;
+    var text = '';
+    for (var i = 1; i <= lineCount; i++) text += i + '\\n';
+    filesIniGutterEl.textContent = text;
+  }
+
+  filesIniTextareaEl.addEventListener('scroll', function () {
+    filesIniGutterEl.scrollTop = filesIniTextareaEl.scrollTop;
+  });
+
+  function renderFilesOpenTabs() {
+    filesOpenTabsEl.innerHTML = '';
+    filesOpenTabsEl.style.display = filesOpenTabs.length === 0 ? 'none' : '';
+    if (filesOpenTabs.length === 0) return;
+
+    var browseBtn = document.createElement('button');
+    browseBtn.type = 'button';
+    browseBtn.className = 'files-browse-tab' + (filesActiveTabPath === null ? ' active' : '');
+    browseBtn.textContent = '📁 Files';
+    browseBtn.addEventListener('click', function () { showFilesBrowser(); });
+    filesOpenTabsEl.appendChild(browseBtn);
+
+    filesOpenTabs.forEach(function (tab) {
+      var wrap = document.createElement('div');
+      wrap.className = 'files-open-tab' + (tab.path === filesActiveTabPath ? ' active' : '');
+      var label = document.createElement('button');
+      label.type = 'button';
+      label.className = 'files-open-tab-label';
+      label.title = tab.path;
+      label.textContent = tab.path.split('/').pop() + (tab.content !== tab.originalContent ? ' •' : '');
+      label.addEventListener('click', function () { focusFilesTab(tab.path); });
+      var closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'files-open-tab-close';
+      closeBtn.title = 'Close';
+      closeBtn.textContent = '×';
+      closeBtn.addEventListener('click', function () { closeFilesTab(tab.path); });
+      wrap.appendChild(label);
+      wrap.appendChild(closeBtn);
+      filesOpenTabsEl.appendChild(wrap);
+    });
+  }
+
+  function showFilesBrowser() {
+    filesActiveTabPath = null;
     filesIniEditorEl.style.display = 'none';
     filesIniDiffEl.style.display = 'none';
     filesTableEl.style.display = '';
+    renderFilesOpenTabs();
+  }
+
+  function closeFilesTab(entryPath) {
+    var closedIndex = -1;
+    for (var i = 0; i < filesOpenTabs.length; i++) {
+      if (filesOpenTabs[i].path === entryPath) { closedIndex = i; break; }
+    }
+    if (closedIndex === -1) return;
+    filesOpenTabs.splice(closedIndex, 1);
+    if (filesActiveTabPath === entryPath) {
+      var fallback = filesOpenTabs[closedIndex] || filesOpenTabs[closedIndex - 1] || null;
+      if (fallback) focusFilesTab(fallback.path);
+      else showFilesBrowser();
+    } else {
+      renderFilesOpenTabs();
+    }
   }
 
   function renderFilesIniDiff(diffLines) {
@@ -6752,8 +6781,9 @@ function initDashboard(resolvedRole) {
   }
 
   function restoreFilesIniEntry(entryId) {
-    if (!currentId || !filesEditingPath) return;
-    if (!confirm('Restore this version of "' + filesEditingPath + '"? The current content will be saved to history first.')) return;
+    if (!currentId || !filesActiveTabPath) return;
+    var path = filesActiveTabPath;
+    if (!confirm('Restore this version of "' + path + '"? The current content will be saved to history first.')) return;
     fetch('/api/servers/' + encodeURIComponent(currentId) + '/ini/restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -6762,8 +6792,17 @@ function initDashboard(resolvedRole) {
       .then(function (r) { return r.json(); })
       .then(function (result) {
         if (!result.ok) { showFilesIniError(result.error || 'Failed to restore.'); return; }
-        showToast('Restored ' + filesEditingPath);
-        openFilesIniEditor(filesEditingPath);
+        showToast('Restored ' + path);
+        fetch('/api/servers/' + encodeURIComponent(currentId) + '/ini?path=' + encodeURIComponent(path))
+          .then(function (r) { return r.json(); })
+          .then(function (body) {
+            var tab = findFilesOpenTab(path);
+            if (tab) { tab.content = body.content; tab.originalContent = body.content; }
+            if (filesActiveTabPath === path) filesIniTextareaEl.value = body.content;
+            renderFilesIniGutter();
+            renderFilesOpenTabs();
+            loadFilesIniHistory(path);
+          });
       })
       .catch(function () { showFilesIniError('Request failed'); });
   }
@@ -6797,42 +6836,66 @@ function initDashboard(resolvedRole) {
       .catch(function () { /* non-fatal - the editor itself still works without history */ });
   }
 
+  function focusFilesTab(entryPath) {
+    var tab = findFilesOpenTab(entryPath);
+    if (!tab) return;
+    filesActiveTabPath = entryPath;
+    filesIniEditorTitleEl.textContent = entryPath;
+    filesIniTextareaEl.value = tab.content;
+    renderFilesIniGutter();
+    showFilesIniError('');
+    filesIniDiffEl.style.display = 'none';
+    filesTableEl.style.display = 'none';
+    filesIniEditorEl.style.display = '';
+    renderFilesOpenTabs();
+    loadFilesIniHistory(entryPath);
+  }
+
   function openFilesIniEditor(entryPath) {
     if (!currentId) return;
+    if (findFilesOpenTab(entryPath)) { focusFilesTab(entryPath); return; }
     showFilesError('');
     fetch('/api/servers/' + encodeURIComponent(currentId) + '/ini?path=' + encodeURIComponent(entryPath))
       .then(function (r) { return r.json().then(function (body) { return { ok: r.ok, body: body }; }); })
       .then(function (result) {
         if (!result.ok) { showFilesError(result.body.error || 'Failed to open this file.'); return; }
-        filesEditingPath = entryPath;
-        filesIniEditorTitleEl.textContent = entryPath;
-        filesIniTextareaEl.value = result.body.content;
-        showFilesIniError('');
-        filesTableEl.style.display = 'none';
-        filesIniEditorEl.style.display = '';
-        loadFilesIniHistory(entryPath);
+        filesOpenTabs.push({ path: entryPath, content: result.body.content, originalContent: result.body.content });
+        focusFilesTab(entryPath);
       })
       .catch(function () { showFilesError('Request failed'); });
   }
 
+  filesIniTextareaEl.addEventListener('input', function () {
+    var tab = findFilesOpenTab(filesActiveTabPath);
+    if (tab) tab.content = filesIniTextareaEl.value;
+    renderFilesIniGutter();
+    renderFilesOpenTabs();
+  });
+
   btnFilesIniSave.addEventListener('click', function () {
-    if (!currentId || !filesEditingPath) return;
+    if (!currentId || !filesActiveTabPath) return;
+    var path = filesActiveTabPath;
     showFilesIniError('');
     fetch('/api/servers/' + encodeURIComponent(currentId) + '/ini', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: filesEditingPath, content: filesIniTextareaEl.value })
+      body: JSON.stringify({ path: path, content: filesIniTextareaEl.value })
     })
       .then(function (r) { return r.json(); })
       .then(function (result) {
         if (!result.ok) { showFilesIniError(result.error || 'Failed to save.'); return; }
-        showToast('Saved ' + filesEditingPath);
-        loadFilesIniHistory(filesEditingPath);
+        showToast('Saved ' + path);
+        var tab = findFilesOpenTab(path);
+        if (tab) tab.originalContent = tab.content;
+        renderFilesOpenTabs();
+        loadFilesIniHistory(path);
       })
       .catch(function () { showFilesIniError('Request failed'); });
   });
 
-  btnFilesIniCancel.addEventListener('click', function () { closeFilesIniEditor(); });
+  btnFilesIniCancel.addEventListener('click', function () {
+    if (filesActiveTabPath) closeFilesTab(filesActiveTabPath);
+  });
 
   function showFilesError(message) {
     filesErrorEl.textContent = message || '';
@@ -6962,7 +7025,7 @@ function initDashboard(resolvedRole) {
       return;
     }
     showFilesError('');
-    closeFilesIniEditor();
+    showFilesBrowser();
     filesNoServerEl.style.display = 'none';
     filesContentEl.classList.add('active');
     renderFilesBreadcrumb();
@@ -7640,6 +7703,8 @@ function initDashboard(resolvedRole) {
     syncServerPickers();
     backupShowAll = false;
     filesCurrentPath = '';
+    filesOpenTabs = [];
+    filesActiveTabPath = null;
     if (activeView === 'analytics') loadAnalyticsView();
     if (activeView === 'backup') loadBackupView();
     if (activeView === 'settings') loadSettingsView();

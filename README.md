@@ -4303,6 +4303,57 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Ported the file browser to the desktop Manager and gave both editors a Notepad++-style
+  multi-tab layout** (user feedback on the batch above - "add the File Browser to the
+  Manager too", plus "make the editing zone bigger and screen-responsive, with a button to
+  go back to the previous file" and "take inspiration from Notepad++'s UI").
+  - **`src/main/lib/fileBrowser.ts`** (new): the file-browser/`.ini`-editor/history logic that
+    used to live inline in `webDashboard.ts`'s route handlers (`listFileBrowserEntries`,
+    `resolveFileBrowserPath`, `deleteFileBrowserFile`, `readIniFile`, `writeIniFile`,
+    `listIniHistory`, `diffIniHistoryEntry`, `restoreIniHistoryEntry`) extracted into a shared
+    module with no HTTP-specific code, so the desktop app and the web dashboard call the exact
+    same functions instead of risking two implementations quietly disagreeing on what's safe
+    to read/write/delete. `webDashboard.ts`'s 7 file-browser/ini routes now call into it
+    instead of containing the logic themselves; `sendFileDownload` stayed behind since it's
+    HTTP-response-specific.
+  - **`shared/types.ts`**: `FileBrowserEntry`/`FileBrowserListing`/`ConfigFileHistorySummary`
+    types, plus 8 new IPC channels and an `Api.fileBrowser` bridge interface (`list`, `open`,
+    `delete`, `readIni`, `writeIni`, `iniHistory`, `iniHistoryDiff`, `iniRestore`).
+  - **`src/main/ipc/fileBrowser.ts`** (new) + **`src/preload/index.ts`**: desktop IPC handlers
+    wrapping the shared `fileBrowser.ts` functions, resolving each profile's `installDir`
+    first. `open` uses Electron's `shell.openPath` - the desktop equivalent of the web
+    dashboard's Download link, since there's no browser to download through and the file is
+    already on disk.
+  - **`src/renderer/src/pages/ServerDetail/FilesTab.tsx`** (new) + a new "Files" tab in
+    `ServerDetail/index.tsx`: the desktop mirror of the web dashboard's own Files tab - browse
+    the install directory, open/delete files, and edit `.ini` files, with the same
+    History/diff/restore the web version has.
+  - **Notepad++-style multi-tab editor, on both the desktop Manager and the web dashboard**:
+    several `.ini` files can now be open at once, each its own tab with a dirty indicator
+    (`•`) and a close (`×`) button, plus a persistent "📁 Files" tab to get back to the folder
+    view without losing the other open tabs - replacing the old single-file editor that had no
+    way back to a previously opened file short of re-browsing to it. Both editors also gained a
+    line-number gutter (a plain scroll-synced `<div>`, not a full code-editor dependency, to
+    avoid the cursor/IME risk a contenteditable-based approach could introduce) and a taller,
+    viewport-relative editing area (`height: 55-60vh`) instead of a small fixed-height
+    textarea.
+  - Fixed a pre-existing gap found while styling the new desktop Files tab: `.data-table` -
+    used by the already-shipped Player Bans/Activity tables - had never actually been defined
+    in the desktop renderer's `styles.css`, only in the web dashboard's own embedded
+    stylesheet, so those two tables had been rendering completely unstyled in the desktop app.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1187 tests - 16 new ones in
+    `tests/fileBrowser.test.ts` for the extracted module, covering listing, path-traversal
+    rejection, delete-refuses-folders, read/write with history snapshotting including a
+    brand-new file with nothing to snapshot yet, non-.ini rejection on both read and write,
+    diffing and restoring a history entry, and a 404-equivalent for a bogus or cross-profile
+    entry id), and `npm run build` all pass, including the standing `node --check` regression
+    test against the web dashboard's served `<script>` content - which caught a real bug
+    during this change: a literal `\n` typed in the TypeScript source for the new gutter
+    renderer was being consumed by the enclosing template literal's own escape processing
+    before ever reaching the served JS, so it had to be written as `\\n` to survive as a
+    literal newline escape in the output. **Not yet verified**: needs the user to confirm the
+    desktop Files tab and both tabbed editors work correctly in `npm run dev`.
+
 - **Merged the Players screens, redesigned the ban picker, and overhauled the RCON
   scheduler's trigger** (user feedback on the batch above, after seeing it in `npm run dev` -
   not part of the original approved list, three related UI requests addressed together).

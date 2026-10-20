@@ -7,8 +7,9 @@ import SettingsTab from './SettingsTab'
 import ServerManagementTab from './ServerManagementTab'
 import MapManagementTab from './MapManagementTab'
 import UpdateLogTab from './UpdateLogTab'
+import FilesTab from './FilesTab'
 
-export type TabKey = 'analytics' | 'mods' | 'backups' | 'management' | 'mapManagement' | 'updateLog' | 'settings'
+export type TabKey = 'analytics' | 'mods' | 'backups' | 'management' | 'mapManagement' | 'files' | 'updateLog' | 'settings'
 
 interface ServerDetailProps {
   profile: ServerProfile
@@ -23,6 +24,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'mods', label: 'Mods' },
   { key: 'backups', label: 'Backups' },
   { key: 'mapManagement', label: 'Map Management' },
+  { key: 'files', label: 'Files' },
   { key: 'updateLog', label: 'Update Log' },
   { key: 'management', label: 'Server Management' }
 ]
@@ -49,6 +51,7 @@ export default function ServerDetail({ profile, initialTab, onBack, onProfileCha
         {tab === 'backups' && <BackupsTab profile={profile} onProfileChange={onProfileChange} />}
         {tab === 'management' && <ServerManagementTab profile={profile} onProfileChange={onProfileChange} />}
         {tab === 'mapManagement' && <MapManagementTab profile={profile} />}
+        {tab === 'files' && <FilesTab profile={profile} />}
         {tab === 'updateLog' && <UpdateLogTab profile={profile} />}
         {tab === 'settings' && <SettingsTab profile={profile} onProfileChange={onProfileChange} />}
       </div>

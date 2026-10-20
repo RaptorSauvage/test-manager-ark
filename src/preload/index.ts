@@ -163,6 +163,17 @@ const api: Api = {
     list: () => ipcRenderer.invoke(IPC.playerActivityList),
     sessions: () => ipcRenderer.invoke(IPC.playerActivitySessions)
   },
+  fileBrowser: {
+    list: (profileId: string, relativePath: string) => ipcRenderer.invoke(IPC.fileBrowserList, profileId, relativePath),
+    open: (profileId: string, relativePath: string) => ipcRenderer.invoke(IPC.fileBrowserOpen, profileId, relativePath),
+    delete: (profileId: string, relativePath: string) => ipcRenderer.invoke(IPC.fileBrowserDelete, profileId, relativePath),
+    readIni: (profileId: string, relativePath: string) => ipcRenderer.invoke(IPC.fileBrowserReadIni, profileId, relativePath),
+    writeIni: (profileId: string, relativePath: string, content: string) =>
+      ipcRenderer.invoke(IPC.fileBrowserWriteIni, profileId, relativePath, content),
+    iniHistory: (profileId: string, relativePath: string) => ipcRenderer.invoke(IPC.fileBrowserIniHistory, profileId, relativePath),
+    iniHistoryDiff: (profileId: string, entryId: string) => ipcRenderer.invoke(IPC.fileBrowserIniHistoryDiff, profileId, entryId),
+    iniRestore: (profileId: string, entryId: string) => ipcRenderer.invoke(IPC.fileBrowserIniRestore, profileId, entryId)
+  },
   discordBot: {
     status: () => ipcRenderer.invoke(IPC.discordBotStatus),
     restart: () => ipcRenderer.invoke(IPC.discordBotRestart),

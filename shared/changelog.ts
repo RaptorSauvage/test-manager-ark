@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-20',
+    title: 'File Browser on the desktop Manager, Notepad++-style tabbed editor',
+    details: [
+      'The Files tab (browse, open, delete, edit .ini files) is now also available in the desktop Manager, not just the web dashboard.',
+      'Both editors now support several open files at once, each its own tab with a dirty indicator and a close button, plus a "Files" tab to get back to the folder view without losing the other open tabs.',
+      'The editing area is now bigger, screen-responsive, and has line numbers.'
+    ]
+  },
+  {
+    date: '2026-10-20',
     title: 'Players screen merged, redesigned ban picker, RCON scheduler overhaul',
     details: [
       '"Player Bans" and "Player Activity" are now one "Players" screen with a sidebar to switch between them, instead of two separate buttons.',
