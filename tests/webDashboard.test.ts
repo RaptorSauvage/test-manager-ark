@@ -1134,6 +1134,83 @@ describe('web dashboard HTTP server', () => {
     })
   })
 
+  describe('raw .ini editor routes', () => {
+    const iniRelativePath = 'ShooterGame/Saved/Config/Test.ini'
+
+    beforeAll(() => {
+      const configDir = path.join(LOGGED_INSTALL_DIR, 'ShooterGame', 'Saved', 'Config')
+      fs.mkdirSync(configDir, { recursive: true })
+      fs.writeFileSync(path.join(configDir, 'Test.ini'), '[Test]\nFoo=Bar\n')
+    })
+
+    it('GET /api/servers/:id/ini returns the raw file content', async () => {
+      const res = await request('/api/servers/p2/ini?path=' + encodeURIComponent(iniRelativePath))
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body).content).toBe('[Test]\nFoo=Bar\n')
+    })
+
+    it('GET /api/servers/:id/ini rejects a non-.ini file', async () => {
+      const res = await request(
+        '/api/servers/p2/ini?path=' + encodeURIComponent('ShooterGame/Saved/Logs/ShooterGame.log')
+      )
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).error).toBe('Only .ini files can be opened here.')
+    })
+
+    it('GET /api/servers/:id/ini rejects a path escaping the install directory', async () => {
+      const res = await request('/api/servers/p2/ini?path=' + encodeURIComponent('../../etc/passwd.ini'))
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).error).toBe('Invalid path')
+    })
+
+    it('GET /api/servers/:id/ini 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/ini?path=' + encodeURIComponent(iniRelativePath))
+      expect(res.status).toBe(404)
+    })
+
+    it('POST /api/servers/:id/ini overwrites the file, readable back afterward', async () => {
+      const res = await request('/api/servers/p2/ini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: iniRelativePath, content: '[Test]\nFoo=Changed\n' })
+      })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body).ok).toBe(true)
+
+      const reread = await request('/api/servers/p2/ini?path=' + encodeURIComponent(iniRelativePath))
+      expect(JSON.parse(reread.body).content).toBe('[Test]\nFoo=Changed\n')
+    })
+
+    it('POST /api/servers/:id/ini rejects a non-.ini file', async () => {
+      const res = await request('/api/servers/p2/ini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'ShooterGame/Saved/Logs/ShooterGame.log', content: 'nope' })
+      })
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).ok).toBe(false)
+    })
+
+    it('POST /api/servers/:id/ini rejects a path escaping the install directory', async () => {
+      const res = await request('/api/servers/p2/ini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: '../../etc/passwd.ini', content: 'evil' })
+      })
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).ok).toBe(false)
+    })
+
+    it('POST /api/servers/:id/ini 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/ini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: iniRelativePath, content: 'x' })
+      })
+      expect(res.status).toBe(404)
+    })
+  })
+
   // The Server Management tab's own narrower route (moderator+, not admin+ like everything
   // else above) - only the whitelisted schedule/watchdog fields, never the rest of the
   // profile.

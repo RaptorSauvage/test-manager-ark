@@ -4303,6 +4303,37 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added a raw .ini editor in the web dashboard** (second of the "Fichiers & config"
+  category in the user-approved batch, right on top of the file browser above it). Clicking
+  a `.ini` file in the Files tab now opens its raw text in an editable textarea instead of
+  only offering Download/Delete - edit `GameUserSettings.ini`/`Game.ini` (or any other `.ini`
+  under the install directory) directly from the browser, no download/edit-locally/re-upload
+  round trip needed.
+  - **`src/main/lib/webDashboard.ts`**: new `isIniPath(p)` helper (case-insensitive `.ini`
+    extension check) gates two new routes, both `requireRole(..., 'admin')` and
+    `resolveSafePath`-contained like the file browser routes right above them. `GET
+    /api/servers/:id/ini?path=` returns `{ content: <raw utf-8 text> }`; `POST .../ini
+    {path, content}` overwrites the file verbatim. Both 400 on a non-`.ini` path rather than
+    silently becoming a generic arbitrary-file read/write primitive. Writing while
+    `iniLockEnabled` has made the file read-only (see `iniLock.ts`) fails the same way any
+    other write to a locked file would - `fs.writeFileSync` throws, caught and reported like
+    every other failure here, nothing ini-lock-specific needed.
+  - **Web dashboard client**: new `files-ini-editor` panel in the Files view (a `<textarea>`
+    plus Save/Cancel) - a `.ini` file's name cell in the table is now clickable
+    (`isIniFileName`) the same way a folder's already was, opening the panel in place of the
+    table rather than navigating away from it. Closes itself (`closeFilesIniEditor`) on
+    Cancel, on a successful Save, or whenever the folder view reloads out from under it
+    (breadcrumb click, server switch) so it can never show stale content for a path that's no
+    longer the one on screen.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1143 tests - 8 new ones in
+    `tests/webDashboard.test.ts`'s new "raw .ini editor routes" describe block covering a
+    read/write round trip, the non-.ini rejection on both routes, path-traversal rejection on
+    both, and 404 for an unknown server), and `npm run build` all pass, including the
+    standing `node --check` regression test against the dashboard's served `<script>`
+    content (see the file browser entry above for why that test exists at all). **Not yet
+    verified**: needs the user to confirm editing and saving a real `.ini` file through the
+    browser actually persists and that the edited server picks the change up correctly.
+
 - **Added a web dashboard file browser** (first of the "Fichiers & config" category in the
   user-approved batch). Browses a server's whole install directory remotely - navigate
   folders, download or delete individual files - without needing a separate FTP/SFTP/RDP

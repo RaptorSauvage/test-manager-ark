@@ -306,6 +306,13 @@ function listFileBrowserEntries(dirPath: string): FileBrowserEntry[] {
   })
 }
 
+/** Whether a path (relative or absolute) ends in `.ini`, case-insensitive - gates the raw
+ *  .ini editor routes below so they can't double as a generic arbitrary-file-write
+ *  primitive. */
+function isIniPath(p: string): boolean {
+  return /\.ini$/i.test(p)
+}
+
 /** Throws (caller sends 400) if `filePath` isn't a plain file - streams it as an attachment
  *  otherwise. `filename*` covers a non-ASCII name properly; the plain `filename` fallback is
  *  just the same name with quotes stripped, for a client that ignores `filename*` entirely. */
@@ -1017,6 +1024,62 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           // a remote web UI is the kind of mistake this browser shouldn't make easy.
           if (!stat.isFile()) throw new Error('Only files can be deleted here, not folders.')
           fs.unlinkSync(filePath)
+          sendJson(res, 200, { ok: true })
+        } catch (err) {
+          sendJson(res, 400, { ok: false, error: (err as Error).message })
+        }
+      })
+      .catch(() => sendJson(res, 400, { ok: false, error: 'Invalid request body' }))
+    return
+  }
+
+  // Raw .ini editor - same admin gate and resolveSafePath containment as the file browser
+  // routes above, plus its own extension check (case-insensitive) so this can't be turned
+  // into a generic arbitrary-file-write primitive beyond what it's actually for. Writing
+  // while iniLockEnabled has made the file read-only (see iniLock.ts) fails the same way any
+  // other write to a locked file would - fs surfaces that as a normal thrown error, caught
+  // and reported like any other failure here, not specially detected.
+  const iniMatch = path.match(/^\/api\/servers\/([^/]+)\/ini$/)
+  if (req.method === 'GET' && iniMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const found = findAnyServer(decodeURIComponent(iniMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    const relativePath = url.searchParams.get('path') ?? ''
+    try {
+      if (!isIniPath(relativePath)) throw new Error('Only .ini files can be opened here.')
+      const filePath = resolveSafePath(found.profile.installDir, relativePath)
+      const stat = fs.statSync(filePath)
+      if (!stat.isFile()) throw new Error('Not a file')
+      sendJson(res, 200, { content: fs.readFileSync(filePath, 'utf-8') })
+    } catch (err) {
+      sendJson(res, 400, { error: (err as Error).message })
+    }
+    return
+  }
+  if (req.method === 'POST' && iniMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const found = findAnyServer(decodeURIComponent(iniMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const relativePath = typeof body.path === 'string' ? body.path : ''
+        const content = typeof body.content === 'string' ? body.content : null
+        if (!relativePath || content === null) {
+          sendJson(res, 400, { ok: false, error: 'Missing path or content' })
+          return
+        }
+        try {
+          if (!isIniPath(relativePath)) throw new Error('Only .ini files can be saved here.')
+          const filePath = resolveSafePath(found.profile.installDir, relativePath)
+          fs.writeFileSync(filePath, content, 'utf-8')
           sendJson(res, 200, { ok: true })
         } catch (err) {
           sendJson(res, 400, { ok: false, error: (err as Error).message })
@@ -2062,6 +2125,7 @@ const DASHBOARD_HTML = `<!doctype html>
   .files-breadcrumb span.sep { color: var(--muted); margin: 0 2px; }
   .data-table td.files-name-cell { cursor: pointer; }
   .data-table td.files-name-cell:hover { text-decoration: underline; }
+  .files-ini-textarea { width: 100%; min-height: 360px; font-family: monospace; font-size: 0.85rem; margin-top: 8px; }
   .data-table td.mod-disabled-row { color: var(--muted); }
   .playerbackup-select-col { width: 28px; }
   .ark-mod-icon { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
@@ -2596,6 +2660,15 @@ const DASHBOARD_HTML = `<!doctype html>
           <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
           <tbody id="files-table-body"></tbody>
         </table>
+        <div id="files-ini-editor" style="display: none">
+          <h3 id="files-ini-editor-title"></h3>
+          <textarea id="files-ini-editor-textarea" class="files-ini-textarea"></textarea>
+          <p id="files-ini-editor-error" class="error-message" style="display: none"></p>
+          <div class="form-actions">
+            <button id="btn-files-ini-save" type="button">Save</button>
+            <button id="btn-files-ini-cancel" type="button">Cancel</button>
+          </div>
+        </div>
       </div>
     </main>
   </section>
@@ -6514,9 +6587,66 @@ function initDashboard(resolvedRole) {
   var filesContentEl = document.getElementById('files-content');
   var filesBreadcrumbEl = document.getElementById('files-breadcrumb');
   var filesErrorEl = document.getElementById('files-error');
+  var filesTableEl = document.getElementById('files-table');
   var filesTableBody = document.getElementById('files-table-body');
+  var filesIniEditorEl = document.getElementById('files-ini-editor');
+  var filesIniEditorTitleEl = document.getElementById('files-ini-editor-title');
+  var filesIniTextareaEl = document.getElementById('files-ini-editor-textarea');
+  var filesIniErrorEl = document.getElementById('files-ini-editor-error');
+  var btnFilesIniSave = document.getElementById('btn-files-ini-save');
+  var btnFilesIniCancel = document.getElementById('btn-files-ini-cancel');
   var filesCurrentPath = '';
   var filesEntries = [];
+  var filesEditingPath = '';
+
+  function isIniFileName(name) { return /\.ini$/i.test(name); }
+
+  function showFilesIniError(message) {
+    filesIniErrorEl.textContent = message || '';
+    filesIniErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function closeFilesIniEditor() {
+    filesEditingPath = '';
+    filesIniEditorEl.style.display = 'none';
+    filesTableEl.style.display = '';
+  }
+
+  function openFilesIniEditor(entryPath) {
+    if (!currentId) return;
+    showFilesError('');
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/ini?path=' + encodeURIComponent(entryPath))
+      .then(function (r) { return r.json().then(function (body) { return { ok: r.ok, body: body }; }); })
+      .then(function (result) {
+        if (!result.ok) { showFilesError(result.body.error || 'Failed to open this file.'); return; }
+        filesEditingPath = entryPath;
+        filesIniEditorTitleEl.textContent = entryPath;
+        filesIniTextareaEl.value = result.body.content;
+        showFilesIniError('');
+        filesTableEl.style.display = 'none';
+        filesIniEditorEl.style.display = '';
+      })
+      .catch(function () { showFilesError('Request failed'); });
+  }
+
+  btnFilesIniSave.addEventListener('click', function () {
+    if (!currentId || !filesEditingPath) return;
+    showFilesIniError('');
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/ini', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filesEditingPath, content: filesIniTextareaEl.value })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showFilesIniError(result.error || 'Failed to save.'); return; }
+        showToast('Saved ' + filesEditingPath);
+        closeFilesIniEditor();
+      })
+      .catch(function () { showFilesIniError('Request failed'); });
+  });
+
+  btnFilesIniCancel.addEventListener('click', function () { closeFilesIniEditor(); });
 
   function showFilesError(message) {
     filesErrorEl.textContent = message || '';
@@ -6595,15 +6725,20 @@ function initDashboard(resolvedRole) {
       return a.name.localeCompare(b.name);
     });
     sorted.forEach(function (entry) {
+      var entryPath = filesCurrentPath ? filesCurrentPath + '/' + entry.name : entry.name;
       var row = document.createElement('tr');
       var nameCell = document.createElement('td');
       nameCell.textContent = (entry.isDir ? '📁 ' : '📄 ') + entry.name;
       if (entry.isDir) {
         nameCell.className = 'files-name-cell';
         nameCell.addEventListener('click', function () {
-          filesCurrentPath = filesCurrentPath ? filesCurrentPath + '/' + entry.name : entry.name;
+          filesCurrentPath = entryPath;
           loadFilesView();
         });
+      } else if (isIniFileName(entry.name)) {
+        nameCell.className = 'files-name-cell';
+        nameCell.title = 'Click to edit';
+        nameCell.addEventListener('click', function () { openFilesIniEditor(entryPath); });
       }
       var sizeCell = document.createElement('td');
       sizeCell.textContent = entry.isDir ? '-' : formatFileSize(entry.size);
@@ -6611,7 +6746,6 @@ function initDashboard(resolvedRole) {
       mtimeCell.textContent = new Date(entry.mtime).toLocaleString();
       var actionsCell = document.createElement('td');
       if (!entry.isDir) {
-        var entryPath = filesCurrentPath ? filesCurrentPath + '/' + entry.name : entry.name;
         var downloadLink = document.createElement('a');
         downloadLink.href = '/api/servers/' + encodeURIComponent(currentId) + '/files/download?path=' + encodeURIComponent(entryPath) +
           (accessToken ? '&token=' + encodeURIComponent(accessToken) : '');
@@ -6642,6 +6776,7 @@ function initDashboard(resolvedRole) {
       return;
     }
     showFilesError('');
+    closeFilesIniEditor();
     filesNoServerEl.style.display = 'none';
     filesContentEl.classList.add('active');
     renderFilesBreadcrumb();

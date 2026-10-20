@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-20',
+    title: 'Raw .ini editor in the web dashboard',
+    details: [
+      'In the Files tab, click any .ini file to edit its raw text directly in the browser and save it - no need to download, edit locally, and re-upload.',
+      'Limited to .ini files only, same admin-only access as the rest of the Files tab.'
+    ]
+  },
+  {
+    date: '2026-10-20',
     title: 'Web dashboard file browser',
     details: [
       'New "Files" tab (admin accounts only) - browse a server\'s whole install directory from the web dashboard: navigate folders, download or delete individual files.',
