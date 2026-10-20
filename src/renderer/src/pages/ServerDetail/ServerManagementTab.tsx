@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ServerProfile } from '@shared/types'
+import type { ServerProfile, ScheduledRconCommand } from '@shared/types'
 import ScheduleDaysPicker from './ScheduleDaysPicker'
 
 interface ServerManagementTabProps {
@@ -26,6 +26,27 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
     const next = { ...form, [key]: value }
     setForm(next)
     void persist(next)
+  }
+
+  function updateRconEntry(id: string, patch: Partial<ScheduledRconCommand>): void {
+    update(
+      'scheduledRconCommands',
+      form.scheduledRconCommands.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry))
+    )
+  }
+
+  function addRconEntry(): void {
+    update('scheduledRconCommands', [
+      ...form.scheduledRconCommands,
+      { id: crypto.randomUUID(), label: '', command: '', time: '00:00', days: [], enabled: false }
+    ])
+  }
+
+  function removeRconEntry(id: string): void {
+    update(
+      'scheduledRconCommands',
+      form.scheduledRconCommands.filter((entry) => entry.id !== id)
+    )
   }
 
   return (
@@ -171,6 +192,46 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
             days={form.scheduledDinoWipeDays}
             onDaysChange={(days) => update('scheduledDinoWipeDays', days)}
           />
+        </div>
+
+        <div className="schedule-subsection">
+          <h4>Scheduled RCON Commands</h4>
+          {form.scheduledRconCommands.map((entry) => (
+            <div key={entry.id} className="schedule-picker">
+              <div className="schedule-picker-row">
+                <input
+                  placeholder="Label (optional)"
+                  value={entry.label}
+                  onChange={(e) => updateRconEntry(entry.id, { label: e.target.value })}
+                />
+                <input
+                  placeholder="RCON command, e.g. ServerChat Restart in 10 minutes"
+                  value={entry.command}
+                  onChange={(e) => updateRconEntry(entry.id, { command: e.target.value })}
+                />
+                <button type="button" className="btn-delete-backup" onClick={() => removeRconEntry(entry.id)}>
+                  Remove
+                </button>
+              </div>
+              <ScheduleDaysPicker
+                label="Run at:"
+                countdownLabel="Next run in:"
+                enabled={entry.enabled}
+                onEnabledChange={(value) => updateRconEntry(entry.id, { enabled: value })}
+                time={entry.time}
+                onTimeChange={(value) => updateRconEntry(entry.id, { time: value })}
+                days={entry.days}
+                onDaysChange={(days) => updateRconEntry(entry.id, { days })}
+              />
+            </div>
+          ))}
+          <button type="button" onClick={addRconEntry}>
+            Add scheduled command
+          </button>
+          <p className="empty-state">
+            Runs any RCON command on its own day/time schedule, independent of Restart/Dino Wipe above - e.g. a
+            <code>ServerChat</code> reminder or an extra <code>SaveWorld</code>.
+          </p>
         </div>
       </section>
 

@@ -123,6 +123,11 @@ export interface ServerProfile {
   scheduledDinoWipeTime: string
   /** Days it fires on, 0=Sunday..6=Saturday */
   scheduledDinoWipeDays: number[]
+  /** Generic RCON command scheduler - independent of (and in addition to) the dedicated
+   *  restart/dino-wipe schedules above, for anything else you'd otherwise have to remember to
+   *  run by hand (a ServerChat reminder, SaveWorld on its own cadence, etc). Any number of
+   *  entries, each with its own command/time/days/enabled - see scheduledActions.ts. */
+  scheduledRconCommands: ScheduledRconCommand[]
   /** Anti-crash watchdog: when a server that was running is found stopped without ever
    *  passing through a deliberate `stopping`/`restarting` state first (i.e. a confirmed,
    *  unexpected crash - see handleUnexpectedExit in serverProcess.ts), restart it
@@ -441,6 +446,24 @@ export interface WatchedPlayerAlert {
    *  watched) - never matched against, unlike value. */
   label: string
   createdAt: number
+}
+
+/**
+ * One entry of a server's generic RCON command scheduler (ARK only) - see
+ * ServerProfile.scheduledRconCommands and scheduledActions.ts's own applyScheduledRconCommands.
+ */
+export interface ScheduledRconCommand {
+  id: string
+  /** Free-text label purely for display (e.g. "Nightly save") - the command itself is what
+   *  actually runs, this is never parsed/matched against anything. */
+  label: string
+  /** Sent via RCON exactly as typed - whatever ARK's RCON console would accept. */
+  command: string
+  /** 24h "HH:MM", same format as scheduledRestartTime/scheduledDinoWipeTime. */
+  time: string
+  /** Days it fires on, 0=Sunday..6=Saturday. */
+  days: number[]
+  enabled: boolean
 }
 
 /**

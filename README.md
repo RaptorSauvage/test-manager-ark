@@ -4303,6 +4303,51 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added a generic RCON command scheduler** (first of the "Planification" category in the
+  user-approved batch). The existing Restart/Dino Wipe schedules (Server Management tab) each
+  do exactly one hardcoded thing - this adds any number of arbitrary RCON commands, each on
+  its own independent day/time schedule, for anything else you'd otherwise have to remember to
+  send by hand (a `ServerChat` reminder, an extra `SaveWorld` on its own cadence, etc). ARK
+  only - RCON scheduling has no Minecraft equivalent in this app (`minecraftScheduledActions.ts`
+  only has a restart schedule, no RCON-command concept at all).
+  - **`shared/types.ts`**: new `ScheduledRconCommand` type (`id`, `label`, `command`, `time`,
+    `days`, `enabled`) and `ServerProfile.scheduledRconCommands: ScheduledRconCommand[]` -
+    stored on the profile itself (like `scheduledRestart*`/`scheduledDinoWipe*`), not a
+    separate store list, since each entry's inherently tied to one server's own schedule.
+  - **`src/main/lib/profileMigration.ts`**: backfills `scheduledRconCommands` to `[]` for any
+    profile saved before this existed.
+  - **`src/main/lib/scheduledActions.ts`**: `applyScheduledRconCommands(profile)` - same
+    `node-cron` mechanism `applyScheduledDinoWipe` already uses, but keyed by
+    `` `${profileId}::${entryId}` `` (not just `profileId`) since there can be any number of
+    these per profile, and iterating every enabled entry with a non-blank command and a valid
+    cron expression (skipping anything disabled, blank, or with no days selected) to schedule
+    its own `cron.schedule` call sending that exact command via `sendRconCommand` - only while
+    the server's actually running, same guard the dino wipe schedule already has.
+    `clearScheduledRconCommands(profileId)` stops and removes every task whose key starts with
+    that profile's id, leaving every other profile's entries untouched. Guards
+    `profile.scheduledRconCommands ?? []` the same way `buildDayOfWeekCron` already guards its
+    own `days` param - some existing test fixtures (and any raw partial patch) can still reach
+    this at runtime without the field despite the type.
+  - **`src/main/ipc/profiles.ts`** / **`cluster.ts`** / **`src/main/lib/webDashboard.ts`** /
+    **`src/main/index.ts`**: `applyScheduledRconCommands`/`clearScheduledRconCommands` added
+    at every single existing call site of `applyScheduledDinoWipe`/`clearScheduledDinoWipe`
+    (save, delete, copy, move, import-from-file, cluster import, the web dashboard's own save
+    route, and the startup loop over every profile) - same lifecycle, same places.
+  - **`src/renderer/src/pages/ServerDetail/ServerManagementTab.tsx`**: new "Scheduled RCON
+    Commands" subsection under "Advanced Schedule", right after Dino Wipe - a label + command
+    input per entry, reusing the existing `ScheduleDaysPicker` component for each entry's own
+    day/time picker (complete with its own live countdown), an Add/Remove button per entry.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1107 tests - 6 new ones in
+    `tests/scheduledRconCommands.test.ts` covering per-entry scheduling, skipping disabled/
+    blank/no-days entries, the RCON command actually firing - and not firing when the server
+    isn't running - and `clearScheduledRconCommands` only touching its own profile's tasks),
+    and `npm run build` all pass. Also fixed four pre-existing test fixtures
+    (`profileMigration.test.ts`, `profileExport.test.ts`, and two `ServerProfile`-shaped
+    object literals this feature's new required field exposed) that needed the new field
+    added to stay in sync with the real type - caught by `npm run typecheck` itself, not a
+    silent gap. **Not yet verified**: needs the user to confirm a real scheduled command
+    actually fires in-game at the configured time.
+
 - **Added player activity/playtime tracking** (fifth of the user-approved batch, "Joueurs"
   category, and the last of that category - see the centralized ban list and the Discord join
   alert above for the other two). Tracks how long each player's actually been connected,

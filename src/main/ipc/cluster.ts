@@ -4,7 +4,7 @@ import { IPC, type AppSettings, type ClusterImportResult } from '@shared/types'
 import { listProfiles, listMinecraftProfiles, saveProfile, saveMinecraftProfile, saveSettings, getSettings } from '../store'
 import { serializeClusterBundle, parseClusterBundle } from '../lib/clusterExport'
 import { applyBackupSchedule } from '../lib/schedule'
-import { applyScheduledRestart, applyScheduledDinoWipe } from '../lib/scheduledActions'
+import { applyScheduledRestart, applyScheduledDinoWipe, applyScheduledRconCommands } from '../lib/scheduledActions'
 import { applyMinecraftScheduledRestart } from '../lib/minecraftScheduledActions'
 import { applyMinecraftBackupSchedule } from '../lib/minecraftBackupSchedule'
 import { applyWebDashboardSettings } from '../lib/webDashboard'
@@ -32,6 +32,7 @@ export function registerClusterHandlers(): void {
       applyBackupSchedule(profile)
       applyScheduledRestart(profile)
       applyScheduledDinoWipe(profile)
+      applyScheduledRconCommands(profile)
     }
 
     let minecraftProfiles = existingMinecraft

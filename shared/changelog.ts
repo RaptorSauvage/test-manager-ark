@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-20',
+    title: 'Generic RCON command scheduler',
+    details: [
+      "Each ARK server's Server Management tab now has a \"Scheduled RCON Commands\" section - add any number of commands, each on its own day/time schedule, independent of the dedicated Restart/Dino Wipe schedules above it.",
+      'Useful for anything you\'d otherwise have to remember to type by hand, like a ServerChat reminder before a restart.'
+    ]
+  },
+  {
+    date: '2026-10-20',
     title: 'Player activity/playtime tracking',
     details: [
       'Settings > General > "Track player activity/playtime" - once on, the new "Player Activity" button on the Dashboard shows total playtime per player, merged across every ARK server, plus a recent-sessions log.',

@@ -21,7 +21,7 @@ import {
 import { applyWebDashboardSettings } from './lib/webDashboard'
 import { applyDiscordBotSettings } from './lib/discordBot'
 import { applyBackupSchedule, registerBackupScheduleWatcher } from './lib/schedule'
-import { applyScheduledRestart, applyScheduledDinoWipe } from './lib/scheduledActions'
+import { applyScheduledRestart, applyScheduledDinoWipe, applyScheduledRconCommands } from './lib/scheduledActions'
 import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
 import { startMonitoring } from './lib/monitor'
 import { registerPlayerBackupWatch, startPlayerBackupWatch } from './lib/playerBackupWatch'
@@ -199,6 +199,7 @@ app.whenReady().then(() => {
     applyBackupSchedule(profile)
     applyScheduledRestart(profile)
     applyScheduledDinoWipe(profile)
+    applyScheduledRconCommands(profile)
     if (isRunning(profile.id)) {
       startMonitoring(profile)
       startPlayerBackupWatch(profile)

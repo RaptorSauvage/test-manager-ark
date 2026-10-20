@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import Store from 'electron-store'
 import {
@@ -77,7 +78,11 @@ describe('listWatchedPlayers/addWatchedPlayer/removeWatchedPlayer', () => {
 
 describe('listPlayerActivity/listPlayerSessions/recordPlayerSession', () => {
   it('accumulates total playtime and session count across multiple sessions on different servers', () => {
-    const playerId = 'steam-activity-resilience-1'
+    // A fresh random id each run, not a fixed literal - unlike playerBans/watchedPlayers
+    // above, there's no delete function for a player's activity record (it's meant to
+    // accumulate forever), so a repeat run against the real on-disk store would otherwise
+    // keep adding onto whatever an earlier run already left behind for the same id.
+    const playerId = randomUUID()
     const start = Date.now()
     recordPlayerSession('profile-activity-a', playerId, 'Survivor', start, start + 60_000)
     recordPlayerSession('profile-activity-b', playerId, 'Survivor', start, start + 30_000)
@@ -89,7 +94,7 @@ describe('listPlayerActivity/listPlayerSessions/recordPlayerSession', () => {
   })
 
   it('records a closed session into the recent-sessions log, most recent first', () => {
-    const playerId = 'steam-activity-resilience-2'
+    const playerId = randomUUID()
     const start = Date.now()
     recordPlayerSession('profile-activity-c', playerId, 'Newcomer', start, start + 5_000)
 
@@ -98,7 +103,7 @@ describe('listPlayerActivity/listPlayerSessions/recordPlayerSession', () => {
   })
 
   it('never lets a negative duration (clock skew) subtract from the total', () => {
-    const playerId = 'steam-activity-resilience-3'
+    const playerId = randomUUID()
     const start = Date.now()
     recordPlayerSession('profile-activity-d', playerId, 'Confused', start, start - 10_000)
 

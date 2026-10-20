@@ -7,8 +7,10 @@ import { applyBackupSchedule, clearBackupSchedule } from '../lib/schedule'
 import {
   applyScheduledRestart,
   applyScheduledDinoWipe,
+  applyScheduledRconCommands,
   clearScheduledRestart,
-  clearScheduledDinoWipe
+  clearScheduledDinoWipe,
+  clearScheduledRconCommands
 } from '../lib/scheduledActions'
 import { detectGameFromInstall, detectProfileFields, uniqueProfileName } from '../lib/detect'
 import { serializeProfile, parseImportedProfile } from '../lib/profileExport'
@@ -34,6 +36,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     syncPlayerBackupWatch(profile)
     applyScheduledRestart(profile)
     applyScheduledDinoWipe(profile)
+    applyScheduledRconCommands(profile)
     return profiles
   })
 
@@ -41,6 +44,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     clearBackupSchedule(id)
     clearScheduledRestart(id)
     clearScheduledDinoWipe(id)
+    clearScheduledRconCommands(id)
     return deleteProfile(id)
   })
 
@@ -57,6 +61,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     applyBackupSchedule(profile)
     applyScheduledRestart(profile)
     applyScheduledDinoWipe(profile)
+    applyScheduledRconCommands(profile)
     return { profile, profiles }
   })
 
@@ -115,6 +120,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
       scheduledDinoWipeEnabled: false,
       scheduledDinoWipeTime: '00:00',
       scheduledDinoWipeDays: [],
+      scheduledRconCommands: [],
       startOnManagerLaunch: false,
       hidden: false,
       group: '',
@@ -138,6 +144,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     syncPlayerBackupWatch(copied)
     applyScheduledRestart(copied)
     applyScheduledDinoWipe(copied)
+    applyScheduledRconCommands(copied)
     return { profile: copied, profiles }
   })
 
@@ -148,6 +155,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     syncPlayerBackupWatch(moved)
     applyScheduledRestart(moved)
     applyScheduledDinoWipe(moved)
+    applyScheduledRconCommands(moved)
     return { profile: moved, profiles }
   })
 }

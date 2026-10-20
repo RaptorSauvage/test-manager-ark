@@ -13,6 +13,9 @@ import { logManagerEvent, newTaskId } from './managerLog'
 
 const restartTasks = new Map<string, ScheduledTask>()
 const dinoWipeTasks = new Map<string, ScheduledTask>()
+// Keyed by `${profileId}::${entryId}`, not just profileId - unlike restart/dino wipe, a
+// profile can have any number of these at once.
+const rconCommandTasks = new Map<string, ScheduledTask>()
 
 /** Grace period between the server actually stopping and SteamCMD starting the update -
  *  gives the OS a moment to fully release the install directory's file handles (log file,
@@ -112,5 +115,39 @@ export function clearScheduledDinoWipe(profileId: string): void {
   if (task) {
     task.stop()
     dinoWipeTasks.delete(profileId)
+  }
+}
+
+/** Generic RCON command scheduler - any number of entries per profile, each on its own
+ *  independent day/time schedule, same cron mechanism as the dino wipe schedule above but
+ *  sending whatever command the entry was given instead of a hardcoded one. */
+export function applyScheduledRconCommands(profile: ServerProfile): void {
+  clearScheduledRconCommands(profile.id)
+
+  // Guarded the same way buildDayOfWeekCron guards its own `days` param - a profile saved
+  // through a path that doesn't go through migrateProfile (some test fixtures, or a raw
+  // partial patch) can still reach here with this field missing at runtime despite the type.
+  for (const entry of profile.scheduledRconCommands ?? []) {
+    if (!entry.enabled || !entry.command.trim()) continue
+    const cronExpr = buildDayOfWeekCron(entry.time, entry.days)
+    if (!cronExpr || !cron.validate(cronExpr)) continue
+
+    const task = cron.schedule(cronExpr, () => {
+      if (!isRunning(profile.id)) return
+      void sendRconCommand(profile, entry.command).then((result) => {
+        if (!result.ok) {
+          console.error(`Scheduled RCON command "${entry.label || entry.command}" failed for ${profile.name}:`, result.error)
+        }
+      })
+    })
+    rconCommandTasks.set(`${profile.id}::${entry.id}`, task)
+  }
+}
+
+export function clearScheduledRconCommands(profileId: string): void {
+  for (const [key, task] of rconCommandTasks) {
+    if (!key.startsWith(`${profileId}::`)) continue
+    task.stop()
+    rconCommandTasks.delete(key)
   }
 }

@@ -45,6 +45,7 @@ export function createDefaultProfile(name: string): ServerProfile {
     scheduledDinoWipeEnabled: false,
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],
+    scheduledRconCommands: [],
     startOnManagerLaunch: false,
     hidden: false,
     group: '',

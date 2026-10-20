@@ -45,6 +45,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     scheduledDinoWipeEnabled: false,
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],
+    scheduledRconCommands: [],
     startOnManagerLaunch: false,
     hidden: false,
     group: '',
