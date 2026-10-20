@@ -6,7 +6,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE } from '../src/main/lib/logEvents'
-import type { WebDashboardAccessToken, WebDashboardApiKey } from '../shared/types'
+import type { WebDashboardAccessToken, WebDashboardApiKey, ConfigFileHistoryEntry } from '../shared/types'
 
 const EMPTY_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-empty-${process.pid}`)
 const LOGGED_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-logged-${process.pid}`)
@@ -34,6 +34,7 @@ let mockSettings = {
 
 let mockAccessTokens: WebDashboardAccessToken[] = []
 let mockApiKeys: WebDashboardApiKey[] = []
+const mockConfigFileHistory: ConfigFileHistoryEntry[] = []
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let mockProfiles: any[] = [
@@ -140,6 +141,12 @@ vi.mock('../src/main/store', () => ({
   deleteWebDashboardApiKey: (id: string) => {
     mockApiKeys = mockApiKeys.filter((k) => k.id !== id)
     return mockApiKeys
+  },
+  listConfigFileHistory: (profileId: string, filePath: string) =>
+    mockConfigFileHistory.filter((e) => e.profileId === profileId && e.path === filePath).sort((a, b) => b.savedAt - a.savedAt),
+  getConfigFileHistoryEntry: (id: string) => mockConfigFileHistory.find((e) => e.id === id),
+  recordConfigFileHistory: (profileId: string, filePath: string, content: string) => {
+    mockConfigFileHistory.push({ id: `hist-${mockConfigFileHistory.length}`, profileId, path: filePath, content, savedAt: Date.now() })
   }
 }))
 vi.mock('../src/main/lib/serverProcess', async (importOriginal) => {
@@ -1206,6 +1213,81 @@ describe('web dashboard HTTP server', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: iniRelativePath, content: 'x' })
+      })
+      expect(res.status).toBe(404)
+    })
+
+    // The rest of these build on the one successful save above (the "overwrites the file"
+    // test), which snapshotted the original "[Test]\nFoo=Bar\n" into history right before
+    // overwriting it with "[Test]\nFoo=Changed\n" - the file is currently in that
+    // "Changed" state going into every test below, same as the test suite would see it.
+    it('GET /api/servers/:id/ini/history lists the one snapshot taken before the earlier save', async () => {
+      const res = await request('/api/servers/p2/ini/history?path=' + encodeURIComponent(iniRelativePath))
+      expect(res.status).toBe(200)
+      const entries = JSON.parse(res.body)
+      expect(entries).toHaveLength(1)
+      expect(entries[0]).toMatchObject({ id: expect.any(String), savedAt: expect.any(Number) })
+    })
+
+    it('GET /api/servers/:id/ini/history 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/ini/history?path=' + encodeURIComponent(iniRelativePath))
+      expect(res.status).toBe(404)
+    })
+
+    it('GET /api/servers/:id/ini/history-diff diffs the snapshot against the current file', async () => {
+      const historyRes = await request('/api/servers/p2/ini/history?path=' + encodeURIComponent(iniRelativePath))
+      const entryId = JSON.parse(historyRes.body)[0].id
+
+      const res = await request('/api/servers/p2/ini/history-diff?id=' + encodeURIComponent(entryId))
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body).diff).toEqual([
+        { type: 'same', text: '[Test]' },
+        { type: 'removed', text: 'Foo=Bar' },
+        { type: 'added', text: 'Foo=Changed' },
+        { type: 'same', text: '' }
+      ])
+    })
+
+    it('GET /api/servers/:id/ini/history-diff 404s for an unknown history entry id', async () => {
+      const res = await request('/api/servers/p2/ini/history-diff?id=does-not-exist')
+      expect(res.status).toBe(404)
+    })
+
+    it('POST /api/servers/:id/ini/restore brings back the snapshotted content', async () => {
+      const historyRes = await request('/api/servers/p2/ini/history?path=' + encodeURIComponent(iniRelativePath))
+      const entryId = JSON.parse(historyRes.body)[0].id
+
+      const res = await request('/api/servers/p2/ini/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: entryId })
+      })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body).ok).toBe(true)
+
+      const reread = await request('/api/servers/p2/ini?path=' + encodeURIComponent(iniRelativePath))
+      expect(JSON.parse(reread.body).content).toBe('[Test]\nFoo=Bar\n')
+
+      // The restore itself snapshotted the pre-restore ("Changed") content, so there are now
+      // two history entries, not still just the one from before.
+      const afterRes = await request('/api/servers/p2/ini/history?path=' + encodeURIComponent(iniRelativePath))
+      expect(JSON.parse(afterRes.body)).toHaveLength(2)
+    })
+
+    it('POST /api/servers/:id/ini/restore 404s for an unknown history entry id', async () => {
+      const res = await request('/api/servers/p2/ini/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'does-not-exist' })
+      })
+      expect(res.status).toBe(404)
+    })
+
+    it('POST /api/servers/:id/ini/restore 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/ini/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'x' })
       })
       expect(res.status).toBe(404)
     })

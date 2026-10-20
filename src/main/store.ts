@@ -9,7 +9,8 @@ import type {
   BannedPlayer,
   WatchedPlayerAlert,
   PlayerActivityRecord,
-  PlayerActivitySession
+  PlayerActivitySession,
+  ConfigFileHistoryEntry
 } from '@shared/types'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { migrateProfile } from './lib/profileMigration'
@@ -58,6 +59,8 @@ interface StoreSchema {
   playerActivity: Record<string, PlayerActivityRecord>
   /** Capped recent-session log - see PlayerActivitySession and recordPlayerSession. */
   playerSessions: PlayerActivitySession[]
+  /** Config file edit history - see ConfigFileHistoryEntry and recordConfigFileHistory. */
+  configFileHistory: ConfigFileHistoryEntry[]
   /** Set once the pre-4-tier-role migration (legacy 'admin' -> globalAdmin, 'operator' ->
    *  moderator) has actually been written back to the two lists above. Must run at most
    *  once, ever: 'admin' is now also the current, intentional value for the new scoped
@@ -134,6 +137,7 @@ const store = new Store<StoreSchema>({
     watchedPlayers: [],
     playerActivity: {},
     playerSessions: [],
+    configFileHistory: [],
     webDashboardRolesMigrated: false,
     profilesMigratedToDisk: false
   }
@@ -415,6 +419,34 @@ export function recordPlayerSession(profileId: string, playerId: string, playerN
 
   const sessions = [...(store.get('playerSessions') ?? []), { id: randomUUID(), profileId, playerId, playerName, joinedAt, leftAt }]
   store.set('playerSessions', sessions.length > MAX_PLAYER_SESSIONS ? sessions.slice(sessions.length - MAX_PLAYER_SESSIONS) : sessions)
+}
+
+/** Per-(profileId, path) cap, not a global one like MAX_PLAYER_SESSIONS - a server with
+ *  several frequently-edited config files shouldn't have one of them crowd the others out
+ *  of history entirely. */
+const MAX_CONFIG_FILE_HISTORY_PER_FILE = 20
+
+export function listConfigFileHistory(profileId: string, path: string): ConfigFileHistoryEntry[] {
+  return (store.get('configFileHistory') ?? [])
+    .filter((e) => e.profileId === profileId && e.path === path)
+    .sort((a, b) => b.savedAt - a.savedAt)
+}
+
+export function getConfigFileHistoryEntry(id: string): ConfigFileHistoryEntry | undefined {
+  return (store.get('configFileHistory') ?? []).find((e) => e.id === id)
+}
+
+/** Snapshots `content` (the file's content right before it's about to be overwritten - see
+ *  the caller in webDashboard.ts) as a new history entry, trimming that same file's own
+ *  oldest entries once there are more than MAX_CONFIG_FILE_HISTORY_PER_FILE of them. Other
+ *  files' history (any other profileId/path pair) is never touched by this trim. */
+export function recordConfigFileHistory(profileId: string, path: string, content: string): void {
+  const all = store.get('configFileHistory') ?? []
+  const forThisFile = all.filter((e) => e.profileId === profileId && e.path === path)
+  const others = all.filter((e) => !(e.profileId === profileId && e.path === path))
+  const updated = [...forThisFile, { id: randomUUID(), profileId, path, content, savedAt: Date.now() }]
+  const trimmed = updated.length > MAX_CONFIG_FILE_HISTORY_PER_FILE ? updated.slice(updated.length - MAX_CONFIG_FILE_HISTORY_PER_FILE) : updated
+  store.set('configFileHistory', [...others, ...trimmed])
 }
 
 export function getRunningPids(): Record<string, number> {

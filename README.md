@@ -4303,6 +4303,54 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added config file edit history and diff** (third and last of the "Fichiers & config"
+  category, and the last item of the entire user-approved batch - "compare with AMP/
+  Pterodactyl/Nitrado-style panels" brainstorm → Fichiers & Config/Planification/Divers/
+  Joueurs approved → all 11 items now shipped). Every save made through the raw .ini editor
+  above now keeps the version it's about to overwrite, so nothing typed into that textarea is
+  ever truly gone - a "History" list under the editor shows each past save with a diff
+  against the current file and a one-click restore. Scoped deliberately to the editor's own
+  saves only (not every .ini write anywhere in the app) - see `ConfigFileHistoryEntry`'s own
+  doc comment for why that's the coherent boundary, not a gap.
+  - **`shared/textDiff.ts`** (new): pure `computeLineDiff(oldText, newText)` - classic LCS
+    (longest-common-subsequence) dynamic-programming line diff, correct for an inserted or
+    deleted line shifting everything below it (a naive index-by-index comparison would mark
+    every subsequent line as "changed" instead of just the one that actually moved).
+    Returns `null` above `MAX_DIFF_LINES` (2000) on either side rather than letting the O(n·m)
+    table allocate tens of millions of cells for a file nobody would read as a diff anyway.
+  - **`shared/types.ts`**: new `ConfigFileHistoryEntry` (`id`, `profileId`, `path`, `content`,
+    `savedAt`).
+  - **`src/main/store.ts`**: `configFileHistory: ConfigFileHistoryEntry[]` schema field.
+    `recordConfigFileHistory(profileId, path, content)` appends a snapshot, trimming that
+    same `(profileId, path)` pair's own oldest entries past 20 - a per-file cap, not a global
+    one, so one frequently-edited file can't crowd every other file's history out entirely.
+    `listConfigFileHistory(profileId, path)` (newest first) and `getConfigFileHistoryEntry(id)`
+    read it back.
+  - **`src/main/lib/webDashboard.ts`**: the existing `POST .../ini` route now reads the
+    file's current content (if any - a first-ever edit has nothing to snapshot, not an error)
+    and calls `recordConfigFileHistory` right before overwriting it. Three new admin-gated
+    routes: `GET .../ini/history?path=` lists `{id, savedAt}` only (never the full content -
+    that would make the list grow with every edit ever made); `GET .../ini/history-diff?id=`
+    diffs that one entry's content against the file's current content via `computeLineDiff`;
+    `POST .../ini/restore {id}` writes that entry's content back as current - which, being
+    itself just another overwrite, first snapshots whatever was current right before the
+    restore, so a restore is itself undoable the same way any other save is.
+  - **Web dashboard client**: new "History" list under the raw .ini editor panel, each entry
+    a timestamp with "View diff" (renders colored +/-/unchanged lines) and "Restore" (confirms,
+    then reloads the editor with the restored content) buttons. Saving now refreshes the
+    history list in place instead of closing the editor, so the newly-created entry is visible
+    immediately.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1159 tests - 6 new ones in
+    `tests/textDiff.test.ts` for `computeLineDiff` itself, including the inserted/deleted-line-
+    shift case and the `MAX_DIFF_LINES` cutoff; 3 in `tests/store.test.ts` for list/get/record
+    and the per-file cap; 10 in `tests/webDashboard.test.ts`'s `raw .ini editor routes` describe
+    block for the history list, the diff, the restore round trip - including that a restore
+    itself creates a second history entry - and 404s on an unknown entry/server), and `npm run
+    build` all pass, including the standing `node --check` regression test against the
+    dashboard's served `<script>` content. **Not yet verified**: needs the user to confirm the
+    History list, diff view, and restore all work correctly against a real edited `.ini` file
+    in a real browser.
+
 - **Added a raw .ini editor in the web dashboard** (second of the "Fichiers & config"
   category in the user-approved batch, right on top of the file browser above it). Clicking
   a `.ini` file in the Files tab now opens its raw text in an editable textarea instead of

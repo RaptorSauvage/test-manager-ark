@@ -18,8 +18,12 @@ import {
   listMinecraftProfiles,
   getMinecraftProfile,
   saveMinecraftProfile,
-  recordPlayerBan
+  recordPlayerBan,
+  listConfigFileHistory,
+  getConfigFileHistoryEntry,
+  recordConfigFileHistory
 } from '../store'
+import { computeLineDiff } from '@shared/textDiff'
 import { getStatus, watchLogFile, serverEvents } from './serverProcess'
 import { sendRconCommand, parsePlayerListWithIds } from './rcon'
 import { parseLogChunk, createLogEventCaches, readLogBacklog } from './logEvents'
@@ -1079,7 +1083,104 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         try {
           if (!isIniPath(relativePath)) throw new Error('Only .ini files can be saved here.')
           const filePath = resolveSafePath(found.profile.installDir, relativePath)
+          // Snapshot whatever's there right now before it's gone - a missing file (first
+          // edit ever, nothing to snapshot) is not an error, same as createBackup's own
+          // "nothing to lose" cases elsewhere in this app.
+          try {
+            const previous = fs.readFileSync(filePath, 'utf-8')
+            recordConfigFileHistory(found.profile.id, relativePath, previous)
+          } catch {
+            // No existing file (or unreadable) - nothing to snapshot, not fatal.
+          }
           fs.writeFileSync(filePath, content, 'utf-8')
+          sendJson(res, 200, { ok: true })
+        } catch (err) {
+          sendJson(res, 400, { ok: false, error: (err as Error).message })
+        }
+      })
+      .catch(() => sendJson(res, 400, { ok: false, error: 'Invalid request body' }))
+    return
+  }
+
+  // Config history/diff - every entry here was captured right before a raw .ini editor save
+  // overwrote that file (see the POST route above), keyed by profile+path. Admin-gated like
+  // the editor itself; nothing here ever writes to disk except /ini/restore, which is really
+  // just another .ini save under the hood (so it snapshots the current content too, the same
+  // way any other save would, before applying the restored one).
+  const iniHistoryMatch = path.match(/^\/api\/servers\/([^/]+)\/ini\/history$/)
+  if (req.method === 'GET' && iniHistoryMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const found = findAnyServer(decodeURIComponent(iniHistoryMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    const relativePath = url.searchParams.get('path') ?? ''
+    // Only id/savedAt - the full content of every past revision would make this list
+    // response grow with every edit ever made; a specific revision's content is fetched
+    // separately below, only once something's actually selected.
+    const entries = listConfigFileHistory(found.profile.id, relativePath).map((e) => ({ id: e.id, savedAt: e.savedAt }))
+    sendJson(res, 200, entries)
+    return
+  }
+
+  const iniHistoryDiffMatch = path.match(/^\/api\/servers\/([^/]+)\/ini\/history-diff$/)
+  if (req.method === 'GET' && iniHistoryDiffMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const found = findAnyServer(decodeURIComponent(iniHistoryDiffMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    const entryId = url.searchParams.get('id') ?? ''
+    const entry = getConfigFileHistoryEntry(entryId)
+    if (!entry || entry.profileId !== found.profile.id) {
+      sendJson(res, 404, { error: 'Unknown history entry' })
+      return
+    }
+    try {
+      const filePath = resolveSafePath(found.profile.installDir, entry.path)
+      const current = fs.readFileSync(filePath, 'utf-8')
+      const diff = computeLineDiff(entry.content, current)
+      if (!diff) {
+        sendJson(res, 400, { error: 'This file is too large to diff.' })
+        return
+      }
+      sendJson(res, 200, { diff })
+    } catch (err) {
+      sendJson(res, 400, { error: (err as Error).message })
+    }
+    return
+  }
+
+  const iniRestoreMatch = path.match(/^\/api\/servers\/([^/]+)\/ini\/restore$/)
+  if (req.method === 'POST' && iniRestoreMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const found = findAnyServer(decodeURIComponent(iniRestoreMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const entryId = typeof body.id === 'string' ? body.id : ''
+        const entry = getConfigFileHistoryEntry(entryId)
+        if (!entry || entry.profileId !== found.profile.id) {
+          sendJson(res, 404, { ok: false, error: 'Unknown history entry' })
+          return
+        }
+        try {
+          const filePath = resolveSafePath(found.profile.installDir, entry.path)
+          try {
+            const previous = fs.readFileSync(filePath, 'utf-8')
+            recordConfigFileHistory(found.profile.id, entry.path, previous)
+          } catch {
+            // No existing file - nothing to snapshot, not fatal.
+          }
+          fs.writeFileSync(filePath, entry.content, 'utf-8')
           sendJson(res, 200, { ok: true })
         } catch (err) {
           sendJson(res, 400, { ok: false, error: (err as Error).message })
@@ -2126,6 +2227,13 @@ const DASHBOARD_HTML = `<!doctype html>
   .data-table td.files-name-cell { cursor: pointer; }
   .data-table td.files-name-cell:hover { text-decoration: underline; }
   .files-ini-textarea { width: 100%; min-height: 360px; font-family: monospace; font-size: 0.85rem; margin-top: 8px; }
+  .files-ini-history-list { list-style: none; padding: 0; margin: 8px 0; }
+  .files-ini-history-list li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+  .files-ini-history-list li span { flex: 1; }
+  .files-ini-diff { font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; margin-top: 8px; max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+  .files-ini-diff .diff-added { background: rgba(46, 204, 113, 0.18); display: block; }
+  .files-ini-diff .diff-removed { background: rgba(231, 76, 60, 0.18); display: block; }
+  .files-ini-diff .diff-same { display: block; opacity: 0.7; }
   .data-table td.mod-disabled-row { color: var(--muted); }
   .playerbackup-select-col { width: 28px; }
   .ark-mod-icon { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
@@ -2668,6 +2776,10 @@ const DASHBOARD_HTML = `<!doctype html>
             <button id="btn-files-ini-save" type="button">Save</button>
             <button id="btn-files-ini-cancel" type="button">Cancel</button>
           </div>
+          <h4>History</h4>
+          <p id="files-ini-history-empty" class="empty-state" style="display: none">No saved edits yet.</p>
+          <ul id="files-ini-history-list" class="files-ini-history-list"></ul>
+          <div id="files-ini-diff" class="files-ini-diff" style="display: none"></div>
         </div>
       </div>
     </main>
@@ -6595,6 +6707,9 @@ function initDashboard(resolvedRole) {
   var filesIniErrorEl = document.getElementById('files-ini-editor-error');
   var btnFilesIniSave = document.getElementById('btn-files-ini-save');
   var btnFilesIniCancel = document.getElementById('btn-files-ini-cancel');
+  var filesIniHistoryEmptyEl = document.getElementById('files-ini-history-empty');
+  var filesIniHistoryListEl = document.getElementById('files-ini-history-list');
+  var filesIniDiffEl = document.getElementById('files-ini-diff');
   var filesCurrentPath = '';
   var filesEntries = [];
   var filesEditingPath = '';
@@ -6609,7 +6724,77 @@ function initDashboard(resolvedRole) {
   function closeFilesIniEditor() {
     filesEditingPath = '';
     filesIniEditorEl.style.display = 'none';
+    filesIniDiffEl.style.display = 'none';
     filesTableEl.style.display = '';
+  }
+
+  function renderFilesIniDiff(diffLines) {
+    filesIniDiffEl.innerHTML = '';
+    diffLines.forEach(function (line) {
+      var span = document.createElement('span');
+      span.className = 'diff-' + line.type;
+      var prefix = line.type === 'added' ? '+ ' : line.type === 'removed' ? '- ' : '  ';
+      span.textContent = prefix + line.text;
+      filesIniDiffEl.appendChild(span);
+    });
+    filesIniDiffEl.style.display = '';
+  }
+
+  function viewFilesIniDiff(entryId) {
+    if (!currentId) return;
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/ini/history-diff?id=' + encodeURIComponent(entryId))
+      .then(function (r) { return r.json().then(function (body) { return { ok: r.ok, body: body }; }); })
+      .then(function (result) {
+        if (!result.ok) { showFilesIniError(result.body.error || 'Failed to load diff.'); return; }
+        renderFilesIniDiff(result.body.diff);
+      })
+      .catch(function () { showFilesIniError('Request failed'); });
+  }
+
+  function restoreFilesIniEntry(entryId) {
+    if (!currentId || !filesEditingPath) return;
+    if (!confirm('Restore this version of "' + filesEditingPath + '"? The current content will be saved to history first.')) return;
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/ini/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: entryId })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showFilesIniError(result.error || 'Failed to restore.'); return; }
+        showToast('Restored ' + filesEditingPath);
+        openFilesIniEditor(filesEditingPath);
+      })
+      .catch(function () { showFilesIniError('Request failed'); });
+  }
+
+  function loadFilesIniHistory(entryPath) {
+    if (!currentId) return;
+    filesIniDiffEl.style.display = 'none';
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/ini/history?path=' + encodeURIComponent(entryPath))
+      .then(function (r) { return r.json(); })
+      .then(function (entries) {
+        filesIniHistoryListEl.innerHTML = '';
+        filesIniHistoryEmptyEl.style.display = entries.length === 0 ? '' : 'none';
+        entries.forEach(function (entry) {
+          var li = document.createElement('li');
+          var span = document.createElement('span');
+          span.textContent = new Date(entry.savedAt).toLocaleString();
+          var diffBtn = document.createElement('button');
+          diffBtn.type = 'button';
+          diffBtn.textContent = 'View diff';
+          diffBtn.addEventListener('click', function () { viewFilesIniDiff(entry.id); });
+          var restoreBtn = document.createElement('button');
+          restoreBtn.type = 'button';
+          restoreBtn.textContent = 'Restore';
+          restoreBtn.addEventListener('click', function () { restoreFilesIniEntry(entry.id); });
+          li.appendChild(span);
+          li.appendChild(diffBtn);
+          li.appendChild(restoreBtn);
+          filesIniHistoryListEl.appendChild(li);
+        });
+      })
+      .catch(function () { /* non-fatal - the editor itself still works without history */ });
   }
 
   function openFilesIniEditor(entryPath) {
@@ -6625,6 +6810,7 @@ function initDashboard(resolvedRole) {
         showFilesIniError('');
         filesTableEl.style.display = 'none';
         filesIniEditorEl.style.display = '';
+        loadFilesIniHistory(entryPath);
       })
       .catch(function () { showFilesError('Request failed'); });
   }
@@ -6641,7 +6827,7 @@ function initDashboard(resolvedRole) {
       .then(function (result) {
         if (!result.ok) { showFilesIniError(result.error || 'Failed to save.'); return; }
         showToast('Saved ' + filesEditingPath);
-        closeFilesIniEditor();
+        loadFilesIniHistory(filesEditingPath);
       })
       .catch(function () { showFilesIniError('Request failed'); });
   });

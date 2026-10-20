@@ -511,6 +511,24 @@ export interface PlayerActivitySession {
 }
 
 /**
+ * A snapshot of a config file's content right before the web dashboard's raw .ini editor
+ * overwrote it (see recordConfigFileHistory in store.ts and webDashboard.ts's POST
+ * .../ini route) - only edits made through that editor are tracked; every other way a .ini
+ * file gets written in this app (the structured Settings forms, mod toggles rewriting
+ * ActiveMods=, etc.) goes through its own targeted key writes rather than a free-form
+ * overwrite, so there's no single "previous full content" moment worth snapshotting there
+ * the way there is for a raw edit.
+ */
+export interface ConfigFileHistoryEntry {
+  id: string
+  profileId: string
+  /** Relative to the profile's installDir - same shape POST .../ini already takes. */
+  path: string
+  content: string
+  savedAt: number
+}
+
+/**
  * A programmatic credential for the web dashboard's HTTP API - meant for scripts/bots
  * that can't drive a login form/session cookie the way a browser does. Presented as
  * `Authorization: Bearer ark_<id>_<secret>`; `id` is looked up directly (not scanned) and

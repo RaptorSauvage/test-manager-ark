@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-20',
+    title: 'Config edit history and diff',
+    details: [
+      'The raw .ini editor now keeps every previous version of a file you save - a "History" list under the editor shows each past save with "View diff" (colored line-by-line comparison against the current file) and "Restore" buttons.',
+      'Restoring an older version saves the current one to history first, so nothing is ever lost.'
+    ]
+  },
+  {
+    date: '2026-10-20',
     title: 'Raw .ini editor in the web dashboard',
     details: [
       'In the Files tab, click any .ini file to edit its raw text directly in the browser and save it - no need to download, edit locally, and re-upload.',

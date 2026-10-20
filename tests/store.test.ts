@@ -14,7 +14,10 @@ import {
   removeWatchedPlayer,
   listPlayerActivity,
   listPlayerSessions,
-  recordPlayerSession
+  recordPlayerSession,
+  listConfigFileHistory,
+  getConfigFileHistoryEntry,
+  recordConfigFileHistory
 } from '../src/main/store'
 
 describe('setRunningPid/setRunningStartedAt', () => {
@@ -109,5 +112,38 @@ describe('listPlayerActivity/listPlayerSessions/recordPlayerSession', () => {
 
     const record = listPlayerActivity().find((r) => r.id === playerId)
     expect(record?.totalPlaytimeMs).toBe(0)
+  })
+})
+
+describe('listConfigFileHistory/getConfigFileHistoryEntry/recordConfigFileHistory', () => {
+  it('lists entries for one profile+path newest first, without the others', () => {
+    const profileId = randomUUID()
+    recordConfigFileHistory(profileId, 'Test.ini', 'first')
+    recordConfigFileHistory(profileId, 'Test.ini', 'second')
+    recordConfigFileHistory(profileId, 'Other.ini', 'unrelated')
+
+    const history = listConfigFileHistory(profileId, 'Test.ini')
+    expect(history.map((e) => e.content)).toEqual(['second', 'first'])
+  })
+
+  it('fetches a single entry by id with getConfigFileHistoryEntry', () => {
+    const profileId = randomUUID()
+    recordConfigFileHistory(profileId, 'Test.ini', 'the content')
+    const entry = listConfigFileHistory(profileId, 'Test.ini')[0]
+
+    expect(getConfigFileHistoryEntry(entry.id)?.content).toBe('the content')
+    expect(getConfigFileHistoryEntry('does-not-exist')).toBeUndefined()
+  })
+
+  it("caps one file's own history without trimming another file's", () => {
+    const profileId = randomUUID()
+    for (let i = 0; i < 25; i++) recordConfigFileHistory(profileId, 'Busy.ini', 'version ' + i)
+    recordConfigFileHistory(profileId, 'Quiet.ini', 'only version')
+
+    const busyHistory = listConfigFileHistory(profileId, 'Busy.ini')
+    expect(busyHistory).toHaveLength(20)
+    expect(busyHistory[0].content).toBe('version 24')
+    expect(busyHistory[busyHistory.length - 1].content).toBe('version 5')
+    expect(listConfigFileHistory(profileId, 'Quiet.ini')).toHaveLength(1)
   })
 })
