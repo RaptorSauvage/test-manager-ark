@@ -4302,3 +4302,34 @@ async function findProfileIdByName(name) {
     exportedAt fallback), and `npm run build` all pass. **Not yet verified**: needs the user
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
+
+- **Added a "What's New" page in the app** (second of the user-approved batch) - a
+  non-technical, curated changelog shown inside the Manager itself, distinct from this
+  README (which documents every change in full engineering/file-by-file detail for whoever
+  develops this next, not something to hand a user).
+  - **`shared/changelog.ts`** (new): `CHANGELOG: ChangelogEntry[]` (`date`, `title`,
+    `details: string[]`), newest first. Seeded with user-facing summaries of this session's
+    changes going back to the group-order fix, plus two older, undated ("Earlier") entries
+    for the native Discord bot integration and Minecraft support - deliberately left
+    without a specific date rather than guessing one, since this file doesn't have the real
+    date either happened and fabricating one would just be wrong. The doc comment at the
+    top asks for a new entry here alongside each README one that's actually worth telling a
+    user about (skipping pure refactors/internal fixes).
+  - **`src/renderer/src/pages/ChangelogView.tsx`** (new): renders the list as simple cards
+    (date, title, bullet points) - same `.server-detail`/`.server-detail-header` wrapper
+    every other standalone screen here already uses (SteamCmdView/DataSettingsView/
+    ProfileManagementView), so it gets the same header/Back button look for free.
+  - **`src/renderer/src/App.tsx`**: new `showChangelog` state, checked at the same top-level
+    tier as Settings/SteamCMD/Profile Management (reachable from either game mode). Added a
+    "What's New" button as the new first item of the sidebar's bottom-pinned group, right
+    above Log/Settings, in both the ARK and Minecraft sidebars.
+  - **`src/renderer/src/styles.css`**: renamed `.app-sidebar-log` to the more accurate
+    `.app-sidebar-bottom-group` (it now anchors three buttons, not just Log) and moved the
+    `margin-top: auto` onto whichever is first in the DOM - still What's New in both
+    sidebars after this change, no behavior difference, just a rename for clarity. New
+    `.changelog-list`/`.changelog-entry`/`.changelog-entry-header`/`.changelog-date` rules
+    for the new page's card layout.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1091 tests, unchanged -
+    this is static content plus simple rendering, no isolated unit to test), and
+    `npm run build` all pass. **Not yet verified**: needs the user to confirm the new
+    sidebar button/page look right in both game modes.

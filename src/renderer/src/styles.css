@@ -256,12 +256,12 @@ label.checkbox {
   opacity: 1;
 }
 
-/* Pins Log+Settings together as a group at the bottom of the sidebar (regardless of how many
-   nav buttons come before it, ARK's or Minecraft's) via the sidebar's own flex-column layout -
-   the margin goes on Log (the first of the two) so the pair stays adjacent to each other,
-   separated from the rest of the nav by the gap/border instead of each button pushing
-   independently to its own edge. */
-.app-sidebar-log {
+/* Pins What's New/Log/Settings together as a group at the bottom of the sidebar (regardless
+   of how many nav buttons come before it, ARK's or Minecraft's) via the sidebar's own
+   flex-column layout - the margin goes on the first of the three so the group stays
+   adjacent, separated from the rest of the nav by the gap/border instead of each button
+   pushing independently to its own edge. */
+.app-sidebar-bottom-group {
   margin-top: auto;
   border-top: 1px solid var(--border);
   padding-top: 2px;
@@ -1227,6 +1227,51 @@ label.checkbox {
 .server-detail-header h1 {
   margin: 0;
   font-size: 1.4rem;
+}
+
+.changelog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 640px;
+}
+
+.changelog-entry {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 18px;
+}
+
+.changelog-entry-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.changelog-entry-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.changelog-date {
+  color: var(--muted);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.changelog-entry ul {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.changelog-entry li {
+  color: var(--text);
+  font-size: 0.9rem;
 }
 
 .tab-nav {

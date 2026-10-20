@@ -8,6 +8,7 @@ import ManagerLogView from './pages/ManagerLogView'
 import ServerDetail, { type TabKey } from './pages/ServerDetail'
 import SteamCmdView from './pages/SteamCmdView'
 import DataSettingsView from './pages/DataSettingsView'
+import ChangelogView from './pages/ChangelogView'
 import ProfileManagementView from './pages/ProfileManagementView'
 import MinecraftDashboard from './pages/MinecraftDashboard'
 import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftServerDetail'
@@ -52,6 +53,7 @@ export default function App(): JSX.Element {
   const [showSteamCmd, setShowSteamCmd] = useState(false)
   const [showDataSettings, setShowDataSettings] = useState(false)
   const [showProfileManagement, setShowProfileManagement] = useState(false)
+  const [showChangelog, setShowChangelog] = useState(false)
   const [mainPage, setMainPage] = useState<MainPage>('dashboard')
   const [groupConsoleTarget, setGroupConsoleTarget] = useState<{ groupName: string; profileIds: string[] } | null>(
     null
@@ -163,6 +165,10 @@ export default function App(): JSX.Element {
     )
   }
 
+  if (showChangelog) {
+    return <ChangelogView onBack={() => setShowChangelog(false)} />
+  }
+
   if (gameMode === 'minecraft') {
     if (minecraftSelected) {
       return (
@@ -186,9 +192,12 @@ export default function App(): JSX.Element {
           >
             Minecraft Servers
           </button>
+          <button type="button" className="app-sidebar-bottom-group" onClick={() => setShowChangelog(true)}>
+            What&apos;s New
+          </button>
           <button
             type="button"
-            className={`app-sidebar-log${mainPage === 'managerLog' ? ' active' : ''}`}
+            className={mainPage === 'managerLog' ? 'active' : ''}
             onClick={() => setMainPage('managerLog')}
           >
             Log
@@ -253,9 +262,12 @@ export default function App(): JSX.Element {
         >
           Cluster Dashboard
         </button>
+        <button type="button" className="app-sidebar-bottom-group" onClick={() => setShowChangelog(true)}>
+          What&apos;s New
+        </button>
         <button
           type="button"
-          className={`app-sidebar-log${mainPage === 'managerLog' ? ' active' : ''}`}
+          className={mainPage === 'managerLog' ? 'active' : ''}
           onClick={() => setMainPage('managerLog')}
         >
           Log
