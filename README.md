@@ -4224,3 +4224,30 @@ async function findProfileIdByName(name) {
     `npm run build` all pass. **Not yet verified**: needs the user to confirm that launching
     a second instance now just brings the first one's window to the front instead of
     actually starting a second process.
+
+- **Added a server search box to both Dashboards** (user request, after a brainstorm about
+  Manager additions - a 13+-server ARK cluster makes finding one specific server by
+  scrolling/expanding groups tedious). Matches on name or group, case-insensitively, live as
+  you type - no IPC round trip, purely client-side over the profiles already in memory.
+  - **`src/renderer/src/pages/Dashboard.tsx`** and **`MinecraftDashboard.tsx`** (identical
+    treatment in both, matching their already-identical group/search-adjacent structure):
+    new `searchQuery` state and a `matchesSearch(profile)` helper (name-or-group substring
+    match, always `true` when the box is empty so normal browsing is untouched). Applied to
+    the ungrouped grid, each group's grid, and the hidden-servers grid. A group with zero
+    matches isn't rendered at all while searching (instead of showing an empty summary), and
+    any group that does match is forced `open` regardless of its own collapsed state - a
+    match sitting inside a collapsed group would otherwise be invisible, the opposite of
+    what a search is for. A dedicated empty state ("No server matches ...") covers the
+    all-groups-filtered-out case, distinct from the existing "no profiles yet"/"everything's
+    hidden" messages.
+  - **`src/renderer/src/styles.css`**: new `.dashboard-search` input, sized to grow between
+    the page title and the action buttons (`flex: 1 1 auto` with a sensible min/max width)
+    rather than defaulting to a cramped intrinsic width; `.dashboard-header` and
+    `.dashboard-header-actions` picked up the small adjustments (`gap`, `flex-shrink: 0`)
+    needed to fit a third flex child cleanly.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1082 tests, unchanged -
+    this is renderer-only UI filtering with no isolated unit to test, same gap as the rest
+    of these two components), and `npm run build` all pass. **Not yet verified**: needs the
+    user to confirm the search box behaves correctly on their real cluster (filters as
+    expected, auto-expands matching groups, clears back to normal when emptied) in both ARK
+    and Minecraft mode.

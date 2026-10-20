@@ -46,6 +46,7 @@ export default function MinecraftDashboard({
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [dragGroupName, setDragGroupName] = useState<string | null>(null)
   const [showInstallPanel, setShowInstallPanel] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     void window.api.webDashboard.getLocalIps().then((ips) => {
@@ -328,10 +329,25 @@ export default function MinecraftDashboard({
   const totalCpu = visibleProfiles.reduce((sum, p) => sum + (statuses[p.id]?.cpu ?? 0), 0)
   const totalMemoryMB = visibleProfiles.reduce((sum, p) => sum + (statuses[p.id]?.memoryMB ?? 0), 0)
 
+  // Same matches-name-or-group search as ARK's own Dashboard.tsx.
+  const isSearching = searchQuery.trim().length > 0
+  function matchesSearch(profile: MinecraftProfile): boolean {
+    if (!isSearching) return true
+    const q = searchQuery.trim().toLowerCase()
+    return profile.name.toLowerCase().includes(q) || profile.group.toLowerCase().includes(q)
+  }
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
         <h1>Minecraft Servers</h1>
+        <input
+          type="search"
+          className="dashboard-search"
+          placeholder="Search servers..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
         <div className="dashboard-header-actions">
           <button onClick={() => void handleImport()} disabled={importing}>
             {importing ? 'Scanning...' : 'Import existing server'}
@@ -389,14 +405,21 @@ export default function MinecraftDashboard({
               Every Minecraft server is hidden. Expand &quot;Hidden servers&quot; below to unhide one.
             </p>
           )}
+          {isSearching && !visibleProfiles.some(matchesSearch) && (
+            <p className="empty-state">No server matches &quot;{searchQuery.trim()}&quot;.</p>
+          )}
 
-          <div className="server-grid">{ungroupedProfiles.map(renderCard)}</div>
+          <div className="server-grid">{ungroupedProfiles.filter(matchesSearch).map(renderCard)}</div>
 
-          {groupNames.map((groupName) => (
+          {groupNames.map((groupName) => {
+            const groupProfiles = visibleProfiles.filter((p) => p.group.trim() === groupName)
+            const matchingGroupProfiles = groupProfiles.filter(matchesSearch)
+            if (isSearching && matchingGroupProfiles.length === 0) return null
+            return (
             <details
               className={`server-group${dragGroupName === groupName ? ' dragging' : ''}`}
               key={groupName}
-              open={!collapsedGroups.includes(groupName)}
+              open={isSearching || !collapsedGroups.includes(groupName)}
               onToggle={(e) => setGroupCollapsed(groupName, !(e.currentTarget as HTMLDetailsElement).open)}
             >
               <summary onDragOver={(e) => e.preventDefault()} onDrop={() => void handleGroupDrop(groupName)}>
@@ -415,15 +438,16 @@ export default function MinecraftDashboard({
                 {groupName}
               </summary>
               <div className="server-grid">
-                {visibleProfiles.filter((p) => p.group.trim() === groupName).map(renderCard)}
+                {matchingGroupProfiles.map(renderCard)}
               </div>
             </details>
-          ))}
+            )
+          })}
 
           {hiddenProfiles.length > 0 && (
             <details className="hidden-servers">
               <summary>Hidden servers ({hiddenProfiles.length})</summary>
-              <div className="server-grid">{hiddenProfiles.map(renderCard)}</div>
+              <div className="server-grid">{hiddenProfiles.filter(matchesSearch).map(renderCard)}</div>
             </details>
           )}
         </div>

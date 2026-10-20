@@ -797,12 +797,29 @@ label.checkbox {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
 .dashboard-header-actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Matches on name or group, case-insensitively - see Dashboard.tsx's own matchesSearch. Sits
+   between the title and the action buttons, growing to fill the space between them rather
+   than defaulting to a cramped intrinsic width. */
+.dashboard-search {
+  flex: 1 1 auto;
+  min-width: 120px;
+  max-width: 320px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
 }
 
 .dashboard-body {
