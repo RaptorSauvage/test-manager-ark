@@ -176,7 +176,21 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
                 />
                 Start server after shutdown
               </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={form.scheduledRestartOnlyIfEmpty}
+                  onChange={(e) => update('scheduledRestartOnlyIfEmpty', e.target.checked)}
+                  disabled={!form.scheduledRestartEnabled}
+                />
+                Only if no players are connected
+              </label>
             </div>
+            <p className="empty-state">
+              When checked, a restart that comes due while anyone's still online is skipped entirely for that
+              occurrence (nothing is stopped/updated/started) - it's tried again at the next scheduled occurrence
+              instead of sooner.
+            </p>
           </ScheduleDaysPicker>
         </div>
 

@@ -42,6 +42,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     scheduledRestartDays: [],
     scheduledRestartUpdateAfter: false,
     scheduledRestartStartAfter: false,
+    scheduledRestartOnlyIfEmpty: false,
     scheduledDinoWipeEnabled: false,
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],

@@ -116,6 +116,10 @@ export interface ServerProfile {
   scheduledRestartDays: number[]
   scheduledRestartUpdateAfter: boolean
   scheduledRestartStartAfter: boolean
+  /** When true, a scheduled restart that fires while any player is still connected (per RCON
+   *  ListPlayers) is skipped entirely for that occurrence - no stop/update/start at all,
+   *  logged and left for the schedule's next occurrence rather than retried sooner. */
+  scheduledRestartOnlyIfEmpty: boolean
   /** Scheduled dino wipe - independent of the restart above: sends RCON DestroyWildDinos
    *  at `scheduledDinoWipeTime` on the selected days, while the server is running. */
   scheduledDinoWipeEnabled: boolean

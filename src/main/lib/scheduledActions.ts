@@ -6,7 +6,7 @@ import { buildDayOfWeekCron } from '@shared/scheduleTime'
 import { isRunning, startServer, stopServer, setUpdating } from './serverProcess'
 import { startMonitoring } from './monitor'
 import { updateServer, getUpdateLogPath } from './steamcmd'
-import { sendRconCommand } from './rcon'
+import { sendRconCommand, listPlayers } from './rcon'
 import { getSettings } from '../store'
 import { delay } from './delay'
 import { logManagerEvent, newTaskId } from './managerLog'
@@ -38,6 +38,18 @@ export async function runScheduledRestart(profile: ServerProfile): Promise<void>
 
   const taskId = newTaskId('scheduled-restart')
   const taskLabel = `Scheduled Restart — ${profile.name}`
+
+  if (profile.scheduledRestartOnlyIfEmpty) {
+    const players = await listPlayers(profile)
+    if (players.length > 0) {
+      logManagerEvent(
+        taskId,
+        taskLabel,
+        `Skipped - ${players.length} player${players.length === 1 ? '' : 's'} still connected (will try again at the next occurrence).`
+      )
+      return
+    }
+  }
 
   logManagerEvent(taskId, taskLabel, 'Stopping...')
   await stopServer(profile)

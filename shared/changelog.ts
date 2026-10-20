@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-20',
+    title: 'Conditional scheduled restart ("only if empty")',
+    details: [
+      'New checkbox on the scheduled Restart (Server Management tab): "Only if no players are connected" - a restart that comes due while anyone\'s online is skipped entirely and retried at the next scheduled occurrence, instead of kicking everyone off mid-session.'
+    ]
+  },
+  {
+    date: '2026-10-20',
     title: 'Generic RCON command scheduler',
     details: [
       "Each ARK server's Server Management tab now has a \"Scheduled RCON Commands\" section - add any number of commands, each on its own day/time schedule, independent of the dedicated Restart/Dino Wipe schedules above it.",

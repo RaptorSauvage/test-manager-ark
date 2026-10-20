@@ -21,7 +21,7 @@ vi.mock('../src/main/lib/steamcmd', () => ({
   updateServer: vi.fn().mockResolvedValue(undefined),
   getUpdateLogPath: vi.fn(() => '/tmp/scheduled-actions-test-update.log')
 }))
-vi.mock('../src/main/lib/rcon', () => ({ sendRconCommand: vi.fn() }))
+vi.mock('../src/main/lib/rcon', () => ({ sendRconCommand: vi.fn(), listPlayers: vi.fn().mockResolvedValue([]) }))
 vi.mock('../src/main/store', () => ({
   getSettings: vi.fn(() => ({ steamCmdPath: '/tmp/steamcmd' })),
   getProfile: vi.fn()
@@ -38,6 +38,7 @@ import {
   isUpdating as mockIsUpdating
 } from '../src/main/lib/serverProcess'
 import { updateServer as mockUpdateServer } from '../src/main/lib/steamcmd'
+import { listPlayers as mockListPlayers } from '../src/main/lib/rcon'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
   return {
@@ -57,6 +58,7 @@ describe('runScheduledRestart', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.mocked(mockIsRunning).mockReturnValue(true)
+    vi.mocked(mockListPlayers).mockResolvedValue([])
     updatingProfiles.clear()
   })
 
@@ -154,5 +156,34 @@ describe('runScheduledRestart', () => {
     await runScheduledRestart(profile)
 
     expect(() => doStartServer(profile)).not.toThrow()
+  })
+
+  it('skips the whole restart when scheduledRestartOnlyIfEmpty is on and players are still connected', async () => {
+    vi.mocked(mockListPlayers).mockResolvedValue(['LeRaptorSauvage'])
+    const profile = makeProfile({ scheduledRestartOnlyIfEmpty: true, scheduledRestartStartAfter: true })
+
+    await runScheduledRestart(profile)
+
+    expect(mockStopServer).not.toHaveBeenCalled()
+    expect(mockStartServer).not.toHaveBeenCalled()
+  })
+
+  it('restarts normally when scheduledRestartOnlyIfEmpty is on but no one is connected', async () => {
+    vi.mocked(mockListPlayers).mockResolvedValue([])
+    const profile = makeProfile({ scheduledRestartOnlyIfEmpty: true, scheduledRestartStartAfter: true })
+
+    await runScheduledRestart(profile)
+
+    expect(mockStopServer).toHaveBeenCalledWith(profile)
+    expect(mockStartServer).toHaveBeenCalledWith(profile)
+  })
+
+  it('never checks the player list at all when scheduledRestartOnlyIfEmpty is off', async () => {
+    const profile = makeProfile({ scheduledRestartOnlyIfEmpty: false })
+
+    await runScheduledRestart(profile)
+
+    expect(mockListPlayers).not.toHaveBeenCalled()
+    expect(mockStopServer).toHaveBeenCalledWith(profile)
   })
 })

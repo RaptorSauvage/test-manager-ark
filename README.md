@@ -4303,6 +4303,29 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added a conditional scheduled restart** (second of the "Planification" category in the
+  user-approved batch). The existing scheduled restart always fires at its configured time
+  regardless of who's online, kicking everyone off mid-session - this adds an opt-in "Only if
+  no players are connected" condition so a restart due while someone's actually playing is
+  skipped entirely for that occurrence (no stop/update/start at all) and simply tried again
+  at the schedule's next occurrence, rather than forced through or retried sooner.
+  - **`shared/types.ts`**: new `ServerProfile.scheduledRestartOnlyIfEmpty: boolean` field,
+    right next to `scheduledRestartUpdateAfter`/`scheduledRestartStartAfter` which it joins.
+  - **`src/main/lib/profileMigration.ts`**: backfills it to `false` for existing profiles.
+  - **`src/main/lib/scheduledActions.ts`**: `runScheduledRestart` now checks `listPlayers(profile)`
+    (the same RCON `ListPlayers` call the web dashboard's own live player list already uses)
+    before doing anything at all when this flag is on - any player still connected skips the
+    whole restart (stop/update/start, all of it) with a Manager Log entry explaining why,
+    rather than partially running or guessing who to wait for.
+  - **`src/renderer/src/pages/ServerDetail/ServerManagementTab.tsx`**: new checkbox inside the
+    existing Restart `ScheduleDaysPicker`, alongside "Update server from steam after
+    shutdown"/"Start server after shutdown".
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1110 tests - 3 new ones in
+    `tests/scheduledActions.test.ts` covering the skip-when-occupied case, the normal-restart-
+    when-empty case, and that the player list isn't even checked when the flag is off), and
+    `npm run build` all pass. **Not yet verified**: needs the user to confirm a real scheduled
+    restart actually skips while someone's connected and fires normally once they leave.
+
 - **Added a generic RCON command scheduler** (first of the "Planification" category in the
   user-approved batch). The existing Restart/Dino Wipe schedules (Server Management tab) each
   do exactly one hardcoded thing - this adds any number of arbitrary RCON commands, each on

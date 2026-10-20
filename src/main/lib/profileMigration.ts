@@ -32,6 +32,7 @@ interface LegacyProfileFields {
  *   `playerProfileBackupMaxPerPlayer` are new and default to off/empty/70 players/20
  * - `scheduledRestart*`/`scheduledDinoWipe*` are new and default to off/00:00/no days
  * - `scheduledRconCommands` is new and defaults to an empty list
+ * - `scheduledRestartOnlyIfEmpty` is new and defaults to false
  * - `scheduledRestartDestroyWildDinosAfter` was dropped from the restart schedule -
  *   folded into the separate, independent scheduled dino wipe instead
  * - `hidden` is new and defaults to false (shown on the dashboard)
@@ -106,6 +107,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     scheduledRestartDays: rest.scheduledRestartDays ?? [],
     scheduledRestartUpdateAfter: rest.scheduledRestartUpdateAfter ?? false,
     scheduledRestartStartAfter: rest.scheduledRestartStartAfter ?? false,
+    scheduledRestartOnlyIfEmpty: rest.scheduledRestartOnlyIfEmpty ?? false,
     scheduledDinoWipeEnabled: rest.scheduledDinoWipeEnabled ?? false,
     scheduledDinoWipeTime: rest.scheduledDinoWipeTime ?? '00:00',
     scheduledDinoWipeDays: rest.scheduledDinoWipeDays ?? [],

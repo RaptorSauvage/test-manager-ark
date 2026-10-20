@@ -42,6 +42,7 @@ export function createDefaultProfile(name: string): ServerProfile {
     scheduledRestartDays: [],
     scheduledRestartUpdateAfter: false,
     scheduledRestartStartAfter: false,
+    scheduledRestartOnlyIfEmpty: false,
     scheduledDinoWipeEnabled: false,
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],
