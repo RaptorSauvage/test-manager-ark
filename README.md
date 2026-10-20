@@ -4303,6 +4303,58 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added a web dashboard file browser** (first of the "Fichiers & config" category in the
+  user-approved batch). Browses a server's whole install directory remotely - navigate
+  folders, download or delete individual files - without needing a separate FTP/SFTP/RDP
+  setup just to grab or clear out a file. Works for both ARK and Minecraft (the backend
+  resolves either via `findAnyServer`), unlike every other item in this batch so far which was
+  ARK-only.
+  - **`src/main/lib/pathSanitize.ts`**: new `resolveSafePath(baseDir, relativePath)` - joins
+    `relativePath` onto `baseDir` and throws unless the result actually stays inside it
+    (`resolved === base || resolved.startsWith(base + path.sep)`, not a bare `startsWith`,
+    which would wrongly let `../ark-install-dir-evil` through against a base of
+    `ark-install-dir`). Rejects an absolute `relativePath` outright (POSIX leading slash,
+    Windows drive letter, or UNC `\\\\`) rather than letting `path.resolve` silently replace
+    `baseDir` with it - checked independently of the current platform's own `path.isAbsolute`,
+    so a Windows-style absolute path is still caught when this runs in CI on Linux, not just
+    in production on Windows.
+  - **`src/main/lib/webDashboard.ts`**: three new routes, all gated `requireRole(..., 'admin')`
+    like every other route that can touch arbitrary files (restore/delete backup) - installDir
+    can contain anything, and `resolveSafePath` only guarantees containment, not that
+    everything in there is safe to hand out. `GET /api/servers/:id/files?path=` lists a
+    directory (`{name, isDir, size, mtime}` per entry); `GET .../files/download?path=` streams
+    a file as an attachment (`filename*=UTF-8''...` alongside a quote-stripped plain
+    `filename` fallback); `POST .../files/delete {path}` removes a file - deliberately files
+    only (checked via `fs.statSync(...).isFile()`), never a folder, so a wrong click from a
+    remote web UI can't turn into a recursive directory wipe. `listFileBrowserEntries`/
+    `sendFileDownload` are defined as free functions outside the main request-handler
+    function rather than inline, since that function's own local `path` (the URL's pathname -
+    `const path = url.pathname`) shadows the `node:path` module import for its entire scope.
+  - **`src/renderer/src/pages/ServerDetail/ServerManagementTab.tsx`**: not touched - this is a
+    web-dashboard-only feature (the desktop app already has a native file system/Explorer to
+    browse the same install directory locally, so there's no equivalent need there).
+  - **Web dashboard client** (the hand-written HTML/JS template in webDashboard.ts - see
+    README's own architecture note on that file): new "Files" nav button/view, wired through
+    every per-server-view touchpoint the existing Map Management view already has (admin nav
+    gating, `SERVER_SCOPED_VIEWS`, its own server picker kept in sync with the other seven,
+    `applyActiveView`/`selectServer` dispatch). Breadcrumb navigation (click any segment to
+    jump there), a table sorted folders-first-then-alphabetical with a clickable folder name
+    to descend into it, a Download link per file (carries `?token=` when auth is on, since a
+    plain `<a href>` navigation can't set an `Authorization` header the way this client's
+    patched `window.fetch` does for everything else), and a Delete button per file.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1135 tests - 14 new ones:
+    7 in `tests/pathSanitize.test.ts` for `resolveSafePath` itself, including the sibling-
+    directory-name-prefix false-positive case and both absolute-path syntaxes; 11 in
+    `tests/webDashboard.test.ts`'s new "file browser routes" describe block covering list/
+    download/delete success and 404/400/traversal-rejection cases, plus 2 role-gating checks
+    in the auth-enabled suite), and `npm run build` all pass. Also added a standing
+    regression test (`node --check` against the dashboard's actual served `<script>` content)
+    - nothing else in this codebase ever executes or lints that hand-written client JS at
+    build time, so a stray syntax error in it would otherwise only ever surface as a silent
+    blank page in a real browser. **Not yet verified**: needs the user to confirm the Files
+    tab actually renders and works end-to-end in a real browser (breadcrumb navigation,
+    download, delete) against both a real ARK and Minecraft server.
+
 - **Added a chained scheduled maintenance task** (third and last of the "Planification"
   category in the user-approved batch). The existing restart schedule already does Stop +
   optional Update + optional Start, but as separately toggleable options on one schedule -

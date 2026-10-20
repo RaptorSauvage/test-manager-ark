@@ -33,6 +33,7 @@ import {
   doStopUpdateRestart
 } from './serverActions'
 import { createBackup, listBackups, deleteBackup, restoreBackup, getBackupLog } from './backup'
+import { resolveSafePath } from './pathSanitize'
 import { listPlayerBackupFolders, listPlayerBackups } from './playerBackup'
 import { getBackupScheduleStatus, applyBackupSchedule } from './schedule'
 import {
@@ -285,6 +286,39 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
     'Content-Length': Buffer.byteLength(payload)
   })
   res.end(payload)
+}
+
+interface FileBrowserEntry {
+  name: string
+  isDir: boolean
+  size: number
+  mtime: number
+}
+
+/** Defined up here rather than inline in the route below because the request handler's own
+ *  local `path` (the URL's pathname, see `const path = url.pathname` further down) shadows
+ *  the `node:path` module import for the rest of that function's scope - these two helpers
+ *  need the real one. */
+function listFileBrowserEntries(dirPath: string): FileBrowserEntry[] {
+  return fs.readdirSync(dirPath, { withFileTypes: true }).map((entry) => {
+    const stat = fs.statSync(path.join(dirPath, entry.name))
+    return { name: entry.name, isDir: entry.isDirectory(), size: stat.size, mtime: stat.mtimeMs }
+  })
+}
+
+/** Throws (caller sends 400) if `filePath` isn't a plain file - streams it as an attachment
+ *  otherwise. `filename*` covers a non-ASCII name properly; the plain `filename` fallback is
+ *  just the same name with quotes stripped, for a client that ignores `filename*` entirely. */
+function sendFileDownload(res: http.ServerResponse, filePath: string): void {
+  const stat = fs.statSync(filePath)
+  if (!stat.isFile()) throw new Error('Not a file')
+  const safeName = path.basename(filePath).replace(/"/g, '')
+  res.writeHead(200, {
+    'Content-Type': 'application/octet-stream',
+    'Content-Length': stat.size,
+    'Content-Disposition': `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(path.basename(filePath))}`
+  })
+  fs.createReadStream(filePath).pipe(res)
 }
 
 function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -912,6 +946,83 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       playerProfileBackupEnabled: profile.playerProfileBackupEnabled,
       playerProfileBackupMaxPerPlayer: profile.playerProfileBackupMaxPerPlayer
     })
+    return
+  }
+
+  // File browser - admin-gated like every other route that can touch arbitrary files on
+  // disk (restore/delete backup above) rather than just moderator, since installDir can
+  // contain anything (save games, configs, logs) and resolveSafePath only guarantees the
+  // path stays inside installDir, not that everything in there is safe to hand out. ARK and
+  // Minecraft both have an installDir, so these use findAnyServer rather than ARK-only
+  // listProfiles() the way the ban/dino-wipe routes above do.
+  const filesListMatch = path.match(/^\/api\/servers\/([^/]+)\/files$/)
+  if (req.method === 'GET' && filesListMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const found = findAnyServer(decodeURIComponent(filesListMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    const relativePath = url.searchParams.get('path') ?? ''
+    try {
+      const dirPath = resolveSafePath(found.profile.installDir, relativePath)
+      sendJson(res, 200, { path: relativePath, entries: listFileBrowserEntries(dirPath) })
+    } catch (err) {
+      sendJson(res, 400, { error: (err as Error).message })
+    }
+    return
+  }
+
+  const filesDownloadMatch = path.match(/^\/api\/servers\/([^/]+)\/files\/download$/)
+  if (req.method === 'GET' && filesDownloadMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const found = findAnyServer(decodeURIComponent(filesDownloadMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 404, { error: 'Unknown server' })
+      return
+    }
+    const relativePath = url.searchParams.get('path') ?? ''
+    try {
+      const filePath = resolveSafePath(found.profile.installDir, relativePath)
+      sendFileDownload(res, filePath)
+    } catch (err) {
+      sendJson(res, 400, { error: (err as Error).message })
+    }
+    return
+  }
+
+  const filesDeleteMatch = path.match(/^\/api\/servers\/([^/]+)\/files\/delete$/)
+  if (req.method === 'POST' && filesDeleteMatch) {
+    const auth = await requireRole(req, res, 'admin')
+    if (!auth) return
+    const found = findAnyServer(decodeURIComponent(filesDeleteMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    readJsonBody(req)
+      .then((body) => {
+        const relativePath = typeof body.path === 'string' ? body.path : ''
+        if (!relativePath) {
+          sendJson(res, 400, { ok: false, error: 'Missing path' })
+          return
+        }
+        try {
+          const filePath = resolveSafePath(found.profile.installDir, relativePath)
+          const stat = fs.statSync(filePath)
+          // Deliberately files only - a wrong click deleting one file is recoverable from a
+          // backup, a wrong click recursively deleting a whole folder (SavedArks, say) from
+          // a remote web UI is the kind of mistake this browser shouldn't make easy.
+          if (!stat.isFile()) throw new Error('Only files can be deleted here, not folders.')
+          fs.unlinkSync(filePath)
+          sendJson(res, 200, { ok: true })
+        } catch (err) {
+          sendJson(res, 400, { ok: false, error: (err as Error).message })
+        }
+      })
+      .catch(() => sendJson(res, 400, { ok: false, error: 'Invalid request body' }))
     return
   }
 
@@ -1945,6 +2056,12 @@ const DASHBOARD_HTML = `<!doctype html>
   .data-table th { color: var(--muted); font-weight: 600; }
   .data-table tbody tr.selected { background: var(--bg); }
   .data-table tbody tr.selectable { cursor: pointer; }
+  .files-breadcrumb { margin: 8px 0; font-size: 0.85rem; }
+  .files-breadcrumb button { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0 2px; font-size: 0.85rem; }
+  .files-breadcrumb button:hover { text-decoration: underline; }
+  .files-breadcrumb span.sep { color: var(--muted); margin: 0 2px; }
+  .data-table td.files-name-cell { cursor: pointer; }
+  .data-table td.files-name-cell:hover { text-decoration: underline; }
   .data-table td.mod-disabled-row { color: var(--muted); }
   .playerbackup-select-col { width: 28px; }
   .ark-mod-icon { width: 24px; height: 24px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
@@ -2057,6 +2174,7 @@ const DASHBOARD_HTML = `<!doctype html>
     <button id="nav-mods" class="nav-btn" type="button">Mods</button>
     <button id="nav-backup" class="nav-btn" type="button">Backup</button>
     <button id="nav-mapmanagement" class="nav-btn" type="button">Map Management</button>
+    <button id="nav-files" class="nav-btn" type="button">Files</button>
     <button id="nav-servermanagement" class="nav-btn" type="button">Server Management</button>
     <button id="nav-updatelog" class="nav-btn" type="button">Update Log</button>
   </div>
@@ -2456,6 +2574,27 @@ const DASHBOARD_HTML = `<!doctype html>
         <table id="mapmanagement-table" class="data-table">
           <thead><tr><th>Name</th><th>Creation Date</th></tr></thead>
           <tbody id="mapmanagement-table-body"></tbody>
+        </table>
+      </div>
+    </main>
+  </section>
+  <section id="view-files" class="view">
+    <header>
+      <h1>Files</h1>
+      <select id="files-server-select" class="server-picker"></select>
+    </header>
+    <main>
+      <p id="files-no-server" class="empty-state">No server selected - choose one above.</p>
+      <div id="files-content" class="admin-tab-content">
+        <p class="empty-state">
+          Browses this server's own install directory - everything under it, not just configs. Deleting is limited
+          to files (not folders) as a safety margin for a remote web UI.
+        </p>
+        <nav id="files-breadcrumb" class="files-breadcrumb"></nav>
+        <p id="files-error" class="error-message" style="display: none"></p>
+        <table id="files-table" class="data-table">
+          <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+          <tbody id="files-table-body"></tbody>
         </table>
       </div>
     </main>
@@ -3120,6 +3259,7 @@ function initDashboard(resolvedRole) {
   var navSettingsBtn = document.getElementById('nav-settings');
   var navModsBtn = document.getElementById('nav-mods');
   var navMapManagementBtn = document.getElementById('nav-mapmanagement');
+  var navFilesBtn = document.getElementById('nav-files');
   var navServerManagementBtn = document.getElementById('nav-servermanagement');
   var navUpdateLogBtn = document.getElementById('nav-updatelog');
   var navMcDashboardBtn = document.getElementById('nav-mcdashboard');
@@ -3152,6 +3292,7 @@ function initDashboard(resolvedRole) {
   var viewSettingsEl = document.getElementById('view-settings');
   var viewModsEl = document.getElementById('view-mods');
   var viewMapManagementEl = document.getElementById('view-mapmanagement');
+  var viewFilesEl = document.getElementById('view-files');
   var viewServerManagementEl = document.getElementById('view-servermanagement');
   var viewUpdateLogEl = document.getElementById('view-updatelog');
   var clusterCardsEl = document.getElementById('cluster-cards');
@@ -3212,7 +3353,7 @@ function initDashboard(resolvedRole) {
   if (role && !canAdmin) navDashboardBtn.style.display = 'none';
   // Settings/Mods/Map Management/Update Log stay admin+ only. Server Management is its own,
   // wider tier (moderator+) since moderators are meant to see it per the role's definition.
-  var adminNavBtns = [navSettingsBtn, navModsBtn, navMapManagementBtn, navUpdateLogBtn];
+  var adminNavBtns = [navSettingsBtn, navModsBtn, navMapManagementBtn, navUpdateLogBtn, navFilesBtn];
   var moderatorNavBtns = [navServerManagementBtn];
 
   // Minecraft section - separate from ARK's own servers/tabs entirely (its own nav group, its
@@ -3235,7 +3376,7 @@ function initDashboard(resolvedRole) {
   // anymore. Recomputed on every view change (see applyActiveView below) against
   // SERVER_SCOPED_VIEWS, rather than a one-time reveal that used to stick around for the
   // rest of the page's session even after navigating back to an overview tab.
-  var SERVER_SCOPED_VIEWS = ['console', 'analytics', 'backup', 'settings', 'mods', 'mapmanagement', 'servermanagement', 'updatelog'];
+  var SERVER_SCOPED_VIEWS = ['console', 'analytics', 'backup', 'settings', 'mods', 'mapmanagement', 'files', 'servermanagement', 'updatelog'];
   // Minecraft's own per-server tabs - same "only while looking at one of them" treatment as
   // SERVER_SCOPED_VIEWS above (added after a user report that the whole Minecraft nav group
   // showed these even from the "Minecraft Servers" overview, with no server selected at all -
@@ -3293,6 +3434,7 @@ function initDashboard(resolvedRole) {
     navSettingsBtn.classList.toggle('active', activeView === 'settings');
     navModsBtn.classList.toggle('active', activeView === 'mods');
     navMapManagementBtn.classList.toggle('active', activeView === 'mapmanagement');
+    navFilesBtn.classList.toggle('active', activeView === 'files');
     navServerManagementBtn.classList.toggle('active', activeView === 'servermanagement');
     navUpdateLogBtn.classList.toggle('active', activeView === 'updatelog');
     navMcDashboardBtn.classList.toggle('active', activeView === 'mcdashboard');
@@ -3318,6 +3460,7 @@ function initDashboard(resolvedRole) {
     viewSettingsEl.classList.toggle('active', activeView === 'settings');
     viewModsEl.classList.toggle('active', activeView === 'mods');
     viewMapManagementEl.classList.toggle('active', activeView === 'mapmanagement');
+    viewFilesEl.classList.toggle('active', activeView === 'files');
     viewServerManagementEl.classList.toggle('active', activeView === 'servermanagement');
     viewUpdateLogEl.classList.toggle('active', activeView === 'updatelog');
     if (activeView === 'dashboard') renderDashboardCards(latestServers.filter(isArkServerEntry));
@@ -3326,6 +3469,7 @@ function initDashboard(resolvedRole) {
     if (activeView === 'settings') loadSettingsView();
     if (activeView === 'mods') loadModsView();
     if (activeView === 'mapmanagement') loadMapManagementView();
+    if (activeView === 'files') loadFilesView();
     if (activeView === 'servermanagement') loadServerManagementView();
     if (activeView === 'updatelog') loadUpdateLogView();
     if (activeView === 'mcdashboard') renderMcDashboardCards(latestServers.filter(isMcServerEntry));
@@ -3349,6 +3493,7 @@ function initDashboard(resolvedRole) {
   navSettingsBtn.addEventListener('click', function () { selectView('settings'); });
   navModsBtn.addEventListener('click', function () { selectView('mods'); });
   navMapManagementBtn.addEventListener('click', function () { selectView('mapmanagement'); });
+  navFilesBtn.addEventListener('click', function () { selectView('files'); });
   navServerManagementBtn.addEventListener('click', function () { selectView('servermanagement'); });
   navUpdateLogBtn.addEventListener('click', function () { selectView('updatelog'); });
   navMcDashboardBtn.addEventListener('click', function () { selectView('mcdashboard'); });
@@ -6359,6 +6504,163 @@ function initDashboard(resolvedRole) {
       .catch(function () { showMapManagementError('Request failed'); });
   });
 
+  // -- Files ----------------------------------------------------------------------------
+  // Browses a server's own install directory over the /files* routes (webDashboard.ts),
+  // which resolve every path server-side via resolveSafePath (pathSanitize.ts) - this client
+  // code never has to think about traversal itself, it just sends whatever relative path the
+  // breadcrumb/folder clicks build up.
+  var filesServerSelectEl = document.getElementById('files-server-select');
+  var filesNoServerEl = document.getElementById('files-no-server');
+  var filesContentEl = document.getElementById('files-content');
+  var filesBreadcrumbEl = document.getElementById('files-breadcrumb');
+  var filesErrorEl = document.getElementById('files-error');
+  var filesTableBody = document.getElementById('files-table-body');
+  var filesCurrentPath = '';
+  var filesEntries = [];
+
+  function showFilesError(message) {
+    filesErrorEl.textContent = message || '';
+    filesErrorEl.style.display = message ? '' : 'none';
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    var units = ['KB', 'MB', 'GB', 'TB'];
+    var value = bytes;
+    for (var i = 0; i < units.length; i++) {
+      value = value / 1024;
+      if (value < 1024 || i === units.length - 1) return value.toFixed(1) + ' ' + units[i];
+    }
+    return bytes + ' B';
+  }
+
+  function renderFilesBreadcrumb() {
+    filesBreadcrumbEl.innerHTML = '';
+    var rootBtn = document.createElement('button');
+    rootBtn.type = 'button';
+    rootBtn.textContent = 'Root';
+    rootBtn.addEventListener('click', function () { filesCurrentPath = ''; loadFilesView(); });
+    filesBreadcrumbEl.appendChild(rootBtn);
+    if (!filesCurrentPath) return;
+    var segments = filesCurrentPath.split('/').filter(Boolean);
+    var built = '';
+    segments.forEach(function (segment) {
+      built = built ? built + '/' + segment : segment;
+      var sep = document.createElement('span');
+      sep.className = 'sep';
+      sep.textContent = '/';
+      filesBreadcrumbEl.appendChild(sep);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = segment;
+      var target = built;
+      btn.addEventListener('click', function () { filesCurrentPath = target; loadFilesView(); });
+      filesBreadcrumbEl.appendChild(btn);
+    });
+  }
+
+  function deleteFilesEntry(entry) {
+    if (!currentId) return;
+    if (!confirm('Delete "' + entry.name + '"? This cannot be undone.')) return;
+    var entryPath = filesCurrentPath ? filesCurrentPath + '/' + entry.name : entry.name;
+    fetch('/api/servers/' + encodeURIComponent(currentId) + '/files/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: entryPath })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (result) {
+        if (!result.ok) { showFilesError(result.error || 'Failed'); return; }
+        loadFilesView();
+      })
+      .catch(function () { showFilesError('Request failed'); });
+  }
+
+  function renderFilesTable() {
+    filesTableBody.innerHTML = '';
+    if (filesEntries.length === 0) {
+      var emptyRow = document.createElement('tr');
+      var emptyCell = document.createElement('td');
+      emptyCell.colSpan = 4;
+      emptyCell.className = 'empty-state';
+      emptyCell.textContent = 'This folder is empty.';
+      emptyRow.appendChild(emptyCell);
+      filesTableBody.appendChild(emptyRow);
+      return;
+    }
+    // Folders first, then files, each alphabetical - matches a typical native file browser
+    // rather than whatever order fs.readdirSync happened to return.
+    var sorted = filesEntries.slice().sort(function (a, b) {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    sorted.forEach(function (entry) {
+      var row = document.createElement('tr');
+      var nameCell = document.createElement('td');
+      nameCell.textContent = (entry.isDir ? '📁 ' : '📄 ') + entry.name;
+      if (entry.isDir) {
+        nameCell.className = 'files-name-cell';
+        nameCell.addEventListener('click', function () {
+          filesCurrentPath = filesCurrentPath ? filesCurrentPath + '/' + entry.name : entry.name;
+          loadFilesView();
+        });
+      }
+      var sizeCell = document.createElement('td');
+      sizeCell.textContent = entry.isDir ? '-' : formatFileSize(entry.size);
+      var mtimeCell = document.createElement('td');
+      mtimeCell.textContent = new Date(entry.mtime).toLocaleString();
+      var actionsCell = document.createElement('td');
+      if (!entry.isDir) {
+        var entryPath = filesCurrentPath ? filesCurrentPath + '/' + entry.name : entry.name;
+        var downloadLink = document.createElement('a');
+        downloadLink.href = '/api/servers/' + encodeURIComponent(currentId) + '/files/download?path=' + encodeURIComponent(entryPath) +
+          (accessToken ? '&token=' + encodeURIComponent(accessToken) : '');
+        downloadLink.textContent = 'Download';
+        downloadLink.style.marginRight = '8px';
+        actionsCell.appendChild(downloadLink);
+        var deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'danger';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.addEventListener('click', function () { deleteFilesEntry(entry); });
+        actionsCell.appendChild(deleteBtn);
+      }
+      row.appendChild(nameCell);
+      row.appendChild(sizeCell);
+      row.appendChild(mtimeCell);
+      row.appendChild(actionsCell);
+      filesTableBody.appendChild(row);
+    });
+  }
+
+  function loadFilesView() {
+    var id = currentId;
+    if (!id) {
+      filesNoServerEl.textContent = 'No server selected - choose one above.';
+      filesNoServerEl.style.display = '';
+      filesContentEl.classList.remove('active');
+      return;
+    }
+    showFilesError('');
+    filesNoServerEl.style.display = 'none';
+    filesContentEl.classList.add('active');
+    renderFilesBreadcrumb();
+    fetch('/api/servers/' + encodeURIComponent(id) + '/files?path=' + encodeURIComponent(filesCurrentPath))
+      .then(function (r) { return r.json().then(function (body) { return { ok: r.ok, body: body }; }); })
+      .then(function (result) {
+        if (id !== currentId) return;
+        if (!result.ok) {
+          showFilesError(result.body.error || 'Failed to load this folder.');
+          filesEntries = [];
+          renderFilesTable();
+          return;
+        }
+        filesEntries = result.body.entries;
+        renderFilesTable();
+      })
+      .catch(function () { showFilesError('Request failed'); });
+  }
+
   // -- Server Management ---------------------------------------------------------------
   var DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   var smServerSelectEl = document.getElementById('servermanagement-server-select');
@@ -6945,6 +7247,7 @@ function initDashboard(resolvedRole) {
     modsServerSelectEl,
     backupServerSelectEl,
     mapmanagementServerSelectEl,
+    filesServerSelectEl,
     smServerSelectEl,
     updatelogServerSelectEl
   ];
@@ -7015,11 +7318,13 @@ function initDashboard(resolvedRole) {
     currentId = id;
     syncServerPickers();
     backupShowAll = false;
+    filesCurrentPath = '';
     if (activeView === 'analytics') loadAnalyticsView();
     if (activeView === 'backup') loadBackupView();
     if (activeView === 'settings') loadSettingsView();
     if (activeView === 'mods') loadModsView();
     if (activeView === 'mapmanagement') loadMapManagementView();
+    if (activeView === 'files') loadFilesView();
     if (activeView === 'servermanagement') loadServerManagementView();
     if (activeView === 'updatelog') loadUpdateLogView();
     if (activeView === 'mc-startsettings') loadMcStartSettingsView();

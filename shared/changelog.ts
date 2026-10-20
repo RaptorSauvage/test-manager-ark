@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-20',
+    title: 'Web dashboard file browser',
+    details: [
+      'New "Files" tab (admin accounts only) - browse a server\'s whole install directory from the web dashboard: navigate folders, download or delete individual files.',
+      'Works for both ARK and Minecraft servers. Deleting is limited to files, not folders, to keep a remote web UI from making an entire-folder mistake.'
+    ]
+  },
+  {
+    date: '2026-10-20',
     title: 'Chained scheduled maintenance (Stop → Backup → Update → Start)',
     details: [
       'New "Scheduled Maintenance" section (Server Management tab) - one schedule that runs the whole chain automatically: stops the server, takes a backup, updates it via SteamCMD, then starts it back up.',

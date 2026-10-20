@@ -4,6 +4,7 @@ import https from 'node:https'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
+import { execFileSync } from 'node:child_process'
 import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE } from '../src/main/lib/logEvents'
 import type { WebDashboardAccessToken, WebDashboardApiKey } from '../shared/types'
 
@@ -353,6 +354,24 @@ describe('web dashboard HTTP server', () => {
     expect(res.status).toBe(200)
     expect(res.body).toContain('<title>Bober Server Manager - Web Console</title>')
     expect(res.body).toContain('<link rel="icon" type="image/png" href="/favicon.png" />')
+  })
+
+  it('serves a dashboard page whose inline <script> is syntactically valid JS', async () => {
+    // The dashboard's entire client is a hand-written string embedded in webDashboard.ts -
+    // nothing ever actually executes or lints it at build time (it's just HTTP response
+    // text as far as tsc/vitest are concerned), so a stray typo here would otherwise only
+    // surface as a silent blank page in a real browser. `node --check` catches a syntax
+    // error the same way a browser's own parser would, without needing one.
+    const res = await request('/')
+    const scriptMatch = res.body.match(/<script>([\s\S]*)<\/script>/)
+    expect(scriptMatch).not.toBeNull()
+    const scriptPath = path.join(os.tmpdir(), `web-dashboard-script-check-${process.pid}.js`)
+    fs.writeFileSync(scriptPath, scriptMatch![1])
+    try {
+      expect(() => execFileSync(process.execPath, ['--check', scriptPath])).not.toThrow()
+    } finally {
+      fs.rmSync(scriptPath, { force: true })
+    }
   })
 
   it('serves the app icon as a PNG at /favicon.png, with an ETag rather than a long cache lifetime', async () => {
@@ -1022,6 +1041,99 @@ describe('web dashboard HTTP server', () => {
     })
   })
 
+  describe('file browser routes', () => {
+    it('GET /api/servers/:id/files lists the install directory root', async () => {
+      const res = await request('/api/servers/p2/files')
+      expect(res.status).toBe(200)
+      const body = JSON.parse(res.body)
+      expect(body.path).toBe('')
+      expect(body.entries).toEqual([{ name: 'ShooterGame', isDir: true, size: expect.any(Number), mtime: expect.any(Number) }])
+    })
+
+    it('GET /api/servers/:id/files?path= lists a subfolder and finds the seeded log file', async () => {
+      const res = await request('/api/servers/p2/files?path=' + encodeURIComponent('ShooterGame/Saved/Logs'))
+      expect(res.status).toBe(200)
+      const body = JSON.parse(res.body)
+      expect(body.entries).toEqual([{ name: 'ShooterGame.log', isDir: false, size: expect.any(Number), mtime: expect.any(Number) }])
+    })
+
+    it('GET /api/servers/:id/files 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/files')
+      expect(res.status).toBe(404)
+    })
+
+    it('GET /api/servers/:id/files rejects a path that escapes the install directory', async () => {
+      const res = await request('/api/servers/p2/files?path=' + encodeURIComponent('../../etc'))
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).error).toBe('Invalid path')
+    })
+
+    it('GET /api/servers/:id/files/download streams the file with attachment headers', async () => {
+      const res = await request(
+        '/api/servers/p2/files/download?path=' + encodeURIComponent('ShooterGame/Saved/Logs/ShooterGame.log')
+      )
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toBe('application/octet-stream')
+      expect(res.headers['content-disposition']).toContain('attachment; filename="ShooterGame.log"')
+      expect(res.body).toContain('ARK Version: 92.28')
+    })
+
+    it('GET /api/servers/:id/files/download rejects downloading a directory', async () => {
+      const res = await request('/api/servers/p2/files/download?path=' + encodeURIComponent('ShooterGame/Saved/Logs'))
+      expect(res.status).toBe(400)
+    })
+
+    it('GET /api/servers/:id/files/download rejects a path escaping the install directory', async () => {
+      const res = await request('/api/servers/p2/files/download?path=' + encodeURIComponent('../../etc/passwd'))
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).error).toBe('Invalid path')
+    })
+
+    it('POST /api/servers/:id/files/delete removes a file and leaves it gone', async () => {
+      const scratchDir = path.join(LOGGED_INSTALL_DIR, 'ShooterGame', 'Saved')
+      fs.writeFileSync(path.join(scratchDir, 'scratch-delete-me.txt'), 'temporary')
+
+      const res = await request('/api/servers/p2/files/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'ShooterGame/Saved/scratch-delete-me.txt' })
+      })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body).ok).toBe(true)
+      expect(fs.existsSync(path.join(scratchDir, 'scratch-delete-me.txt'))).toBe(false)
+    })
+
+    it('POST /api/servers/:id/files/delete refuses to delete a folder', async () => {
+      const res = await request('/api/servers/p2/files/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'ShooterGame/Saved/Logs' })
+      })
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).ok).toBe(false)
+      expect(fs.existsSync(path.join(LOGGED_INSTALL_DIR, 'ShooterGame', 'Saved', 'Logs'))).toBe(true)
+    })
+
+    it('POST /api/servers/:id/files/delete rejects a path escaping the install directory', async () => {
+      const res = await request('/api/servers/p2/files/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: '../../etc/passwd' })
+      })
+      expect(res.status).toBe(400)
+      expect(JSON.parse(res.body).ok).toBe(false)
+    })
+
+    it('POST /api/servers/:id/files/delete 404s for an unknown server', async () => {
+      const res = await request('/api/servers/nope/files/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: 'x' })
+      })
+      expect(res.status).toBe(404)
+    })
+  })
+
   // The Server Management tab's own narrower route (moderator+, not admin+ like everything
   // else above) - only the whitelisted schedule/watchdog fields, never the rest of the
   // profile.
@@ -1445,6 +1557,23 @@ describe('web dashboard HTTP server, auth enabled', () => {
     })
     expect(postRes.status).toBe(200)
     expect(JSON.parse(postRes.body).profile.extraArgs).toBe('-clusterid=test')
+  })
+
+  it('blocks a moderator access token from the admin-only file browser route', async () => {
+    const res = await authRequest('/api/servers/p1/files', {
+      headers: { Authorization: `Bearer ${moderatorToken}` }
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('allows an admin access token past the file browser role gate', async () => {
+    // p1's installDir doesn't actually exist on disk in this suite, so this 400s on the
+    // ENOENT past the gate rather than 200 - the point here is only that an admin token
+    // clears requireRole('admin') at all (401/403 would mean it didn't).
+    const res = await authRequest('/api/servers/p1/files', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    })
+    expect(res.status).toBe(400)
   })
 
   it('blocks a readonly access token from the moderator-accessible Server Management route', async () => {
