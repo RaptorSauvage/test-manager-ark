@@ -5,7 +5,7 @@
 // for as long as the backup's zipping takes.
 process.env.UV_THREADPOOL_SIZE = '8'
 
-import { app, BrowserWindow, Menu, Tray, shell } from 'electron'
+import { app, BrowserWindow, Menu, Tray, shell, dialog } from 'electron'
 import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
 import {
@@ -27,7 +27,7 @@ import {
   applyScheduledRconCommands,
   applyScheduledMaintenance
 } from './lib/scheduledActions'
-import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
+import { adoptPersistedProcesses, isRunning, getStatus } from './lib/serverProcess'
 import { startMonitoring } from './lib/monitor'
 import { registerPlayerBackupWatch, startPlayerBackupWatch } from './lib/playerBackupWatch'
 import { registerPlayerJoinAlertWatch, startPlayerJoinAlertWatch } from './lib/playerJoinAlertWatch'
@@ -35,15 +35,19 @@ import { registerDiscordChatBridgeWatch, startDiscordChatBridgeWatch } from './l
 import { registerPlayerActivityWatch, startPlayerActivityWatch } from './lib/playerActivityWatch'
 import { startUpdateCheckPolling } from './lib/updateCheck'
 import { applyLaunchOnStartup } from './lib/launchOnStartup'
-import { doStartServer, doKillServer } from './lib/serverActions'
+import { doStartServer, doStopServer, doKillServer } from './lib/serverActions'
 import { runAutoStart } from './lib/autoStart'
 import { registerServerVersionWatcher, checkAllGameVersionsOnStartup } from './lib/serverVersionWatcher'
 import { registerIniLockWatcher, unlockStoppedProfilesOnStartup, applyIniLockSetting } from './lib/iniLock'
 import { registerCrashWatch } from './lib/crashWatch'
 import { registerZombieDetection } from './lib/zombieDetection'
 import { registerClusterLogArchiveWatch, startClusterLogArchiveWatch } from './lib/clusterLogArchive'
-import { doStartMinecraftServer } from './lib/minecraftActions'
-import { adoptPersistedMinecraftProcesses, isRunning as isMinecraftRunning } from './lib/minecraftProcess'
+import { doStartMinecraftServer, doStopMinecraftServer } from './lib/minecraftActions'
+import {
+  adoptPersistedMinecraftProcesses,
+  isRunning as isMinecraftRunning,
+  getStatus as getMinecraftStatus
+} from './lib/minecraftProcess'
 import { startMinecraftMonitoring } from './lib/minecraftMonitor'
 import { applyMinecraftScheduledRestart } from './lib/minecraftScheduledActions'
 import { applyMinecraftBackupSchedule, registerMinecraftBackupScheduleWatcher } from './lib/minecraftBackupSchedule'
@@ -108,17 +112,83 @@ function showAndFocusMainWindow(): void {
 
 app.on('second-instance', showAndFocusMainWindow)
 
+/** Stops every currently-running ARK and Minecraft server, confirmed first since this kicks
+ *  every connected player off every server at once - a much bigger blast radius than the
+ *  Dashboard's own per-server Stop button, which only ever needs a confirm for one server
+ *  at a time (confirmAction in the renderer; this runs in the main process, off its own
+ *  window entirely, so it needs Electron's own dialog instead). */
+async function stopAllServers(): Promise<void> {
+  const arkRunning = listProfiles().filter((p) => isRunning(p.id))
+  const mcRunning = listMinecraftProfiles().filter((p) => isMinecraftRunning(p.id))
+  const total = arkRunning.length + mcRunning.length
+  if (total === 0) return
+
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['Annuler', 'Tout arrêter'],
+    defaultId: 0,
+    cancelId: 0,
+    message: `Arrêter les ${total} serveur${total > 1 ? 's' : ''} en cours ?`,
+    detail: 'Tous les joueurs connectés seront déconnectés.'
+  })
+  if (response !== 1) return
+
+  await Promise.all([
+    ...arkRunning.map((p) => doStopServer(p).catch((err) => console.error(`Stop all - ${p.name} failed:`, err))),
+    ...mcRunning.map((p) =>
+      doStopMinecraftServer(p).catch((err) => console.error(`Stop all - ${p.name} failed:`, err))
+    )
+  ])
+}
+
+/** Rebuilt fresh on every open (see createTray/the refresh timer below) rather than once -
+ *  the running counts/players/CPU/RAM lines would otherwise go stale the moment any server
+ *  starts, stops, or a player joins/leaves while the tray's just sitting there. */
+function buildTrayMenu(): Menu {
+  const arkProfiles = listProfiles()
+  const mcProfiles = listMinecraftProfiles()
+  const arkRunning = arkProfiles.filter((p) => isRunning(p.id))
+  const mcRunning = mcProfiles.filter((p) => isMinecraftRunning(p.id))
+  const arkStatuses = arkRunning.map((p) => getStatus(p.id))
+  const mcStatuses = mcRunning.map((p) => getMinecraftStatus(p.id))
+  const totalPlayers =
+    arkStatuses.reduce((sum, s) => sum + (s.players?.length ?? 0), 0) +
+    mcStatuses.reduce((sum, s) => sum + (s.players?.length ?? 0), 0)
+  const totalCpu =
+    arkStatuses.reduce((sum, s) => sum + (s.cpu ?? 0), 0) + mcStatuses.reduce((sum, s) => sum + (s.cpu ?? 0), 0)
+  const totalMemoryMB =
+    arkStatuses.reduce((sum, s) => sum + (s.memoryMB ?? 0), 0) +
+    mcStatuses.reduce((sum, s) => sum + (s.memoryMB ?? 0), 0)
+
+  return Menu.buildFromTemplate([
+    { label: `ARK : ${arkRunning.length}/${arkProfiles.length} en cours`, enabled: false },
+    { label: `Minecraft : ${mcRunning.length}/${mcProfiles.length} en cours`, enabled: false },
+    { label: `Joueurs : ${totalPlayers}`, enabled: false },
+    { label: `CPU : ${totalCpu.toFixed(1)}% · RAM : ${totalMemoryMB} Mo`, enabled: false },
+    { type: 'separator' },
+    { label: 'Ouvrir Bober Server Manager', click: showAndFocusMainWindow },
+    { type: 'separator' },
+    {
+      label: 'Tout arrêter',
+      enabled: arkRunning.length + mcRunning.length > 0,
+      click: () => void stopAllServers()
+    },
+    { type: 'separator' },
+    { label: 'Quitter', click: () => app.quit() }
+  ])
+}
+
 function createTray(): void {
   tray = new Tray(iconPath)
   tray.setToolTip('Bober Server Manager')
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Ouvrir Bober Server Manager', click: showAndFocusMainWindow },
-      { type: 'separator' },
-      { label: 'Quitter', click: () => app.quit() }
-    ])
-  )
+  tray.setContextMenu(buildTrayMenu())
   tray.on('click', showAndFocusMainWindow)
+  // No 'right-click' event to hook on Linux (Electron only emits it on Windows/macOS), so a
+  // short interval rebuild is what keeps the menu's counts fresh everywhere instead - cheap
+  // (in-memory store reads only) and only runs once the tray actually exists.
+  setInterval(() => {
+    if (tray && !tray.isDestroyed()) tray.setContextMenu(buildTrayMenu())
+  }, 5000)
 }
 
 function createWindow(): void {

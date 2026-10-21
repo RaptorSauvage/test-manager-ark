@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-21',
+    title: 'Players moved to the sidebar, hidden servers excluded, tray menu overhaul',
+    details: [
+      '"Players" is now its own tab in the ARK sidebar instead of a button on the Dashboard, and the Live Players tab groups servers by cluster the same way the Dashboard does.',
+      'A hidden server (Dashboard\'s "hide" toggle) no longer shows up anywhere on the Players screen.',
+      'Right-clicking the system tray icon now also shows how many ARK/Minecraft servers are running, total connected players, and total CPU/RAM used - plus a new "Tout arrêter" item to stop every running server at once (with a confirmation).'
+    ]
+  },
+  {
+    date: '2026-10-21',
     title: 'Discord chat bridge + tame/death/mission events channel',
     details: [
       "Each server can now relay its in-game chat to a Discord channel and back (set a \"Discord Chat Channel ID\" in Settings), and post tame/tamed-dino-death/mission events to a separate channel (\"Discord Events Channel ID\") - both off by default, and independent of each other.",

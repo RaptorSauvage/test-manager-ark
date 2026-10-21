@@ -7,7 +7,10 @@ import PlayerRosterPanel from './PlayerRosterPanel'
 
 interface PlayersViewProps {
   profiles: ServerProfile[]
-  onBack: () => void
+  /** Omitted when this is rendered as a left-sidebar tab (App.tsx's ARK mode) rather than a
+   *  standalone screen pushed on top of everything else - there's nowhere to "go back" to,
+   *  the sidebar itself is the navigation. */
+  onBack?: () => void
 }
 
 type PlayersTab = 'live' | 'bans' | 'whitelist' | 'activity'
@@ -18,11 +21,15 @@ type PlayersTab = 'live' | 'bans' | 'whitelist' | 'activity'
  *  them into unrelated top-level screens was more navigation than the content warranted. */
 export default function PlayersView({ profiles, onBack }: PlayersViewProps): JSX.Element {
   const [tab, setTab] = useState<PlayersTab>('live')
+  // Hidden servers (Dashboard's own "hide" toggle) are hidden here too - a player-management
+  // screen listing a server its owner deliberately tucked away would defeat the point of
+  // hiding it in the first place.
+  const visibleProfiles = profiles.filter((p) => !p.hidden)
 
   return (
     <div className="server-detail">
       <header className="server-detail-header">
-        <button onClick={onBack}>&larr; Back</button>
+        {onBack && <button onClick={onBack}>&larr; Back</button>}
         <h1>Players</h1>
       </header>
       <div className="players-view-body">
@@ -41,10 +48,10 @@ export default function PlayersView({ profiles, onBack }: PlayersViewProps): JSX
           </button>
         </nav>
         <div className="players-view-content">
-          {tab === 'live' && <PlayerRosterPanel profiles={profiles} />}
-          {tab === 'bans' && <PlayerBansPanel profiles={profiles} />}
-          {tab === 'whitelist' && <PlayerWhitelistPanel profiles={profiles} />}
-          {tab === 'activity' && <PlayerActivityPanel profiles={profiles} />}
+          {tab === 'live' && <PlayerRosterPanel profiles={visibleProfiles} />}
+          {tab === 'bans' && <PlayerBansPanel profiles={visibleProfiles} />}
+          {tab === 'whitelist' && <PlayerWhitelistPanel profiles={visibleProfiles} />}
+          {tab === 'activity' && <PlayerActivityPanel profiles={visibleProfiles} />}
         </div>
       </div>
     </div>

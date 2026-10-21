@@ -16,7 +16,7 @@ import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftSe
 import { GAME_ICONS } from './lib/gameIcons'
 import minecraftIcon from './assets/games/minecraft.png'
 
-type MainPage = 'dashboard' | 'clusterData' | 'managerLog'
+type MainPage = 'dashboard' | 'clusterData' | 'players' | 'managerLog'
 type GameMode = 'ark' | 'minecraft'
 
 /** The ARK/Minecraft switch - its own small group at the top of the sidebar, visually
@@ -55,7 +55,6 @@ export default function App(): JSX.Element {
   const [showDataSettings, setShowDataSettings] = useState(false)
   const [showProfileManagement, setShowProfileManagement] = useState(false)
   const [showChangelog, setShowChangelog] = useState(false)
-  const [showPlayers, setShowPlayers] = useState(false)
   const [mainPage, setMainPage] = useState<MainPage>('dashboard')
   const [groupConsoleTarget, setGroupConsoleTarget] = useState<{ groupName: string; profileIds: string[] } | null>(
     null
@@ -171,10 +170,6 @@ export default function App(): JSX.Element {
     return <ChangelogView onBack={() => setShowChangelog(false)} />
   }
 
-  if (showPlayers) {
-    return <PlayersView profiles={profiles} onBack={() => setShowPlayers(false)} />
-  }
-
   if (gameMode === 'minecraft') {
     if (minecraftSelected) {
       return (
@@ -268,6 +263,13 @@ export default function App(): JSX.Element {
         >
           Cluster Dashboard
         </button>
+        <button
+          type="button"
+          className={mainPage === 'players' ? 'active' : ''}
+          onClick={() => setMainPage('players')}
+        >
+          Players
+        </button>
         <button type="button" className="app-sidebar-bottom-group" onClick={() => setShowChangelog(true)}>
           What&apos;s New
         </button>
@@ -285,6 +287,8 @@ export default function App(): JSX.Element {
       <div className="app-content">
         {mainPage === 'clusterData' ? (
           <ClusterDataView profiles={profiles} onOpenGroup={handleOpenGroup} />
+        ) : mainPage === 'players' ? (
+          <PlayersView profiles={profiles} />
         ) : mainPage === 'managerLog' ? (
           <ManagerLogView />
         ) : (
@@ -294,7 +298,6 @@ export default function App(): JSX.Element {
             onOpenProfile={handleOpenProfile}
             onOpenSteamCmd={() => setShowSteamCmd(true)}
             onOpenProfileManagement={() => setShowProfileManagement(true)}
-            onOpenPlayers={() => setShowPlayers(true)}
           />
         )}
       </div>
