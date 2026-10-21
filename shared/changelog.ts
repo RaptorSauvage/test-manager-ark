@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-21',
+    title: 'Live player roster with Kick/Ban/Whitelist, new Whitelist tab',
+    details: [
+      'The Players screen now has a "Live Players" tab showing who\'s actually connected to a chosen server right now, with Kick/Ban/Whitelist buttons on each row.',
+      'A new "Whitelist" tab tracks known/trusted players per server - it\'s a shared note, not an actual join restriction.'
+    ]
+  },
+  {
+    date: '2026-10-21',
     title: 'Fixed: server updates silently running on a beta branch',
     details: [
       "Once any one profile had ever updated with a Steam beta branch enabled, other updates could keep running on that same beta too, even with the beta toggle off (sometimes showing as an update landing on a surprisingly newer version than expected).",

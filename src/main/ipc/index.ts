@@ -27,6 +27,8 @@ import { registerMinecraftInstallHandlers } from './minecraftInstall'
 import { registerDiscordBotHandlers } from './discordBot'
 import { registerClusterHandlers } from './cluster'
 import { registerPlayerBansHandlers } from './playerBans'
+import { registerPlayerWhitelistHandlers } from './playerWhitelist'
+import { registerPlayerRosterHandlers } from './playerRoster'
 import { registerWatchedPlayersHandlers } from './watchedPlayers'
 import { registerPlayerActivityHandlers } from './playerActivity'
 import { registerFileBrowserHandlers } from './fileBrowser'
@@ -60,6 +62,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerMinecraftInstallHandlers()
   registerClusterHandlers()
   registerPlayerBansHandlers()
+  registerPlayerWhitelistHandlers()
+  registerPlayerRosterHandlers()
   registerWatchedPlayersHandlers()
   registerPlayerActivityHandlers()
   registerFileBrowserHandlers()

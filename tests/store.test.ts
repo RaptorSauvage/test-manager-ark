@@ -9,6 +9,9 @@ import {
   listPlayerBans,
   recordPlayerBan,
   removePlayerBanProfile,
+  listWhitelistedPlayers,
+  recordWhitelistedPlayer,
+  removeWhitelistedPlayerProfile,
   listWatchedPlayers,
   addWatchedPlayer,
   removeWatchedPlayer,
@@ -65,6 +68,28 @@ describe('listPlayerBans/recordPlayerBan/removePlayerBanProfile', () => {
 
     removePlayerBanProfile('steam-resilience-2', 'profile-only')
     expect(listPlayerBans().some((b) => b.id === 'steam-resilience-2')).toBe(false)
+  })
+})
+
+describe('listWhitelistedPlayers/recordWhitelistedPlayer/removeWhitelistedPlayerProfile', () => {
+  it('merges whitelist entries for the same player id across servers into one row', () => {
+    recordWhitelistedPlayer('steam-whitelist-1', 'Trusted', 'profile-a')
+    recordWhitelistedPlayer('steam-whitelist-1', 'Trusted', 'profile-b')
+    const entries = listWhitelistedPlayers()
+    const entry = entries.find((e) => e.id === 'steam-whitelist-1')
+    expect(entry?.profileIds).toEqual(['profile-a', 'profile-b'])
+
+    removeWhitelistedPlayerProfile('steam-whitelist-1', 'profile-a')
+    removeWhitelistedPlayerProfile('steam-whitelist-1', 'profile-b')
+    expect(listWhitelistedPlayers().some((e) => e.id === 'steam-whitelist-1')).toBe(false)
+  })
+
+  it('drops the whitelist entry entirely once its last profile is removed', () => {
+    recordWhitelistedPlayer('steam-whitelist-2', 'Lonely', 'profile-only')
+    expect(listWhitelistedPlayers().some((e) => e.id === 'steam-whitelist-2')).toBe(true)
+
+    removeWhitelistedPlayerProfile('steam-whitelist-2', 'profile-only')
+    expect(listWhitelistedPlayers().some((e) => e.id === 'steam-whitelist-2')).toBe(false)
   })
 })
 

@@ -457,6 +457,31 @@ export interface BannedPlayer {
 }
 
 /**
+ * A simple tracking list (ARK only), parallel to BannedPlayer but deliberately not enforced
+ * server-side - unlike Ban (a real RCON BanPlayer call), "whitelisting" someone here is just a
+ * note for admins ("this id is known/trusted"), not an actual join restriction. ARK does have
+ * a real join-restriction mechanism (ExclusiveJoin + a PlayersExclusiveJoinList.txt file), but
+ * that's a bigger, separate feature this deliberately doesn't attempt - see the Players screen
+ * for where this is surfaced.
+ */
+export interface WhitelistedPlayer {
+  /** Steam/EOS id. */
+  id: string
+  /** Last known in-game name - purely a label, same as BannedPlayer.name. */
+  name: string
+  addedAt: number
+  /** Which ARK server profiles this id has been added to the whitelist on. */
+  profileIds: string[]
+}
+
+/** One row of a server's live RCON `ListPlayers` roster - see parsePlayerListWithIds
+ *  (rcon.ts), which is what actually produces these on the main-process side. */
+export interface PlayerRosterEntry {
+  id: string
+  name: string
+}
+
+/**
  * A player watched for the Discord "player join" alert (ARK only - see
  * playerConnectionWatcher.ts, which this reuses). `value` is matched case-insensitively
  * against either the joining player's in-game name or their Steam/EOS id, against every
@@ -766,6 +791,13 @@ export const IPC = {
   playerBansList: 'player-bans:list',
   playerBansBan: 'player-bans:ban',
   playerBansUnban: 'player-bans:unban',
+
+  playerWhitelistList: 'player-whitelist:list',
+  playerWhitelistAdd: 'player-whitelist:add',
+  playerWhitelistRemove: 'player-whitelist:remove',
+
+  playerRosterList: 'player-roster:list',
+  playerRosterKick: 'player-roster:kick',
 
   watchedPlayersList: 'watched-players:list',
   watchedPlayersAdd: 'watched-players:add',
@@ -1131,6 +1163,21 @@ export interface Api {
     /** Sends UnbanPlayer over RCON to the given profile, then removes that profile from the
      *  entry (dropping the entry entirely once no profile is left). */
     unban: (profileId: string, playerId: string) => Promise<BannedPlayer[]>
+  }
+  /** Tracking-only, unlike playerBans - see WhitelistedPlayer's own doc comment for why
+   *  add/remove here never touch RCON at all. */
+  playerWhitelist: {
+    list: () => Promise<WhitelistedPlayer[]>
+    add: (profileId: string, playerId: string, playerName: string) => Promise<WhitelistedPlayer[]>
+    remove: (profileId: string, playerId: string) => Promise<WhitelistedPlayer[]>
+  }
+  /** One server's own live connected-player list, straight from RCON ListPlayers - distinct
+   *  from playerBans/playerActivity, which are the Manager's own persisted, cross-server
+   *  records. Desktop mirror of the web dashboard's own players route/context menu. */
+  playerRoster: {
+    list: (profileId: string) => Promise<PlayerRosterEntry[]>
+    /** Sends KickPlayer over RCON - nothing persisted, the player can simply reconnect. */
+    kick: (profileId: string, playerId: string) => Promise<void>
   }
   watchedPlayers: {
     list: () => Promise<WatchedPlayerAlert[]>

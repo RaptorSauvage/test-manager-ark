@@ -4303,6 +4303,46 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added a live per-server player roster with Kick/Ban/Whitelist, plus a tracking-only
+  whitelist** (user-suggested feature, after being asked for ideas - "on peut faire en sorte
+  que ça affiche par serveur et qu'on peut kick/ban/ajout whitelist depuis ce menu"). The
+  Players screen's existing Bans/Activity tabs only ever showed the Manager's own merged,
+  persisted records - neither fetched who's actually connected right now, and there was no
+  way to kick a player from the desktop app at all (the web dashboard already had Kick/Ban via
+  a right-click menu on its own live `/api/servers/:id/players` route - this ports that same
+  idea to the desktop app's own screen, as inline row buttons instead of a context menu).
+  Whitelist is new entirely - deliberately tracking-only (a shared note of known/trusted
+  players), not an actual join restriction; ARK does have a real one (`-exclusivejoin` + a
+  `PlayersExclusiveJoinList.txt` file) but that's a bigger, separate feature this doesn't
+  attempt.
+  - **`shared/types.ts`**: new `WhitelistedPlayer` (`id`, `name`, `addedAt`, `profileIds[]` -
+    same merge-across-servers shape as `BannedPlayer`, minus `reason`) and `PlayerRosterEntry`
+    (`id`, `name` - one row of a live `ListPlayers` result). New IPC channels
+    `player-whitelist:list/add/remove` and `player-roster:list/kick`, plus matching
+    `Api.playerWhitelist`/`Api.playerRoster` blocks.
+  - **`src/main/store.ts`**: new `playerWhitelist: WhitelistedPlayer[]` store key and
+    `listWhitelistedPlayers`/`recordWhitelistedPlayer`/`removeWhitelistedPlayerProfile` -
+    identical upsert-across-servers/drop-when-empty shape as the existing ban-list functions.
+  - **`src/main/ipc/playerWhitelist.ts`** (new): thin IPC wrapper around the store functions
+    above - no RCON call at all, unlike `playerBans.ts`'s `BanPlayer`/`UnbanPlayer`.
+  - **`src/main/ipc/playerRoster.ts`** (new): `list(profileId)` sends RCON `ListPlayers` and
+    parses it via the existing `parsePlayerListWithIds` (already built for the web dashboard's
+    own Kick action); `kick(profileId, playerId)` sends RCON `KickPlayer <id>` - nothing
+    persisted, the player can simply reconnect.
+  - **`src/renderer/src/pages/PlayerRosterPanel.tsx`** (new): a per-server picker plus the
+    live roster table, refreshed on a 15s timer while open, with Kick/Ban/Whitelist buttons on
+    each row.
+  - **`src/renderer/src/pages/PlayerWhitelistPanel.tsx`** (new): the persisted whitelist's own
+    view/manage screen - same manual add-by-id form + grouped server picker + "currently
+    whitelisted" table layout as `PlayerBansPanel.tsx`, minus the `reason` field and the RCON
+    call.
+  - **`PlayersView.tsx`**: two new sidebar entries, "Live Players" (now the default tab) and
+    "Whitelist", alongside the existing Bans/Activity.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1234 tests - 4 new ones in
+    `tests/store.test.ts` for the whitelist store functions, mirroring the existing ban-list
+    ones), and `npm run build` all pass. **Not yet verified**: needs the user to confirm Kick/
+    Ban/Whitelist actually work against a real running server from the new Live Players tab.
+
 - **Correction to the two beta-branch fixes below: `-beta none` isn't actually the right value
   - it's `-beta public`** (user pushback: "il est pas censé avoir de -beta si on veut revenir
   aux update normale" - prompted checking the actual SteamCMD convention instead of assuming).

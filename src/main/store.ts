@@ -7,6 +7,7 @@ import type {
   WebDashboardAccessToken,
   WebDashboardApiKey,
   BannedPlayer,
+  WhitelistedPlayer,
   WatchedPlayerAlert,
   PlayerActivityRecord,
   PlayerActivitySession,
@@ -53,6 +54,8 @@ interface StoreSchema {
   webDashboardApiKeys: WebDashboardApiKey[]
   /** Centralized ban list - see BannedPlayer's own doc comment (shared/types.ts). */
   playerBans: BannedPlayer[]
+  /** Centralized whitelist (tracking-only) - see WhitelistedPlayer's own doc comment. */
+  playerWhitelist: WhitelistedPlayer[]
   /** Discord "player joined" alert watchlist - see WatchedPlayerAlert's own doc comment. */
   watchedPlayers: WatchedPlayerAlert[]
   /** Aggregated per-player playtime, keyed by Steam/EOS id - see PlayerActivityRecord. */
@@ -134,6 +137,7 @@ const store = new Store<StoreSchema>({
     webDashboardAccessTokens: [],
     webDashboardApiKeys: [],
     playerBans: [],
+    playerWhitelist: [],
     watchedPlayers: [],
     playerActivity: {},
     playerSessions: [],
@@ -362,6 +366,35 @@ export function removePlayerBanProfile(playerId: string, profileId: string): Ban
     .filter((b) => b.profileIds.length > 0)
   store.set('playerBans', bans)
   return bans
+}
+
+export function listWhitelistedPlayers(): WhitelistedPlayer[] {
+  return store.get('playerWhitelist') ?? []
+}
+
+/** Same upsert-across-servers shape as recordPlayerBan, just with no RCON side effect behind
+ *  it - this list is tracking-only (see WhitelistedPlayer's own doc comment). */
+export function recordWhitelistedPlayer(playerId: string, playerName: string, profileId: string): WhitelistedPlayer[] {
+  const entries = listWhitelistedPlayers()
+  const existing = entries.find((e) => e.id === playerId)
+  if (existing) {
+    existing.name = playerName
+    existing.addedAt = Date.now()
+    if (!existing.profileIds.includes(profileId)) existing.profileIds.push(profileId)
+  } else {
+    entries.push({ id: playerId, name: playerName, addedAt: Date.now(), profileIds: [profileId] })
+  }
+  store.set('playerWhitelist', entries)
+  return entries
+}
+
+/** Same drop-when-empty shape as removePlayerBanProfile. */
+export function removeWhitelistedPlayerProfile(playerId: string, profileId: string): WhitelistedPlayer[] {
+  const entries = listWhitelistedPlayers()
+    .map((e) => (e.id === playerId ? { ...e, profileIds: e.profileIds.filter((id) => id !== profileId) } : e))
+    .filter((e) => e.profileIds.length > 0)
+  store.set('playerWhitelist', entries)
+  return entries
 }
 
 export function listWatchedPlayers(): WatchedPlayerAlert[] {

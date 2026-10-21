@@ -154,6 +154,16 @@ const api: Api = {
       ipcRenderer.invoke(IPC.playerBansBan, profileId, playerId, playerName, reason),
     unban: (profileId: string, playerId: string) => ipcRenderer.invoke(IPC.playerBansUnban, profileId, playerId)
   },
+  playerWhitelist: {
+    list: () => ipcRenderer.invoke(IPC.playerWhitelistList),
+    add: (profileId: string, playerId: string, playerName: string) =>
+      ipcRenderer.invoke(IPC.playerWhitelistAdd, profileId, playerId, playerName),
+    remove: (profileId: string, playerId: string) => ipcRenderer.invoke(IPC.playerWhitelistRemove, profileId, playerId)
+  },
+  playerRoster: {
+    list: (profileId: string) => ipcRenderer.invoke(IPC.playerRosterList, profileId),
+    kick: (profileId: string, playerId: string) => ipcRenderer.invoke(IPC.playerRosterKick, profileId, playerId)
+  },
   watchedPlayers: {
     list: () => ipcRenderer.invoke(IPC.watchedPlayersList),
     add: (value: string, label: string) => ipcRenderer.invoke(IPC.watchedPlayersAdd, value, label),
