@@ -234,10 +234,7 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
               )}
             </div>
             <p className="empty-state">
-              When checked, a restart that comes due while anyone's still online is skipped entirely for that
-              occurrence (nothing is stopped/updated/started) - it's tried again at the next scheduled occurrence
-              instead of sooner. Same for "only if a server update is available" - checked against SteamCMD's
-              public branch build id, same as the Analytics tab's own "New update" status.
+              If a checked condition isn't met, the restart is skipped and tried again next time.
             </p>
           </ScheduleDaysPicker>
         </div>
@@ -269,9 +266,8 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
             onDaysChange={(days) => update('scheduledMaintenanceDays', days)}
           />
           <p className="empty-state">
-            A single fixed pipeline, separate from the Restart schedule above: stops the server, takes a backup,
-            updates it via SteamCMD, then starts it back up - every step runs regardless of the others&apos;
-            outcome (e.g. a failed backup still lets the update and restart happen).
+            Stops the server, takes a backup, updates it, then starts it back up - independent of the Restart
+            schedule above.
           </p>
         </div>
       </section>
