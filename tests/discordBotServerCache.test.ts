@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DiscordBotConfig, ManagerServerInfo } from '../shared/discordBot'
-import { arkServers, findServerByName, minecraftServers, refreshServerCache } from '../src/bot/serverCache'
+import { arkServers, findServerByName, minecraftServers, refreshServerCache, serversForChatChannel } from '../src/bot/serverCache'
 
 const island: ManagerServerInfo = {
   id: 'a',
@@ -81,5 +81,20 @@ describe('serverCache', () => {
     expect(findServerByName('island')).toEqual(island)
     expect(findServerByName('ISLAND')).toEqual(island)
     expect(findServerByName('nope')).toBeUndefined()
+  })
+
+  it('serversForChatChannel finds every ARK server sharing a chat channel id, ignoring Minecraft and non-matches', async () => {
+    const extinction: ManagerServerInfo = { ...island, id: 'c', name: 'Extinction', discordChatChannelId: 'chat-1' }
+    const theIsland = { ...island, discordChatChannelId: 'chat-1' }
+    const otherChannel = { ...island, id: 'd', name: 'Other', discordChatChannelId: 'chat-2' }
+    const mcSameId = { ...survie, discordChatChannelId: 'chat-1' }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ status: 200, json: async () => [theIsland, extinction, otherChannel, mcSameId] }) as unknown as Response)
+    )
+    await refreshServerCache(makeConfig())
+
+    expect(serversForChatChannel('chat-1').map((s) => s.name).sort()).toEqual(['Extinction', 'Island'])
+    expect(serversForChatChannel('chat-3')).toEqual([])
   })
 })

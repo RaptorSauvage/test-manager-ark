@@ -83,6 +83,18 @@ export interface ServerProfile {
   noTransferFromFiltering: boolean
   /** Passed as -ServerIP=<ip> when clusterEnabled and non-empty */
   externalIp: string
+  /** Discord channel id the chat bridge relays this server's in-game chat to (and relays
+   *  Discord messages posted there back into the game as ServerChat) - see
+   *  discordChatBridgeWatch.ts. Not launch-related, unlike most of this Cluster group, but
+   *  kept here since it's meant to be set to the same value on every profile in a cluster,
+   *  same convention as clusterDirOverride/clusterId above - one shared chat channel per
+   *  cluster, not a separate one per server. Blank disables the bridge for this profile. */
+  discordChatChannelId: string
+  /** Discord channel id TAME/tamed-dino-death/MISSION events from this server's log get
+   *  posted to - same per-cluster convention as discordChatChannelId above, and independent
+   *  of it (a server can have one, both, or neither set). Blank disables this for this
+   *  profile. */
+  discordEventsChannelId: string
   /** Passed as -culture=<value> when not 'none' */
   cultureSettings: 'none' | 'en' | 'fr'
   /** Passed as -NoBattlEye when true */

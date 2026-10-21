@@ -430,6 +430,27 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
             disabled={!form.clusterEnabled}
           />
         </label>
+        <label>
+          Discord Chat Channel ID
+          <input
+            value={form.discordChatChannelId}
+            onChange={(e) => update('discordChatChannelId', e.target.value)}
+            placeholder="Blank disables the chat bridge"
+          />
+        </label>
+        <label>
+          Discord Events Channel ID
+          <input
+            value={form.discordEventsChannelId}
+            onChange={(e) => update('discordEventsChannelId', e.target.value)}
+            placeholder="Blank disables tame/death/mission posts"
+          />
+        </label>
+        <p className="empty-state">
+          Relays this server's in-game chat to/from the Chat Channel, and posts tame/tamed-dino-death/mission events
+          to the Events Channel - both independent of the cluster settings above and off by default. Set the same
+          channel id on every server in a cluster to share one channel between them.
+        </p>
       </section>
       <section className="cluster-section launch-command-section">
         <h3>Launch command</h3>

@@ -27,6 +27,8 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     clusterDirOverride: '',
     noTransferFromFiltering: false,
     externalIp: '',
+    discordChatChannelId: '',
+    discordEventsChannelId: '',
     cultureSettings: 'none',
     disableBattlEye: false,
     rconTribeLog: false,

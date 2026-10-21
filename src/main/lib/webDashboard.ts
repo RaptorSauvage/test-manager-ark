@@ -52,6 +52,7 @@ import {
   applyScheduledMaintenance
 } from './scheduledActions'
 import { syncPlayerBackupWatch } from './playerBackupWatch'
+import { syncDiscordChatBridgeWatch } from './discordChatBridgeWatch'
 import { syncAseModsToIni } from './gameConfigWrite'
 import { getCachedGameVersion } from './serverVersion'
 import { getOrCreateCert } from './tlsCert'
@@ -174,6 +175,7 @@ function toMinecraftLogEvent(line: { text: string; ts: number }): { label: strin
 function applyProfileSideEffects(profile: ServerProfile, syncMods: boolean): void {
   applyBackupSchedule(profile)
   syncPlayerBackupWatch(profile)
+  syncDiscordChatBridgeWatch(profile)
   applyScheduledRestart(profile)
   applyScheduledDinoWipe(profile)
   applyScheduledRconCommands(profile)
@@ -471,7 +473,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         gameVersion: getCachedGameVersion(profile.id),
         statsEnabled: profile.statsEnabled,
         gameIconUrl: `/game-icons/${game.iconFileName}`,
-        gameDisplayName: game.displayName
+        gameDisplayName: game.displayName,
+        discordChatChannelId: profile.discordChatChannelId || undefined,
+        discordEventsChannelId: profile.discordEventsChannelId || undefined
       }
     })
     const minecraftCollapsedGroups = new Set(settings.minecraftCollapsedGroups)
@@ -2647,6 +2651,19 @@ const DASHBOARD_HTML = `<!doctype html>
             External IP
             <input id="settings-externalip" placeholder="203.0.113.10" />
           </label>
+          <label>
+            Discord Chat Channel ID
+            <input id="settings-discordchatchannel" placeholder="Blank disables the chat bridge" />
+          </label>
+          <label>
+            Discord Events Channel ID
+            <input id="settings-discordeventschannel" placeholder="Blank disables tame/death/mission posts" />
+          </label>
+          <p class="empty-state">
+            Relays this server's in-game chat to/from the Chat Channel, and posts tame/tamed-dino-death/mission
+            events to the Events Channel - both independent of the cluster settings above and off by default. Set
+            the same channel id on every server in a cluster to share one channel between them.
+          </p>
         </section>
         <p id="settings-status" class="status-message" style="display: none"></p>
         <p id="settings-error" class="error-message" style="display: none"></p>
@@ -7436,6 +7453,8 @@ function initDashboard(resolvedRole) {
   var settingsClusterDir = document.getElementById('settings-clusterdir');
   var settingsNoTransferFiltering = document.getElementById('settings-notransferfiltering');
   var settingsExternalIp = document.getElementById('settings-externalip');
+  var settingsDiscordChatChannel = document.getElementById('settings-discordchatchannel');
+  var settingsDiscordEventsChannel = document.getElementById('settings-discordeventschannel');
   var settingsProfile = null;
   var settingsMapsCache = { maps: [], customMaps: [] };
 
@@ -7513,6 +7532,8 @@ function initDashboard(resolvedRole) {
     settingsNoTransferFiltering.disabled = !p.clusterEnabled;
     settingsExternalIp.value = p.externalIp;
     settingsExternalIp.disabled = !p.clusterEnabled;
+    settingsDiscordChatChannel.value = p.discordChatChannelId || '';
+    settingsDiscordEventsChannel.value = p.discordEventsChannelId || '';
   }
 
   function saveSettingsField(field, value) {
@@ -7595,6 +7616,8 @@ function initDashboard(resolvedRole) {
   settingsClusterDir.addEventListener('change', function () { saveSettingsField('clusterDirOverride', settingsClusterDir.value); });
   settingsNoTransferFiltering.addEventListener('change', function () { saveSettingsField('noTransferFromFiltering', settingsNoTransferFiltering.checked); });
   settingsExternalIp.addEventListener('change', function () { saveSettingsField('externalIp', settingsExternalIp.value); });
+  settingsDiscordChatChannel.addEventListener('change', function () { saveSettingsField('discordChatChannelId', settingsDiscordChatChannel.value); });
+  settingsDiscordEventsChannel.addEventListener('change', function () { saveSettingsField('discordEventsChannelId', settingsDiscordEventsChannel.value); });
 
   var CONSOLE_AUTOSCROLL_KEY = 'ark-dashboard-console-autoscroll';
   var consoleAutoScroll = false;

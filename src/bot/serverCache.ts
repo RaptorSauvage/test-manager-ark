@@ -30,3 +30,12 @@ export function arkServers(servers: ManagerServerInfo[] = cached): ManagerServer
 export function minecraftServers(servers: ManagerServerInfo[] = cached): ManagerServerInfo[] {
   return servers.filter((s) => s.gameDisplayName === 'Minecraft')
 }
+
+/** Every ARK server currently configured to relay chat from `channelId` (there can be more
+ *  than one - a whole cluster sharing one channel, each profile's own
+ *  ServerProfile.discordChatChannelId set to the same value) - the inbound half of the chat
+ *  bridge in index.ts uses this to find who a Discord message should be relayed to. Pure/
+ *  testable on its own, same as arkServers/minecraftServers above. */
+export function serversForChatChannel(channelId: string, servers: ManagerServerInfo[] = cached): ManagerServerInfo[] {
+  return arkServers(servers).filter((s) => s.discordChatChannelId === channelId)
+}

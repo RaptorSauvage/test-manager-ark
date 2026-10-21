@@ -31,6 +31,7 @@ import { adoptPersistedProcesses, isRunning } from './lib/serverProcess'
 import { startMonitoring } from './lib/monitor'
 import { registerPlayerBackupWatch, startPlayerBackupWatch } from './lib/playerBackupWatch'
 import { registerPlayerJoinAlertWatch, startPlayerJoinAlertWatch } from './lib/playerJoinAlertWatch'
+import { registerDiscordChatBridgeWatch, startDiscordChatBridgeWatch } from './lib/discordChatBridgeWatch'
 import { registerPlayerActivityWatch, startPlayerActivityWatch } from './lib/playerActivityWatch'
 import { startUpdateCheckPolling } from './lib/updateCheck'
 import { applyLaunchOnStartup } from './lib/launchOnStartup'
@@ -195,6 +196,7 @@ app.whenReady().then(() => {
   registerPlayerBackupWatch()
   registerPlayerJoinAlertWatch()
   registerPlayerActivityWatch()
+  registerDiscordChatBridgeWatch()
   applyWebDashboardSettings(getSettings())
   void applyDiscordBotSettings(getSettings())
   applyLaunchOnStartup(getSettings())
@@ -212,6 +214,7 @@ app.whenReady().then(() => {
       startPlayerJoinAlertWatch(profile)
       startPlayerActivityWatch(profile)
       startClusterLogArchiveWatch(profile)
+      startDiscordChatBridgeWatch(profile)
     }
   }
 

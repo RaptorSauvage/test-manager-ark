@@ -28,6 +28,8 @@ export function createDefaultProfile(name: string): ServerProfile {
     clusterDirOverride: '',
     noTransferFromFiltering: false,
     externalIp: '',
+    discordChatChannelId: '',
+    discordEventsChannelId: '',
     cultureSettings: 'none',
     disableBattlEye: false,
     rconTribeLog: false,

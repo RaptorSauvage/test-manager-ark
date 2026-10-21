@@ -17,6 +17,7 @@ import {
 import { detectGameFromInstall, detectProfileFields, uniqueProfileName } from '../lib/detect'
 import { serializeProfile, parseImportedProfile } from '../lib/profileExport'
 import { syncPlayerBackupWatch } from '../lib/playerBackupWatch'
+import { syncDiscordChatBridgeWatch } from '../lib/discordChatBridgeWatch'
 import { copyProfile, moveProfile } from '../lib/profileCopyMove'
 
 function requireProfile(profileId: string): ServerProfile {
@@ -36,6 +37,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
     const profiles = saveProfile(profile)
     applyBackupSchedule(profile)
     syncPlayerBackupWatch(profile)
+    syncDiscordChatBridgeWatch(profile)
     applyScheduledRestart(profile)
     applyScheduledDinoWipe(profile)
     applyScheduledRconCommands(profile)
@@ -108,6 +110,8 @@ export function registerProfileHandlers(webContents: WebContents): void {
       clusterDirOverride: '',
       noTransferFromFiltering: false,
       externalIp: '',
+      discordChatChannelId: '',
+      discordEventsChannelId: '',
       cultureSettings: 'none',
       disableBattlEye: false,
       rconTribeLog: false,

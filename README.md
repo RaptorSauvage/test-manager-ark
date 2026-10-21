@@ -4303,6 +4303,61 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added a Discord chat bridge, plus a tame/tamed-dino-death/mission admin events channel**
+  (user-suggested feature, after being asked for ideas - "ça serait cool de faire la même
+  fonction pour les tame, mort, mission dans un channel admin"; "un salon par cluster" when
+  asked whether to scope channels per-server or globally). Two independent, opt-in channel ids
+  on each ARK profile, under Settings' Cluster section: a Chat Channel (relays this server's
+  in-game chat to Discord and back) and an Events Channel (posts TAME, a tamed dino's death,
+  and MISSION log lines). Deliberately per-*profile* fields, not a new cluster entity - same
+  convention this app already uses for clusterId/clusterDirOverride, where every server in a
+  cluster is expected to carry the same value rather than there being one normalized "cluster"
+  record anywhere. Setting the same channel id on every profile in a cluster is what makes it
+  "one salon par cluster" in practice.
+  - **`shared/types.ts`**: new `ServerProfile.discordChatChannelId`/`discordEventsChannelId`
+    (both default `''`, meaning off). Migration backfill.
+  - **`src/renderer/src/pages/ServerDetail/SettingsTab.tsx`** + **`webDashboard.ts`**'s own
+    mirrored Settings form: two new inputs in the Cluster card on both surfaces, not gated by
+    "Enable cluster" (a standalone, non-clustered server can use either feature too).
+  - **`shared/discordBot.ts`**: `ManagerServerInfo` gains the same two optional fields;
+    **`webDashboard.ts`**'s `GET /api/servers` ARK mapping populates them from the profile, so
+    the bot's own periodic server-cache poll (already happening for the status embeds) picks
+    them up for free - no new IPC or polling needed.
+  - **`src/main/lib/discordChatBridgeWatch.ts`** (new) - the outbound half (game -> Discord).
+    Same per-server start/stop-on-status-event shape as `playerJoinAlertWatch.ts`, tailing
+    `ShooterGame.log` via the same `watchLogFile`/`parseLogChunk` primitives
+    `groupConsole.ts`'s Cluster Data console already uses - CHAT lines go to
+    `discordChatChannelId`; TAME and MISSION lines go to `discordEventsChannelId`; a KILL line
+    only goes there when `isTamedDinoKillEvent` recognizes it as a *tamed* dino's death (" -
+    Lvl <n>" in the text, ARK's own tamed-dino naming convention) rather than one of the
+    hundreds of wild-vs-wild deaths an active server logs per day - the specific filter the
+    user asked for after being warned how noisy the unfiltered version would be. A no-op
+    (costs nothing) for any profile with neither channel id set.
+  - **`src/main/lib/discordBot.ts`**: new `notifyGameEvent(channelId, kind, text)`, same fork-
+    IPC-message shape as the existing `notifyPlayerJoin` (a log line can happen at any moment,
+    so this bypasses the config file the bot only reads once at its own startup).
+  - **`src/bot/index.ts`**: handles the new `'gameEvent'` message type, posting to whichever
+    channel id it names (💀/🦖/🎯 prefix per kind, 'chat' posted as-is for a plain bridge
+    look). The inbound half (Discord -> game) is a new `Events.MessageCreate` listener:
+    ignores the bot's own messages, matches the message's channel id against every ARK
+    server's cached `discordChatChannelId` (`serversForChatChannel`, `serverCache.ts` - can
+    match more than one profile at once, the whole point of sharing one channel across a
+    cluster), and relays via RCON `ServerChat <DiscordName> (Discord) - <message>` through the
+    same Manager API passthrough `/adminchat` already uses. **Requires enabling "Message
+    Content Intent" for this bot application in the Discord Developer Portal** (Bot page,
+    Privileged Gateway Intents) - without it, Discord delivers every guild message with
+    `.content` blanked out and the bridge silently relays nothing. The bot's own intents list
+    grew from Guilds-only to include GuildMessages + MessageContent to support this; it still
+    never reads member lists or anything beyond messages in channels it's already in.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1243 tests - 8 new ones in
+    `tests/discordChatBridgeWatch.test.ts` for `isTamedDinoKillEvent` and `routeGameEvent`'s
+    label-by-label routing including the wild-vs-tamed KILL split, 1 new one in
+    `tests/discordBotServerCache.test.ts` for `serversForChatChannel` matching several ARK
+    servers sharing one channel id while ignoring Minecraft entries and other channels), and
+    `npm run build` (including the bot's own bundle) all pass. **Not yet verified**: needs the
+    user to actually enable the Message Content privileged intent in the Developer Portal and
+    confirm a real two-way chat round trip and real tame/kill/mission posts.
+
 - **Added a live per-server player roster with Kick/Ban/Whitelist, plus a tracking-only
   whitelist** (user-suggested feature, after being asked for ideas - "on peut faire en sorte
   que ça affiche par serveur et qu'on peut kick/ban/ajout whitelist depuis ce menu"). The

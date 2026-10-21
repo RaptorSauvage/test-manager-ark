@@ -190,6 +190,17 @@ export function notifyPlayerJoin(serverName: string, playerName: string, uniqueN
   child?.send?.({ type: 'playerJoinAlert', serverName, playerName, uniqueNetId })
 }
 
+/** Live notification for the chat bridge/events channel (see discordChatBridgeWatch.ts) -
+ *  same reasoning as notifyPlayerJoin above: a log line can arrive at any moment, so this
+ *  goes straight over the fork IPC channel instead of the config file. `channelId` is the
+ *  literal Discord channel id to post to (the caller has already resolved it from the
+ *  profile's own discordChatChannelId/discordEventsChannelId - the bot itself doesn't need
+ *  to know which profile a game event came from, just where to put it). `kind` is one of
+ *  'chat'/'tame'/'kill'/'mission', used bot-side only to decide how to format the message. */
+export function notifyGameEvent(channelId: string, kind: string, text: string): void {
+  child?.send?.({ type: 'gameEvent', channelId, kind, text })
+}
+
 export async function restartDiscordBot(): Promise<void> {
   await startDiscordBot(getSettings())
 }

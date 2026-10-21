@@ -91,6 +91,14 @@ export interface ManagerServerInfo {
   /** Minecraft-only (always set on a Minecraft entry, always absent on an ARK one) - the
    *  cheapest reliable way to tell the two apart client-side without hardcoding game ids. */
   serverType?: string
+  /** ARK-only - the profile's own ServerProfile.discordChatChannelId/discordEventsChannelId,
+   *  absent/blank when not set. The bot's inbound chat relay (src/bot/index.ts) uses
+   *  discordChatChannelId to map an incoming Discord message's channel back to every profile
+   *  that should receive it - the outbound direction (game events -> Discord) doesn't need
+   *  this at all, since the main process already knows each profile's own channel id and
+   *  resolves it before ever messaging the bot (see discordChatBridgeWatch.ts). */
+  discordChatChannelId?: string
+  discordEventsChannelId?: string
 }
 
 export function isMinecraftServerInfo(server: ManagerServerInfo): boolean {

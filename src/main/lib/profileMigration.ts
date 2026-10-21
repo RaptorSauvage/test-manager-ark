@@ -37,6 +37,8 @@ interface LegacyProfileFields {
  *   already did (fire at `time` on `days`), so this migration never changes behavior
  * - `scheduledRestartOnlyIfEmpty` is new and defaults to false
  * - `scheduledRestartOnlyIfUpdateAvailable` is new and defaults to false
+ * - `discordChatChannelId`/`discordEventsChannelId` are new and default to '' (bridge/events
+ *   off for this profile)
  * - `scheduledMaintenance*` is new and defaults to off/00:00/no days
  * - `scheduledRestartDestroyWildDinosAfter` was dropped from the restart schedule -
  *   folded into the separate, independent scheduled dino wipe instead
@@ -95,6 +97,8 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     serverPlatform: rest.serverPlatform ?? 'PC',
     maxPlayers: rest.maxPlayers ?? 70,
     externalIp: rest.externalIp ?? '',
+    discordChatChannelId: rest.discordChatChannelId ?? '',
+    discordEventsChannelId: rest.discordEventsChannelId ?? '',
     cultureSettings: rest.cultureSettings ?? 'none',
     disableBattlEye: rest.disableBattlEye ?? false,
     rconTribeLog: rest.rconTribeLog ?? false,

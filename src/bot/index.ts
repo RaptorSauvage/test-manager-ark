@@ -7,6 +7,8 @@ import { checkSchedules } from './schedule'
 import { checkCurseforgeUpdates } from './curseforgeCheck'
 import { initMaintenanceState } from './maintenanceState'
 import { initStatusMessageState } from './statusMessageState'
+import { getCachedServers, serversForChatChannel } from './serverCache'
+import { sendManagerRconCommand } from './managerApiClient'
 import type { SlashCommand } from './commands/types'
 import { statusCommands } from './commands/statusCommands'
 import { maintenanceCommands } from './commands/maintenanceCommands'
@@ -29,10 +31,12 @@ const allCommands: SlashCommand[] = [
 ]
 const commandsByName = new Map(allCommands.map((c) => [c.data.name, c]))
 
-// Aucun intent privilégié nécessaire - ce bot n'utilise que les commandes slash
-// (interactions) et envoie des messages dans des salons qu'il a déjà en cache, il ne lit
-// jamais le contenu des messages ni la liste des membres.
-const client = new Client({ intents: [GatewayIntentBits.Guilds] })
+// GuildMessages + MessageContent (both privileged - MessageContent must be turned on for
+// this bot application in the Discord Developer Portal, under Bot > Privileged Gateway
+// Intents, or every message's .content arrives as an empty string and the chat bridge below
+// silently relays nothing) are only needed for the chat bridge (discordChatChannelId) - this
+// bot otherwise still only uses slash commands and messages it sends itself, same as before.
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] })
 
 async function registerCommands(): Promise<void> {
   const rest = new REST().setToken(config.discordToken)
@@ -68,6 +72,28 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } catch (err) {
       log.error(`Erreur non gérée sur l'autocomplétion de /${interaction.commandName} : ${(err as Error).message}`)
     }
+  }
+})
+
+// Chat bridge, inbound half (Discord -> game) - the outbound half (game -> Discord) is
+// discordChatBridgeWatch.ts in the Manager's own main process, which posts into whichever
+// channel a server's own discordChatChannelId names via the 'gameEvent' message type above.
+// A message typed in that same channel gets relayed here to every ARK server currently
+// configured with it (there can be more than one - a whole cluster sharing one channel) via
+// RCON ServerChat, the same command /adminchat already uses.
+client.on(Events.MessageCreate, (message) => {
+  if (message.author.bot) return
+  if (!message.content.trim()) return
+  const targets = serversForChatChannel(message.channelId, getCachedServers())
+  if (targets.length === 0) return
+
+  const formatted = `${message.author.displayName} (Discord) - ${message.content}`
+  for (const server of targets) {
+    sendManagerRconCommand(config, server.id, `ServerChat ${formatted}`)
+      .then((result) => {
+        if (!result.ok) log.warn(`Relais du chat vers '${server.name}' impossible : ${result.error ?? 'erreur inconnue'}`)
+      })
+      .catch((err: Error) => log.warn(`Relais du chat vers '${server.name}' impossible : ${err.message}`))
   }
 })
 
@@ -115,6 +141,8 @@ function shutdown(): void {
 
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
+const GAME_EVENT_PREFIXES: Record<string, string> = { tame: '🦖', kill: '💀', mission: '🎯' }
+
 process.on('message', (message: unknown) => {
   if (typeof message !== 'object' || message === null) return
   const type = (message as { type?: string }).type
@@ -133,6 +161,21 @@ process.on('message', (message: unknown) => {
     channel.send({ embeds: [buildPlayerJoinAlertEmbed(serverName, playerName, uniqueNetId)] }).catch((err: Error) => {
       log.error(`Envoi de l'alerte joueur impossible : ${err.message}`)
     })
+  }
+  if (type === 'gameEvent') {
+    const { channelId, kind, text } = message as { channelId: string; kind: string; text: string }
+    const channel = client.channels.cache.get(channelId)
+    if (!channel || !(channel instanceof TextChannel)) {
+      log.warn(`Événement de jeu ignoré : le salon ${channelId} est introuvable ou n'est pas un salon textuel.`)
+      return
+    }
+    // 'chat' is posted as-is (its own text already reads "Player: message", a plain chat
+    // bridge look) - the others get a small emoji prefix so they're quick to scan in an
+    // events channel that can otherwise just be a wall of similarly-shaped lines.
+    const prefix = GAME_EVENT_PREFIXES[kind] ?? ''
+    channel
+      .send((prefix ? `${prefix} ` : '') + text.slice(0, 2000 - prefix.length - 1))
+      .catch((err: Error) => log.error(`Envoi de l'événement de jeu impossible : ${err.message}`))
   }
 })
 

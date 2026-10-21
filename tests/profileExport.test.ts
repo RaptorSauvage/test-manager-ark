@@ -28,6 +28,8 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     clusterDirOverride: '',
     noTransferFromFiltering: false,
     externalIp: '',
+    discordChatChannelId: '',
+    discordEventsChannelId: '',
     cultureSettings: 'none',
     disableBattlEye: false,
     rconTribeLog: false,

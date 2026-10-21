@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-21',
+    title: 'Discord chat bridge + tame/death/mission events channel',
+    details: [
+      "Each server can now relay its in-game chat to a Discord channel and back (set a \"Discord Chat Channel ID\" in Settings), and post tame/tamed-dino-death/mission events to a separate channel (\"Discord Events Channel ID\") - both off by default, and independent of each other.",
+      'Set the same channel id on every server in a cluster to share one channel between them.',
+      'Requires turning on "Message Content Intent" for the bot in the Discord Developer Portal for the chat bridge\'s Discord-to-game direction to work.'
+    ]
+  },
+  {
+    date: '2026-10-21',
     title: 'Live player roster with Kick/Ban/Whitelist, new Whitelist tab',
     details: [
       'The Players screen now has a "Live Players" tab showing who\'s actually connected to a chosen server right now, with Kick/Ban/Whitelist buttons on each row.',
