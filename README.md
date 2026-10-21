@@ -4303,6 +4303,48 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added an "only if a server update is available" condition to the scheduled restart**
+  (user request - "add a scheduled restart with the condition that there's an update
+  available, at a configured time"). A third opt-in condition alongside the existing "only if
+  no players are connected" one, on the same Restart schedule (Server Management tab) rather
+  than a separate mechanism - when checked, a restart that comes due with nothing new to
+  install is skipped entirely for that occurrence (no stop/update/start at all) and simply
+  tried again at the schedule's next occurrence, the same way the player-count condition
+  already behaves. ARK: Survival Ascended only - the only game `GameDefinition.
+  supportsUpdateCheck` is true for; the checkbox itself is hidden for ARK: Survival Evolved
+  rather than shown and silently never firing.
+  - **`shared/types.ts`**: new `ServerProfile.scheduledRestartOnlyIfUpdateAvailable: boolean`,
+    right next to `scheduledRestartOnlyIfEmpty` which it joins (both can be on at once - the
+    restart only runs once every enabled condition passes).
+  - **`src/main/lib/profileMigration.ts`**: backfills it to `false` for existing profiles.
+  - **`src/main/lib/updateCheck.ts`**: new `isUpdateAvailable(installedBuildId, latestBuildId)`
+    - the same comparison `UpdateCheckPanel.tsx` already does in the renderer for the
+    Analytics tab's "New update" status, pulled out as its own pure function so it's testable
+    without a real SteamCMD poll - and `isUpdateAvailableForProfile(profile)`, which wires it
+    up to a profile's own cached latest build id (`getLatestBuildIdCache`) and installed build
+    id (`getInstalledBuildId`, steamcmd.ts), short-circuiting to `false` before ever touching
+    disk when nothing's been polled yet or the game doesn't support update checking at all.
+    "Unknown" deliberately means "don't restart" here (unlike `scheduledRestartOnlyIfEmpty`,
+    there's no live question this can ask the server the way RCON `ListPlayers` can) - a false
+    positive restart is the one outcome that can't just be fixed by waiting for the next
+    occurrence.
+  - **`src/main/lib/scheduledActions.ts`**: `runScheduledRestart` checks
+    `isUpdateAvailableForProfile(profile)` right after the existing "only if empty" guard
+    (before doing anything at all) when the new flag is on, logging why and returning early
+    exactly like that guard does.
+  - **`src/renderer/src/pages/ServerDetail/ServerManagementTab.tsx`**: new checkbox next to
+    "Only if no players are connected" inside the Restart `ScheduleDaysPicker`, gated behind
+    `getGameDefinition(profile.game).supportsUpdateCheck`.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1221 tests - 5 new ones in
+    `tests/updateCheck.test.ts` for `isUpdateAvailable`'s four known/unknown combinations plus
+    `isUpdateAvailableForProfile`'s game-support and fresh-cache short-circuits; 4 new ones in
+    `tests/scheduledActions.test.ts` covering skip-when-unavailable, restart-when-available,
+    never-checking-when-the-flag-is-off, and combining with `scheduledRestartOnlyIfEmpty`; 1
+    new one in `tests/profileMigration.test.ts` for the backfill), and `npm run build` all
+    pass. **Not yet verified**: needs the user to confirm a real scheduled restart actually
+    skips with no update pending and fires once SteamCMD's public branch build id actually
+    changes.
+
 - **Added Notepad++-style syntax coloring to both editors, and opened them up to `.json` and
   `.log` files** (user feedback on the file browser port below - "add Notepad++'s color
   codes" and "make it so .json and .log files can be opened too").

@@ -121,6 +121,14 @@ export interface ServerProfile {
    *  ListPlayers) is skipped entirely for that occurrence - no stop/update/start at all,
    *  logged and left for the schedule's next occurrence rather than retried sooner. */
   scheduledRestartOnlyIfEmpty: boolean
+  /** When true, a scheduled restart that fires with no server update actually available (per
+   *  SteamCMD's cached public-branch build id vs. this profile's own installed build id - see
+   *  isUpdateAvailableForProfile in updateCheck.ts) is skipped entirely for that occurrence,
+   *  the same way scheduledRestartOnlyIfEmpty skips one with players still connected. Only
+   *  meaningful for a game that supports update checking at all (GameDefinition.
+   *  supportsUpdateCheck - ARK: Survival Ascended, not Evolved); combines with
+   *  scheduledRestartOnlyIfEmpty when both are on, rather than replacing it. */
+  scheduledRestartOnlyIfUpdateAvailable: boolean
   /** Scheduled dino wipe - independent of the restart above: sends RCON DestroyWildDinos
    *  at `scheduledDinoWipeTime` on the selected days, while the server is running. */
   scheduledDinoWipeEnabled: boolean

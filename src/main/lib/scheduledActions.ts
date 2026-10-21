@@ -11,6 +11,7 @@ import { createBackup } from './backup'
 import { getSettings } from '../store'
 import { delay } from './delay'
 import { logManagerEvent, newTaskId } from './managerLog'
+import { isUpdateAvailableForProfile } from './updateCheck'
 
 const restartTasks = new Map<string, ScheduledTask>()
 const dinoWipeTasks = new Map<string, ScheduledTask>()
@@ -55,6 +56,11 @@ export async function runScheduledRestart(profile: ServerProfile): Promise<void>
       )
       return
     }
+  }
+
+  if (profile.scheduledRestartOnlyIfUpdateAvailable && !isUpdateAvailableForProfile(profile)) {
+    logManagerEvent(taskId, taskLabel, 'Skipped - no server update available right now (will try again at the next occurrence).')
+    return
   }
 
   logManagerEvent(taskId, taskLabel, 'Stopping...')

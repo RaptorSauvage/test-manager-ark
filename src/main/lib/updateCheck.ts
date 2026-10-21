@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
-import type { LatestBuildIdCache } from '@shared/types'
+import type { LatestBuildIdCache, ServerProfile } from '@shared/types'
 import { type GameId, getGameDefinition, listGameDefinitions } from '@shared/games'
 import { getSettings } from '../store'
+import { getInstalledBuildId } from './steamcmd'
 
 let cache: Partial<Record<GameId, LatestBuildIdCache>> = {}
 let pollTimer: NodeJS.Timeout | null = null
@@ -73,6 +74,35 @@ export function checkLatestBuildId(steamCmdPath: string, game: GameId): Promise<
 
 export function getLatestBuildIdCache(game: GameId): LatestBuildIdCache {
   return cache[game] ?? { buildId: null, checkedAt: null, error: null }
+}
+
+/** Pure comparison, split out from isUpdateAvailableForProfile below so it's testable without
+ *  needing a real SteamCMD poll or a real installed manifest on disk - false whenever either
+ *  side is unknown (never polled yet, or never installed), same as "unknown" meaning "don't
+ *  restart" rather than "go ahead" in isUpdateAvailableForProfile's own doc comment. */
+export function isUpdateAvailable(installedBuildId: string | null, latestBuildId: string | null): boolean {
+  return latestBuildId !== null && installedBuildId !== null && installedBuildId !== latestBuildId
+}
+
+/**
+ * Same comparison UpdateCheckPanel.tsx already does in the renderer (cached latest SteamCMD
+ * build id vs. this profile's own installed build id, from its appmanifest .acf), but
+ * available in the main process too - for runScheduledRestart's "only if an update is
+ * available" condition (scheduledActions.ts), which can't reach into the renderer. False
+ * whenever either side is unknown (never polled yet, never installed, or this profile's game
+ * doesn't support update checking at all, e.g. ARK: Survival Evolved) - unlike
+ * "only if empty", there's no live RCON question to ask here, so "unknown" has to mean "don't
+ * restart" rather than "go ahead", since proceeding on a false positive is the one direction
+ * that can't be undone by just waiting for the next occurrence.
+ */
+export function isUpdateAvailableForProfile(profile: ServerProfile): boolean {
+  if (!getGameDefinition(profile.game).supportsUpdateCheck) return false
+  const latestBuildId = getLatestBuildIdCache(profile.game).buildId
+  // Short-circuits before touching disk at all when nothing's been polled yet (the common
+  // case right after the Manager starts) - no point reading the installed manifest just to
+  // immediately discard it.
+  if (!latestBuildId) return false
+  return isUpdateAvailable(getInstalledBuildId(profile.installDir, profile.game), latestBuildId)
 }
 
 async function pollOnceForGame(game: GameId): Promise<void> {

@@ -28,6 +28,7 @@ vi.mock('../src/main/store', () => ({
   getProfile: vi.fn()
 }))
 vi.mock('../src/main/lib/managerLog', () => ({ logManagerEvent: vi.fn(), newTaskId: vi.fn(() => 'task-id') }))
+vi.mock('../src/main/lib/updateCheck', () => ({ isUpdateAvailableForProfile: vi.fn(() => false) }))
 vi.mock('node:fs', () => ({ default: { mkdirSync: vi.fn(), appendFileSync: vi.fn() } }))
 
 import { runScheduledRestart, runScheduledMaintenance } from '../src/main/lib/scheduledActions'
@@ -41,6 +42,7 @@ import {
 import { updateServer as mockUpdateServer } from '../src/main/lib/steamcmd'
 import { listPlayers as mockListPlayers } from '../src/main/lib/rcon'
 import { createBackup as mockCreateBackup } from '../src/main/lib/backup'
+import { isUpdateAvailableForProfile as mockIsUpdateAvailableForProfile } from '../src/main/lib/updateCheck'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
   return {
@@ -187,6 +189,49 @@ describe('runScheduledRestart', () => {
 
     expect(mockListPlayers).not.toHaveBeenCalled()
     expect(mockStopServer).toHaveBeenCalledWith(profile)
+  })
+
+  it('skips the whole restart when scheduledRestartOnlyIfUpdateAvailable is on and no update is available', async () => {
+    vi.mocked(mockIsUpdateAvailableForProfile).mockReturnValue(false)
+    const profile = makeProfile({ scheduledRestartOnlyIfUpdateAvailable: true, scheduledRestartStartAfter: true })
+
+    await runScheduledRestart(profile)
+
+    expect(mockStopServer).not.toHaveBeenCalled()
+    expect(mockStartServer).not.toHaveBeenCalled()
+  })
+
+  it('restarts normally when scheduledRestartOnlyIfUpdateAvailable is on and an update is available', async () => {
+    vi.mocked(mockIsUpdateAvailableForProfile).mockReturnValue(true)
+    const profile = makeProfile({ scheduledRestartOnlyIfUpdateAvailable: true, scheduledRestartStartAfter: true })
+
+    await runScheduledRestart(profile)
+
+    expect(mockStopServer).toHaveBeenCalledWith(profile)
+    expect(mockStartServer).toHaveBeenCalledWith(profile)
+  })
+
+  it('never checks update availability at all when scheduledRestartOnlyIfUpdateAvailable is off', async () => {
+    const profile = makeProfile({ scheduledRestartOnlyIfUpdateAvailable: false })
+
+    await runScheduledRestart(profile)
+
+    expect(mockIsUpdateAvailableForProfile).not.toHaveBeenCalled()
+    expect(mockStopServer).toHaveBeenCalledWith(profile)
+  })
+
+  it('combines with scheduledRestartOnlyIfEmpty - both must pass for the restart to run', async () => {
+    vi.mocked(mockListPlayers).mockResolvedValue([])
+    vi.mocked(mockIsUpdateAvailableForProfile).mockReturnValue(false)
+    const profile = makeProfile({
+      scheduledRestartOnlyIfEmpty: true,
+      scheduledRestartOnlyIfUpdateAvailable: true,
+      scheduledRestartStartAfter: true
+    })
+
+    await runScheduledRestart(profile)
+
+    expect(mockStopServer).not.toHaveBeenCalled()
   })
 })
 

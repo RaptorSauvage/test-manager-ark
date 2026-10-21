@@ -43,6 +43,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     scheduledRestartUpdateAfter: false,
     scheduledRestartStartAfter: false,
     scheduledRestartOnlyIfEmpty: false,
+    scheduledRestartOnlyIfUpdateAvailable: false,
     scheduledDinoWipeEnabled: false,
     scheduledDinoWipeTime: '00:00',
     scheduledDinoWipeDays: [],
@@ -171,6 +172,11 @@ describe('migrateProfile', () => {
   it('backfills autoManageMods to false on profiles saved before it existed', () => {
     const legacy = baseProfile({ autoManageMods: undefined })
     expect(migrateProfile(legacy).autoManageMods).toBe(false)
+  })
+
+  it('backfills scheduledRestartOnlyIfUpdateAvailable to false on profiles saved before it existed', () => {
+    const legacy = baseProfile({ scheduledRestartOnlyIfUpdateAvailable: undefined })
+    expect(migrateProfile(legacy).scheduledRestartOnlyIfUpdateAvailable).toBe(false)
   })
 
   it('drops the removed sessionName field from profiles that still have it on disk', () => {

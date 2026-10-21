@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-21',
+    title: 'Scheduled restart: "only if a server update is available" condition',
+    details: [
+      'The scheduled restart (Server Management tab) now has a third opt-in condition: "Only if a server update is available" - checked against the same SteamCMD build id comparison as the Analytics tab\'s "New update" status.',
+      'When checked, a restart that comes due with nothing new to install is skipped entirely for that occurrence and tried again next time, just like the existing "only if no players are connected" condition.',
+      'ARK: Survival Ascended only - Evolved doesn\'t support update checking, so the checkbox is hidden for it.'
+    ]
+  },
+  {
+    date: '2026-10-21',
     title: 'Notepad++-style syntax coloring, plus .json and .log support',
     details: [
       'The file editor (desktop Manager and web dashboard) now colors .ini, .json, and .log files Notepad++-style: sections, keys, strings, numbers, booleans, comments, timestamps, and log levels each get their own color.',

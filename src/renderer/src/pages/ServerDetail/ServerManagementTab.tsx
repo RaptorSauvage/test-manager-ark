@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ServerProfile, ScheduledRconCommand, ScheduledRconTriggerType, ScheduledRconPlayerRequirement } from '@shared/types'
+import { getGameDefinition } from '@shared/games'
 import ScheduleDaysPicker from './ScheduleDaysPicker'
 
 const TRIGGER_CARDS: Array<{ value: ScheduledRconTriggerType; label: string; description: string }> = [
@@ -220,11 +221,23 @@ export default function ServerManagementTab({ profile, onProfileChange }: Server
                 />
                 Only if no players are connected
               </label>
+              {getGameDefinition(profile.game).supportsUpdateCheck && (
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={form.scheduledRestartOnlyIfUpdateAvailable}
+                    onChange={(e) => update('scheduledRestartOnlyIfUpdateAvailable', e.target.checked)}
+                    disabled={!form.scheduledRestartEnabled}
+                  />
+                  Only if a server update is available
+                </label>
+              )}
             </div>
             <p className="empty-state">
               When checked, a restart that comes due while anyone's still online is skipped entirely for that
               occurrence (nothing is stopped/updated/started) - it's tried again at the next scheduled occurrence
-              instead of sooner.
+              instead of sooner. Same for "only if a server update is available" - checked against SteamCMD's
+              public branch build id, same as the Analytics tab's own "New update" status.
             </p>
           </ScheduleDaysPicker>
         </div>

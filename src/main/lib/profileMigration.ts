@@ -36,6 +36,7 @@ interface LegacyProfileFields {
  *   'fixedTime'/60/'always' - 'fixedTime' preserves exactly what every existing entry
  *   already did (fire at `time` on `days`), so this migration never changes behavior
  * - `scheduledRestartOnlyIfEmpty` is new and defaults to false
+ * - `scheduledRestartOnlyIfUpdateAvailable` is new and defaults to false
  * - `scheduledMaintenance*` is new and defaults to off/00:00/no days
  * - `scheduledRestartDestroyWildDinosAfter` was dropped from the restart schedule -
  *   folded into the separate, independent scheduled dino wipe instead
@@ -112,6 +113,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     scheduledRestartUpdateAfter: rest.scheduledRestartUpdateAfter ?? false,
     scheduledRestartStartAfter: rest.scheduledRestartStartAfter ?? false,
     scheduledRestartOnlyIfEmpty: rest.scheduledRestartOnlyIfEmpty ?? false,
+    scheduledRestartOnlyIfUpdateAvailable: rest.scheduledRestartOnlyIfUpdateAvailable ?? false,
     scheduledDinoWipeEnabled: rest.scheduledDinoWipeEnabled ?? false,
     scheduledDinoWipeTime: rest.scheduledDinoWipeTime ?? '00:00',
     scheduledDinoWipeDays: rest.scheduledDinoWipeDays ?? [],
