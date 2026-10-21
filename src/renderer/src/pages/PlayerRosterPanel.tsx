@@ -23,9 +23,9 @@ export default function PlayerRosterPanel({ profiles }: PlayerRosterPanelProps):
   const [busyId, setBusyId] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState('')
 
-  function loadAll(): void {
+  function loadAll(showLoading = true): void {
     if (profiles.length === 0) return
-    setLoading(true)
+    if (showLoading) setLoading(true)
     Promise.all(
       profiles.map((p) =>
         window.api.playerRoster
@@ -42,7 +42,7 @@ export default function PlayerRosterPanel({ profiles }: PlayerRosterPanelProps):
       }
       setRosters(nextRosters)
       setRosterErrors(nextErrors)
-      setLoading(false)
+      if (showLoading) setLoading(false)
     })
   }
 
@@ -50,7 +50,7 @@ export default function PlayerRosterPanel({ profiles }: PlayerRosterPanelProps):
   useEffect(() => {
     loadAll()
     if (profiles.length === 0) return
-    const interval = setInterval(loadAll, REFRESH_INTERVAL_MS)
+    const interval = setInterval(() => loadAll(false), REFRESH_INTERVAL_MS)
     return () => clearInterval(interval)
     // loadAll is a plain function recreated every render - only re-running this when the set
     // of profiles actually changes (not on every render) is the point here.
@@ -178,7 +178,7 @@ export default function PlayerRosterPanel({ profiles }: PlayerRosterPanelProps):
   return (
     <>
       <div className="form-actions">
-        <button type="button" onClick={loadAll} disabled={loading}>
+        <button type="button" onClick={() => loadAll()} disabled={loading}>
           {loading ? 'Refreshing...' : 'Refresh all'}
         </button>
         {statusMessage && <span className="empty-state">{statusMessage}</span>}
