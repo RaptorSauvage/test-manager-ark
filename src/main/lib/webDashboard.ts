@@ -2180,10 +2180,14 @@ const DASHBOARD_HTML = `<!doctype html>
      tokens; the textarea on top stays fully functional but renders its own text transparent
      (only the caret/selection show) so the colors underneath show through. Both share the
      same font/padding/white-space so they wrap identically and stay pixel-aligned as the user
-     types - see the 'scroll' listener below for how their scroll position stays in sync. */
-  .files-editor-highlight, .files-editor-textarea { position: absolute; inset: 0; margin: 0; padding: 8px 10px; font-family: monospace; font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; overflow: hidden; }
-  .files-editor-highlight { color: var(--text); pointer-events: none; }
-  .files-editor-textarea { border: none; border-radius: 0; resize: none; background: transparent; color: transparent; caret-color: var(--text); }
+     types - see the 'scroll' listener below for how their scroll position stays in sync. The
+     highlight layer's scrollTop is only ever set programmatically (to mirror the textarea's),
+     so it stays overflow: hidden - but the textarea is what the user actually scrolls with the
+     wheel/keyboard, so it needs overflow-y: auto, not hidden (hidden would silently block the
+     user's own scroll input, not just the scrollbar). */
+  .files-editor-highlight, .files-editor-textarea { position: absolute; inset: 0; margin: 0; padding: 8px 10px; font-family: monospace; font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  .files-editor-highlight { color: var(--text); overflow: hidden; pointer-events: none; }
+  .files-editor-textarea { border: none; border-radius: 0; resize: none; background: transparent; color: transparent; caret-color: var(--text); overflow-y: auto; overflow-x: hidden; }
   .files-editor-textarea::selection { background: rgba(79, 140, 255, 0.35); }
   .files-editor-textarea:focus { outline: none; }
   .files-editor-textarea[readonly] { cursor: default; }

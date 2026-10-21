@@ -2632,7 +2632,6 @@ label.checkbox {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  overflow: hidden;
 }
 
 /* Notepad++-style coloring: a non-interactive <pre> sits behind the real textarea and shows
@@ -2640,9 +2639,14 @@ label.checkbox {
    transparent (only the caret and selection are visible) so the colors underneath show
    through instead of being covered by plain black-on-dark text. Both elements share the same
    font/padding/white-space so they wrap identically and stay pixel-aligned as the user types -
-   see syncEditorScroll in FilesTab.tsx for how their scroll position stays in sync too. */
+   see syncEditorScroll in FilesTab.tsx for how their scroll position stays in sync too. The
+   highlight layer is purely JS-driven (its scrollTop is only ever set programmatically, to
+   mirror the textarea's own) so it stays overflow: hidden - but the textarea itself is the one
+   the user actually scrolls with the wheel/keyboard, so it needs overflow-y: auto, not hidden
+   (hidden would silently block the user's own scroll input, not just the scrollbar). */
 .files-editor-highlight {
   color: var(--text);
+  overflow: hidden;
   pointer-events: none;
 }
 
@@ -2653,6 +2657,8 @@ label.checkbox {
   background: transparent;
   color: transparent;
   caret-color: var(--text);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .files-editor-textarea::selection {
