@@ -108,6 +108,73 @@ export default function PlayerRosterPanel({ profiles }: PlayerRosterPanelProps):
     )
   }
 
+  // Ungrouped first (plain grid, no heading), then every named group under its own
+  // collapsible heading - same grouping Dashboard.tsx uses for its own server grid, minus
+  // drag-reordering (this panel has no persisted layout to reorder).
+  const ungrouped = profiles.filter((p) => !p.group.trim())
+  const groupNames = Array.from(new Set(profiles.filter((p) => p.group.trim()).map((p) => p.group.trim()))).sort(
+    (a, b) => a.localeCompare(b)
+  )
+
+  function renderCard(profile: ServerProfile): JSX.Element {
+    const roster = rosters[profile.id] ?? []
+    const error = rosterErrors[profile.id]
+    return (
+      <section key={profile.id} className="cluster-section player-roster-card">
+        <h3>
+          {profile.name} <span className="player-roster-count">({roster.length})</span>
+        </h3>
+        {error ? (
+          <p className="error-message">{error}</p>
+        ) : roster.length === 0 ? (
+          <p className="empty-state">{loading ? 'Loading...' : 'No players connected right now.'}</p>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Id</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {roster.map((player) => (
+                <tr key={player.id}>
+                  <td>{player.name}</td>
+                  <td>{player.id}</td>
+                  <td>
+                    <button
+                      type="button"
+                      onClick={() => void handleKick(profile.id, player)}
+                      disabled={busyId === player.id}
+                    >
+                      Kick
+                    </button>{' '}
+                    <button
+                      type="button"
+                      className="btn-delete-backup"
+                      onClick={() => void handleBan(profile.id, player)}
+                      disabled={busyId === player.id}
+                    >
+                      Ban
+                    </button>{' '}
+                    <button
+                      type="button"
+                      onClick={() => void handleWhitelist(profile.id, player)}
+                      disabled={busyId === player.id}
+                    >
+                      Whitelist
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    )
+  }
+
   return (
     <>
       <div className="form-actions">
@@ -116,66 +183,16 @@ export default function PlayerRosterPanel({ profiles }: PlayerRosterPanelProps):
         </button>
         {statusMessage && <span className="empty-state">{statusMessage}</span>}
       </div>
-      <div className="player-roster-grid">
-        {profiles.map((profile) => {
-          const roster = rosters[profile.id] ?? []
-          const error = rosterErrors[profile.id]
-          return (
-            <section key={profile.id} className="cluster-section player-roster-card">
-              <h3>
-                {profile.name} <span className="player-roster-count">({roster.length})</span>
-              </h3>
-              {error ? (
-                <p className="error-message">{error}</p>
-              ) : roster.length === 0 ? (
-                <p className="empty-state">{loading ? 'Loading...' : 'No players connected right now.'}</p>
-              ) : (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Id</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {roster.map((player) => (
-                      <tr key={player.id}>
-                        <td>{player.name}</td>
-                        <td>{player.id}</td>
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() => void handleKick(profile.id, player)}
-                            disabled={busyId === player.id}
-                          >
-                            Kick
-                          </button>{' '}
-                          <button
-                            type="button"
-                            className="btn-delete-backup"
-                            onClick={() => void handleBan(profile.id, player)}
-                            disabled={busyId === player.id}
-                          >
-                            Ban
-                          </button>{' '}
-                          <button
-                            type="button"
-                            onClick={() => void handleWhitelist(profile.id, player)}
-                            disabled={busyId === player.id}
-                          >
-                            Whitelist
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </section>
-          )
-        })}
-      </div>
+      <div className="player-roster-grid">{ungrouped.map(renderCard)}</div>
+
+      {groupNames.map((groupName) => (
+        <details key={groupName} className="server-group" open>
+          <summary>{groupName}</summary>
+          <div className="player-roster-grid">
+            {profiles.filter((p) => p.group.trim() === groupName).map(renderCard)}
+          </div>
+        </details>
+      ))}
     </>
   )
 }
