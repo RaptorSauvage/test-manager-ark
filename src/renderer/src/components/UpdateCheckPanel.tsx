@@ -71,7 +71,9 @@ export default function UpdateCheckPanel({
       {latestBuildId === null || knownInstalled.length === 0 ? (
         <span className="official-status-value">Checking...</span>
       ) : updateAvailable ? (
-        <span className="official-status-value status-warn">A server update is available.</span>
+        <span className="official-status-value status-warn" title={`Installed ${knownInstalled.join(', ')} - latest ${latestBuildId}`}>
+          A server update is available.
+        </span>
       ) : (
         <span className="official-status-value status-ok">No new update available.</span>
       )}

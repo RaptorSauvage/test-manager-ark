@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-10-22',
+    title: 'Fixed: a beta/PTR-pinned server still showed "update available" after updating',
+    details: [
+      'SteamCMD caches its own "latest build id" lookup on disk, and that cache can stay stale for a less-common branch (a beta/PTR one) even after `+app_info_update` - so the check could keep comparing against an old, wrong number even though SteamCMD\'s own update just confirmed nothing had changed.',
+      'The check now clears that local cache before every poll, forcing a fresh lookup each time.',
+      'Hovering over "A server update is available" now shows the installed vs. latest build id numbers, to make a mismatch like this easier to spot and report.'
+    ]
+  },
+  {
     date: '2026-10-21',
     title: 'Fixed: a server on a beta branch always showed "update available"',
     details: [

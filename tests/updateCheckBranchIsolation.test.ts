@@ -76,6 +76,37 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
   } as ServerProfile
 }
 
+describe('clearAppInfoCache', () => {
+  it('deletes appcache/appinfo.vdf next to steamcmd.exe when present', async () => {
+    const { clearAppInfoCache } = await import('../src/main/lib/updateCheck')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ark-appinfo-cache-test-'))
+    try {
+      const exe = path.join(dir, 'steamcmd.exe')
+      fs.writeFileSync(exe, '')
+      const appcacheDir = path.join(dir, 'appcache')
+      fs.mkdirSync(appcacheDir)
+      const appInfoPath = path.join(appcacheDir, 'appinfo.vdf')
+      fs.writeFileSync(appInfoPath, 'stale cached data')
+
+      clearAppInfoCache(exe)
+
+      expect(fs.existsSync(appInfoPath)).toBe(false)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('is a no-op when there is nothing to delete', async () => {
+    const { clearAppInfoCache } = await import('../src/main/lib/updateCheck')
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ark-appinfo-cache-test-'))
+    try {
+      expect(() => clearAppInfoCache(path.join(dir, 'steamcmd.exe'))).not.toThrow()
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('isUpdateAvailableForProfile - per-branch cache isolation', () => {
   it("compares a beta-pinned profile against its own branch's build id, not the public branch's", async () => {
     const { pollOnce, isUpdateAvailableForProfile } = await import('../src/main/lib/updateCheck')

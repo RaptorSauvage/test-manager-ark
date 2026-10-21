@@ -29,6 +29,29 @@ export function parseBranchBuildId(appInfoOutput: string, branch: string = PUBLI
 }
 
 /**
+ * SteamCMD caches the whole `app_info_print` dump locally (`appcache/appinfo.vdf`, next to
+ * steamcmd.exe itself) and `+app_info_update 1` only best-effort *requests* a refresh of it -
+ * it doesn't block until that refresh actually lands before the following `+app_info_print`
+ * reads the cache back. For the "public" branch (queried constantly by everyone using this
+ * app id) that cache is practically always warm/current, so this never showed up - but a
+ * less-queried branch (a beta/PTR one, queried only by profiles actually pinned to it) can
+ * sit on a stale cached buildid indefinitely, well behind what `+app_update -beta <branch>`
+ * itself resolves to (that command always negotiates fresh with Steam's CDN, cache or not) -
+ * a real report found exactly this: a PTR-pinned server kept showing "update available"
+ * forever despite `+app_update` itself confirming nothing had changed. Deleting the cache
+ * file first forces SteamCMD to fetch it from scratch instead of trusting whatever's on disk.
+ */
+export function clearAppInfoCache(steamCmdPath: string): void {
+  const appInfoPath = path.join(path.dirname(steamCmdPath), 'appcache', 'appinfo.vdf')
+  try {
+    if (fs.existsSync(appInfoPath)) fs.rmSync(appInfoPath, { force: true })
+  } catch {
+    // Best-effort - a failed delete just leaves this one poll as exposed to the staleness
+    // above as it always was before this fix; not worth failing the whole check over.
+  }
+}
+
+/**
  * Asks SteamCMD (anonymous login, no download) for `game`'s current build id on `branch` -
  * the same id `getInstalledBuildId` reads out of an install's own manifest once it's actually
  * installed, so the two are directly comparable for an "update available" check without ever
@@ -41,6 +64,8 @@ export function checkLatestBuildId(steamCmdPath: string, game: GameId, branch: s
       reject(new Error('SteamCMD path is not set or does not exist - set it in Settings first.'))
       return
     }
+
+    clearAppInfoCache(steamCmdPath)
 
     const args = [
       '+login',
