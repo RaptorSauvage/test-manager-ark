@@ -11,6 +11,7 @@ import {
   isManifestStuckInErrorState,
   readManifestStateFlags,
   readManifestBuildId,
+  readManifestBetaKey,
   getInstalledBuildId,
   isInstallUpToDate,
   updateServer
@@ -201,6 +202,23 @@ describe('readManifestBuildId', () => {
 
   it('returns null when there is no buildid entry', () => {
     expect(readManifestBuildId('"AppState"\n{\n\t"appid"\t\t"2430930"\n}\n')).toBeNull()
+  })
+})
+
+describe('readManifestBetaKey', () => {
+  it('parses a non-empty BetaKey out of the UserConfig block, trimmed', () => {
+    const manifest =
+      '"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"UserConfig"\n\t{\n\t\t"BetaKey"\t\t"  testing  "\n\t}\n}\n'
+    expect(readManifestBetaKey(manifest)).toBe('testing')
+  })
+
+  it("returns '' when there is no BetaKey entry at all", () => {
+    expect(readManifestBetaKey('"AppState"\n{\n\t"appid"\t\t"2430930"\n}\n')).toBe('')
+  })
+
+  it("returns '' when BetaKey is present but blank", () => {
+    const manifest = '"AppState"\n{\n\t"UserConfig"\n\t{\n\t\t"BetaKey"\t\t""\n\t}\n}\n'
+    expect(readManifestBetaKey(manifest)).toBe('')
   })
 })
 

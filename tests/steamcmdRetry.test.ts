@@ -49,7 +49,7 @@ vi.mock('node:child_process', () => ({
   exec: vi.fn()
 }))
 
-import { updateServer, steamcmdUpdateEvents } from '../src/main/lib/steamcmd'
+import { updateServer, steamcmdUpdateEvents, getAppManifestPath } from '../src/main/lib/steamcmd'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
   return {
@@ -160,5 +160,57 @@ describe('updateServer retry', () => {
 
     expect(seenProfileIds.length).toBeGreaterThan(0)
     expect(seenProfileIds.every((id) => id === profile.id)).toBe(true)
+  })
+
+  describe('beta-mismatch manifest clearing', () => {
+    function writeManifest(installDir: string, betaKey: string | null): string {
+      const manifestPath = getAppManifestPath(installDir, 'ark-ascended')
+      fs.mkdirSync(path.dirname(manifestPath), { recursive: true })
+      const userConfig = betaKey === null ? '' : `\t"UserConfig"\n\t{\n\t\t"BetaKey"\t\t"${betaKey}"\n\t}\n`
+      fs.writeFileSync(manifestPath, `"AppState"\n{\n\t"appid"\t\t"2430930"\n\t"buildid"\t\t"1"\n${userConfig}}\n`)
+      return manifestPath
+    }
+
+    it("deletes the manifest when it remembers a beta but the profile's beta is now off - -beta none alone isn't reliable enough", async () => {
+      queueExitCodes([0])
+      const profile = makeProfile({ id: 'beta-mismatch-off', steamBetaEnabled: false, steamBetaName: '' })
+      const manifestPath = writeManifest(profile.installDir, 'testing')
+
+      await updateServer(profile, steamCmdPath)
+
+      // The mocked spawn never recreates the manifest, so it staying gone proves it was
+      // actually deleted before the (mocked) SteamCMD run, not left stale with the old beta.
+      expect(fs.existsSync(manifestPath)).toBe(false)
+    })
+
+    it('deletes the manifest when it remembers a different beta than the one now requested', async () => {
+      queueExitCodes([0])
+      const profile = makeProfile({ id: 'beta-mismatch-different', steamBetaEnabled: true, steamBetaName: 'new-beta' })
+      const manifestPath = writeManifest(profile.installDir, 'old-beta')
+
+      await updateServer(profile, steamCmdPath)
+
+      expect(fs.existsSync(manifestPath)).toBe(false)
+    })
+
+    it('leaves the manifest alone when it already matches the requested (no) beta', async () => {
+      queueExitCodes([0])
+      const profile = makeProfile({ id: 'beta-match-none', steamBetaEnabled: false, steamBetaName: '' })
+      const manifestPath = writeManifest(profile.installDir, null)
+
+      await updateServer(profile, steamCmdPath)
+
+      expect(fs.existsSync(manifestPath)).toBe(true)
+    })
+
+    it('leaves the manifest alone when it already matches the requested beta', async () => {
+      queueExitCodes([0])
+      const profile = makeProfile({ id: 'beta-match-same', steamBetaEnabled: true, steamBetaName: 'testing' })
+      const manifestPath = writeManifest(profile.installDir, 'testing')
+
+      await updateServer(profile, steamCmdPath)
+
+      expect(fs.existsSync(manifestPath)).toBe(true)
+    })
   })
 })

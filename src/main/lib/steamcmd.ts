@@ -153,6 +153,33 @@ function clearStuckManifest(installDir: string, game: GameId): void {
   }
 }
 
+/** Reads a non-empty BetaKey out of an appmanifest .acf's UserConfig block, trimmed - the
+ *  beta branch SteamCMD currently has recorded for this install, or '' if there isn't one. */
+export function readManifestBetaKey(manifestContent: string): string {
+  const match = manifestContent.match(/"BetaKey"\s*"([^"]*)"/i)
+  return match ? match[1].trim() : ''
+}
+
+/**
+ * Deletes the app manifest when its own recorded BetaKey doesn't match the beta this update is
+ * about to request - passing `-beta none` (or a different `-beta <name>`) on the command line
+ * isn't reliably enough on its own: SteamCMD can keep reusing whatever beta the manifest's
+ * UserConfig.BetaKey already remembers instead of actually switching off (or between) betas -
+ * the exact bug a real report traced "every server update silently stayed on a beta branch"
+ * back to, even after buildUpdateArgs started passing `-beta none` explicitly. Deleting the
+ * manifest forces the upcoming `validate` to do a full, clean resync against the newly
+ * requested branch and write a fresh manifest with no stale BetaKey - only a one-time cost
+ * when the beta selection is actually changing, not on every ordinary update.
+ */
+function clearMismatchedBetaManifest(installDir: string, game: GameId, desiredBetaName: string): void {
+  const manifestPath = getAppManifestPath(installDir, game)
+  if (!fs.existsSync(manifestPath)) return
+  const currentBetaKey = safeReadFileSync(manifestPath, desiredBetaName, readManifestBetaKey)
+  if (currentBetaKey !== desiredBetaName) {
+    fs.rmSync(manifestPath, { force: true })
+  }
+}
+
 /** SteamCMD's documented appmanifest StateFlags bit for "an update is required". */
 const STATE_FLAG_UPDATE_REQUIRED = 2
 
@@ -207,6 +234,9 @@ const MAX_UPDATE_ATTEMPTS = 3
 function runUpdateAttempt(profile: ServerProfile, steamCmdPath: string, logStream: fs.WriteStream): Promise<void> {
   return new Promise((resolve, reject) => {
     clearStuckManifest(profile.installDir, profile.game)
+
+    const desiredBetaName = profile.steamBetaEnabled ? profile.steamBetaName.trim() : ''
+    clearMismatchedBetaManifest(profile.installDir, profile.game, desiredBetaName)
 
     const args = buildUpdateArgs(profile.installDir, profile.game, {
       enabled: profile.steamBetaEnabled,

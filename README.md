@@ -4303,6 +4303,35 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **The `-beta none` fix below wasn't enough on its own - found the actual reason it kept
+  sticking** (user report, right after the fix below shipped: "quand j'update le serveur ça
+  revient pas à la version précédente", then "ça revient à une version très ultérieur" - a
+  server updating back onto a *later* build than its own public one is exactly what landing on
+  a beta looks like, since beta branches normally run ahead of the public one). Passing
+  `-beta none` on the command line turned out not to be reliable by itself: SteamCMD can keep
+  honoring whatever beta is already recorded in the install's own `appmanifest_<id>.acf`
+  (`UserConfig.BetaKey`) instead of actually switching away from it, regardless of what
+  `-beta` says on that run's command line.
+  - **`src/main/lib/steamcmd.ts`**: new `readManifestBetaKey(manifestContent)` (parses
+    `UserConfig.BetaKey`, trimmed, `''` if absent/blank) and `clearMismatchedBetaManifest`,
+    called right alongside the existing `clearStuckManifest` at the start of every update
+    attempt - compares the manifest's own recorded `BetaKey` against what this update is about
+    to request and, only on a mismatch, deletes the manifest outright so the upcoming
+    `validate` does a full clean resync against the actually-requested branch and writes a
+    fresh manifest with no stale `BetaKey`. A one-time cost only when the beta selection is
+    actually changing (off → on, on → a different name, or on → off) - an ordinary update
+    whose manifest already agrees with the profile's current beta setting is untouched, same
+    as before.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1232 tests - 3 new ones in
+    `tests/steamcmd.test.ts` for `readManifestBetaKey` itself, and 4 new ones in
+    `tests/steamcmdRetry.test.ts`'s real `updateServer` + mocked-`spawn` harness - confirming
+    the manifest is actually deleted on disk when its `BetaKey` doesn't match what the profile
+    now wants, in both directions (a stale beta vs. none wanted, and switching between two
+    different betas), and left alone when it already agrees), and `npm run build` all pass.
+    **Not yet verified**: needs the user to confirm a real update on an affected profile
+    actually lands back on the real public build this time, not just an immediate re-run of
+    the same (now manifest-less) update.
+
 - **Fixed: every server update was silently running on a beta branch, crashing servers whose
   mods weren't available on it** (user report: "l'update des serveurs sont tous avec la beta
   activé alors qu'elle n'est pas activé pour ces profils", followed by "les serveurs crash car

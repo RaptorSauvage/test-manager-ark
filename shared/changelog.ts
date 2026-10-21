@@ -15,8 +15,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-10-21',
     title: 'Fixed: server updates silently running on a beta branch',
     details: [
-      "Once any one profile had ever updated with a Steam beta branch enabled, every other profile's updates could keep running on that same beta too, even with the beta toggle off - SteamCMD doesn't reset to the public branch just because the -beta flag is absent.",
-      "Updates now explicitly request the public branch when beta isn't enabled, instead of just omitting the flag."
+      "Once any one profile had ever updated with a Steam beta branch enabled, other updates could keep running on that same beta too, even with the beta toggle off (sometimes showing as an update landing on a surprisingly newer version than expected).",
+      "Updates now both explicitly request the public branch when beta isn't enabled, and clear the server's own saved SteamCMD state whenever its beta selection is actually changing, instead of trusting SteamCMD to switch on its own."
     ]
   },
   {
