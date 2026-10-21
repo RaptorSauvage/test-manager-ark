@@ -8,153 +8,174 @@ interface PlayerRosterPanelProps {
 
 const REFRESH_INTERVAL_MS = 15_000
 
-/** One server's live connected-player list, straight from RCON ListPlayers - unlike
- *  PlayerBansPanel/PlayerActivityPanel (the Manager's own merged, persisted records across
- *  every server), this is per-server and only ever reflects who's online right now, refreshed
- *  on a short timer while this panel's open. Kick/Ban/Add-to-whitelist act directly on a row -
- *  the same actions the web dashboard's own player context menu already offers, just inline
- *  buttons instead of a right-click menu. */
+/** Every server's live connected-player list at once, straight from RCON ListPlayers - one
+ *  card per server (rather than a single-server picker) so the whole cluster's current
+ *  occupancy is visible in one glance, refreshed on a short timer while this panel's open.
+ *  Unlike PlayerBansPanel/PlayerActivityPanel (the Manager's own merged, persisted records
+ *  across every server), this never persists anything by itself - it's just who's online
+ *  right now. Kick/Ban/Add-to-whitelist act directly on a row - the same actions the web
+ *  dashboard's own player context menu already offers, just inline buttons instead of a
+ *  right-click menu. */
 export default function PlayerRosterPanel({ profiles }: PlayerRosterPanelProps): JSX.Element {
-  const [profileId, setProfileId] = useState(profiles[0]?.id ?? '')
-  const [roster, setRoster] = useState<PlayerRosterEntry[]>([])
+  const [rosters, setRosters] = useState<Record<string, PlayerRosterEntry[]>>({})
+  const [rosterErrors, setRosterErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState('')
 
-  useEffect(() => {
-    if (!profileId && profiles.length > 0) setProfileId(profiles[0].id)
-  }, [profiles, profileId])
-
-  function loadRoster(id: string): void {
-    if (!id) {
-      setRoster([])
-      return
-    }
+  function loadAll(): void {
+    if (profiles.length === 0) return
     setLoading(true)
-    setError('')
-    window.api.playerRoster
-      .list(id)
-      .then(setRoster)
-      .catch((err) => setError((err as Error).message))
-      .finally(() => setLoading(false))
+    Promise.all(
+      profiles.map((p) =>
+        window.api.playerRoster
+          .list(p.id)
+          .then((roster) => ({ id: p.id, roster, error: '' }))
+          .catch((err) => ({ id: p.id, roster: [] as PlayerRosterEntry[], error: (err as Error).message }))
+      )
+    ).then((results) => {
+      const nextRosters: Record<string, PlayerRosterEntry[]> = {}
+      const nextErrors: Record<string, string> = {}
+      for (const result of results) {
+        nextRosters[result.id] = result.roster
+        if (result.error) nextErrors[result.id] = result.error
+      }
+      setRosters(nextRosters)
+      setRosterErrors(nextErrors)
+      setLoading(false)
+    })
   }
 
+  const profileIdsKey = profiles.map((p) => p.id).join(',')
   useEffect(() => {
-    loadRoster(profileId)
-    if (!profileId) return
-    const interval = setInterval(() => loadRoster(profileId), REFRESH_INTERVAL_MS)
+    loadAll()
+    if (profiles.length === 0) return
+    const interval = setInterval(loadAll, REFRESH_INTERVAL_MS)
     return () => clearInterval(interval)
-    // loadRoster is a plain function recreated every render - only re-running this on the
-    // profileId itself changing (not on every render) is the point here.
+    // loadAll is a plain function recreated every render - only re-running this when the set
+    // of profiles actually changes (not on every render) is the point here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId])
+  }, [profileIdsKey])
 
-  async function handleKick(player: PlayerRosterEntry): Promise<void> {
+  async function handleKick(profileId: string, player: PlayerRosterEntry): Promise<void> {
     if (!confirmAction(`Kick ${player.name}?`)) return
     setBusyId(player.id)
     setStatusMessage('')
-    setError('')
     try {
       await window.api.playerRoster.kick(profileId, player.id)
       setStatusMessage(`Kicked ${player.name}.`)
-      loadRoster(profileId)
+      loadAll()
     } catch (err) {
-      setError((err as Error).message)
+      setStatusMessage((err as Error).message)
     } finally {
       setBusyId(null)
     }
   }
 
-  async function handleBan(player: PlayerRosterEntry): Promise<void> {
+  async function handleBan(profileId: string, player: PlayerRosterEntry): Promise<void> {
     if (!confirmAction(`Ban ${player.name} on this server?`)) return
     setBusyId(player.id)
     setStatusMessage('')
-    setError('')
     try {
       await window.api.playerBans.ban(profileId, player.id, player.name, '')
       setStatusMessage(`Banned ${player.name}.`)
     } catch (err) {
-      setError((err as Error).message)
+      setStatusMessage((err as Error).message)
     } finally {
       setBusyId(null)
     }
   }
 
-  async function handleWhitelist(player: PlayerRosterEntry): Promise<void> {
+  async function handleWhitelist(profileId: string, player: PlayerRosterEntry): Promise<void> {
     setBusyId(player.id)
     setStatusMessage('')
-    setError('')
     try {
       await window.api.playerWhitelist.add(profileId, player.id, player.name)
       setStatusMessage(`Added ${player.name} to the whitelist.`)
     } catch (err) {
-      setError((err as Error).message)
+      setStatusMessage((err as Error).message)
     } finally {
       setBusyId(null)
     }
   }
 
-  return (
-    <section className="cluster-section">
-      <h3>Live players</h3>
-      {profiles.length === 0 ? (
+  if (profiles.length === 0) {
+    return (
+      <section className="cluster-section">
+        <h3>Live players</h3>
         <p className="empty-state">No ARK servers configured yet.</p>
-      ) : (
-        <>
-          <div className="form-actions">
-            <select value={profileId} onChange={(e) => setProfileId(e.target.value)}>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <button type="button" onClick={() => loadRoster(profileId)} disabled={loading}>
-              {loading ? 'Refreshing...' : 'Refresh'}
-            </button>
-          </div>
-          {error && <p className="error-message">{error}</p>}
-          {statusMessage && <p className="empty-state">{statusMessage}</p>}
-          {roster.length === 0 ? (
-            <p className="empty-state">{loading ? 'Loading...' : 'No players connected right now.'}</p>
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Id</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {roster.map((player) => (
-                  <tr key={player.id}>
-                    <td>{player.name}</td>
-                    <td>{player.id}</td>
-                    <td>
-                      <button type="button" onClick={() => void handleKick(player)} disabled={busyId === player.id}>
-                        Kick
-                      </button>{' '}
-                      <button
-                        type="button"
-                        className="btn-delete-backup"
-                        onClick={() => void handleBan(player)}
-                        disabled={busyId === player.id}
-                      >
-                        Ban
-                      </button>{' '}
-                      <button type="button" onClick={() => void handleWhitelist(player)} disabled={busyId === player.id}>
-                        Whitelist
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </>
-      )}
-    </section>
+      </section>
+    )
+  }
+
+  return (
+    <>
+      <div className="form-actions">
+        <button type="button" onClick={loadAll} disabled={loading}>
+          {loading ? 'Refreshing...' : 'Refresh all'}
+        </button>
+        {statusMessage && <span className="empty-state">{statusMessage}</span>}
+      </div>
+      <div className="player-roster-grid">
+        {profiles.map((profile) => {
+          const roster = rosters[profile.id] ?? []
+          const error = rosterErrors[profile.id]
+          return (
+            <section key={profile.id} className="cluster-section player-roster-card">
+              <h3>
+                {profile.name} <span className="player-roster-count">({roster.length})</span>
+              </h3>
+              {error ? (
+                <p className="error-message">{error}</p>
+              ) : roster.length === 0 ? (
+                <p className="empty-state">{loading ? 'Loading...' : 'No players connected right now.'}</p>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Id</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roster.map((player) => (
+                      <tr key={player.id}>
+                        <td>{player.name}</td>
+                        <td>{player.id}</td>
+                        <td>
+                          <button
+                            type="button"
+                            onClick={() => void handleKick(profile.id, player)}
+                            disabled={busyId === player.id}
+                          >
+                            Kick
+                          </button>{' '}
+                          <button
+                            type="button"
+                            className="btn-delete-backup"
+                            onClick={() => void handleBan(profile.id, player)}
+                            disabled={busyId === player.id}
+                          >
+                            Ban
+                          </button>{' '}
+                          <button
+                            type="button"
+                            onClick={() => void handleWhitelist(profile.id, player)}
+                            disabled={busyId === player.id}
+                          >
+                            Whitelist
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </section>
+          )
+        })}
+      </div>
+    </>
   )
 }

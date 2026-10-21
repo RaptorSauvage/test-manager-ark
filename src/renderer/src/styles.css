@@ -318,6 +318,24 @@ label.checkbox {
   border-left: 1px solid var(--border);
 }
 
+.player-roster-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.player-roster-card {
+  flex: 1 1 380px;
+  max-width: 480px;
+}
+
+.player-roster-count {
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .ban-picker-columns {
   display: flex;
   flex-wrap: wrap;
