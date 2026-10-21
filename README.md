@@ -4303,6 +4303,42 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Fixed, again: the Discord bot abandoned its status message and started posting new ones**
+  (user report with full logs - a run of `Connect Timeout Error`s around 06:53-06:57 right
+  before `mcStatusChannelId`/`statusChannelId` edits, matching a gap where the user found an
+  orphaned old message and a new one in its place). A *different* root cause from the earlier
+  "Discord bot posted a brand new status message instead of editing" fix above (that one was
+  AWS's malformed JSON response breaking the server-status fetch itself) - this one was in
+  `refreshStatusMessage`/`refreshMinecraftStatusMessage`'s own error handling:
+  `statusMessage.edit(...)` failing for *any* reason - including a plain transient network
+  timeout, Discord having a bad moment, anything - fell back to `channel.send(...)`, creating
+  and persisting a brand new message every time, regardless of whether the old one was still
+  perfectly fine. During a multi-minute run of timeouts, every refresh cycle's failed edit
+  silently abandoned whatever message was being edited and started a fresh one, orphaning the
+  one before it.
+  - **`src/bot/statusRefresh.ts`**: new `isUnknownMessageError(err)` - true only for a real
+    Discord `DiscordAPIError` with `RESTJSONErrorCodes.UnknownMessage` (10008, the message was
+    actually deleted or the channel/guild no longer has it). Both refresh functions' catch
+    blocks now only fall back to `channel.send(...)` when this is true; any other failure
+    (the transient case this bug was actually about) just logs a "will retry next refresh"
+    warning and leaves the in-memory `statusMessage`/`mcStatusMessage` untouched, so the next
+    scheduled refresh retries `.edit()` against the exact same message instead of starting a
+    new one.
+  - **`src/main/lib/serverProcess.ts`**: unrelated to the bug above, but visible in the same
+    log dump - a `MaxListenersExceededWarning: 11 status listeners added` on `serverEvents`.
+    Not an actual leak (every permanent listener - crashWatch, iniLock,
+    serverVersionWatcher, playerJoinAlertWatch, playerActivityWatch, zombieDetection,
+    playerBackupWatch, the backup schedule, the IPC status broadcast - is added exactly once
+    at startup, not accumulated over time), just more independent features sharing one
+    `EventEmitter` than Node's conservative default of 10 - `serverEvents.setMaxListeners(30)`
+    silences the spurious warning.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1225 tests - 4 new ones in
+    `tests/statusRefresh.test.ts` for `isUnknownMessageError` against a real constructed
+    `DiscordAPIError` for both the Unknown Message and a different code, a plain transient
+    `Error` that isn't a `DiscordAPIError` at all, and non-Error values), and `npm run build`
+    (including the bot's own bundle) all pass. **Not yet verified**: needs the user to confirm
+    a real network blip during a status refresh no longer orphans the existing message.
+
 - **Added an "only if a server update is available" condition to the scheduled restart**
   (user request - "add a scheduled restart with the condition that there's an update
   available, at a configured time"). A third opt-in condition alongside the existing "only if

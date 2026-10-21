@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-21',
+    title: 'Fixed: Discord bot status message abandoned on a network blip',
+    details: [
+      "A temporary network hiccup while the bot updated its status message could make it give up on the existing message and start posting a new one instead, leaving the old one behind unchanged.",
+      "The bot now only posts a replacement message when the old one is genuinely gone (deleted) - any other failure just retries on the same message next refresh."
+    ]
+  },
+  {
+    date: '2026-10-21',
     title: 'Scheduled restart: "only if a server update is available" condition',
     details: [
       'The scheduled restart (Server Management tab) now has a third opt-in condition: "Only if a server update is available" - checked against the same SteamCMD build id comparison as the Analytics tab\'s "New update" status.',

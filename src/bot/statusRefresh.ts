@@ -1,4 +1,4 @@
-import { ActivityType, type Client, type Message, TextChannel } from 'discord.js'
+import { ActivityType, type Client, type Message, TextChannel, DiscordAPIError, RESTJSONErrorCodes } from 'discord.js'
 import type { DiscordBotConfig } from '@shared/discordBot'
 import { refreshServerCache, arkServers, minecraftServers } from './serverCache'
 import { queryEosStatus, queryOfficialNetworkStatus, queryAwsStatus, queryCloudflareStatus, queryXboxStatus, queryMinecraftAuthStatus } from './externalStatus'
@@ -14,6 +14,17 @@ import { log } from './logging'
 
 let statusMessage: Message | null = null
 let mcStatusMessage: Message | null = null
+
+/** True only when `err` means the message itself is genuinely gone (deleted, or the channel/
+ *  guild no longer has it) - the one case worth abandoning it and creating a replacement for.
+ *  Anything else (a transient network timeout, a momentary rate limit, Discord's API having a
+ *  bad moment) must NOT fall back to creating a new message, or every blip turns into an
+ *  orphaned duplicate - exactly what a real report showed: a run of Connect Timeout Errors
+ *  around the edit call each (wrongly) fell back to send(), abandoning the message users were
+ *  actually looking at and silently starting to edit a new one instead. */
+export function isUnknownMessageError(err: unknown): boolean {
+  return err instanceof DiscordAPIError && err.code === RESTJSONErrorCodes.UnknownMessage
+}
 
 /** Reacquires the real status message across a bot restart (statusMessage/mcStatusMessage
  *  above are in-memory only and reset to null every restart - see statusMessageState.ts's own
@@ -109,13 +120,20 @@ export async function refreshStatusMessage(client: Client, config: DiscordBotCon
       setPersistedStatusMessageId(statusMessage.id)
     }
   } catch (err) {
+    if (!isUnknownMessageError(err)) {
+      log.warn(
+        `Échec temporaire en mettant à jour le message dans statusChannelId=${config.statusChannelId} ` +
+          `- nouvelle tentative au prochain rafraîchissement. ${(err as Error).message}`
+      )
+      return
+    }
     try {
       statusMessage = await channel.send({ embeds: [embed] })
       setPersistedStatusMessageId(statusMessage.id)
-    } catch {
+    } catch (sendErr) {
       log.warn(
         `Impossible d'envoyer/éditer le message dans statusChannelId=${config.statusChannelId} ` +
-          `(permissions manquantes : vérifie 'Envoyer des messages' et 'Intégrer des liens'). ${(err as Error).message}`
+          `(permissions manquantes : vérifie 'Envoyer des messages' et 'Intégrer des liens'). ${(sendErr as Error).message}`
       )
     }
   }
@@ -163,13 +181,20 @@ export async function refreshMinecraftStatusMessage(client: Client, config: Disc
       setPersistedMcStatusMessageId(mcStatusMessage.id)
     }
   } catch (err) {
+    if (!isUnknownMessageError(err)) {
+      log.warn(
+        `Échec temporaire en mettant à jour le message dans mcStatusChannelId=${config.mcStatusChannelId} ` +
+          `- nouvelle tentative au prochain rafraîchissement. ${(err as Error).message}`
+      )
+      return
+    }
     try {
       mcStatusMessage = await channel.send({ embeds: [embed] })
       setPersistedMcStatusMessageId(mcStatusMessage.id)
-    } catch {
+    } catch (sendErr) {
       log.warn(
         `Impossible d'envoyer/éditer le message dans mcStatusChannelId=${config.mcStatusChannelId} ` +
-          `(permissions manquantes : vérifie 'Envoyer des messages' et 'Intégrer des liens'). ${(err as Error).message}`
+          `(permissions manquantes : vérifie 'Envoyer des messages' et 'Intégrer des liens'). ${(sendErr as Error).message}`
       )
     }
   }

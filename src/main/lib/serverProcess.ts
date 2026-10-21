@@ -178,6 +178,15 @@ export function __resetServerSpawnQueueForTests(): void {
 }
 
 export const serverEvents = new EventEmitter()
+// Deliberately shared by many independent, permanent features (crashWatch, iniLock,
+// serverVersionWatcher, playerJoinAlertWatch, playerActivityWatch, zombieDetection,
+// playerBackupWatch, the backup schedule, the IPC status broadcast...) each adding their own
+// 'status' listener once at startup, plus short-lived per-connection ones (web dashboard SSE
+// clients, the group console). That easily clears Node's conservative default of 10 and logs
+// a "possible EventEmitter memory leak" warning that isn't one - every permanent listener is
+// added exactly once, not accumulated, so the real count stays flat over time; this just
+// raises the threshold so the warning doesn't needlessly show up in a real user's logs.
+serverEvents.setMaxListeners(30)
 
 /** Persists a status update (so a later getStatus() call sees it too, not just whoever's
  *  listening for the 'status' event right now) and broadcasts it. */
