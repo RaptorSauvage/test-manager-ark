@@ -432,31 +432,24 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
         </label>
       </section>
       <section className="cluster-section">
-        <h3>Debug</h3>
-        <label>
-          Launch command
-          <div className="path-input-row">
-            <textarea
-              className="launch-command-preview"
-              readOnly
-              rows={3}
-              value={
-                launchPreviewError
-                  ? launchPreviewError
-                  : launchPreview
-                    ? [launchPreview.executable, ...launchPreview.args].join(' ')
-                    : 'Computing...'
-              }
-            />
-            <button type="button" onClick={() => void copyLaunchCommand()} disabled={!launchPreview}>
-              {copyStatus || 'Copy'}
-            </button>
-          </div>
-        </label>
-        <p className="empty-state">
-          Exactly what Start would run right now, including unsaved edits above - useful for diagnosing a server that
-          won't launch.
-        </p>
+        <h3>Launch command</h3>
+        <div className="path-input-row">
+          <textarea
+            className="launch-command-preview"
+            readOnly
+            rows={3}
+            value={
+              launchPreviewError
+                ? launchPreviewError
+                : launchPreview
+                  ? [launchPreview.executable, ...launchPreview.args].join(' ')
+                  : 'Computing...'
+            }
+          />
+          <button type="button" onClick={() => void copyLaunchCommand()} disabled={!launchPreview}>
+            {copyStatus || 'Copy'}
+          </button>
+        </div>
       </section>
       {formError && <p className="error-message">{formError}</p>}
     </form>
