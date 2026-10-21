@@ -431,25 +431,23 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           />
         </label>
       </section>
-      <section className="cluster-section">
+      <section className="cluster-section launch-command-section">
         <h3>Launch command</h3>
-        <div className="path-input-row">
-          <textarea
-            className="launch-command-preview"
-            readOnly
-            rows={3}
-            value={
-              launchPreviewError
-                ? launchPreviewError
-                : launchPreview
-                  ? [launchPreview.executable, ...launchPreview.args].join(' ')
-                  : 'Computing...'
-            }
-          />
-          <button type="button" onClick={() => void copyLaunchCommand()} disabled={!launchPreview}>
-            {copyStatus || 'Copy'}
-          </button>
-        </div>
+        <textarea
+          className="launch-command-preview"
+          readOnly
+          rows={8}
+          value={
+            launchPreviewError
+              ? launchPreviewError
+              : launchPreview
+                ? [launchPreview.executable, ...launchPreview.args].join(' ')
+                : 'Computing...'
+          }
+        />
+        <button type="button" onClick={() => void copyLaunchCommand()} disabled={!launchPreview}>
+          {copyStatus || 'Copy'}
+        </button>
       </section>
       {formError && <p className="error-message">{formError}</p>}
     </form>

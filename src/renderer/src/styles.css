@@ -1422,7 +1422,8 @@ label.checkbox {
 
 .server-settings-tab > .form-actions,
 .server-settings-tab > .error-message,
-.server-settings-tab > .empty-state {
+.server-settings-tab > .empty-state,
+.server-settings-tab > .launch-command-section {
   flex: 1 1 100%;
   max-width: none;
 }
@@ -1770,6 +1771,12 @@ label.checkbox {
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 0.8rem;
   resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.launch-command-section > button {
+  align-self: flex-start;
 }
 
 .form-actions {
