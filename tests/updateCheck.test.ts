@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { parseLatestPublicBuildId, isUpdateAvailable, isUpdateAvailableForProfile } from '../src/main/lib/updateCheck'
+import { parseBranchBuildId, isUpdateAvailable, isUpdateAvailableForProfile } from '../src/main/lib/updateCheck'
 import type { ServerProfile } from '../shared/types'
 
-describe('parseLatestPublicBuildId', () => {
-  it('reads the buildid out of the public branch inside a realistic app_info_print dump', () => {
-    const output = `
+describe('parseBranchBuildId', () => {
+  const output = `
 "2430930"
 {
 	"common"
@@ -29,21 +28,31 @@ describe('parseLatestPublicBuildId', () => {
 	}
 }
 `
-    expect(parseLatestPublicBuildId(output)).toBe('18742069')
+
+  it('reads the buildid out of the public branch by default', () => {
+    expect(parseBranchBuildId(output)).toBe('18742069')
+  })
+
+  it('reads the buildid out of a named beta branch instead', () => {
+    expect(parseBranchBuildId(output, 'beta')).toBe('18800000')
+  })
+
+  it('returns null for a branch that does not exist in the output', () => {
+    expect(parseBranchBuildId(output, 'ptr')).toBeNull()
   })
 
   it('returns null when there is no branches section at all', () => {
-    expect(parseLatestPublicBuildId('"2430930"\n{\n\t"common" { "name" "ARK" }\n}\n')).toBeNull()
+    expect(parseBranchBuildId('"2430930"\n{\n\t"common" { "name" "ARK" }\n}\n')).toBeNull()
   })
 
-  it('returns null when there is a branches section but no public sub-key', () => {
+  it('returns null when there is a branches section but no matching sub-key', () => {
     const output = '"2430930"\n{\n\t"branches"\n\t{\n\t\t"beta"\n\t\t{\n\t\t\t"buildid"\t\t"123"\n\t\t}\n\t}\n}\n'
-    expect(parseLatestPublicBuildId(output)).toBeNull()
+    expect(parseBranchBuildId(output, 'public')).toBeNull()
   })
 
-  it('returns null when the public block has no buildid within it', () => {
+  it('returns null when the matching block has no buildid within it', () => {
     const output = '"branches"\n{\n\t"public"\n\t{\n\t\t"timeupdated"\t\t"123"\n\t}\n}\n'
-    expect(parseLatestPublicBuildId(output)).toBeNull()
+    expect(parseBranchBuildId(output)).toBeNull()
   })
 })
 

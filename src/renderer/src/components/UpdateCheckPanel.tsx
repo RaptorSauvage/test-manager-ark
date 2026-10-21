@@ -10,6 +10,11 @@ interface UpdateCheckPanelProps {
   /** Which game's SteamCMD build id to check against - every profile in `profileIds` must
    *  belong to this game. */
   game: GameId
+  /** Which branch's latest build id to compare against - omit (or leave blank) for the
+   *  public branch, or pass a profile's own trimmed steamBetaName while steamBetaEnabled is
+   *  on, so a server pinned to a beta branch is compared against that branch's own latest
+   *  build instead of the public one, which it may never match on purpose. */
+  branch?: string
   /** When true, renders just the status line - no section wrapper, header, or explanatory
    *  paragraph - for embedding inline within another section's own group instead of as its
    *  own standalone panel. */
@@ -19,7 +24,12 @@ interface UpdateCheckPanelProps {
 /** Same visual embed as OfficialServerStatusPanel (official-status-panel/-header/-line
  *  classes), for the "New update" check - polls the cached latest SteamCMD build id and
  *  compares it against each given profile's own installed build id. */
-export default function UpdateCheckPanel({ profileIds, game, compact = false }: UpdateCheckPanelProps): JSX.Element {
+export default function UpdateCheckPanel({
+  profileIds,
+  game,
+  branch,
+  compact = false
+}: UpdateCheckPanelProps): JSX.Element {
   const [latest, setLatest] = useState<LatestBuildIdCache | null>(null)
   const [installedBuildIds, setInstalledBuildIds] = useState<Array<string | null>>([])
   const profileIdsKey = profileIds.join(',')
@@ -27,7 +37,7 @@ export default function UpdateCheckPanel({ profileIds, game, compact = false }: 
   useEffect(() => {
     let cancelled = false
     function refresh(): void {
-      window.api.steamcmd.getLatestBuildId(game).then((cache) => {
+      window.api.steamcmd.getLatestBuildId(game, branch).then((cache) => {
         if (!cancelled) setLatest(cache)
       })
     }
@@ -37,7 +47,7 @@ export default function UpdateCheckPanel({ profileIds, game, compact = false }: 
       cancelled = true
       clearInterval(interval)
     }
-  }, [game])
+  }, [game, branch])
 
   useEffect(() => {
     let cancelled = false
@@ -76,8 +86,8 @@ export default function UpdateCheckPanel({ profileIds, game, compact = false }: 
         <h3>New update</h3>
       </div>
       <p className="empty-state">
-        Checked against SteamCMD&apos;s public branch build id for {getGameDefinition(game).displayName}&apos;s
-        Dedicated Server, every 30 minutes.
+        Checked against SteamCMD&apos;s {branch ? `"${branch}" branch` : 'public branch'} build id for{' '}
+        {getGameDefinition(game).displayName}&apos;s Dedicated Server, every 30 minutes.
       </p>
       {statusLine}
     </section>

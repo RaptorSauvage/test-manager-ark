@@ -14,7 +14,8 @@ import {
   readManifestBetaKey,
   getInstalledBuildId,
   isInstallUpToDate,
-  updateServer
+  updateServer,
+  getDesiredBranchName
 } from '../src/main/lib/steamcmd'
 import type { ServerProfile } from '../shared/types'
 
@@ -132,6 +133,20 @@ describe('buildUpdateArgs', () => {
   it('passes -beta public when enabled but the name is blank/whitespace-only', () => {
     const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended', { enabled: true, name: '   ' })
     expect(args[args.indexOf('-beta') + 1]).toBe('public')
+  })
+})
+
+describe('getDesiredBranchName', () => {
+  it('is "public" when the beta toggle is off, regardless of a leftover name', () => {
+    expect(getDesiredBranchName({ steamBetaEnabled: false, steamBetaName: 'testing' })).toBe('public')
+  })
+
+  it('is the trimmed beta branch name when the toggle is on', () => {
+    expect(getDesiredBranchName({ steamBetaEnabled: true, steamBetaName: '  testing  ' })).toBe('testing')
+  })
+
+  it('falls back to "public" when enabled but the name is blank/whitespace-only', () => {
+    expect(getDesiredBranchName({ steamBetaEnabled: true, steamBetaName: '   ' })).toBe('public')
   })
 })
 

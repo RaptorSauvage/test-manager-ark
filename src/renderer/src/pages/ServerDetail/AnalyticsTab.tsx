@@ -237,7 +237,12 @@ export default function AnalyticsTab({ profile, onProfileChange }: AnalyticsTabP
               <p className="error-message">CPU/RAM unavailable: {status.statsError}</p>
             )}
             {getGameDefinition(profile.game).supportsUpdateCheck && (
-              <UpdateCheckPanel profileIds={[profile.id]} game={profile.game} compact />
+              <UpdateCheckPanel
+                profileIds={[profile.id]}
+                game={profile.game}
+                branch={profile.steamBetaEnabled ? profile.steamBetaName.trim() || undefined : undefined}
+                compact
+              />
             )}
           </div>
           <div className="file-shortcuts">

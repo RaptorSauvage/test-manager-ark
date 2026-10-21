@@ -682,7 +682,9 @@ export interface BackupScheduleStatus {
 }
 
 /** Polled every 30 minutes from SteamCMD (anonymous, no download) for the Analytics tab's
- *  "update available" check - see src/main/lib/updateCheck.ts. */
+ *  "update available" check - see src/main/lib/updateCheck.ts. Scoped to one branch (the
+ *  public one by default, or a profile's own beta branch) - a beta-pinned profile is never
+ *  compared against the public branch's build id, only its own branch's. */
 export interface LatestBuildIdCache {
   buildId: string | null
   /** When that value was captured (epoch ms), or null before the first check. */
@@ -1121,7 +1123,7 @@ export interface Api {
     getUpdateLog: (profileId: string) => Promise<string | null>
     onUpdateLogChanged: (callback: (profileId: string) => void) => () => void
     addFirewallRule: (steamCmdPath: string) => Promise<void>
-    getLatestBuildId: (game: GameId) => Promise<LatestBuildIdCache>
+    getLatestBuildId: (game: GameId, branch?: string) => Promise<LatestBuildIdCache>
   }
   maps: {
     list: (game: GameId) => Promise<MapDefinition[]>

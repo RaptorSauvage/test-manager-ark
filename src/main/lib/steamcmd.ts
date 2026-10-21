@@ -15,7 +15,16 @@ export const steamcmdUpdateEvents = new EventEmitter()
 /** Valve's own name for every app's default, non-beta branch - the same literal key this
  *  app's own updateCheck.ts already reads out of SteamCMD's `app_info_print` output
  *  (`branches { public { buildid ... } }`), not a guess specific to this function. */
-const PUBLIC_BRANCH = 'public'
+export const PUBLIC_BRANCH = 'public'
+
+/** Which branch a profile's updates actually target - the single source of truth
+ *  buildUpdateArgs/runUpdateAttempt below and updateCheck.ts's "is a new build available"
+ *  check both build on, so a server pinned to a beta branch is always compared against
+ *  that branch's own latest build id instead of the public one it was never tracking. */
+export function getDesiredBranchName(profile: Pick<ServerProfile, 'steamBetaEnabled' | 'steamBetaName'>): string {
+  const betaName = profile.steamBetaEnabled ? profile.steamBetaName.trim() : ''
+  return betaName || PUBLIC_BRANCH
+}
 
 /**
  * Builds the SteamCMD arguments to install/update `game`'s dedicated server into

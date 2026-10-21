@@ -115,7 +115,7 @@ const api: Api = {
       return () => ipcRenderer.removeListener(IPC.steamcmdUpdateLogChanged, listener)
     },
     addFirewallRule: (steamCmdPath: string) => ipcRenderer.invoke(IPC.steamcmdAddFirewallRule, steamCmdPath),
-    getLatestBuildId: (game) => ipcRenderer.invoke(IPC.steamcmdLatestBuildId, game)
+    getLatestBuildId: (game, branch) => ipcRenderer.invoke(IPC.steamcmdLatestBuildId, game, branch)
   },
   maps: {
     list: (game) => ipcRenderer.invoke(IPC.mapsList, game)

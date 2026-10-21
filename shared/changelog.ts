@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-21',
+    title: 'Fixed: a server on a beta branch always showed "update available"',
+    details: [
+      'The Analytics tab\'s "New update" check now compares a beta-pinned server against that beta branch\'s own latest build id instead of always the public branch\'s - a server fully up to date on its beta no longer shows a permanent false "update available".',
+      'Same fix applies to the scheduled restart\'s "only if an update is available" condition.'
+    ]
+  },
+  {
+    date: '2026-10-21',
     title: 'Players moved to the sidebar, hidden servers excluded, tray menu overhaul',
     details: [
       '"Players" is now its own tab in the ARK sidebar instead of a button on the Dashboard, and the Live Players tab groups servers by cluster the same way the Dashboard does.',

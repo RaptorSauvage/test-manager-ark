@@ -38,5 +38,7 @@ export function registerSteamcmdInstallHandlers(mainWindow: BrowserWindow): void
     }
   })
 
-  ipcMain.handle(IPC.steamcmdLatestBuildId, (_event, game: GameId) => getLatestBuildIdCache(game))
+  ipcMain.handle(IPC.steamcmdLatestBuildId, (_event, game: GameId, branch?: string) =>
+    getLatestBuildIdCache(game, branch)
+  )
 }

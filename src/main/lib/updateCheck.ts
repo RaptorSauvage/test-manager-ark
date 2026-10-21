@@ -3,35 +3,39 @@ import path from 'node:path'
 import fs from 'node:fs'
 import type { LatestBuildIdCache, ServerProfile } from '@shared/types'
 import { type GameId, getGameDefinition, listGameDefinitions } from '@shared/games'
-import { getSettings } from '../store'
-import { getInstalledBuildId } from './steamcmd'
+import { getSettings, listProfiles } from '../store'
+import { getInstalledBuildId, getDesiredBranchName, PUBLIC_BRANCH } from './steamcmd'
 
-let cache: Partial<Record<GameId, LatestBuildIdCache>> = {}
+// Keyed by game, then by branch name ("public", or a profile's own steamBetaName) - a
+// profile pinned to a beta branch has its own "latest build id" entirely separate from the
+// public branch's, so one cache slot per game alone isn't enough: it made every beta-pinned
+// server see the public branch's build id as "latest" and show "update available" forever,
+// even while fully up to date on its own branch.
+let cache: Partial<Record<GameId, Record<string, LatestBuildIdCache>>> = {}
 let pollTimer: NodeJS.Timeout | null = null
 
 /**
- * Pulls the "buildid" out of `branches { public { buildid "..." } }` in the text SteamCMD's
+ * Pulls the "buildid" out of `branches { <branch> { buildid "..." } }` in the text SteamCMD's
  * `app_info_print` prints (a VDF/KeyValues dump, not JSON - regex is good enough here, same
  * approach already used for the installed appmanifest .acf, which is the same format).
- * Only "public" is read - a server profile pinned to a beta branch isn't tracked by this app.
  */
-export function parseLatestPublicBuildId(appInfoOutput: string): string | null {
+export function parseBranchBuildId(appInfoOutput: string, branch: string = PUBLIC_BRANCH): string | null {
   const branchesIndex = appInfoOutput.indexOf('"branches"')
   if (branchesIndex === -1) return null
-  const publicIndex = appInfoOutput.indexOf('"public"', branchesIndex)
-  if (publicIndex === -1) return null
-  const match = appInfoOutput.slice(publicIndex, publicIndex + 500).match(/"buildid"\s*"(\d+)"/)
+  const branchIndex = appInfoOutput.indexOf(`"${branch}"`, branchesIndex)
+  if (branchIndex === -1) return null
+  const match = appInfoOutput.slice(branchIndex, branchIndex + 500).match(/"buildid"\s*"(\d+)"/)
   return match ? match[1] : null
 }
 
 /**
- * Asks SteamCMD (anonymous login, no download) for `game`'s current public-branch build id -
+ * Asks SteamCMD (anonymous login, no download) for `game`'s current build id on `branch` -
  * the same id `getInstalledBuildId` reads out of an install's own manifest once it's actually
  * installed, so the two are directly comparable for an "update available" check without ever
  * hitting a third-party site like SteamDB (fragile to scrape, and not an endpoint Valve
  * documents/supports for this).
  */
-export function checkLatestBuildId(steamCmdPath: string, game: GameId): Promise<string> {
+export function checkLatestBuildId(steamCmdPath: string, game: GameId, branch: string = PUBLIC_BRANCH): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!steamCmdPath.trim() || !fs.existsSync(steamCmdPath)) {
       reject(new Error('SteamCMD path is not set or does not exist - set it in Settings first.'))
@@ -62,18 +66,22 @@ export function checkLatestBuildId(steamCmdPath: string, game: GameId): Promise<
     // their data, so app_info_print's (fairly large) VDF dump is fully captured in `output`
     // before parsing it. 'exit' can fire first and race ahead of the last chunk(s) of
     // stdout arriving, which intermittently truncated the output right before the
-    // "branches"/"public"/"buildid" section this looks for - the same race already found
+    // "branches"/"<branch>"/"buildid" section this looks for - the same race already found
     // and fixed in steamcmd.ts's own update-download child process.
     child.on('close', () => {
-      const buildId = parseLatestPublicBuildId(output)
+      const buildId = parseBranchBuildId(output, branch)
       if (buildId) resolve(buildId)
-      else reject(new Error("Could not find a public branch build id in SteamCMD's app_info_print output."))
+      else reject(new Error(`Could not find a "${branch}" branch build id in SteamCMD's app_info_print output.`))
     })
   })
 }
 
-export function getLatestBuildIdCache(game: GameId): LatestBuildIdCache {
-  return cache[game] ?? { buildId: null, checkedAt: null, error: null }
+export function getLatestBuildIdCache(game: GameId, branch: string = PUBLIC_BRANCH): LatestBuildIdCache {
+  return cache[game]?.[branch] ?? { buildId: null, checkedAt: null, error: null }
+}
+
+function setLatestBuildIdCache(game: GameId, branch: string, value: LatestBuildIdCache): void {
+  cache[game] = { ...cache[game], [branch]: value }
 }
 
 /** Pure comparison, split out from isUpdateAvailableForProfile below so it's testable without
@@ -97,7 +105,8 @@ export function isUpdateAvailable(installedBuildId: string | null, latestBuildId
  */
 export function isUpdateAvailableForProfile(profile: ServerProfile): boolean {
   if (!getGameDefinition(profile.game).supportsUpdateCheck) return false
-  const latestBuildId = getLatestBuildIdCache(profile.game).buildId
+  const branch = getDesiredBranchName(profile)
+  const latestBuildId = getLatestBuildIdCache(profile.game, branch).buildId
   // Short-circuits before touching disk at all when nothing's been polled yet (the common
   // case right after the Manager starts) - no point reading the installed manifest just to
   // immediately discard it.
@@ -105,21 +114,41 @@ export function isUpdateAvailableForProfile(profile: ServerProfile): boolean {
   return isUpdateAvailable(getInstalledBuildId(profile.installDir, profile.game), latestBuildId)
 }
 
-async function pollOnceForGame(game: GameId): Promise<void> {
+async function pollOnceForGame(game: GameId, branch: string): Promise<void> {
   try {
-    const buildId = await checkLatestBuildId(getSettings().steamCmdPath, game)
-    cache[game] = { buildId, checkedAt: Date.now(), error: null }
+    const buildId = await checkLatestBuildId(getSettings().steamCmdPath, game, branch)
+    setLatestBuildIdCache(game, branch, { buildId, checkedAt: Date.now(), error: null })
   } catch (err) {
-    cache[game] = { ...getLatestBuildIdCache(game), checkedAt: Date.now(), error: (err as Error).message }
+    setLatestBuildIdCache(game, branch, {
+      ...getLatestBuildIdCache(game, branch),
+      checkedAt: Date.now(),
+      error: (err as Error).message
+    })
   }
 }
 
-async function pollOnce(): Promise<void> {
-  await Promise.all(
-    listGameDefinitions()
-      .filter((g) => g.usesSteamCmd && g.supportsUpdateCheck)
-      .map((g) => pollOnceForGame(g.id))
-  )
+/** Every (game, branch) pair actually worth polling: the public branch for every SteamCMD
+ *  game that supports update checking (so a server not yet on a beta still gets a check),
+ *  plus whichever beta branch any configured profile is actually pinned to - a beta branch
+ *  nobody has a profile on isn't polled, since there'd be nothing to compare it against. */
+function activeBranchesToPoll(): Array<{ game: GameId; branch: string }> {
+  const pairs = new Map<string, { game: GameId; branch: string }>()
+  for (const g of listGameDefinitions().filter((g) => g.usesSteamCmd && g.supportsUpdateCheck)) {
+    pairs.set(`${g.id}\u0000${PUBLIC_BRANCH}`, { game: g.id, branch: PUBLIC_BRANCH })
+  }
+  for (const profile of listProfiles()) {
+    const def = getGameDefinition(profile.game)
+    if (!def.usesSteamCmd || !def.supportsUpdateCheck) continue
+    const branch = getDesiredBranchName(profile)
+    pairs.set(`${profile.game}\u0000${branch}`, { game: profile.game, branch })
+  }
+  return Array.from(pairs.values())
+}
+
+/** Exported for tests - startUpdateCheckPolling below only ever fire-and-forgets this, so a
+ *  test needs a way to await one poll pass directly and then inspect getLatestBuildIdCache. */
+export async function pollOnce(): Promise<void> {
+  await Promise.all(activeBranchesToPoll().map(({ game, branch }) => pollOnceForGame(game, branch)))
 }
 
 /** Starts polling SteamCMD for every SteamCMD-based game's latest dedicated server build id,
