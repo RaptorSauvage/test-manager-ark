@@ -75,7 +75,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
 }
 
 describe('buildUpdateArgs', () => {
-  it('targets the ARK:SA dedicated server app id with anonymous login, validation, and an explicit -beta none', () => {
+  it('targets the ARK:SA dedicated server app id with anonymous login, validation, and an explicit -beta public', () => {
     const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended')
     expect(args).toEqual([
       '+force_install_dir',
@@ -85,7 +85,7 @@ describe('buildUpdateArgs', () => {
       '+app_update',
       '2430930',
       '-beta',
-      'none',
+      'public',
       'validate',
       '+quit'
     ])
@@ -123,15 +123,15 @@ describe('buildUpdateArgs', () => {
   // explicitly clearing it) when the toggle is off left SteamCMD free to keep reusing
   // whichever beta branch it had last remembered for this app/login, on every profile -
   // see buildUpdateArgs' own doc comment for the full story.
-  it('explicitly passes -beta none when the beta toggle is off, even with a name set - never just omits -beta', () => {
+  it('explicitly passes -beta public when the beta toggle is off, even with a name set - never just omits -beta', () => {
     const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended', { enabled: false, name: 'testing' })
     expect(args).toContain('-beta')
-    expect(args[args.indexOf('-beta') + 1]).toBe('none')
+    expect(args[args.indexOf('-beta') + 1]).toBe('public')
   })
 
-  it('passes -beta none when enabled but the name is blank/whitespace-only', () => {
+  it('passes -beta public when enabled but the name is blank/whitespace-only', () => {
     const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended', { enabled: true, name: '   ' })
-    expect(args[args.indexOf('-beta') + 1]).toBe('none')
+    expect(args[args.indexOf('-beta') + 1]).toBe('public')
   })
 })
 

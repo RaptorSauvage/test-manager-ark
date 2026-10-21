@@ -12,22 +12,28 @@ import { getDataDir } from './dataDir'
  *  new to show instead of only finding out on its next poll. */
 export const steamcmdUpdateEvents = new EventEmitter()
 
+/** Valve's own name for every app's default, non-beta branch - the same literal key this
+ *  app's own updateCheck.ts already reads out of SteamCMD's `app_info_print` output
+ *  (`branches { public { buildid ... } }`), not a guess specific to this function. */
+const PUBLIC_BRANCH = 'public'
+
 /**
  * Builds the SteamCMD arguments to install/update `game`'s dedicated server into
  * `installDir`. Also works for a first-time install into an empty folder.
  * When `beta.enabled` and `beta.name` (trimmed) are both set, inserts `-beta <name>` right
  * before `validate`, targeting that beta branch instead of the default/public one.
  *
- * Always passes an explicit `-beta` - `none` when not opted into one - rather than omitting
- * the flag. A real report traced "every server's update somehow running on a beta branch it
- * never asked for" (and the mod-compatibility crashes that followed) back to exactly that:
- * every profile here updates through the same anonymous-login SteamCMD installation (one
- * `steamCmdPath` setting shared by every profile, not a separate one per server), and once
- * any single profile had ever updated with a beta selected - even briefly, even on a
- * different profile - SteamCMD/Steam remembers that app's beta selection for that login and
- * keeps using it on every later `app_update` that doesn't say otherwise. Simply not passing
- * `-beta` is not "otherwise" as far as SteamCMD is concerned; only `-beta none` actually
- * clears it back to the public branch.
+ * Always passes an explicit `-beta` - PUBLIC_BRANCH ("public") when not opted into one -
+ * rather than omitting the flag. A real report traced "every server's update somehow running
+ * on a beta branch it never asked for" (and the mod-compatibility crashes that followed) back
+ * to exactly that: every profile here updates through the same anonymous-login SteamCMD
+ * installation (one `steamCmdPath` setting shared by every profile, not a separate one per
+ * server), and once any single profile had ever updated with a beta selected - even briefly,
+ * even on a different profile - SteamCMD/Steam remembers that app's beta selection for that
+ * login and keeps using it on every later `app_update` that doesn't say otherwise. Simply not
+ * passing `-beta` is not "otherwise" as far as SteamCMD is concerned. (An earlier version of
+ * this fix passed `-beta none` instead - "none" shows up in some older SteamCMD guides, but
+ * isn't actually a documented branch name the way "public" is; switched to the real one.)
  */
 export function buildUpdateArgs(installDir: string, game: GameId, beta?: { enabled: boolean; name: string }): string[] {
   const betaName = beta?.enabled ? beta.name.trim() : ''
@@ -39,7 +45,7 @@ export function buildUpdateArgs(installDir: string, game: GameId, beta?: { enabl
     '+app_update',
     getGameDefinition(game).steamAppId,
     '-beta',
-    betaName || 'none',
+    betaName || PUBLIC_BRANCH,
     'validate',
     '+quit'
   ]

@@ -4303,6 +4303,26 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Correction to the two beta-branch fixes below: `-beta none` isn't actually the right value
+  - it's `-beta public`** (user pushback: "il est pas censé avoir de -beta si on veut revenir
+  aux update normale" - prompted checking the actual SteamCMD convention instead of assuming).
+  `none` shows up in some older community guides for switching off a beta, but isn't a
+  documented branch name the way `public` is - this app's own `updateCheck.ts` already reads
+  `"public"` as the literal branch key out of SteamCMD's `app_info_print` output
+  (`branches { public { buildid ... } }`), which is the authoritative source for what Valve
+  actually calls the default branch, not a guess. Omitting `-beta` entirely remains wrong for
+  the same reason as before (see the entry below) - this only corrects *which* value an
+  explicit `-beta` should carry when no specific beta is wanted.
+  - **`src/main/lib/steamcmd.ts`**: `buildUpdateArgs` now passes `-beta public` (via a new
+    `PUBLIC_BRANCH` constant) instead of `-beta none` when the profile's beta toggle is off.
+    `clearMismatchedBetaManifest`'s own comparison logic needed no change - it already worked
+    in terms of the manifest's own `BetaKey` being empty/absent for "on the public branch",
+    never by comparing against the literal string passed on the command line.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1232 tests -
+    `tests/steamcmd.test.ts`'s `buildUpdateArgs` suite updated to assert `-beta public`), and
+    `npm run build` all pass. **Not yet verified**: needs the user to confirm a real update
+    with beta off actually lands on the true public build.
+
 - **The `-beta none` fix below wasn't enough on its own - found the actual reason it kept
   sticking** (user report, right after the fix below shipped: "quand j'update le serveur ça
   revient pas à la version précédente", then "ça revient à une version très ultérieur" - a
