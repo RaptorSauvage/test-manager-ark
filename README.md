@@ -4303,6 +4303,28 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Fixed: every server update was silently running on a beta branch, crashing servers whose
+  mods weren't available on it** (user report: "l'update des serveurs sont tous avec la beta
+  activé alors qu'elle n'est pas activé pour ces profils", followed by "les serveurs crash car
+  les mods ne sont pas dispo"). `buildUpdateArgs` (`steamcmd.ts`) only ever added `-beta <name>`
+  when a profile's own `steamBetaEnabled` was on, and simply *omitted* the flag otherwise -
+  which turned out not to mean "use the public branch". Every profile updates through the same
+  single, shared, anonymously-logged-in SteamCMD installation (one global `steamCmdPath`
+  setting, not one per server) - and SteamCMD/Steam remembers the last beta selected for a
+  given app under that login. Once *any* profile had ever updated with a beta enabled, that
+  selection stuck for that app across *every other profile's* updates too, since none of them
+  ever explicitly said otherwise - "not passing `-beta`" is not the same thing to SteamCMD as
+  "clear whatever beta was selected before".
+  - **`src/main/lib/steamcmd.ts`**: `buildUpdateArgs` now always passes an explicit `-beta`,
+    with `none` when the profile isn't opted into one, instead of omitting the flag - the only
+    way to actually force SteamCMD back to the public branch rather than hoping it already was
+    there.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1225 tests -
+    `tests/steamcmd.test.ts`'s `buildUpdateArgs` suite updated to assert the explicit
+    `-beta none` instead of its absence), and `npm run build` all pass. **Not yet verified**:
+    needs the user to confirm a real update on a non-beta profile stays on the public branch
+    now, including one that follows a profile that had beta enabled.
+
 - **Fixed, again: the Discord bot abandoned its status message and started posting new ones**
   (user report with full logs - a run of `Connect Timeout Error`s around 06:53-06:57 right
   before `mcStatusChannelId`/`statusChannelId` edits, matching a gap where the user found an

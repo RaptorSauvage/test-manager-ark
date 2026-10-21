@@ -74,7 +74,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
 }
 
 describe('buildUpdateArgs', () => {
-  it('targets the ARK:SA dedicated server app id with anonymous login and validation', () => {
+  it('targets the ARK:SA dedicated server app id with anonymous login, validation, and an explicit -beta none', () => {
     const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended')
     expect(args).toEqual([
       '+force_install_dir',
@@ -83,6 +83,8 @@ describe('buildUpdateArgs', () => {
       'anonymous',
       '+app_update',
       '2430930',
+      '-beta',
+      'none',
       'validate',
       '+quit'
     ])
@@ -116,14 +118,19 @@ describe('buildUpdateArgs', () => {
     expect(args).not.toContain('  testing  ')
   })
 
-  it('omits -beta when the beta toggle is off, even with a name set', () => {
+  // The exact bug a real report traced back to this file: omitting -beta (rather than
+  // explicitly clearing it) when the toggle is off left SteamCMD free to keep reusing
+  // whichever beta branch it had last remembered for this app/login, on every profile -
+  // see buildUpdateArgs' own doc comment for the full story.
+  it('explicitly passes -beta none when the beta toggle is off, even with a name set - never just omits -beta', () => {
     const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended', { enabled: false, name: 'testing' })
-    expect(args).not.toContain('-beta')
+    expect(args).toContain('-beta')
+    expect(args[args.indexOf('-beta') + 1]).toBe('none')
   })
 
-  it('omits -beta when enabled but the name is blank/whitespace-only', () => {
+  it('passes -beta none when enabled but the name is blank/whitespace-only', () => {
     const args = buildUpdateArgs('/servers/my-ark', 'ark-ascended', { enabled: true, name: '   ' })
-    expect(args).not.toContain('-beta')
+    expect(args[args.indexOf('-beta') + 1]).toBe('none')
   })
 })
 

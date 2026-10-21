@@ -15,9 +15,19 @@ export const steamcmdUpdateEvents = new EventEmitter()
 /**
  * Builds the SteamCMD arguments to install/update `game`'s dedicated server into
  * `installDir`. Also works for a first-time install into an empty folder.
- * When `beta.enabled` and `beta.name` (trimmed) are both set, inserts
- * `-beta <name>` right before `validate`, targeting that beta branch instead of the
- * default/public one - same install otherwise.
+ * When `beta.enabled` and `beta.name` (trimmed) are both set, inserts `-beta <name>` right
+ * before `validate`, targeting that beta branch instead of the default/public one.
+ *
+ * Always passes an explicit `-beta` - `none` when not opted into one - rather than omitting
+ * the flag. A real report traced "every server's update somehow running on a beta branch it
+ * never asked for" (and the mod-compatibility crashes that followed) back to exactly that:
+ * every profile here updates through the same anonymous-login SteamCMD installation (one
+ * `steamCmdPath` setting shared by every profile, not a separate one per server), and once
+ * any single profile had ever updated with a beta selected - even briefly, even on a
+ * different profile - SteamCMD/Steam remembers that app's beta selection for that login and
+ * keeps using it on every later `app_update` that doesn't say otherwise. Simply not passing
+ * `-beta` is not "otherwise" as far as SteamCMD is concerned; only `-beta none` actually
+ * clears it back to the public branch.
  */
 export function buildUpdateArgs(installDir: string, game: GameId, beta?: { enabled: boolean; name: string }): string[] {
   const betaName = beta?.enabled ? beta.name.trim() : ''
@@ -28,7 +38,8 @@ export function buildUpdateArgs(installDir: string, game: GameId, beta?: { enabl
     'anonymous',
     '+app_update',
     getGameDefinition(game).steamAppId,
-    ...(betaName ? ['-beta', betaName] : []),
+    '-beta',
+    betaName || 'none',
     'validate',
     '+quit'
   ]

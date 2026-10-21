@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-21',
+    title: 'Fixed: server updates silently running on a beta branch',
+    details: [
+      "Once any one profile had ever updated with a Steam beta branch enabled, every other profile's updates could keep running on that same beta too, even with the beta toggle off - SteamCMD doesn't reset to the public branch just because the -beta flag is absent.",
+      "Updates now explicitly request the public branch when beta isn't enabled, instead of just omitting the flag."
+    ]
+  },
+  {
+    date: '2026-10-21',
     title: 'Fixed: Discord bot status message abandoned on a network blip',
     details: [
       "A temporary network hiccup while the bot updated its status message could make it give up on the existing message and start posting a new one instead, leaving the old one behind unchanged.",
