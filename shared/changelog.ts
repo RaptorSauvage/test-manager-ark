@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-10-21',
+    title: 'Notepad++-style syntax coloring, plus .json and .log support',
+    details: [
+      'The file editor (desktop Manager and web dashboard) now colors .ini, .json, and .log files Notepad++-style: sections, keys, strings, numbers, booleans, comments, timestamps, and log levels each get their own color.',
+      'You can now open .json files (editable, with the same save history as .ini) and .log files (view-only, since a running server may still be writing to them) - not just .ini.'
+    ]
+  },
+  {
     date: '2026-10-20',
     title: 'File Browser on the desktop Manager, Notepad++-style tabbed editor',
     details: [

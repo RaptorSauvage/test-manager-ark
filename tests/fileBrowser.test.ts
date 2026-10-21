@@ -12,14 +12,40 @@ import {
   listIniHistory,
   diffIniHistoryEntry,
   restoreIniHistoryEntry,
-  isIniPath
+  isIniPath,
+  isJsonPath,
+  isLogPath,
+  isEditableTextPath,
+  isOpenableTextPath
 } from '../src/main/lib/fileBrowser'
 
-describe('isIniPath', () => {
-  it('matches .ini case-insensitively', () => {
+describe('isIniPath / isJsonPath / isLogPath', () => {
+  it('matches their own extension case-insensitively', () => {
     expect(isIniPath('GameUserSettings.ini')).toBe(true)
     expect(isIniPath('game.INI')).toBe(true)
     expect(isIniPath('ShooterGame.log')).toBe(false)
+    expect(isJsonPath('curseforge_config.json')).toBe(true)
+    expect(isJsonPath('config.JSON')).toBe(true)
+    expect(isJsonPath('GameUserSettings.ini')).toBe(false)
+    expect(isLogPath('ShooterGame.log')).toBe(true)
+    expect(isLogPath('ShooterGame.LOG')).toBe(true)
+    expect(isLogPath('GameUserSettings.ini')).toBe(false)
+  })
+})
+
+describe('isEditableTextPath / isOpenableTextPath', () => {
+  it('editable covers .ini and .json only', () => {
+    expect(isEditableTextPath('Game.ini')).toBe(true)
+    expect(isEditableTextPath('config.json')).toBe(true)
+    expect(isEditableTextPath('ShooterGame.log')).toBe(false)
+    expect(isEditableTextPath('root-file.txt')).toBe(false)
+  })
+
+  it('openable additionally covers .log (read-only)', () => {
+    expect(isOpenableTextPath('Game.ini')).toBe(true)
+    expect(isOpenableTextPath('config.json')).toBe(true)
+    expect(isOpenableTextPath('ShooterGame.log')).toBe(true)
+    expect(isOpenableTextPath('root-file.txt')).toBe(false)
   })
 })
 
@@ -94,9 +120,21 @@ describe('fileBrowser - raw .ini editor + history/diff/restore', () => {
     expect(readIniFile(installDir, iniRelativePath)).toBe('[Test]\nFoo=Bar\n')
   })
 
-  it('rejects reading a non-.ini file', () => {
+  it('rejects reading a file whose extension is not ini/json/log', () => {
+    fs.writeFileSync(path.join(installDir, 'root-file.txt'), 'hello')
+    expect(() => readIniFile(installDir, 'root-file.txt')).toThrow(
+      'Only .ini, .json, and .log files can be opened here.'
+    )
+  })
+
+  it('reads a .json file (opening does not require writability)', () => {
+    fs.writeFileSync(path.join(installDir, 'config.json'), '{"a":1}')
+    expect(readIniFile(installDir, 'config.json')).toBe('{"a":1}')
+  })
+
+  it('reads a .log file, which is openable but not editable', () => {
     fs.writeFileSync(path.join(installDir, 'ShooterGame.log'), 'log content')
-    expect(() => readIniFile(installDir, 'ShooterGame.log')).toThrow('Only .ini files can be opened here.')
+    expect(readIniFile(installDir, 'ShooterGame.log')).toBe('log content')
   })
 
   it('writes new content and snapshots the previous content into history', () => {
@@ -113,8 +151,17 @@ describe('fileBrowser - raw .ini editor + history/diff/restore', () => {
     expect(listIniHistory(profileId, 'ShooterGame/Saved/Config/New.ini')).toHaveLength(0)
   })
 
-  it('rejects writing a non-.ini file', () => {
-    expect(() => writeIniFile(profileId, installDir, 'ShooterGame.log', 'nope')).toThrow('Only .ini files can be saved here.')
+  it('rejects writing a .log file - it may still be live-written by a running server', () => {
+    expect(() => writeIniFile(profileId, installDir, 'ShooterGame.log', 'nope')).toThrow(
+      'Only .ini and .json files can be saved here.'
+    )
+  })
+
+  it('writes and reads back a .json file, with history too', () => {
+    writeIniFile(profileId, installDir, 'config.json', '{"a":1}')
+    expect(readIniFile(installDir, 'config.json')).toBe('{"a":1}')
+    writeIniFile(profileId, installDir, 'config.json', '{"a":2}')
+    expect(listIniHistory(profileId, 'config.json')).toHaveLength(1)
   })
 
   it('diffs a history entry against the current file content', () => {

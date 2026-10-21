@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { ServerProfile, FileBrowserEntry, ConfigFileHistorySummary } from '@shared/types'
 import type { DiffLine } from '@shared/textDiff'
+import { languageForPath, tokenizeLine } from '@shared/syntaxHighlight'
 import { confirmAction } from '../../lib/confirmAction'
 
 interface FilesTabProps {
@@ -24,8 +25,8 @@ function formatFileSize(bytes: number): string {
   return `${bytes} B`
 }
 
-function isIniFileName(name: string): boolean {
-  return /\.ini$/i.test(name)
+function isOpenableFileName(name: string): boolean {
+  return languageForPath(name) !== 'plain'
 }
 
 function joinPath(dir: string, name: string): string {
@@ -34,9 +35,10 @@ function joinPath(dir: string, name: string): string {
 
 /** Desktop mirror of the web dashboard's own Files tab (same fileBrowser.ts logic
  *  underneath, over IPC instead of HTTP) - browse the install directory, open/delete files,
- *  and edit .ini files in a Notepad++-inspired tabbed editor (multiple files open at once,
- *  line numbers, a full-size textarea) with the same history/diff/restore the web version
- *  has. ARK only for now, same scope as the raw .ini editor itself. */
+ *  and edit .ini/.json files (or view .log files read-only) in a Notepad++-inspired tabbed
+ *  editor: multiple files open at once, line numbers, Notepad++-style syntax coloring, and a
+ *  full-size textarea, with the same history/diff/restore the web version has for .ini/.json
+ *  saves. ARK only for now, same scope as the raw .ini editor itself. */
 export default function FilesTab({ profile }: FilesTabProps): JSX.Element {
   const [currentPath, setCurrentPath] = useState('')
   const [entries, setEntries] = useState<FileBrowserEntry[]>([])
@@ -52,6 +54,7 @@ export default function FilesTab({ profile }: FilesTabProps): JSX.Element {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const gutterRef = useRef<HTMLDivElement>(null)
+  const highlightRef = useRef<HTMLPreElement>(null)
 
   function loadDirectory(dirPath: string): void {
     setListError('')
@@ -85,7 +88,7 @@ export default function FilesTab({ profile }: FilesTabProps): JSX.Element {
     loadHistory(path)
   }
 
-  function openIniFile(entryPath: string): void {
+  function openFile(entryPath: string): void {
     if (openTabs.some((t) => t.path === entryPath)) {
       focusTab(entryPath)
       return
@@ -120,9 +123,13 @@ export default function FilesTab({ profile }: FilesTabProps): JSX.Element {
 
   const activeTab = openTabs.find((t) => t.path === activeTabPath) ?? null
   const isDirty = activeTab ? activeTab.content !== activeTab.originalContent : false
+  // .log files open read-only - a running server may still be appending to the same file,
+  // and saving stale editor content back over it would silently erase what it wrote since.
+  const activeLanguage = activeTab ? languageForPath(activeTab.path) : 'plain'
+  const readOnly = activeLanguage === 'log'
 
   async function saveActiveTab(): Promise<void> {
-    if (!activeTab) return
+    if (!activeTab || readOnly) return
     setSaving(true)
     setEditorError('')
     try {
@@ -176,12 +183,15 @@ export default function FilesTab({ profile }: FilesTabProps): JSX.Element {
     }
   }
 
-  function syncGutterScroll(): void {
-    if (gutterRef.current && textareaRef.current) gutterRef.current.scrollTop = textareaRef.current.scrollTop
+  function syncEditorScroll(): void {
+    const top = textareaRef.current?.scrollTop ?? 0
+    if (gutterRef.current) gutterRef.current.scrollTop = top
+    if (highlightRef.current) highlightRef.current.scrollTop = top
   }
 
   const breadcrumbSegments = currentPath ? currentPath.split('/').filter(Boolean) : []
-  const lineCount = activeTab ? activeTab.content.split('\n').length : 0
+  const activeLines = activeTab ? activeTab.content.split('\n') : []
+  const lineCount = activeLines.length
   const browsing = activeTabPath === null
 
   const sortedEntries = [...entries].sort((a, b) => {
@@ -218,11 +228,16 @@ export default function FilesTab({ profile }: FilesTabProps): JSX.Element {
       {activeTab ? (
         <div className="files-editor">
           <div className="files-editor-header">
-            <h3>{activeTab.path}</h3>
+            <h3>
+              {activeTab.path}
+              {readOnly ? <span className="files-editor-readonly-badge"> (read-only)</span> : null}
+            </h3>
             <div className="form-actions">
-              <button type="button" onClick={() => void saveActiveTab()} disabled={saving || !isDirty}>
-                {saving ? 'Saving...' : 'Save'}
-              </button>
+              {!readOnly && (
+                <button type="button" onClick={() => void saveActiveTab()} disabled={saving || !isDirty}>
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+              )}
               <button type="button" onClick={() => closeTab(activeTab.path)}>
                 Close
               </button>
@@ -235,33 +250,52 @@ export default function FilesTab({ profile }: FilesTabProps): JSX.Element {
                 <div key={i}>{i + 1}</div>
               ))}
             </div>
-            <textarea
-              ref={textareaRef}
-              className="files-editor-textarea"
-              value={activeTab.content}
-              onChange={(e) => updateActiveTabContent(e.target.value)}
-              onScroll={syncGutterScroll}
-              spellCheck={false}
-            />
+            <div className="files-editor-code">
+              <pre className="files-editor-highlight" ref={highlightRef} aria-hidden="true">
+                {activeLines.map((line, i) => (
+                  <Fragment key={i}>
+                    {tokenizeLine(line, activeLanguage).map((tok, j) => (
+                      <span key={j} className={'tok-' + tok.type}>
+                        {tok.text}
+                      </span>
+                    ))}
+                    {i < activeLines.length - 1 ? '\n' : null}
+                  </Fragment>
+                ))}
+              </pre>
+              <textarea
+                ref={textareaRef}
+                className="files-editor-textarea"
+                value={activeTab.content}
+                onChange={(e) => updateActiveTabContent(e.target.value)}
+                onScroll={syncEditorScroll}
+                readOnly={readOnly}
+                spellCheck={false}
+              />
+            </div>
           </div>
 
-          <h4>History</h4>
-          {history.length === 0 ? (
-            <p className="empty-state">No saved edits yet.</p>
-          ) : (
-            <ul className="files-ini-history-list">
-              {history.map((entry) => (
-                <li key={entry.id}>
-                  <span>{new Date(entry.savedAt).toLocaleString()}</span>
-                  <button type="button" onClick={() => void viewDiff(entry.id)}>
-                    View diff
-                  </button>
-                  <button type="button" onClick={() => void restoreEntry(entry.id)}>
-                    Restore
-                  </button>
-                </li>
-              ))}
-            </ul>
+          {!readOnly && (
+            <>
+              <h4>History</h4>
+              {history.length === 0 ? (
+                <p className="empty-state">No saved edits yet.</p>
+              ) : (
+                <ul className="files-ini-history-list">
+                  {history.map((entry) => (
+                    <li key={entry.id}>
+                      <span>{new Date(entry.savedAt).toLocaleString()}</span>
+                      <button type="button" onClick={() => void viewDiff(entry.id)}>
+                        View diff
+                      </button>
+                      <button type="button" onClick={() => void restoreEntry(entry.id)}>
+                        Restore
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
           {diff && (
             <div className="files-ini-diff">
@@ -312,10 +346,10 @@ export default function FilesTab({ profile }: FilesTabProps): JSX.Element {
                 sortedEntries.map((entry) => (
                   <tr key={entry.name}>
                     <td
-                      className={entry.isDir || isIniFileName(entry.name) ? 'files-name-cell' : undefined}
+                      className={entry.isDir || isOpenableFileName(entry.name) ? 'files-name-cell' : undefined}
                       onClick={() => {
                         if (entry.isDir) loadDirectory(joinPath(currentPath, entry.name))
-                        else if (isIniFileName(entry.name)) openIniFile(joinPath(currentPath, entry.name))
+                        else if (isOpenableFileName(entry.name)) openFile(joinPath(currentPath, entry.name))
                       }}
                     >
                       {entry.isDir ? '📁 ' : '📄 '}

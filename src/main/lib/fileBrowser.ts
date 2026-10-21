@@ -15,11 +15,35 @@ import { listConfigFileHistory, getConfigFileHistoryEntry, recordConfigFileHisto
  * about path traversal itself.
  */
 
-/** Whether a path (relative or absolute) ends in `.ini`, case-insensitive - gates the raw
- *  .ini editor functions below so they can't double as a generic arbitrary-file-write
- *  primitive. */
+/** Whether a path (relative or absolute) ends in `.ini`, case-insensitive. */
 export function isIniPath(p: string): boolean {
   return /\.ini$/i.test(p)
+}
+
+/** Whether a path ends in `.json`, case-insensitive. */
+export function isJsonPath(p: string): boolean {
+  return /\.json$/i.test(p)
+}
+
+/** Whether a path ends in `.log`, case-insensitive. */
+export function isLogPath(p: string): boolean {
+  return /\.log$/i.test(p)
+}
+
+/** Gates the editor's save path - `.ini` and `.json` only, so it can't double as a generic
+ *  arbitrary-file-write primitive. `.log` is deliberately excluded: a running server may
+ *  still be appending to it, and saving stale editor content back over it would silently
+ *  erase whatever it wrote in the meantime. */
+export function isEditableTextPath(p: string): boolean {
+  return isIniPath(p) || isJsonPath(p)
+}
+
+/** Gates the editor's open/read path - everything isEditableTextPath allows, plus `.log`
+ *  (view-only, see isEditableTextPath above for why it can't be saved). The "Ini" in these
+ *  function names below is historical; they now serve the whole open/read/save/history
+ *  pipeline for all three extensions, not just `.ini`. */
+export function isOpenableTextPath(p: string): boolean {
+  return isEditableTextPath(p) || isLogPath(p)
 }
 
 export function resolveFileBrowserPath(installDir: string, relativePath: string): string {
@@ -47,7 +71,7 @@ export function deleteFileBrowserFile(installDir: string, relativePath: string):
 }
 
 export function readIniFile(installDir: string, relativePath: string): string {
-  if (!isIniPath(relativePath)) throw new Error('Only .ini files can be opened here.')
+  if (!isOpenableTextPath(relativePath)) throw new Error('Only .ini, .json, and .log files can be opened here.')
   const filePath = resolveSafePath(installDir, relativePath)
   const stat = fs.statSync(filePath)
   if (!stat.isFile()) throw new Error('Not a file')
@@ -58,7 +82,7 @@ export function readIniFile(installDir: string, relativePath: string): string {
  *  way any other write to a locked file would - fs throws, the caller surfaces it like any
  *  other failure, nothing ini-lock-specific needed here. */
 export function writeIniFile(profileId: string, installDir: string, relativePath: string, content: string): void {
-  if (!isIniPath(relativePath)) throw new Error('Only .ini files can be saved here.')
+  if (!isEditableTextPath(relativePath)) throw new Error('Only .ini and .json files can be saved here.')
   const filePath = resolveSafePath(installDir, relativePath)
   snapshotIfExists(profileId, filePath, relativePath)
   fs.writeFileSync(filePath, content, 'utf-8')

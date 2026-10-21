@@ -2610,22 +2610,113 @@ label.checkbox {
   user-select: none;
 }
 
-.files-editor-textarea {
+.files-editor-readonly-badge {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.files-editor-code {
+  position: relative;
   flex: 1;
   min-width: 0;
-  border: none;
-  border-radius: 0;
-  resize: none;
+}
+
+.files-editor-highlight,
+.files-editor-textarea {
+  position: absolute;
+  inset: 0;
+  margin: 0;
   padding: 8px 10px;
   font-family: monospace;
   font-size: 0.85rem;
   line-height: 1.5;
-  background: var(--bg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: hidden;
+}
+
+/* Notepad++-style coloring: a non-interactive <pre> sits behind the real textarea and shows
+   the colored tokens; the textarea on top stays fully functional but renders its own text
+   transparent (only the caret and selection are visible) so the colors underneath show
+   through instead of being covered by plain black-on-dark text. Both elements share the same
+   font/padding/white-space so they wrap identically and stay pixel-aligned as the user types -
+   see syncEditorScroll in FilesTab.tsx for how their scroll position stays in sync too. */
+.files-editor-highlight {
   color: var(--text);
+  pointer-events: none;
+}
+
+.files-editor-textarea {
+  border: none;
+  border-radius: 0;
+  resize: none;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+}
+
+.files-editor-textarea::selection {
+  background: rgba(79, 140, 255, 0.35);
 }
 
 .files-editor-textarea:focus {
   outline: none;
+}
+
+.files-editor-textarea[readonly] {
+  cursor: default;
+}
+
+.tok-section {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tok-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.tok-key {
+  color: var(--cyan);
+}
+
+.tok-punctuation {
+  color: var(--muted);
+}
+
+.tok-string {
+  color: var(--warn);
+}
+
+.tok-number {
+  color: var(--purple);
+}
+
+.tok-boolean {
+  color: var(--pink);
+}
+
+.tok-timestamp {
+  color: var(--muted);
+}
+
+.tok-error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.tok-warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.tok-info {
+  color: var(--cyan);
+}
+
+.tok-plain {
+  color: var(--text);
 }
 
 .files-ini-history-list {

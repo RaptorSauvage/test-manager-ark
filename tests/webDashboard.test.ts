@@ -7,6 +7,7 @@ import os from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE } from '../src/main/lib/logEvents'
 import type { WebDashboardAccessToken, WebDashboardApiKey, ConfigFileHistoryEntry } from '../shared/types'
+import { languageForPath, tokenizeLine } from '../shared/syntaxHighlight'
 
 const EMPTY_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-empty-${process.pid}`)
 const LOGGED_INSTALL_DIR = path.join(os.tmpdir(), `web-dashboard-test-logged-${process.pid}`)
@@ -376,6 +377,63 @@ describe('web dashboard HTTP server', () => {
     fs.writeFileSync(scriptPath, scriptMatch![1])
     try {
       expect(() => execFileSync(process.execPath, ['--check', scriptPath])).not.toThrow()
+    } finally {
+      fs.rmSync(scriptPath, { force: true })
+    }
+  })
+
+  it('serves a Files syntax highlighter whose actual behavior matches shared/syntaxHighlight.ts', async () => {
+    // node --check above only proves the served script parses - it would happily pass even if
+    // a backslash-escape got mis-doubled (or not doubled) while this section was being
+    // duplicated as plain JS from shared/syntaxHighlight.ts's tokenizeLine, since a wrong
+    // regex is still syntactically valid JS. This test instead extracts just the pure
+    // "BEGIN/END-FILES-HIGHLIGHT-PURE" block from the real served script and actually runs it
+    // in a fresh Node process, comparing its output against the shared module for the same
+    // inputs - the only thing that would actually catch that class of mistake.
+    const res = await request('/')
+    const scriptMatch = res.body.match(/<script>([\s\S]*)<\/script>/)
+    expect(scriptMatch).not.toBeNull()
+    const pureMatch = scriptMatch![1].match(
+      /\/\/ BEGIN-FILES-HIGHLIGHT-PURE[^\n]*\n([\s\S]*?)\/\/ END-FILES-HIGHLIGHT-PURE/
+    )
+    expect(pureMatch).not.toBeNull()
+
+    const cases: Array<{ path: string; line: string; language: string }> = [
+      { path: 'Game.ini', line: '', language: '' },
+      { path: 'config.json', line: '', language: '' },
+      { path: 'ShooterGame.log', line: '', language: '' },
+      { path: 'run.bat', line: '', language: '' },
+      { path: '', line: '[/script/shootergame.shootergamemode]', language: 'ini' },
+      { path: '', line: ';Breeding', language: 'ini' },
+      { path: '', line: 'BabyMatureSpeedMultiplier=30', language: 'ini' },
+      { path: '', line: 'bDisableLootCrates=False', language: 'ini' },
+      { path: '', line: 'SessionName=My Server', language: 'ini' },
+      { path: '', line: '  "name": "value",', language: 'json' },
+      { path: '', line: '  "count": 42, "ok": true, "x": null', language: 'json' },
+      { path: '', line: '  "unterminated', language: 'json' },
+      { path: '', line: '2026-10-20T23:45:17.532Z [ERROR] something broke', language: 'log' },
+      { path: '', line: 'WARNING: low disk space', language: 'log' },
+      { path: '', line: 'DEBUG starting up', language: 'log' },
+      { path: '', line: 'just some text', language: 'log' }
+    ]
+
+    const script =
+      pureMatch![1] +
+      '\nvar cases = JSON.parse(process.argv[2]);\n' +
+      'var out = cases.map(function (c) {\n' +
+      '  if (c.language) return { tokens: filesTokenizeLine(c.line, c.language) };\n' +
+      '  return { language: filesLanguageForPath(c.path) };\n' +
+      '});\n' +
+      'process.stdout.write(JSON.stringify(out));\n'
+    const scriptPath = path.join(os.tmpdir(), `web-dashboard-highlight-check-${process.pid}.js`)
+    fs.writeFileSync(scriptPath, script)
+    try {
+      const stdout = execFileSync(process.execPath, [scriptPath, JSON.stringify(cases)]).toString()
+      const actual = JSON.parse(stdout)
+      const expected = cases.map((c) =>
+        c.language ? { tokens: tokenizeLine(c.line, c.language as never) } : { language: languageForPath(c.path) }
+      )
+      expect(actual).toEqual(expected)
     } finally {
       fs.rmSync(scriptPath, { force: true })
     }
@@ -1156,12 +1214,21 @@ describe('web dashboard HTTP server', () => {
       expect(JSON.parse(res.body).content).toBe('[Test]\nFoo=Bar\n')
     })
 
-    it('GET /api/servers/:id/ini rejects a non-.ini file', async () => {
+    it('GET /api/servers/:id/ini rejects a file whose extension is not ini/json/log', async () => {
       const res = await request(
-        '/api/servers/p2/ini?path=' + encodeURIComponent('ShooterGame/Saved/Logs/ShooterGame.log')
+        '/api/servers/p2/ini?path=' + encodeURIComponent('ShooterGame/Saved/Logs/ShooterGame.txt')
       )
       expect(res.status).toBe(400)
-      expect(JSON.parse(res.body).error).toBe('Only .ini files can be opened here.')
+      expect(JSON.parse(res.body).error).toBe('Only .ini, .json, and .log files can be opened here.')
+    })
+
+    it('GET /api/servers/:id/ini opens a .log file read-only', async () => {
+      const logPath = 'ShooterGame/Saved/Logs/ShooterGame.log'
+      fs.mkdirSync(path.join(LOGGED_INSTALL_DIR, 'ShooterGame', 'Saved', 'Logs'), { recursive: true })
+      fs.writeFileSync(path.join(LOGGED_INSTALL_DIR, logPath), 'log line\n')
+      const res = await request('/api/servers/p2/ini?path=' + encodeURIComponent(logPath))
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body).content).toBe('log line\n')
     })
 
     it('GET /api/servers/:id/ini rejects a path escaping the install directory', async () => {
@@ -1188,7 +1255,7 @@ describe('web dashboard HTTP server', () => {
       expect(JSON.parse(reread.body).content).toBe('[Test]\nFoo=Changed\n')
     })
 
-    it('POST /api/servers/:id/ini rejects a non-.ini file', async () => {
+    it('POST /api/servers/:id/ini rejects a .log file - it is read-only in this editor', async () => {
       const res = await request('/api/servers/p2/ini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

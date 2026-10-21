@@ -1915,6 +1915,7 @@ const DASHBOARD_HTML = `<!doctype html>
     color-scheme: dark;
     --bg: #14161a; --panel: #1d2027; --border: #2c303a; --text: #e6e8ec; --muted: #9aa0ab;
     --accent: #4f8cff; --danger: #e0555b; --ok: #3fbf6f; --warn: #e0a63f; --cyan: #22d3ee;
+    --purple: #a78bfa; --pink: #f472b6;
     --status-running: #1f8a4c; --status-starting: #7ee6a0; --status-updating: #6fa8ff;
     --status-stopping: #f2878b; --status-stopped: #a83239; --status-restarting: #e0a63f;
   }
@@ -2172,9 +2173,32 @@ const DASHBOARD_HTML = `<!doctype html>
   /* Fills most of the viewport instead of a small fixed box - bigger and responsive to the
      window size, per direct user feedback on the previous fixed-height textarea. */
   .files-editor-body { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; height: 60vh; margin-top: 8px; }
-  .files-editor-gutter { flex-shrink: 0; padding: 8px 8px 8px 0; text-align: right; font-family: monospace; font-size: 0.85rem; line-height: 1.5; color: var(--muted); background: var(--panel); border-right: 1px solid var(--border); overflow: hidden; user-select: none; white-space: pre; }
-  .files-editor-textarea { flex: 1; min-width: 0; border: none; border-radius: 0; resize: none; padding: 8px 10px; font-family: monospace; font-size: 0.85rem; line-height: 1.5; background: var(--bg); color: var(--text); }
+  .files-editor-gutter { flex-shrink: 0; padding: 8px 8px 8px 0; text-align: right; font-family: monospace; font-size: 0.85rem; line-height: 1.5; color: var(--muted); background: var(--panel); border-right: 1px solid var(--border); overflow: hidden; user-select: none; white-space: pre-wrap; }
+  .files-editor-readonly-badge { color: var(--muted); font-style: italic; }
+  .files-editor-code { position: relative; flex: 1; min-width: 0; }
+  /* Notepad++-style coloring: a non-interactive <pre> behind the real textarea shows colored
+     tokens; the textarea on top stays fully functional but renders its own text transparent
+     (only the caret/selection show) so the colors underneath show through. Both share the
+     same font/padding/white-space so they wrap identically and stay pixel-aligned as the user
+     types - see the 'scroll' listener below for how their scroll position stays in sync. */
+  .files-editor-highlight, .files-editor-textarea { position: absolute; inset: 0; margin: 0; padding: 8px 10px; font-family: monospace; font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; overflow: hidden; }
+  .files-editor-highlight { color: var(--text); pointer-events: none; }
+  .files-editor-textarea { border: none; border-radius: 0; resize: none; background: transparent; color: transparent; caret-color: var(--text); }
+  .files-editor-textarea::selection { background: rgba(79, 140, 255, 0.35); }
   .files-editor-textarea:focus { outline: none; }
+  .files-editor-textarea[readonly] { cursor: default; }
+  .tok-section { color: var(--accent); font-weight: 600; }
+  .tok-comment { color: var(--muted); font-style: italic; }
+  .tok-key { color: var(--cyan); }
+  .tok-punctuation { color: var(--muted); }
+  .tok-string { color: var(--warn); }
+  .tok-number { color: var(--purple); }
+  .tok-boolean { color: var(--pink); }
+  .tok-timestamp { color: var(--muted); }
+  .tok-error { color: var(--danger); font-weight: 600; }
+  .tok-warn { color: var(--warn); font-weight: 600; }
+  .tok-info { color: var(--cyan); }
+  .tok-plain { color: var(--text); }
   .files-ini-history-list { list-style: none; padding: 0; margin: 8px 0; }
   .files-ini-history-list li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
   .files-ini-history-list li span { flex: 1; }
@@ -2728,11 +2752,16 @@ const DASHBOARD_HTML = `<!doctype html>
           <p id="files-ini-editor-error" class="error-message" style="display: none"></p>
           <div class="files-editor-body">
             <div id="files-ini-gutter" class="files-editor-gutter"></div>
-            <textarea id="files-ini-editor-textarea" class="files-editor-textarea" spellcheck="false"></textarea>
+            <div class="files-editor-code">
+              <pre id="files-ini-highlight" class="files-editor-highlight" aria-hidden="true"></pre>
+              <textarea id="files-ini-editor-textarea" class="files-editor-textarea" spellcheck="false"></textarea>
+            </div>
           </div>
-          <h4>History</h4>
-          <p id="files-ini-history-empty" class="empty-state" style="display: none">No saved edits yet.</p>
-          <ul id="files-ini-history-list" class="files-ini-history-list"></ul>
+          <div id="files-ini-history-section">
+            <h4>History</h4>
+            <p id="files-ini-history-empty" class="empty-state" style="display: none">No saved edits yet.</p>
+            <ul id="files-ini-history-list" class="files-ini-history-list"></ul>
+          </div>
           <div id="files-ini-diff" class="files-ini-diff" style="display: none"></div>
         </div>
       </div>
@@ -6659,6 +6688,8 @@ function initDashboard(resolvedRole) {
   var filesIniEditorEl = document.getElementById('files-ini-editor');
   var filesIniEditorTitleEl = document.getElementById('files-ini-editor-title');
   var filesIniGutterEl = document.getElementById('files-ini-gutter');
+  var filesIniHighlightEl = document.getElementById('files-ini-highlight');
+  var filesIniHistorySectionEl = document.getElementById('files-ini-history-section');
   var filesIniTextareaEl = document.getElementById('files-ini-editor-textarea');
   var filesIniErrorEl = document.getElementById('files-ini-editor-error');
   var btnFilesIniSave = document.getElementById('btn-files-ini-save');
@@ -6674,8 +6705,109 @@ function initDashboard(resolvedRole) {
   // it. filesActiveTabPath === null means "browsing the table", not "no tabs open".
   var filesOpenTabs = [];
   var filesActiveTabPath = null;
+  // .log files are opened read-only (see isEditableTextPath's own comment in
+  // src/main/lib/fileBrowser.ts for why) - tracked alongside the active tab so the Save
+  // button/History section/textarea can all reflect it without re-deriving it everywhere.
+  var filesActiveReadOnly = false;
 
-  function isIniFileName(name) { return /\.ini$/i.test(name); }
+  // BEGIN-FILES-HIGHLIGHT-PURE - a plain-JS mirror of shared/syntaxHighlight.ts's
+  // languageForPath/tokenizeLine, duplicated here (rather than imported) because this whole
+  // script is a hand-written string served as-is, not bundled code. No DOM access in this
+  // block on purpose - tests/webDashboard.test.ts extracts exactly the text between these two
+  // markers and actually runs it (not just checking its syntax) against the same cases as
+  // tests/syntaxHighlight.test.ts, to catch the two drifting apart. Writing backslash escapes
+  // in this section specifically needs care: this whole script is itself one giant TS
+  // template literal (DASHBOARD_HTML in this same file) - a single backslash followed by a
+  // recognized escape letter written here is consumed by *that* template literal's own escape
+  // processing before it ever reaches the browser, so a regex meant to keep its word-boundary
+  // escape in the served JS has to double that backslash here (see the "syntactically valid
+  // JS" test's own comment for the newline-escape case that first caught this).
+  function filesLanguageForPath(p) {
+    if (/\\.ini$/i.test(p)) return 'ini';
+    if (/\\.json$/i.test(p)) return 'json';
+    if (/\\.log$/i.test(p)) return 'log';
+    return 'plain';
+  }
+
+  var FILES_INI_BOOLEAN_RE = /^(true|false)$/i;
+  var FILES_NUMBER_RE = /^-?\\d+(\\.\\d+)?$/;
+
+  function filesTokenizeIniLine(line) {
+    var trimmed = line.trim();
+    if (trimmed.indexOf(';') === 0 || trimmed.indexOf('#') === 0) return [{ text: line, type: 'comment' }];
+    if (trimmed.indexOf('[') === 0 && trimmed.charAt(trimmed.length - 1) === ']') return [{ text: line, type: 'section' }];
+    var eq = line.indexOf('=');
+    if (eq === -1) return [{ text: line, type: 'plain' }];
+    var key = line.slice(0, eq);
+    var value = line.slice(eq + 1);
+    var valueTrimmed = value.trim();
+    var valueType = FILES_NUMBER_RE.test(valueTrimmed)
+      ? 'number'
+      : (FILES_INI_BOOLEAN_RE.test(valueTrimmed) ? 'boolean' : 'string');
+    return [{ text: key, type: 'key' }, { text: '=', type: 'punctuation' }, { text: value, type: valueType }];
+  }
+
+  // See JSON_TOKEN_RE's own comment in shared/syntaxHighlight.ts for why the string
+  // alternative here is a plain "[^"]*" instead of handling escaped quotes.
+  var FILES_JSON_TOKEN_RE = /"[^"]*"|-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?|\\btrue\\b|\\bfalse\\b|\\bnull\\b|[{}[\\],:]/g;
+
+  function filesTokenizeJsonLine(line) {
+    var tokens = [];
+    var lastIndex = 0;
+    FILES_JSON_TOKEN_RE.lastIndex = 0;
+    var match;
+    while ((match = FILES_JSON_TOKEN_RE.exec(line))) {
+      if (match.index > lastIndex) tokens.push({ text: line.slice(lastIndex, match.index), type: 'plain' });
+      var text = match[0];
+      var type;
+      if (text === '{' || text === '}' || text === '[' || text === ']' || text === ',' || text === ':') type = 'punctuation';
+      else if (text === 'true' || text === 'false' || text === 'null') type = 'boolean';
+      else if (text.charAt(0) === '"') type = /^\\s*:/.test(line.slice(match.index + text.length)) ? 'key' : 'string';
+      else type = 'number';
+      tokens.push({ text: text, type: type });
+      lastIndex = FILES_JSON_TOKEN_RE.lastIndex;
+    }
+    if (lastIndex < line.length) tokens.push({ text: line.slice(lastIndex), type: 'plain' });
+    return tokens.length ? tokens : [{ text: line, type: 'plain' }];
+  }
+
+  var FILES_LOG_TIMESTAMP_RE = /^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z?/;
+  var FILES_LOG_LEVEL_RE = /\\b(ERROR|FATAL|WARN|WARNING|INFO|DEBUG|TRACE)\\b/;
+
+  function filesTokenizeLogLine(line) {
+    var tokens = [];
+    var rest = line;
+    var tsMatch = rest.match(FILES_LOG_TIMESTAMP_RE);
+    if (tsMatch) {
+      tokens.push({ text: tsMatch[0], type: 'timestamp' });
+      rest = rest.slice(tsMatch[0].length);
+    }
+    var levelMatch = rest.match(FILES_LOG_LEVEL_RE);
+    if (levelMatch) {
+      var before = rest.slice(0, levelMatch.index);
+      if (before) tokens.push({ text: before, type: 'plain' });
+      var level = levelMatch[0].toUpperCase();
+      var type = (level === 'ERROR' || level === 'FATAL') ? 'error' : ((level === 'WARN' || level === 'WARNING') ? 'warn' : 'info');
+      tokens.push({ text: levelMatch[0], type: type });
+      rest = rest.slice(levelMatch.index + levelMatch[0].length);
+    }
+    if (rest) tokens.push({ text: rest, type: 'plain' });
+    return tokens.length ? tokens : [{ text: line, type: 'plain' }];
+  }
+
+  function filesTokenizeLine(line, language) {
+    if (language === 'ini') return filesTokenizeIniLine(line);
+    if (language === 'json') return filesTokenizeJsonLine(line);
+    if (language === 'log') return filesTokenizeLogLine(line);
+    return [{ text: line, type: 'plain' }];
+  }
+  // END-FILES-HIGHLIGHT-PURE
+
+  function filesEscapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function isOpenableFileName(name) { return filesLanguageForPath(name) !== 'plain'; }
 
   function showFilesIniError(message) {
     filesIniErrorEl.textContent = message || '';
@@ -6689,15 +6821,33 @@ function initDashboard(resolvedRole) {
     return null;
   }
 
-  function renderFilesIniGutter() {
-    var lineCount = filesIniTextareaEl.value.split('\\n').length;
-    var text = '';
-    for (var i = 1; i <= lineCount; i++) text += i + '\\n';
-    filesIniGutterEl.textContent = text;
+  // Renders both the line-number gutter and the Notepad++-style colored layer behind the
+  // textarea from the same split-into-lines pass - see the "Files syntax highlighting"
+  // section above for the tokenizer and the .files-editor-highlight CSS rule for how the two
+  // layers stay pixel-aligned.
+  function renderFilesIniEditorContent() {
+    var lines = filesIniTextareaEl.value.split('\\n');
+
+    var gutterText = '';
+    for (var i = 1; i <= lines.length; i++) gutterText += i + '\\n';
+    filesIniGutterEl.textContent = gutterText;
+
+    var language = filesActiveTabPath ? filesLanguageForPath(filesActiveTabPath) : 'plain';
+    var htmlParts = [];
+    for (var li = 0; li < lines.length; li++) {
+      var tokens = filesTokenizeLine(lines[li], language);
+      var lineHtml = '';
+      for (var ti = 0; ti < tokens.length; ti++) {
+        lineHtml += '<span class="tok-' + tokens[ti].type + '">' + filesEscapeHtml(tokens[ti].text) + '</span>';
+      }
+      htmlParts.push(lineHtml);
+    }
+    filesIniHighlightEl.innerHTML = htmlParts.join('\\n');
   }
 
   filesIniTextareaEl.addEventListener('scroll', function () {
     filesIniGutterEl.scrollTop = filesIniTextareaEl.scrollTop;
+    filesIniHighlightEl.scrollTop = filesIniTextareaEl.scrollTop;
   });
 
   function renderFilesOpenTabs() {
@@ -6735,6 +6885,7 @@ function initDashboard(resolvedRole) {
 
   function showFilesBrowser() {
     filesActiveTabPath = null;
+    filesActiveReadOnly = false;
     filesIniEditorEl.style.display = 'none';
     filesIniDiffEl.style.display = 'none';
     filesTableEl.style.display = '';
@@ -6799,7 +6950,7 @@ function initDashboard(resolvedRole) {
             var tab = findFilesOpenTab(path);
             if (tab) { tab.content = body.content; tab.originalContent = body.content; }
             if (filesActiveTabPath === path) filesIniTextareaEl.value = body.content;
-            renderFilesIniGutter();
+            renderFilesIniEditorContent();
             renderFilesOpenTabs();
             loadFilesIniHistory(path);
           });
@@ -6840,15 +6991,19 @@ function initDashboard(resolvedRole) {
     var tab = findFilesOpenTab(entryPath);
     if (!tab) return;
     filesActiveTabPath = entryPath;
-    filesIniEditorTitleEl.textContent = entryPath;
+    filesActiveReadOnly = filesLanguageForPath(entryPath) === 'log';
+    filesIniEditorTitleEl.textContent = entryPath + (filesActiveReadOnly ? ' (read-only)' : '');
     filesIniTextareaEl.value = tab.content;
-    renderFilesIniGutter();
+    filesIniTextareaEl.readOnly = filesActiveReadOnly;
+    btnFilesIniSave.style.display = filesActiveReadOnly ? 'none' : '';
+    filesIniHistorySectionEl.style.display = filesActiveReadOnly ? 'none' : '';
+    renderFilesIniEditorContent();
     showFilesIniError('');
     filesIniDiffEl.style.display = 'none';
     filesTableEl.style.display = 'none';
     filesIniEditorEl.style.display = '';
     renderFilesOpenTabs();
-    loadFilesIniHistory(entryPath);
+    if (!filesActiveReadOnly) loadFilesIniHistory(entryPath);
   }
 
   function openFilesIniEditor(entryPath) {
@@ -6866,14 +7021,15 @@ function initDashboard(resolvedRole) {
   }
 
   filesIniTextareaEl.addEventListener('input', function () {
+    if (filesActiveReadOnly) return;
     var tab = findFilesOpenTab(filesActiveTabPath);
     if (tab) tab.content = filesIniTextareaEl.value;
-    renderFilesIniGutter();
+    renderFilesIniEditorContent();
     renderFilesOpenTabs();
   });
 
   btnFilesIniSave.addEventListener('click', function () {
-    if (!currentId || !filesActiveTabPath) return;
+    if (!currentId || !filesActiveTabPath || filesActiveReadOnly) return;
     var path = filesActiveTabPath;
     showFilesIniError('');
     fetch('/api/servers/' + encodeURIComponent(currentId) + '/ini', {
@@ -6984,9 +7140,9 @@ function initDashboard(resolvedRole) {
           filesCurrentPath = entryPath;
           loadFilesView();
         });
-      } else if (isIniFileName(entry.name)) {
+      } else if (isOpenableFileName(entry.name)) {
         nameCell.className = 'files-name-cell';
-        nameCell.title = 'Click to edit';
+        nameCell.title = filesLanguageForPath(entry.name) === 'log' ? 'Click to view' : 'Click to edit';
         nameCell.addEventListener('click', function () { openFilesIniEditor(entryPath); });
       }
       var sizeCell = document.createElement('td');
@@ -7705,6 +7861,7 @@ function initDashboard(resolvedRole) {
     filesCurrentPath = '';
     filesOpenTabs = [];
     filesActiveTabPath = null;
+    filesActiveReadOnly = false;
     if (activeView === 'analytics') loadAnalyticsView();
     if (activeView === 'backup') loadBackupView();
     if (activeView === 'settings') loadSettingsView();

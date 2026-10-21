@@ -4303,6 +4303,54 @@ async function findProfileIdByName(name) {
     to confirm a real export/import round trip (profiles show up correctly, no accidental
     collisions, Settings only change when the checkbox was on).
 
+- **Added Notepad++-style syntax coloring to both editors, and opened them up to `.json` and
+  `.log` files** (user feedback on the file browser port below - "add Notepad++'s color
+  codes" and "make it so .json and .log files can be opened too").
+  - **`shared/syntaxHighlight.ts`** (new): pure, per-line tokenizer - `languageForPath(path)`
+    picks `ini`/`json`/`log`/`plain` from the extension, `tokenizeLine(line, language)` splits
+    one line into `{text, type}` tokens (`section`/`comment`/`key`/`punctuation`/`string`/
+    `number`/`boolean`/`timestamp`/`error`/`warn`/`info`/`plain`). Regex-based, not a real
+    parser - deliberately tolerant of invalid/in-progress JSON (a stray mid-edit syntax error
+    must not break the coloring) and cheap enough to re-run on every keystroke. The JSON
+    string pattern doesn't special-case an escaped quote inside a string value, a deliberate
+    simplification covered in its own doc comment.
+  - **`src/main/lib/fileBrowser.ts`**: `isIniPath` split into `isIniPath`/`isJsonPath`/
+    `isLogPath`, plus `isEditableTextPath` (`.ini`+`.json`, gates saving) and
+    `isOpenableTextPath` (+`.log`, gates opening). `.log` is deliberately read-only - a
+    running server may still be appending to the same file, and saving stale editor content
+    back over it would silently erase whatever it wrote in the meantime.
+  - **Both editors** (`FilesTab.tsx` on desktop, the web dashboard's own client script): the
+    single `<textarea>` now sits on top of a same-sized, identically-styled `<pre>` that
+    renders the colored tokens behind it - the textarea's own text is transparent (only the
+    caret/selection show) so the colors show through while the textarea stays fully editable;
+    both layers share the same font/padding/wrapping so they stay pixel-aligned as the user
+    types, and their scroll position is kept in sync the same way the line-number gutter's
+    already was. Opening a `.log` file hides the Save button and History section and makes the
+    textarea read-only, instead of letting a save silently fail against the backend's new
+    `.log` rejection.
+  - **The web dashboard's client script needed its own hand-written copy** of the tokenizer
+    (same algorithm, plain JS instead of a TS import) since that whole script is a
+    string literal served as-is, not bundled code - and writing it exposed a sharper version
+    of the escaping hazard the previous entry's `\n`-in-gutter bug already surfaced: *any*
+    single backslash followed by a letter inside this file's enclosing template literal gets
+    consumed by that literal's own escape processing, not just the "obviously special" ones
+    like `\n` - `\d`, `\s`, and even `\]` inside a character class all silently lose their
+    backslash too (turning `\d+` into a literal `d+`, `[{}[\],:]` into a corrupted character
+    class) unless doubled to `\\d`, `\\s`, `\\]`. `node --check` happily accepts the corrupted
+    version since the result is still syntactically valid JS, just semantically wrong - it was
+    actually caught by a new test (see below) that runs the real served tokenizer and compares
+    its output to `shared/syntaxHighlight.ts`'s, not by the syntax check.
+  - **Verified**: `npm run typecheck`, the full `npx vitest run` (1209 tests - 15 new ones in
+    `tests/syntaxHighlight.test.ts` for the tokenizer itself; new/updated cases in
+    `tests/fileBrowser.test.ts` and `tests/webDashboard.test.ts` for the widened `.ini`/
+    `.json`/`.log` gating; one new `tests/webDashboard.test.ts` test that extracts the web
+    dashboard's served tokenizer function and actually runs it in a fresh Node process against
+    the same cases as `tests/syntaxHighlight.test.ts`, to catch the two drifting apart - this
+    is the test that caught the `\d`/`\]` escaping bugs above before they shipped), and `npm
+    run build` all pass, including the standing `node --check` regression test against the
+    dashboard's served `<script>` content. **Not yet verified**: needs the user to confirm the
+    colors and the `.json`/`.log` opening work correctly in a real browser/`npm run dev`.
+
 - **Ported the file browser to the desktop Manager and gave both editors a Notepad++-style
   multi-tab layout** (user feedback on the batch above - "add the File Browser to the
   Manager too", plus "make the editing zone bigger and screen-responsive, with a button to
