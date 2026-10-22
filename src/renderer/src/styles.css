@@ -1055,25 +1055,41 @@ label.checkbox {
   margin-bottom: 24px;
 }
 
+.dashboard-header h1 {
+  font-size: 1.6rem;
+  margin: 0;
+}
+
 .dashboard-header-actions {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
 }
 
-/* Matches on name or group, case-insensitively - see Dashboard.tsx's own matchesSearch. Sits
-   between the title and the action buttons, growing to fill the space between them rather
-   than defaulting to a cramped intrinsic width. */
+.btn-accent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b1220;
+  font-weight: 600;
+}
+
+.btn-accent:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* Matches on name or group, case-insensitively - see Dashboard.tsx's own matchesSearch. Now
+   sits on the toolbar row (same line as the Status/Map/Sort filters) instead of the header,
+   centered between the filters and the Grid/List toggle - see .toolbar below. */
 .dashboard-search {
-  flex: 1 1 auto;
-  min-width: 120px;
-  max-width: 320px;
+  width: 280px;
+  max-width: 100%;
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 0.9rem;
+  justify-self: center;
 }
 
 /* HardwareStatsBar.tsx - the managed ARK servers' own summed CPU/RAM usage (not the whole
@@ -1529,12 +1545,24 @@ label.checkbox {
    action row, and a "..." dropdown replacing the Manage/Hide/Delete button row. The toolbar
    (search/status/map/sort filters + grid/list toggle) and the list-table alternate view
    live in this same block since they're all part of the same redesign. */
+/* 3-column grid (same technique as .title-bar) so the search box stays centered on this row
+   regardless of how wide the filters on the left or the Grid/List toggle on the right are. */
 .toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.toolbar-filters {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  align-items: center;
-  margin-bottom: 18px;
+}
+
+.toolbar .view-toggle {
+  justify-self: end;
 }
 
 .view-toggle {

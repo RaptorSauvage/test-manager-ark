@@ -15,9 +15,10 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-10-22',
     title: 'A proper "Create New Server" wizard, merged with Import',
     details: [
-      'The 3 separate header buttons (+ Add server / Import existing server / Import profile file...) are now one "+ Add server" button, opening a 3-step wizard: Basic Information (name + install directory, with live validation), Copy Configuration (fresh install, copy settings from an existing profile, or - the two old import buttons, now folded in here - import an existing install or a profile file), and Additional Options (an "Install ArkAPI automatically" checkbox - not wired up to anything real yet - plus a Review & Confirm summary).',
+      'The 3 separate header buttons (+ Add server / Import existing server / Import profile file...) are now one "+ Add Profile" button, opening a 3-step wizard: Basic Information (name + install directory, with live validation), Copy Configuration (fresh install, copy settings from an existing profile, or - the two old import buttons, now folded in here - import an existing install or a profile file), and Additional Options (an "Install ArkAPI automatically" checkbox - not wired up to anything real yet - plus a Review & Confirm summary).',
       'Choosing a fresh install (or copying config from an existing profile) now runs the actual SteamCMD install right there, with a live progress bar/stage (Installing/Verifying/Complete) and the real console output, instead of silently creating an empty profile you had to go install yourself afterward.',
-      'Choosing either import option behaves exactly as before - same pickers, same behavior - just reached from this one button now.'
+      'Choosing either import option behaves exactly as before - same pickers, same behavior - just reached from this one button now.',
+      'The Dashboard header is lighter now that SteamCMD/Profile Management moved into the title bar\'s Tools menu (alongside the new Add Profile) - just the (smaller) title and the blue "+ Add Profile" button remain. The search box moved down onto the filters row, centered between Status/Map/Sort and the Grid/List toggle.'
     ]
   },
   {
@@ -26,7 +27,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     details: [
       'The window no longer uses the OS title bar - it now draws its own, in the same dark theme as everything else, with File/Tools/Help menus, the app version, and its own minimize/maximize/close buttons.',
       'File: Settings, Open Profiles Folder, Open Data Folder, Quit.',
-      'Tools: SteamCMD, Profile Management, Manager Log.',
+      'Tools: Add Profile, SteamCMD, Profile Management, Manager Log.',
       'Help: What\'s New.',
       'The bell icon is a shortcut to What\'s New; the grid icon next to it doesn\'t do anything yet.'
     ]

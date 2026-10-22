@@ -8,6 +8,7 @@ interface TitleBarProps {
   onOpenProfileManagement: () => void
   onOpenManagerLog: () => void
   onOpenChangelog: () => void
+  onOpenCreateWizard: () => void
 }
 
 /** Custom-drawn title bar replacing the OS one (the window runs frame: false - see
@@ -20,7 +21,8 @@ export default function TitleBar({
   onOpenSteamCmd,
   onOpenProfileManagement,
   onOpenManagerLog,
-  onOpenChangelog
+  onOpenChangelog,
+  onOpenCreateWizard
 }: TitleBarProps): JSX.Element {
   const [openMenu, setOpenMenu] = useState<MenuKey>(null)
   const [isMaximized, setIsMaximized] = useState(false)
@@ -96,6 +98,10 @@ export default function TitleBar({
           </button>
           {openMenu === 'tools' && (
             <div className="title-bar-dropdown" onClick={(e) => e.stopPropagation()}>
+              <button type="button" onClick={() => runAndClose(onOpenCreateWizard)}>
+                Add Profile
+              </button>
+              <hr />
               <button type="button" onClick={() => runAndClose(onOpenSteamCmd)}>
                 SteamCMD
               </button>

@@ -13,16 +13,20 @@ interface DashboardProps {
   profiles: ServerProfile[]
   onProfilesChange: (profiles: ServerProfile[]) => void
   onOpenProfile: (id: string, tab?: TabKey) => void
-  onOpenSteamCmd: () => void
-  onOpenProfileManagement: () => void
+  /** Lifted up to App.tsx so the title bar's Tools > Add Profile menu item can open the same
+   *  wizard from anywhere, not just from this page's own "+ Add Profile" button. */
+  showCreateWizard: boolean
+  onOpenCreateWizard: () => void
+  onCloseCreateWizard: () => void
 }
 
 export default function Dashboard({
   profiles,
   onProfilesChange,
   onOpenProfile,
-  onOpenSteamCmd,
-  onOpenProfileManagement
+  showCreateWizard,
+  onOpenCreateWizard,
+  onCloseCreateWizard
 }: DashboardProps): JSX.Element {
   const statuses = useServerStatuses(profiles.map((p) => p.id))
   const visibleProfiles = profiles.filter((p) => !p.hidden)
@@ -44,7 +48,6 @@ export default function Dashboard({
   const [sortOrder, setSortOrder] = useState<'none' | 'name-asc' | 'name-desc'>('none')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-  const [showCreateWizard, setShowCreateWizard] = useState(false)
   // Only drives the Uptime tile's freshness - a minute is plenty for something shown as
   // "1h 9m", unlike the Analytics tab's own per-second ticker which needs second precision.
   const [now, setNow] = useState(() => Date.now())
@@ -568,17 +571,10 @@ export default function Dashboard({
     <div className="dashboard">
       <header className="dashboard-header">
         <h1>Bober Server Manager</h1>
-        <input
-          type="search"
-          className="dashboard-search"
-          placeholder="Search servers..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
         <div className="dashboard-header-actions">
-          <button onClick={onOpenSteamCmd}>SteamCMD</button>
-          <button onClick={onOpenProfileManagement}>Profile Management</button>
-          <button onClick={() => setShowCreateWizard(true)}>+ Add server</button>
+          <button className="btn-accent" onClick={onOpenCreateWizard}>
+            + Add Profile
+          </button>
         </div>
       </header>
 
@@ -591,7 +587,7 @@ export default function Dashboard({
           importing={importing}
           importError={importError}
           onClose={() => {
-            setShowCreateWizard(false)
+            onCloseCreateWizard()
             setImportError('')
           }}
         />
@@ -600,27 +596,36 @@ export default function Dashboard({
       <HardwareStatsBar profiles={visibleProfiles} statuses={statuses} />
 
       <div className="toolbar">
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
-          <option value="all">All Statuses</option>
-          <option value="running">Running</option>
-          <option value="starting">Starting</option>
-          <option value="stopping">Stopping</option>
-          <option value="stopped">Stopped</option>
-          <option value="updating">Updating</option>
-        </select>
-        <select value={mapFilter} onChange={(e) => setMapFilter(e.target.value)}>
-          <option value="all">All Maps</option>
-          {availableMaps.map((mapId) => (
-            <option key={mapId} value={mapId}>
-              {mapDisplayName(mapId)}
-            </option>
-          ))}
-        </select>
-        <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}>
-          <option value="none">Default order</option>
-          <option value="name-asc">Name (A-Z)</option>
-          <option value="name-desc">Name (Z-A)</option>
-        </select>
+        <div className="toolbar-filters">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
+            <option value="all">All Statuses</option>
+            <option value="running">Running</option>
+            <option value="starting">Starting</option>
+            <option value="stopping">Stopping</option>
+            <option value="stopped">Stopped</option>
+            <option value="updating">Updating</option>
+          </select>
+          <select value={mapFilter} onChange={(e) => setMapFilter(e.target.value)}>
+            <option value="all">All Maps</option>
+            {availableMaps.map((mapId) => (
+              <option key={mapId} value={mapId}>
+                {mapDisplayName(mapId)}
+              </option>
+            ))}
+          </select>
+          <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}>
+            <option value="none">Default order</option>
+            <option value="name-asc">Name (A-Z)</option>
+            <option value="name-desc">Name (Z-A)</option>
+          </select>
+        </div>
+        <input
+          type="search"
+          className="dashboard-search"
+          placeholder="Search servers..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
         <div className="view-toggle">
           <button type="button" className={viewMode === 'grid' ? 'active' : ''} onClick={() => setViewMode('grid')}>
             ▦ Grid
@@ -634,7 +639,7 @@ export default function Dashboard({
       <div className="dashboard-body">
         <div className="dashboard-content">
           {profiles.length === 0 && (
-            <p className="empty-state">No server profiles yet. Click &quot;Add server&quot; to configure one.</p>
+            <p className="empty-state">No server profiles yet. Click &quot;Add Profile&quot; to configure one.</p>
           )}
           {profiles.length > 0 && visibleProfiles.length === 0 && (
             <p className="empty-state">

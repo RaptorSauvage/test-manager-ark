@@ -56,6 +56,7 @@ export default function App(): JSX.Element {
   const [showDataSettings, setShowDataSettings] = useState(false)
   const [showProfileManagement, setShowProfileManagement] = useState(false)
   const [showChangelog, setShowChangelog] = useState(false)
+  const [showCreateWizard, setShowCreateWizard] = useState(false)
   const [mainPage, setMainPage] = useState<MainPage>('dashboard')
   const [groupConsoleTarget, setGroupConsoleTarget] = useState<{ groupName: string; profileIds: string[] } | null>(
     null
@@ -120,6 +121,22 @@ export default function App(): JSX.Element {
     setMainPage('managerLog')
   }
 
+  // Same reasoning as handleOpenManagerLog above - the wizard only renders inside Dashboard's
+  // own JSX, which only mounts for the default ARK shell branch, so reaching it from anywhere
+  // else needs every other view's state cleared first.
+  function handleOpenCreateWizard(): void {
+    setSelectedId(null)
+    setMinecraftSelectedId(null)
+    setGroupConsoleTarget(null)
+    setShowSteamCmd(false)
+    setShowDataSettings(false)
+    setShowProfileManagement(false)
+    setShowChangelog(false)
+    setGameMode('ark')
+    setMainPage('dashboard')
+    setShowCreateWizard(true)
+  }
+
   const titleBar = (
     <TitleBar
       onOpenSettings={() => setShowDataSettings(true)}
@@ -127,6 +144,7 @@ export default function App(): JSX.Element {
       onOpenProfileManagement={() => setShowProfileManagement(true)}
       onOpenManagerLog={handleOpenManagerLog}
       onOpenChangelog={() => setShowChangelog(true)}
+      onOpenCreateWizard={handleOpenCreateWizard}
     />
   )
 
@@ -361,8 +379,9 @@ export default function App(): JSX.Element {
               profiles={profiles}
               onProfilesChange={handleProfilesChange}
               onOpenProfile={handleOpenProfile}
-              onOpenSteamCmd={() => setShowSteamCmd(true)}
-              onOpenProfileManagement={() => setShowProfileManagement(true)}
+              showCreateWizard={showCreateWizard}
+              onOpenCreateWizard={() => setShowCreateWizard(true)}
+              onCloseCreateWizard={() => setShowCreateWizard(false)}
             />
           )}
         </div>
