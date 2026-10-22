@@ -14,6 +14,7 @@ import { registerMapsHandlers } from './maps'
 import { registerCustomMapsHandlers } from './customMaps'
 import { registerDataDirHandlers } from './dataDir'
 import { registerOfficialServerStatusHandlers } from './officialServerStatus'
+import { registerSystemStatsHandlers } from './systemStats'
 import { registerSystemHandlers } from './system'
 import { registerAppUpdateHandlers } from './appUpdate'
 import { registerMapManagementHandlers } from './mapManagement'
@@ -50,6 +51,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerCustomMapsHandlers()
   registerDataDirHandlers()
   registerOfficialServerStatusHandlers()
+  registerSystemStatsHandlers()
   registerSystemHandlers(mainWindow)
   registerAppUpdateHandlers(mainWindow.webContents)
   registerMapManagementHandlers()

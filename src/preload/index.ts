@@ -129,6 +129,9 @@ const api: Api = {
   officialServerStatus: {
     get: () => ipcRenderer.invoke(IPC.officialServerStatusGet)
   },
+  systemStats: {
+    get: () => ipcRenderer.invoke(IPC.systemStatsGet)
+  },
   webDashboard: {
     getStatus: () => ipcRenderer.invoke(IPC.webDashboardStatus),
     getLocalIps: () => ipcRenderer.invoke(IPC.webDashboardLocalIps)

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import type { AppSettings, MapDefinition, ServerProfile, ServerRunState } from '@shared/types'
+import type { AppSettings, MapDefinition, ServerProfile, ServerRunState, ServerStatus } from '@shared/types'
 import { getGameDefinition, listGameDefinitions } from '@shared/games'
 import { useServerStatuses } from '../lib/useServerStatuses'
 import { createDefaultProfile } from '../lib/profile'
 import type { TabKey } from './ServerDetail'
-import OfficialServerStatusPanel from '../components/OfficialServerStatusPanel'
+import HardwareStatsBar from '../components/HardwareStatsBar'
 import { GAME_ICONS } from '../lib/gameIcons'
 import { confirmAction } from '../lib/confirmAction'
 
@@ -38,10 +38,30 @@ export default function Dashboard({
   const [maps, setMaps] = useState<MapDefinition[]>([])
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | ServerRunState>('all')
+  const [mapFilter, setMapFilter] = useState('all')
+  const [sortOrder, setSortOrder] = useState<'name-asc' | 'name-desc'>('name-asc')
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  // Only drives the Uptime tile's freshness - a minute is plenty for something shown as
+  // "1h 9m", unlike the Analytics tab's own per-second ticker which needs second precision.
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     window.api.settings.get().then(setSettings)
   }, [])
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    if (!openMenuId) return
+    const close = (): void => setOpenMenuId(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [openMenuId])
 
   async function persistSettings(next: AppSettings): Promise<void> {
     setSettings(next)
@@ -245,124 +265,238 @@ export default function Dashboard({
     await Promise.all(wasRunning.map((p) => runAction(p, () => window.api.server.start(p.id))))
   }
 
-  function renderCard(profile: ServerProfile): JSX.Element {
+  /** Compact "1h 9m" / "2d 4h" form - the Uptime tile only has room for a glance, unlike the
+   *  Analytics tab's own full "0d 1h 9m 42s" formatUptime. */
+  function formatUptimeShort(ms: number): string {
+    const totalMinutes = Math.floor(ms / 60_000)
+    const days = Math.floor(totalMinutes / 1440)
+    const hours = Math.floor((totalMinutes % 1440) / 60)
+    const minutes = totalMinutes % 60
+    return days > 0 ? `${days}d ${hours}h` : `${hours}h ${minutes}m`
+  }
+
+  /** Values both renderCard and renderListRow need, computed once per profile so the two
+   *  views can never silently drift apart on what counts as "running", what the version
+   *  label says, etc. */
+  function cardData(profile: ServerProfile): {
+    status: ServerStatus | undefined
+    state: ServerRunState
+    mapLabel: string
+    versionLabel: string
+    playersLabel: string
+    uptimeLabel: string
+    cpuLabel: string
+    memoryLabel: string
+  } {
     const status = statuses[profile.id]
     const state: ServerRunState = status?.state ?? 'stopped'
+    const running = state === 'running'
+    return {
+      status,
+      state,
+      mapLabel: profile.map ? mapDisplayName(profile.map) : '(not set)',
+      versionLabel: gameVersionById[profile.id] ?? '-',
+      playersLabel: running && status?.players ? `${status.players.length} / ${profile.maxPlayers}` : '-',
+      uptimeLabel: running && status?.startedAt ? formatUptimeShort(now - status.startedAt) : '-',
+      cpuLabel: running && status?.cpu !== undefined ? `${status.cpu}%` : '-',
+      memoryLabel: running && status?.memoryMB !== undefined ? `${status.memoryMB} MB` : '-'
+    }
+  }
+
+  function renderActionButtons(profile: ServerProfile, state: ServerRunState, compact: boolean): JSX.Element {
+    const updateTitle =
+      installedById[profile.id] === false
+        ? `No server executable found - expected one of:\n${profile.installDir}\\ShooterGame\\Binaries\\Win64\\ArkAscendedServer.exe\n${profile.installDir}/ShooterGame/Binaries/Linux/ArkAscendedServer`
+        : 'Install/update the server files via SteamCMD'
+    const updateLabel =
+      installedById[profile.id] === false
+        ? state === 'updating'
+          ? 'Installing...'
+          : 'Install'
+        : state === 'updating'
+          ? 'Updating...'
+          : 'Update'
+    return (
+      <div className={compact ? 'action-row-list' : 'action-row'}>
+        <button className="start" disabled={state !== 'stopped'} onClick={() => void handleAction(profile, 'start')} title="Start">
+          ▶
+        </button>
+        <button className="stop" disabled={state !== 'running'} onClick={() => void handleAction(profile, 'stop')} title="Stop">
+          ■
+        </button>
+        <button
+          className="restart"
+          disabled={state !== 'running'}
+          onClick={() => void handleAction(profile, 'restart')}
+          title="Restart"
+        >
+          ↻
+        </button>
+        <button
+          className="update"
+          disabled={state !== 'stopped'}
+          onClick={() => void handleUpdate(profile)}
+          title={`${updateLabel} - ${updateTitle}`}
+        >
+          ⇡
+        </button>
+        <button
+          className="kill"
+          disabled={state === 'stopped' || state === 'updating'}
+          onClick={() => void handleKill(profile)}
+          title="Kill (force, no save)"
+        >
+          ✕
+        </button>
+      </div>
+    )
+  }
+
+  function renderCardMenu(profile: ServerProfile): JSX.Element {
+    const open = openMenuId === profile.id
+    return (
+      <div className="header-right">
+        <span className={`badge badge-${statuses[profile.id]?.state ?? 'stopped'}`}>
+          {statuses[profile.id]?.state ?? 'stopped'}
+        </span>
+        <button
+          type="button"
+          className="card-menu-btn"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpenMenuId(open ? null : profile.id)
+          }}
+        >
+          ⋯
+        </button>
+        {open && (
+          <div className="card-menu-dropdown open" onClick={(e) => e.stopPropagation()}>
+            <div className="card-menu-group">
+              <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
+              <button onClick={() => onOpenProfile(profile.id, 'settings')}>Settings</button>
+            </div>
+            <div className="card-menu-group">
+              <button
+                onClick={() => void handleToggleHidden(profile)}
+                title={profile.hidden ? 'Show this server on the main dashboard again' : 'Hide this server from the main dashboard'}
+              >
+                {profile.hidden ? 'Unhide' : 'Hide'}
+              </button>
+            </div>
+            <div className="card-menu-group">
+              <button className="danger" onClick={() => void handleDelete(profile.id)}>
+                Delete Profile
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  function renderCard(profile: ServerProfile): JSX.Element {
+    const { state, status, mapLabel, versionLabel, playersLabel, uptimeLabel, cpuLabel, memoryLabel } = cardData(profile)
     return (
       <div
-        className={`server-card${dragId === profile.id ? ' dragging' : ''}`}
+        className={`server-card-v2 status-${state}${dragId === profile.id ? ' dragging' : ''}`}
         key={profile.id}
+        draggable
+        onDragStart={() => setDragId(profile.id)}
+        onDragEnd={() => setDragId(null)}
         onDragOver={(e) => e.preventDefault()}
         onDrop={() => void handleDrop(profile.id)}
       >
-        <div className="server-card-header">
-          <span
-            className="drag-handle"
-            draggable
-            onDragStart={() => setDragId(profile.id)}
-            onDragEnd={() => setDragId(null)}
-            title="Drag to reorder"
-          >
-            ⠿
-          </span>
-          <img
-            src={GAME_ICONS[getGameDefinition(profile.game).iconFileName]}
-            alt=""
-            title={getGameDefinition(profile.game).displayName}
-            className="server-card-game-icon"
-          />
-          <h2>{profile.name}</h2>
-          <span className={`badge badge-${state}`}>{state}</span>
+        <div className="server-card-v2-header">
+          <div className="server-card-v2-title">
+            <img
+              src={GAME_ICONS[getGameDefinition(profile.game).iconFileName]}
+              alt=""
+              title={getGameDefinition(profile.game).displayName}
+              className="server-card-game-icon"
+            />
+            <h3>{profile.name}</h3>
+            <span className="server-version">v{versionLabel}</span>
+          </div>
+          {renderCardMenu(profile)}
         </div>
-        <dl className="server-card-info">
-          <div>
-            <dt>Map</dt>
-            <dd>{profile.map ? mapDisplayName(profile.map) : '(not set)'}</dd>
-          </div>
-          <div>
-            <dt>Port</dt>
-            <dd>{profile.gamePort}</dd>
-          </div>
-          <div>
-            <dt>Version</dt>
-            <dd>{gameVersionById[profile.id] ?? '-'}</dd>
-          </div>
-          {status?.players && (
-            <div>
-              <dt>Players</dt>
-              <dd>{status.players.length}</dd>
-            </div>
-          )}
-          {status?.cpu !== undefined && (
-            <div>
-              <dt>CPU</dt>
-              <dd>{status.cpu}%</dd>
-            </div>
-          )}
-          {status?.memoryMB !== undefined && (
-            <div>
-              <dt>RAM</dt>
-              <dd>{status.memoryMB} MB</dd>
-            </div>
-          )}
-        </dl>
         {status?.lastError && <p className="error-message">{status.lastError}</p>}
         {actionErrors[profile.id] && <p className="error-message">{actionErrors[profile.id]}</p>}
-        <div className="server-card-actions-primary">
-          <button className="start" disabled={state !== 'stopped'} onClick={() => void handleAction(profile, 'start')}>
-            Start
-          </button>
-          <button className="stop" disabled={state !== 'running'} onClick={() => void handleAction(profile, 'stop')}>
-            Stop
-          </button>
-          <button
-            className="restart"
-            disabled={state !== 'running'}
-            onClick={() => void handleAction(profile, 'restart')}
-          >
-            Restart
-          </button>
-          <button
-            className="update"
-            disabled={state !== 'stopped'}
-            onClick={() => void handleUpdate(profile)}
-            title={
-              installedById[profile.id] === false
-                ? `No server executable found - expected one of:\n${profile.installDir}\\ShooterGame\\Binaries\\Win64\\ArkAscendedServer.exe\n${profile.installDir}/ShooterGame/Binaries/Linux/ArkAscendedServer`
-                : "Install/update the server files via SteamCMD"
-            }
-          >
-            {installedById[profile.id] === false
-              ? state === 'updating'
-                ? 'Installing...'
-                : 'Install'
-              : state === 'updating'
-                ? 'Updating...'
-                : 'Update'}
-          </button>
-          <button
-            className="kill"
-            disabled={state === 'stopped' || state === 'updating'}
-            onClick={() => void handleKill(profile)}
-            title="Force-kill immediately, without saving"
-          >
-            Kill
-          </button>
+        <div className="stat-tile-grid">
+          <div className="stat-tile">
+            <div className="stat-tile-label">Port</div>
+            <div className="stat-tile-value">{profile.gamePort}</div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-label">Map</div>
+            <div className="stat-tile-value">{mapLabel}</div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-label">Players</div>
+            <div className="stat-tile-value">{playersLabel}</div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-label">Uptime</div>
+            <div className="stat-tile-value">{uptimeLabel}</div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-label">CPU</div>
+            <div className="stat-tile-value">{cpuLabel}</div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-label">Memory</div>
+            <div className="stat-tile-value">{memoryLabel}</div>
+          </div>
         </div>
-        <div className="server-card-actions-secondary">
-          <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
-          <button
-            onClick={() => void handleToggleHidden(profile)}
-            title={profile.hidden ? 'Show this server on the main dashboard again' : 'Hide this server from the main dashboard'}
-          >
-            {profile.hidden ? 'Unhide' : 'Hide'}
-          </button>
-          <button className="danger" onClick={() => void handleDelete(profile.id)}>
-            Delete
-          </button>
-        </div>
+        {renderActionButtons(profile, state, false)}
       </div>
     )
+  }
+
+  function renderListRow(profile: ServerProfile): JSX.Element {
+    const { state, mapLabel, versionLabel, playersLabel, uptimeLabel, cpuLabel, memoryLabel } = cardData(profile)
+    return (
+      <tr key={profile.id}>
+        <td>
+          <span className={`badge badge-${state}`}>{state}</span>
+        </td>
+        <td>
+          <strong>{profile.name}</strong>
+        </td>
+        <td className="mono">v{versionLabel}</td>
+        <td>{mapLabel}</td>
+        <td className="mono">{profile.gamePort}</td>
+        <td>{playersLabel}</td>
+        <td>{uptimeLabel}</td>
+        <td>{cpuLabel}</td>
+        <td>{memoryLabel}</td>
+        <td>{renderActionButtons(profile, state, true)}</td>
+      </tr>
+    )
+  }
+
+  function renderProfileList(list: ServerProfile[]): JSX.Element {
+    if (viewMode === 'list') {
+      return (
+        <table className="server-list-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Name</th>
+              <th>Version</th>
+              <th>Map</th>
+              <th>Port</th>
+              <th>Players</th>
+              <th>Uptime</th>
+              <th>CPU</th>
+              <th>Memory</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>{list.map(renderListRow)}</tbody>
+        </table>
+      )
+    }
+    return <div className="server-grid">{list.map(renderCard)}</div>
   }
 
   async function handleDrop(targetId: string): Promise<void> {
@@ -384,18 +518,29 @@ export default function Dashboard({
   // Matches on name or group, case-insensitively - with 13+ servers on one cluster, finding
   // a specific one by scrolling/expanding groups gets tedious fast. Forces matching groups
   // open below (regardless of their own collapsed state) so a match inside a collapsed group
-  // is never hidden from the result.
+  // is never hidden from the result. Status/Map narrow the same result set further - all
+  // three combine with AND, same as the toolbar's own left-to-right reading order.
   const isSearching = searchQuery.trim().length > 0
-  function matchesSearch(profile: ServerProfile): boolean {
-    if (!isSearching) return true
-    const q = searchQuery.trim().toLowerCase()
-    return profile.name.toLowerCase().includes(q) || profile.group.toLowerCase().includes(q)
+  const isFiltering = isSearching || statusFilter !== 'all' || mapFilter !== 'all'
+  function matchesFilters(profile: ServerProfile): boolean {
+    if (isSearching) {
+      const q = searchQuery.trim().toLowerCase()
+      if (!profile.name.toLowerCase().includes(q) && !profile.group.toLowerCase().includes(q)) return false
+    }
+    if (statusFilter !== 'all' && (statuses[profile.id]?.state ?? 'stopped') !== statusFilter) return false
+    if (mapFilter !== 'all' && profile.map !== mapFilter) return false
+    return true
   }
-
-  const runningCount = visibleProfiles.filter((p) => statuses[p.id]?.state === 'running').length
-  const totalPlayers = visibleProfiles.reduce((sum, p) => sum + (statuses[p.id]?.players?.length ?? 0), 0)
-  const totalCpu = visibleProfiles.reduce((sum, p) => sum + (statuses[p.id]?.cpu ?? 0), 0)
-  const totalMemoryMB = visibleProfiles.reduce((sum, p) => sum + (statuses[p.id]?.memoryMB ?? 0), 0)
+  function sortProfiles(list: ServerProfile[]): ServerProfile[] {
+    const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name))
+    return sortOrder === 'name-desc' ? sorted.reverse() : sorted
+  }
+  // Every distinct map among this dashboard's own profiles, not every map the game
+  // supports - an empty "All Maps" dropdown full of maps nobody's actually running would be
+  // closer to noise than a filter.
+  const availableMaps = Array.from(new Set(visibleProfiles.map((p) => p.map).filter(Boolean))).sort((a, b) =>
+    mapDisplayName(a).localeCompare(mapDisplayName(b))
+  )
 
   return (
     <div className="dashboard">
@@ -422,6 +567,39 @@ export default function Dashboard({
       </header>
 
       {importError && <p className="error-message">{importError}</p>}
+
+      <HardwareStatsBar />
+
+      <div className="toolbar">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
+          <option value="all">All Statuses</option>
+          <option value="running">Running</option>
+          <option value="starting">Starting</option>
+          <option value="stopping">Stopping</option>
+          <option value="stopped">Stopped</option>
+          <option value="updating">Updating</option>
+        </select>
+        <select value={mapFilter} onChange={(e) => setMapFilter(e.target.value)}>
+          <option value="all">All Maps</option>
+          {availableMaps.map((mapId) => (
+            <option key={mapId} value={mapId}>
+              {mapDisplayName(mapId)}
+            </option>
+          ))}
+        </select>
+        <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}>
+          <option value="name-asc">Name (A-Z)</option>
+          <option value="name-desc">Name (Z-A)</option>
+        </select>
+        <div className="view-toggle">
+          <button type="button" className={viewMode === 'grid' ? 'active' : ''} onClick={() => setViewMode('grid')}>
+            ▦ Grid
+          </button>
+          <button type="button" className={viewMode === 'list' ? 'active' : ''} onClick={() => setViewMode('list')}>
+            ☰ List
+          </button>
+        </div>
+      </div>
 
       <div className="dashboard-body">
         <div className="dashboard-content">
@@ -461,21 +639,21 @@ export default function Dashboard({
               Every server profile is hidden. Expand &quot;Hidden servers&quot; below to unhide one.
             </p>
           )}
-          {isSearching && !visibleProfiles.some(matchesSearch) && (
-            <p className="empty-state">No server matches &quot;{searchQuery.trim()}&quot;.</p>
+          {isFiltering && !visibleProfiles.some(matchesFilters) && (
+            <p className="empty-state">No server matches the current search/filters.</p>
           )}
 
-          <div className="server-grid">{ungroupedProfiles.filter(matchesSearch).map(renderCard)}</div>
+          {renderProfileList(sortProfiles(ungroupedProfiles.filter(matchesFilters)))}
 
           {groupNames.map((groupName) => {
             const groupProfiles = visibleProfiles.filter((p) => p.group.trim() === groupName)
-            const matchingGroupProfiles = groupProfiles.filter(matchesSearch)
-            if (isSearching && matchingGroupProfiles.length === 0) return null
+            const matchingGroupProfiles = sortProfiles(groupProfiles.filter(matchesFilters))
+            if (isFiltering && matchingGroupProfiles.length === 0) return null
             return (
             <details
               className={`server-group${dragGroupName === groupName ? ' dragging' : ''}`}
               key={groupName}
-              open={isSearching || !collapsedGroups.includes(groupName)}
+              open={isFiltering || !collapsedGroups.includes(groupName)}
               onToggle={(e) => setGroupCollapsed(groupName, !(e.currentTarget as HTMLDetailsElement).open)}
             >
               <summary
@@ -496,9 +674,7 @@ export default function Dashboard({
                 </span>
                 {groupName}
               </summary>
-              <div className="server-grid">
-                {matchingGroupProfiles.map(renderCard)}
-              </div>
+              {renderProfileList(matchingGroupProfiles)}
             </details>
             )
           })}
@@ -506,39 +682,10 @@ export default function Dashboard({
           {hiddenProfiles.length > 0 && (
             <details className="hidden-servers">
               <summary>Hidden servers ({hiddenProfiles.length})</summary>
-              <div className="server-grid">{hiddenProfiles.filter(matchesSearch).map(renderCard)}</div>
+              {renderProfileList(sortProfiles(hiddenProfiles.filter(matchesFilters)))}
             </details>
           )}
         </div>
-
-        <aside className="dashboard-sidebar">
-          <section className="official-status-panel">
-            <div className="official-status-header">
-              <h3>Global Performance</h3>
-            </div>
-            <dl className="group-console-cluster-stats">
-              <div>
-                <dt>Servers running</dt>
-                <dd>
-                  {runningCount} <span className="muted">({visibleProfiles.length} total)</span>
-                </dd>
-              </div>
-              <div>
-                <dt>Players</dt>
-                <dd>{totalPlayers}</dd>
-              </div>
-              <div>
-                <dt>CPU</dt>
-                <dd>{totalCpu.toFixed(1)}%</dd>
-              </div>
-              <div>
-                <dt>RAM</dt>
-                <dd>{totalMemoryMB} MB</dd>
-              </div>
-            </dl>
-          </section>
-          <OfficialServerStatusPanel />
-        </aside>
       </div>
     </div>
   )

@@ -788,6 +788,7 @@ export const IPC = {
   dataDirGetDefault: 'data-dir:get-default',
 
   officialServerStatusGet: 'official-server-status:get',
+  systemStatsGet: 'system-stats:get',
 
   webDashboardStatus: 'web-dashboard:status',
   webDashboardLocalIps: 'web-dashboard:local-ips',
@@ -1023,6 +1024,31 @@ export interface OfficialServerStatus {
   color: string
 }
 
+/** Live, host-wide CPU/RAM/network snapshot for the Dashboard's hardware stats bar - see
+ *  src/main/lib/systemStats.ts. Distinct from the pre-existing "Global Performance" panel,
+ *  which sums only this app's own managed server processes rather than the whole machine. */
+export interface SystemStats {
+  cpu: {
+    usagePercent: number
+    model: string
+    physicalCores: number | null
+    logicalCores: number
+  }
+  memory: {
+    usagePercent: number
+    usedBytes: number
+    totalBytes: number
+    type: string | null
+    speedMHz: number | null
+  }
+  network: {
+    interfaceLabel: string | null
+    speedMbps: number | null
+    rxBytesPerSec: number
+    txBytesPerSec: number
+  }
+}
+
 /** The contextBridge API surface exposed by the preload script as `window.api`. */
 export interface Api {
   profiles: {
@@ -1136,6 +1162,9 @@ export interface Api {
   }
   officialServerStatus: {
     get: () => Promise<OfficialServerStatus>
+  }
+  systemStats: {
+    get: () => Promise<SystemStats>
   }
   webDashboard: {
     getStatus: () => Promise<{ running: boolean; error: string | null; host: string | null }>

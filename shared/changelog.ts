@@ -13,6 +13,18 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-22',
+    title: 'Dashboard redesign: denser cards, hardware stats bar, list view, filters',
+    details: [
+      'New host-wide CPU/RAM/Network usage bar at the top of the Dashboard (CPU model, core/thread count, RAM type, network interface) - separate from the existing "Global Performance" panel, which only sums this app\'s own managed server processes.',
+      'Server cards are denser (Port/Map/Players/Uptime/CPU/Memory as a small grid), show the installed game version next to the name, and use icon-only Start/Stop/Restart/Update/Kill buttons with the same colors as before.',
+      '"Manage/Hide/Delete" moved into a "..." dropdown on each card, now also including a direct "Settings" shortcut.',
+      'New Status/Map/Sort filters next to the search box, and a Grid/List toggle - List shows every server as rows in one dense table instead of cards.',
+      'A thin divider now separates ungrouped servers from the first cluster group, and between groups.',
+      '"Global Performance" and "Official Server Status" (the sidebar panels) are temporarily removed while the new layout settles.'
+    ]
+  },
+  {
+    date: '2026-10-22',
     title: 'Fixed: a beta/PTR-pinned server still showed "update available" after updating',
     details: [
       'SteamCMD caches its own "latest build id" lookup on disk, and that cache can stay stale for a less-common branch (a beta/PTR one) even after `+app_info_update` - so the check could keep comparing against an old, wrong number even though SteamCMD\'s own update just confirmed nothing had changed.',
