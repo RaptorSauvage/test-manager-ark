@@ -6,6 +6,8 @@ interface TitleBarProps {
   onOpenSettings: () => void
   onOpenSteamCmd: () => void
   onOpenProfileManagement: () => void
+  onOpenMapManager: () => void
+  onOpenManageGroups: () => void
   onOpenManagerLog: () => void
   onOpenChangelog: () => void
   onOpenCreateWizard: () => void
@@ -20,6 +22,8 @@ export default function TitleBar({
   onOpenSettings,
   onOpenSteamCmd,
   onOpenProfileManagement,
+  onOpenMapManager,
+  onOpenManageGroups,
   onOpenManagerLog,
   onOpenChangelog,
   onOpenCreateWizard
@@ -73,6 +77,9 @@ export default function TitleBar({
               <button type="button" onClick={() => runAndClose(onOpenSettings)}>
                 Settings
               </button>
+              <button type="button" onClick={() => runAndClose(onOpenManageGroups)}>
+                Manage Groups
+              </button>
               <hr />
               <button type="button" onClick={() => runAndClose(() => void window.api.system.openProfilesFolder())}>
                 Open Profiles Folder
@@ -107,6 +114,9 @@ export default function TitleBar({
               </button>
               <button type="button" onClick={() => runAndClose(onOpenProfileManagement)}>
                 Profile Management
+              </button>
+              <button type="button" onClick={() => runAndClose(onOpenMapManager)}>
+                Map Manager
               </button>
               <button type="button" onClick={() => runAndClose(onOpenManagerLog)}>
                 Manager Log

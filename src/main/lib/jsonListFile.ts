@@ -24,8 +24,22 @@ export function parseMapDefinitionsFile(content: string, fileLabel: string): Map
     ) {
       throw new Error(`${fileLabel} entry ${index} must be an object with string "id" and "displayName" fields.`)
     }
-    return { id: (entry as MapDefinition).id, displayName: (entry as MapDefinition).displayName }
+    const modId = (entry as Record<string, unknown>).modId
+    return {
+      id: (entry as MapDefinition).id,
+      displayName: (entry as MapDefinition).displayName,
+      ...(typeof modId === 'string' && modId.trim() ? { modId } : {})
+    }
   })
+}
+
+/** Writes a maps.json/customMaps.json-shaped file - used by customMaps.ts's add/update/
+ *  delete, which always read the current list first (via readMapDefinitionsFile) and write
+ *  the whole array back, same read-modify-write pattern as the rest of this file-backed
+ *  config (settings, profiles). */
+export function writeMapDefinitionsFile(filePath: string, maps: MapDefinition[]): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  fs.writeFileSync(filePath, JSON.stringify(maps, null, 2), 'utf-8')
 }
 
 /** Reads a maps.json/customMaps.json-shaped file, creating it from `defaults` on first run and

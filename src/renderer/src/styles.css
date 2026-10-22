@@ -96,7 +96,11 @@ body {
   position: absolute;
   top: 36px;
   left: 0;
-  z-index: 50;
+  /* Above .side-panel-overlay's z-index: 90 - a File/Tools menu opened while a drawer
+     (Settings, Map Manager, ...) is showing must stay clickable, since switching between
+     drawers straight from their own title bar menu is the whole point of not closing one
+     first. */
+  z-index: 95;
   min-width: 200px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -1745,6 +1749,56 @@ label.checkbox {
   color: var(--danger);
 }
 
+/* Inline-expanding "Group" submenu inside a card's ... menu - pushes the rest of the menu
+   down rather than a hover flyout, so it never runs off the dropdown's edge. */
+.card-menu-submenu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 2px 10px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.card-menu-submenu button {
+  font-size: 0.82rem;
+}
+
+.card-menu-submenu button.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.card-menu-submenu-new {
+  display: flex;
+  gap: 4px;
+  padding: 4px 10px 2px;
+}
+
+.card-menu-submenu-new input {
+  flex: 1;
+  font-size: 0.8rem;
+  padding: 5px 7px;
+}
+
+.card-menu-submenu-new button {
+  all: unset;
+  cursor: pointer;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #0b1220;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.card-menu-submenu-new button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .stat-tile-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -3386,6 +3440,54 @@ label.checkbox {
   justify-content: center;
 }
 
+/* Right-side drawer for secondary screens (Settings, SteamCMD, Profile Management, Map
+   Manager) - see components/SidePanel.tsx. The page behind it stays visible, dimmed, on the
+   left rather than being replaced outright. */
+.side-panel-overlay {
+  position: fixed;
+  /* Starts below the title bar (its own fixed 40px height) rather than covering it, so
+     File/Tools/Help and the window controls stay reachable while a drawer is open - e.g.
+     switching straight from Settings to Map Manager via the Tools menu without closing
+     either one first. */
+  top: 40px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.side-panel {
+  width: min(900px, 78vw);
+  min-width: 420px;
+  height: 100%;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
+  animation: side-panel-in 0.16s ease-out;
+}
+
+@keyframes side-panel-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  .side-panel {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 .wizard-modal {
   width: 540px;
   max-width: calc(100vw - 40px);
@@ -3620,6 +3722,141 @@ label.checkbox {
   background: rgba(224, 85, 91, 0.12);
   border: 1px solid var(--danger);
   color: var(--danger);
+}
+
+.map-manager-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.map-manager-section-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.map-manager-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--border);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.map-manager-lock {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.map-manager-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.map-manager-table th {
+  text-align: left;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.map-manager-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.map-manager-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.map-manager-row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.map-manager-empty {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 32px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 1.6rem;
+  text-align: center;
+}
+
+.map-manager-empty span {
+  font-size: 0.85rem;
+}
+
+.map-manager-empty:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.manage-groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: 14px;
+}
+
+.manage-groups-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.manage-groups-name {
+  font-weight: 600;
+  flex: 1;
+}
+
+.manage-groups-count {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.manage-groups-rename-form {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.manage-groups-rename-form input {
+  flex: 1;
+}
+
+.manage-groups-new-form {
+  display: flex;
+  gap: 8px;
+}
+
+.manage-groups-new-form input {
+  flex: 1;
 }
 
 .wizard-footer {

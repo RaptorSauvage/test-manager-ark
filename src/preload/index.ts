@@ -123,7 +123,10 @@ const api: Api = {
     list: (game) => ipcRenderer.invoke(IPC.mapsList, game)
   },
   customMaps: {
-    list: () => ipcRenderer.invoke(IPC.customMapsList)
+    list: () => ipcRenderer.invoke(IPC.customMapsList),
+    add: (entry) => ipcRenderer.invoke(IPC.customMapsAdd, entry),
+    update: (originalId, entry) => ipcRenderer.invoke(IPC.customMapsUpdate, originalId, entry),
+    delete: (id) => ipcRenderer.invoke(IPC.customMapsDelete, id)
   },
   dataDir: {
     getDefault: () => ipcRenderer.invoke(IPC.dataDirGetDefault)

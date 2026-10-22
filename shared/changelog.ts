@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-22',
+    title: 'Server groups, a Map Manager, and right-side drawers for Settings/SteamCMD/Profile Management',
+    details: [
+      'A server card\'s own "..." menu now has a Group entry - assign it to an existing group, start a brand new one, or send it back to "No group", without opening that server\'s Settings tab.',
+      'File > Manage Groups is the new one-stop place to create, rename, or delete the groups servers sort into on the Dashboard - renaming/deleting updates every server currently in that group, and an empty group you just created still shows up ready to receive servers.',
+      'Tools > Map Manager - a new screen for the custom/modded maps available to server configuration (maps.json stays read-only/official). A custom map can carry an optional Mod ID, which gets added to a server\'s mod list automatically the moment that map is selected in its Settings tab.',
+      'Settings, SteamCMD, Profile Management, and the new Map Manager now open as a right-side drawer over whatever page was already showing, instead of replacing it outright - switching straight between them from the title bar\'s own menus works without closing one first.'
+    ]
+  },
+  {
+    date: '2026-10-22',
     title: 'Fixed: Dashboard and Cluster Dashboard sidebar icons were swapped',
     details: [
       'The grid icon now correctly points to Dashboard/Minecraft Servers, and the server-rack icon to Cluster Dashboard - they had ended up swapped in the previous sidebar icon pass.'

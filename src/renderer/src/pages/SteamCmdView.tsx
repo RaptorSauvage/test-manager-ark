@@ -22,6 +22,7 @@ export default function SteamCmdView({ onBack }: SteamCmdViewProps): JSX.Element
     statsHistoryMaxAgeHours: 24,
     showServerConsoleWindow: true,
     groupOrder: [],
+    registeredGroups: [],
     collapsedGroups: [],
     minecraftGroupOrder: [],
     minecraftCollapsedGroups: [],

@@ -58,6 +58,7 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     statsHistoryMaxAgeHours: 24,
     showServerConsoleWindow: true,
     groupOrder: [],
+    registeredGroups: [],
     collapsedGroups: [],
     minecraftGroupOrder: [],
     minecraftCollapsedGroups: [],

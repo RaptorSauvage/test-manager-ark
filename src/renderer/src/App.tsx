@@ -11,11 +11,14 @@ import DataSettingsView from './pages/DataSettingsView'
 import ChangelogView from './pages/ChangelogView'
 import PlayersView from './pages/PlayersView'
 import ProfileManagementView from './pages/ProfileManagementView'
+import MapManagerView from './pages/MapManagerView'
 import MinecraftDashboard from './pages/MinecraftDashboard'
 import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftServerDetail'
 import { GAME_ICONS } from './lib/gameIcons'
 import minecraftIcon from './assets/games/minecraft.png'
 import TitleBar from './components/TitleBar'
+import SidePanel from './components/SidePanel'
+import ManageGroupsDialog from './components/ManageGroupsDialog'
 import dashboardIcon from './assets/icons/dashboard.png'
 import clusterIcon from './assets/icons/cluster.png'
 import playersIcon from './assets/icons/players.png'
@@ -73,7 +76,9 @@ export default function App(): JSX.Element {
   const [showSteamCmd, setShowSteamCmd] = useState(false)
   const [showDataSettings, setShowDataSettings] = useState(false)
   const [showProfileManagement, setShowProfileManagement] = useState(false)
+  const [showMapManager, setShowMapManager] = useState(false)
   const [showChangelog, setShowChangelog] = useState(false)
+  const [showManageGroups, setShowManageGroups] = useState(false)
   const [showCreateWizard, setShowCreateWizard] = useState(false)
   const [mainPage, setMainPage] = useState<MainPage>('dashboard')
   const [groupConsoleTarget, setGroupConsoleTarget] = useState<{ groupName: string; profileIds: string[] } | null>(
@@ -135,6 +140,7 @@ export default function App(): JSX.Element {
     setShowSteamCmd(false)
     setShowDataSettings(false)
     setShowProfileManagement(false)
+    setShowMapManager(false)
     setShowChangelog(false)
     setMainPage('managerLog')
   }
@@ -149,17 +155,51 @@ export default function App(): JSX.Element {
     setShowSteamCmd(false)
     setShowDataSettings(false)
     setShowProfileManagement(false)
+    setShowMapManager(false)
     setShowChangelog(false)
     setGameMode('ark')
     setMainPage('dashboard')
     setShowCreateWizard(true)
   }
 
+  // Settings/SteamCMD/Profile Management/Map Manager now render as a right-side drawer (see
+  // SidePanel) over whatever page is already showing, rather than replacing it outright - so
+  // opening one just needs the other three closed first, nothing else to reset.
+  function openSteamCmd(): void {
+    setShowDataSettings(false)
+    setShowProfileManagement(false)
+    setShowMapManager(false)
+    setShowSteamCmd(true)
+  }
+
+  function openDataSettings(): void {
+    setShowSteamCmd(false)
+    setShowProfileManagement(false)
+    setShowMapManager(false)
+    setShowDataSettings(true)
+  }
+
+  function openProfileManagement(): void {
+    setShowSteamCmd(false)
+    setShowDataSettings(false)
+    setShowMapManager(false)
+    setShowProfileManagement(true)
+  }
+
+  function openMapManager(): void {
+    setShowSteamCmd(false)
+    setShowDataSettings(false)
+    setShowProfileManagement(false)
+    setShowMapManager(true)
+  }
+
   const titleBar = (
     <TitleBar
-      onOpenSettings={() => setShowDataSettings(true)}
-      onOpenSteamCmd={() => setShowSteamCmd(true)}
-      onOpenProfileManagement={() => setShowProfileManagement(true)}
+      onOpenSettings={openDataSettings}
+      onOpenSteamCmd={openSteamCmd}
+      onOpenProfileManagement={openProfileManagement}
+      onOpenMapManager={openMapManager}
+      onOpenManageGroups={() => setShowManageGroups(true)}
       onOpenManagerLog={handleOpenManagerLog}
       onOpenChangelog={() => setShowChangelog(true)}
       onOpenCreateWizard={handleOpenCreateWizard}
@@ -214,40 +254,8 @@ export default function App(): JSX.Element {
     setMinecraftInitialTab(tab)
   }
 
-  // Checked before the ARK/Minecraft split below - these are top-level screens reachable
-  // from either game mode (most importantly Settings, which used to live only in the ARK
-  // Dashboard's own header and so was unreachable while in Minecraft mode entirely).
-  if (showSteamCmd) {
-    return (
-      <>
-        {titleBar}
-        <SteamCmdView onBack={() => setShowSteamCmd(false)} />
-      </>
-    )
-  }
-
-  if (showDataSettings) {
-    return (
-      <>
-        {titleBar}
-        <DataSettingsView onBack={() => setShowDataSettings(false)} />
-      </>
-    )
-  }
-
-  if (showProfileManagement) {
-    return (
-      <>
-        {titleBar}
-        <ProfileManagementView
-          profiles={profiles}
-          onProfilesChange={handleProfilesChange}
-          onBack={() => setShowProfileManagement(false)}
-        />
-      </>
-    )
-  }
-
+  // Changelog is still a full-page takeover (not one of the four right-side drawers below) -
+  // checked before the ARK/Minecraft split since it's reachable from either game mode.
   if (showChangelog) {
     return (
       <>
@@ -257,24 +265,23 @@ export default function App(): JSX.Element {
     )
   }
 
-  if (gameMode === 'minecraft') {
-    if (minecraftSelected) {
-      return (
-        <>
-          {titleBar}
+  // Settings/SteamCMD/Profile Management/Map Manager render as a right-side drawer (see
+  // SidePanel) layered on top of whatever mainContent below ends up being, instead of
+  // replacing it outright - so this page tree no longer needs to special-case them.
+  const mainContent = (() => {
+    if (gameMode === 'minecraft') {
+      if (minecraftSelected) {
+        return (
           <MinecraftServerDetail
             profile={minecraftSelected}
             initialTab={minecraftInitialTab}
             onBack={() => setMinecraftSelectedId(null)}
             onProfileChange={handleMinecraftProfileChange}
           />
-        </>
-      )
-    }
+        )
+      }
 
-    return (
-      <>
-        {titleBar}
+      return (
         <div className="app-shell">
           <nav className="app-sidebar">
             <GameSwitch mode={gameMode} onChange={setGameMode} />
@@ -302,7 +309,7 @@ export default function App(): JSX.Element {
             >
               <SidebarIcon mask={logIcon} />
             </button>
-            <button type="button" onClick={() => setShowDataSettings(true)} title="Settings">
+            <button type="button" onClick={openDataSettings} title="Settings">
               <SidebarIcon mask={settingsIcon} />
             </button>
           </nav>
@@ -318,42 +325,33 @@ export default function App(): JSX.Element {
             )}
           </div>
         </div>
-      </>
-    )
-  }
+      )
+    }
 
-  if (selected) {
-    return (
-      <>
-        {titleBar}
+    if (selected) {
+      return (
         <ServerDetail
           profile={selected}
           initialTab={initialTab}
           onBack={() => setSelectedId(null)}
           onProfileChange={handleProfileChange}
         />
-      </>
-    )
-  }
+      )
+    }
 
-  if (groupConsoleTarget) {
-    const groupProfiles = profiles.filter((p) => groupConsoleTarget.profileIds.includes(p.id))
-    return (
-      <>
-        {titleBar}
+    if (groupConsoleTarget) {
+      const groupProfiles = profiles.filter((p) => groupConsoleTarget.profileIds.includes(p.id))
+      return (
         <GroupConsoleView
           groupName={groupConsoleTarget.groupName}
           profiles={groupProfiles}
           onBack={() => setGroupConsoleTarget(null)}
           onOpenProfile={handleOpenProfile}
         />
-      </>
-    )
-  }
+      )
+    }
 
-  return (
-    <>
-      {titleBar}
+    return (
       <div className="app-shell">
         <nav className="app-sidebar">
           <GameSwitch mode={gameMode} onChange={setGameMode} />
@@ -397,7 +395,7 @@ export default function App(): JSX.Element {
           >
             <SidebarIcon mask={logIcon} />
           </button>
-          <button type="button" onClick={() => setShowDataSettings(true)} title="Settings">
+          <button type="button" onClick={openDataSettings} title="Settings">
             <SidebarIcon mask={settingsIcon} />
           </button>
         </nav>
@@ -420,6 +418,44 @@ export default function App(): JSX.Element {
           )}
         </div>
       </div>
+    )
+  })()
+
+  return (
+    <>
+      {titleBar}
+      {mainContent}
+      {showSteamCmd && (
+        <SidePanel onClose={() => setShowSteamCmd(false)}>
+          <SteamCmdView onBack={() => setShowSteamCmd(false)} />
+        </SidePanel>
+      )}
+      {showDataSettings && (
+        <SidePanel onClose={() => setShowDataSettings(false)}>
+          <DataSettingsView onBack={() => setShowDataSettings(false)} />
+        </SidePanel>
+      )}
+      {showProfileManagement && (
+        <SidePanel onClose={() => setShowProfileManagement(false)}>
+          <ProfileManagementView
+            profiles={profiles}
+            onProfilesChange={handleProfilesChange}
+            onBack={() => setShowProfileManagement(false)}
+          />
+        </SidePanel>
+      )}
+      {showMapManager && (
+        <SidePanel onClose={() => setShowMapManager(false)}>
+          <MapManagerView onBack={() => setShowMapManager(false)} />
+        </SidePanel>
+      )}
+      {showManageGroups && (
+        <ManageGroupsDialog
+          profiles={profiles}
+          onProfilesChange={handleProfilesChange}
+          onClose={() => setShowManageGroups(false)}
+        />
+      )}
     </>
   )
 }

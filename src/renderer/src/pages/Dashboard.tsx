@@ -48,6 +48,8 @@ export default function Dashboard({
   const [sortOrder, setSortOrder] = useState<'none' | 'name-asc' | 'name-desc'>('none')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [groupSubmenuId, setGroupSubmenuId] = useState<string | null>(null)
+  const [newGroupName, setNewGroupName] = useState('')
   // Only drives the Uptime tile's freshness - a minute is plenty for something shown as
   // "1h 9m", unlike the Analytics tab's own per-second ticker which needs second precision.
   const [now, setNow] = useState(() => Date.now())
@@ -63,7 +65,11 @@ export default function Dashboard({
 
   useEffect(() => {
     if (!openMenuId) return
-    const close = (): void => setOpenMenuId(null)
+    const close = (): void => {
+      setOpenMenuId(null)
+      setGroupSubmenuId(null)
+      setNewGroupName('')
+    }
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [openMenuId])
@@ -75,14 +81,34 @@ export default function Dashboard({
 
   // Explicitly-ordered names first (in that order), then any group not mentioned yet -
   // a brand new group name just appears at the end, alphabetically among its peers, rather
-  // than needing to be added to the order first.
-  const groupNamesRaw = Array.from(new Set(visibleProfiles.filter((p) => p.group.trim()).map((p) => p.group.trim())))
+  // than needing to be added to the order first. Includes registeredGroups so a group
+  // created ahead of time (File > Manage Groups, or "New group..." on a card) still shows
+  // its own empty section here, ready to receive servers, rather than only appearing once a
+  // server actually has that group set.
+  const groupNamesRaw = Array.from(
+    new Set([
+      ...visibleProfiles.filter((p) => p.group.trim()).map((p) => p.group.trim()),
+      ...(settings?.registeredGroups ?? [])
+    ])
+  )
   const groupOrder = settings?.groupOrder ?? []
   const groupNames = [
     ...groupOrder.filter((name) => groupNamesRaw.includes(name)),
     ...groupNamesRaw.filter((name) => !groupOrder.includes(name)).sort((a, b) => a.localeCompare(b))
   ]
   const collapsedGroups = settings?.collapsedGroups ?? []
+
+  /** Creates the group if it's new (so it keeps showing up even once empty again), then
+   *  moves this one profile into it - used by the card menu's Group submenu. Passing '' puts
+   *  the profile back in "no group". */
+  async function setProfileGroup(profile: ServerProfile, groupName: string): Promise<void> {
+    const trimmed = groupName.trim()
+    if (trimmed && settings && !settings.registeredGroups.includes(trimmed)) {
+      await persistSettings({ ...settings, registeredGroups: [...settings.registeredGroups, trimmed] })
+    }
+    const updated = await window.api.profiles.save({ ...profile, group: trimmed })
+    onProfilesChange(updated)
+  }
 
   function setGroupCollapsed(name: string, collapsed: boolean): void {
     if (!settings) return
@@ -398,6 +424,61 @@ export default function Dashboard({
             <div className="card-menu-group">
               <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
               <button onClick={() => onOpenProfile(profile.id, 'settings')}>Settings</button>
+            </div>
+            <div className="card-menu-group">
+              <button
+                onClick={() => setGroupSubmenuId(groupSubmenuId === profile.id ? null : profile.id)}
+              >
+                Group: {profile.group.trim() || 'None'} {groupSubmenuId === profile.id ? '▾' : '▸'}
+              </button>
+              {groupSubmenuId === profile.id && (
+                <div className="card-menu-submenu">
+                  <button
+                    className={!profile.group.trim() ? 'active' : ''}
+                    onClick={() => {
+                      void setProfileGroup(profile, '')
+                      setGroupSubmenuId(null)
+                      setOpenMenuId(null)
+                    }}
+                  >
+                    No group
+                  </button>
+                  {groupNames.map((name) => (
+                    <button
+                      key={name}
+                      className={profile.group.trim() === name ? 'active' : ''}
+                      onClick={() => {
+                        void setProfileGroup(profile, name)
+                        setGroupSubmenuId(null)
+                        setOpenMenuId(null)
+                      }}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                  <form
+                    className="card-menu-submenu-new"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      if (!newGroupName.trim()) return
+                      void setProfileGroup(profile, newGroupName)
+                      setNewGroupName('')
+                      setGroupSubmenuId(null)
+                      setOpenMenuId(null)
+                    }}
+                  >
+                    <input
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      placeholder="New group..."
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <button type="submit" disabled={!newGroupName.trim()}>
+                      +
+                    </button>
+                  </form>
+                </div>
+              )}
             </div>
             <div className="card-menu-group">
               <button

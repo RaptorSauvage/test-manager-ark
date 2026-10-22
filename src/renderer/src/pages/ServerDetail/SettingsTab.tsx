@@ -89,6 +89,24 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
     void persist(next)
   }
 
+  // A custom/modded map (Map Manager, Tools menu) can carry a Mod ID - selecting it here
+  // adds that mod to this server's own mod list automatically, same as if it had been typed
+  // into the Mods tab by hand, so the map's required mod never has to be added separately.
+  async function changeMap(mapId: string): Promise<void> {
+    const next = { ...form, map: mapId }
+    setForm(next)
+    await persist(next)
+    const customMap = customMaps.find((m) => m.id === mapId)
+    if (customMap?.modId && !next.mods.some((m) => m.id === customMap.modId)) {
+      const updated = await window.api.mods.save(next.id, [
+        ...next.mods,
+        { id: customMap.modId, enabled: true, passive: false, dev: false }
+      ])
+      setForm(updated)
+      onProfileChange(updated)
+    }
+  }
+
   async function browseClusterDir(): Promise<void> {
     const dir = await window.api.dialog.selectDirectory()
     if (dir) update('clusterDirOverride', dir)
@@ -225,7 +243,7 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           <label>
             Map
             <div className="path-input-row">
-              <select value={form.map} onChange={(e) => update('map', e.target.value)}>
+              <select value={form.map} onChange={(e) => void changeMap(e.target.value)}>
                 {form.map && !maps.some((m) => m.id === form.map) && !customMaps.some((m) => m.id === form.map) && (
                   <option value={form.map}>{form.map}</option>
                 )}

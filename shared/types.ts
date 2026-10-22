@@ -220,6 +220,10 @@ export interface MapDefinition {
   id: string
   /** Human-readable label shown in the map selector */
   displayName: string
+  /** Custom/modded maps only - a CurseForge/Workshop mod id. Selecting this map in a
+   *  server's Settings tab automatically adds this mod to that server's mod list if it isn't
+   *  there already. Official maps (maps.json) never have this. */
+  modId?: string
 }
 
 export interface ServerMod {
@@ -338,6 +342,11 @@ export interface AppSettings {
    *  after every explicitly-ordered one - so a brand new group shows up without needing to
    *  be added here first. */
   groupOrder: string[]
+  /** Group names created explicitly (File > Manage Groups, or "New group..." from a server
+   *  card's own menu) - kept even while the group has no servers in it yet/anymore, so an
+   *  empty group a user just made still shows up on the Dashboard ready to receive servers,
+   *  instead of silently disappearing until something's actually assigned to it. */
+  registeredGroups: string[]
   /** Group names currently collapsed on the Dashboard. A collapsed group's servers are also
    *  left out of the Cluster Dashboard and the Web Dashboard's own Dashboard tab, not just
    *  visually minimized on the Manager's own Dashboard. */
@@ -786,6 +795,9 @@ export const IPC = {
 
   mapsList: 'maps:list',
   customMapsList: 'custom-maps:list',
+  customMapsAdd: 'custom-maps:add',
+  customMapsUpdate: 'custom-maps:update',
+  customMapsDelete: 'custom-maps:delete',
   dataDirGetDefault: 'data-dir:get-default',
 
   officialServerStatusGet: 'official-server-status:get',
@@ -1160,6 +1172,12 @@ export interface Api {
   }
   customMaps: {
     list: () => Promise<MapDefinition[]>
+    /** Each returns the full, updated custom maps list - same "server hands back fresh
+     *  state" pattern as profiles.save/delete. Throws (shown as an error message by the
+     *  caller) on a blank id/name or an id collision. */
+    add: (entry: { id: string; displayName: string; modId?: string }) => Promise<MapDefinition[]>
+    update: (originalId: string, entry: { id: string; displayName: string; modId?: string }) => Promise<MapDefinition[]>
+    delete: (id: string) => Promise<MapDefinition[]>
   }
   dataDir: {
     getDefault: () => Promise<string>
