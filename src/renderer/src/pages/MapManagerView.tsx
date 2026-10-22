@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import type { MapDefinition } from '@shared/types'
-import { listGameDefinitions } from '@shared/games'
 import { confirmAction } from '../lib/confirmAction'
 
 interface MapManagerViewProps {
@@ -14,14 +13,36 @@ interface MapFormState {
   modId: string
 }
 
+/** One official map, merged across both ARK games by display name - ARK: Survival Ascended
+ *  and Evolved mostly share the same maps under different internal ids (e.g. "The Island" is
+ *  TheIsland_WP on ASA, TheIsland on ASE), and a handful only exist on one of the two
+ *  (Lost Colony, Dragontopia, Astraeos are ASA-only - that side is left blank for them). */
+interface MergedOfficialMap {
+  displayName: string
+  asaId: string | null
+  aseId: string | null
+}
+
+function mergeOfficialMaps(asaMaps: MapDefinition[], aseMaps: MapDefinition[]): MergedOfficialMap[] {
+  const byName = new Map<string, MergedOfficialMap>()
+  for (const m of asaMaps) {
+    byName.set(m.displayName, { displayName: m.displayName, asaId: m.id, aseId: byName.get(m.displayName)?.aseId ?? null })
+  }
+  for (const m of aseMaps) {
+    const existing = byName.get(m.displayName)
+    byName.set(m.displayName, { displayName: m.displayName, asaId: existing?.asaId ?? null, aseId: m.id })
+  }
+  return Array.from(byName.values()).sort((a, b) => a.displayName.localeCompare(b.displayName))
+}
+
 const EMPTY_FORM: MapFormState = { originalId: null, id: '', displayName: '', modId: '' }
 
 /** Tools > Map Manager - lets custom/modded maps (customMaps.json) be added/edited/deleted
  *  from the UI instead of hand-editing the JSON file. Official maps (maps.json, one per
- *  game) are shown read-only alongside them for reference, same grouping the map picker in a
- *  server's own Settings tab already uses. */
+ *  game) are shown read-only alongside them for reference, merged into one row per map
+ *  across both ARK games rather than listed once per game. */
 export default function MapManagerView({ onBack }: MapManagerViewProps): JSX.Element {
-  const [officialMaps, setOfficialMaps] = useState<MapDefinition[]>([])
+  const [officialMaps, setOfficialMaps] = useState<MergedOfficialMap[]>([])
   const [customMaps, setCustomMaps] = useState<MapDefinition[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -35,11 +56,12 @@ export default function MapManagerView({ onBack }: MapManagerViewProps): JSX.Ele
   async function refresh(): Promise<void> {
     setLoading(true)
     try {
-      const [officialLists, custom] = await Promise.all([
-        Promise.all(listGameDefinitions().map((g) => window.api.maps.list(g.id))),
+      const [asaMaps, aseMaps, custom] = await Promise.all([
+        window.api.maps.list('ark-ascended'),
+        window.api.maps.list('ark-evolved'),
         window.api.customMaps.list()
       ])
-      setOfficialMaps(officialLists.flat())
+      setOfficialMaps(mergeOfficialMaps(asaMaps, aseMaps))
       setCustomMaps(custom)
     } finally {
       setLoading(false)
@@ -107,15 +129,17 @@ export default function MapManagerView({ onBack }: MapManagerViewProps): JSX.Ele
             <table className="map-manager-table">
               <thead>
                 <tr>
-                  <th>Map ID</th>
                   <th>Display Name</th>
+                  <th>Map ID (ASA)</th>
+                  <th>Map ID (ASE)</th>
                 </tr>
               </thead>
               <tbody>
                 {officialMaps.map((m) => (
-                  <tr key={m.id}>
-                    <td className="mono">{m.id}</td>
+                  <tr key={m.displayName}>
                     <td>{m.displayName}</td>
+                    <td className="mono">{m.asaId ?? <span className="muted">-</span>}</td>
+                    <td className="mono">{m.aseId ?? <span className="muted">-</span>}</td>
                   </tr>
                 ))}
               </tbody>

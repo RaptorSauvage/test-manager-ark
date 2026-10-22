@@ -2014,6 +2014,101 @@ label.checkbox {
   color: var(--accent);
 }
 
+/* Settings drawer (DataSettingsView) - a left nav grouped into sections (Application,
+   Integrations, ...) next to the active section's own content, replacing the old single row
+   of top tabs so there's room to grow the nav without it wrapping. */
+.settings-view {
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.settings-view .server-detail-header {
+  padding: 24px 24px 0;
+  margin-bottom: 16px;
+}
+
+.settings-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-nav {
+  width: 220px;
+  flex-shrink: 0;
+  padding: 0 10px 24px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.settings-nav-group + .settings-nav-group {
+  margin-top: 18px;
+}
+
+.settings-nav-group-label {
+  padding: 0 10px 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.settings-nav button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.settings-nav button:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.settings-nav button.active {
+  background: rgba(79, 140, 255, 0.15);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.settings-nav-icon {
+  flex-shrink: 0;
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0 24px 24px;
+}
+
+.settings-content-header {
+  margin-bottom: 18px;
+}
+
+.settings-content-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 1.2rem;
+}
+
+.settings-content-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .settings-tab {
   display: flex;
   flex-direction: column;
@@ -3460,7 +3555,7 @@ label.checkbox {
 }
 
 .side-panel {
-  width: min(900px, 78vw);
+  width: min(1180px, 85vw);
   min-width: 420px;
   height: 100%;
   background: var(--bg);

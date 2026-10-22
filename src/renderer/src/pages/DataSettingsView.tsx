@@ -13,13 +13,53 @@ interface DataSettingsViewProps {
 
 type SettingsTabKey = 'general' | 'webDashboard' | 'accessTokens' | 'discordBot' | 'updates'
 
-const SETTINGS_TABS: Array<{ key: SettingsTabKey; label: string }> = [
-  { key: 'general', label: 'General' },
-  { key: 'webDashboard', label: 'Web Dashboard' },
-  { key: 'accessTokens', label: 'Access Tokens' },
-  { key: 'discordBot', label: 'Discord Bot' },
-  { key: 'updates', label: 'Updates' }
+interface SettingsTabMeta {
+  key: SettingsTabKey
+  label: string
+  icon: string
+  description: string
+  group: 'Application' | 'Integrations'
+}
+
+const SETTINGS_TABS: SettingsTabMeta[] = [
+  {
+    key: 'general',
+    label: 'Application',
+    icon: '⚙️',
+    description: 'Data storage, cluster backups, startup behavior, and multi-game support.',
+    group: 'Application'
+  },
+  {
+    key: 'webDashboard',
+    label: 'Web Dashboard',
+    icon: '🌐',
+    description: 'A browser-accessible live console and RCON for your servers.',
+    group: 'Integrations'
+  },
+  {
+    key: 'accessTokens',
+    label: 'Access Tokens',
+    icon: '🔑',
+    description: 'Access tokens for the web dashboard, and API keys for other integrations.',
+    group: 'Integrations'
+  },
+  {
+    key: 'discordBot',
+    label: 'Discord Bot',
+    icon: '💬',
+    description: 'Status embeds, slash commands, and mod-update notifications in Discord.',
+    group: 'Integrations'
+  },
+  {
+    key: 'updates',
+    label: 'Updates',
+    icon: '⬆️',
+    description: 'Check for and install Manager updates.',
+    group: 'Integrations'
+  }
 ]
+
+const SETTINGS_TAB_GROUPS: SettingsTabMeta['group'][] = ['Application', 'Integrations']
 
 function describeAppUpdateStatus(appUpdateStatus: AppUpdateStatus, appVersion: string): string {
   switch (appUpdateStatus.state) {
@@ -197,22 +237,44 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
   }
 
   const isLan = settings.webDashboardHost.trim() !== '' && settings.webDashboardHost.trim() !== '127.0.0.1'
+  const activeTabMeta = SETTINGS_TABS.find((t) => t.key === tab) ?? SETTINGS_TABS[0]
 
   return (
-    <div className="server-detail">
+    <div className="server-detail settings-view">
       <header className="server-detail-header">
         <button onClick={onBack}>&larr; Back</button>
         <h1>Settings</h1>
       </header>
-      <nav className="tab-nav">
-        {SETTINGS_TABS.map((t) => (
-          <button key={t.key} className={tab === t.key ? 'active' : ''} onClick={() => setTab(t.key)}>
-            {t.label}
-          </button>
-        ))}
-      </nav>
 
-      <div className="app-settings-view">
+      <div className="settings-shell">
+        <nav className="settings-nav">
+          {SETTINGS_TAB_GROUPS.map((group) => (
+            <div className="settings-nav-group" key={group}>
+              <div className="settings-nav-group-label">{group.toUpperCase()}</div>
+              {SETTINGS_TABS.filter((t) => t.group === group).map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  className={tab === t.key ? 'active' : ''}
+                  onClick={() => setTab(t.key)}
+                >
+                  <span className="settings-nav-icon">{t.icon}</span>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        <div className="settings-content">
+          <div className="settings-content-header">
+            <h2>
+              <span className="settings-nav-icon">{activeTabMeta.icon}</span>
+              {activeTabMeta.label}
+            </h2>
+            <p>{activeTabMeta.description}</p>
+          </div>
+          <div className="app-settings-view">
         {(tab === 'general' || tab === 'webDashboard' || tab === 'discordBot') && (
           <form
             className="app-settings-form"
@@ -851,6 +913,8 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
             )}
           </section>
         )}
+          </div>
+        </div>
       </div>
     </div>
   )

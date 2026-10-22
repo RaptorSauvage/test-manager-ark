@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-22',
+    title: 'Map Manager\'s official maps table merged by map, and a restyled Settings screen',
+    details: [
+      'Map Manager\'s Official Maps table now lists one row per map (Display Name, Map ID (ASA), Map ID (ASE)) instead of a separate row per game - a handful of maps only exist on one of the two (Lost Colony, Dragontopia, Astraeos are ASA-only) and show a dash on the other side.',
+      'Settings is reorganized into a left-side nav grouped by section (Application, Integrations) instead of a single row of top tabs, with each section\'s own icon and description - the drawer itself is also a bit wider to give the new layout room to breathe.'
+    ]
+  },
+  {
+    date: '2026-10-22',
     title: 'Server groups, a Map Manager, and right-side drawers for Settings/SteamCMD/Profile Management',
     details: [
       'A server card\'s own "..." menu now has a Group entry - assign it to an existing group, start a brand new one, or send it back to "No group", without opening that server\'s Settings tab.',
