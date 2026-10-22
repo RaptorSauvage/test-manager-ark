@@ -282,25 +282,28 @@ export default function App(): JSX.Element {
               type="button"
               className={mainPage !== 'managerLog' ? 'active' : ''}
               onClick={() => setMainPage('dashboard')}
+              title="Minecraft Servers"
             >
               <SidebarIcon mask={dashboardIcon} />
-              Minecraft Servers
             </button>
-            <button type="button" className="app-sidebar-bottom-group" onClick={() => setShowChangelog(true)}>
+            <button
+              type="button"
+              className="app-sidebar-bottom-group"
+              onClick={() => setShowChangelog(true)}
+              title="What's New"
+            >
               <SidebarIcon emoji="🔔" />
-              What&apos;s New
             </button>
             <button
               type="button"
               className={mainPage === 'managerLog' ? 'active' : ''}
               onClick={() => setMainPage('managerLog')}
+              title="Log"
             >
               <SidebarIcon mask={logIcon} />
-              Log
             </button>
-            <button type="button" onClick={() => setShowDataSettings(true)}>
+            <button type="button" onClick={() => setShowDataSettings(true)} title="Settings">
               <SidebarIcon mask={settingsIcon} />
-              Settings
             </button>
           </nav>
           <div className="app-content">
@@ -358,41 +361,44 @@ export default function App(): JSX.Element {
             type="button"
             className={mainPage === 'dashboard' ? 'active' : ''}
             onClick={() => setMainPage('dashboard')}
+            title="Dashboard"
           >
             <SidebarIcon mask={dashboardIcon} />
-            Dashboard
           </button>
           <button
             type="button"
             className={mainPage === 'clusterData' ? 'active' : ''}
             onClick={() => setMainPage('clusterData')}
+            title="Cluster Dashboard"
           >
             <SidebarIcon mask={clusterIcon} />
-            Cluster Dashboard
           </button>
           <button
             type="button"
             className={mainPage === 'players' ? 'active' : ''}
             onClick={() => setMainPage('players')}
+            title="Players"
           >
             <SidebarIcon mask={playersIcon} />
-            Players
           </button>
-          <button type="button" className="app-sidebar-bottom-group" onClick={() => setShowChangelog(true)}>
+          <button
+            type="button"
+            className="app-sidebar-bottom-group"
+            onClick={() => setShowChangelog(true)}
+            title="What's New"
+          >
             <SidebarIcon emoji="🔔" />
-            What&apos;s New
           </button>
           <button
             type="button"
             className={mainPage === 'managerLog' ? 'active' : ''}
             onClick={() => setMainPage('managerLog')}
+            title="Log"
           >
             <SidebarIcon mask={logIcon} />
-            Log
           </button>
-          <button type="button" onClick={() => setShowDataSettings(true)}>
+          <button type="button" onClick={() => setShowDataSettings(true)} title="Settings">
             <SidebarIcon mask={settingsIcon} />
-            Settings
           </button>
         </nav>
         <div className="app-content">

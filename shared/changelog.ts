@@ -13,10 +13,11 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-22',
-    title: 'Sidebar nav icons, rounded active-item highlight',
+    title: 'Sidebar: icon-only, bigger icons, fixed What\'s New/Log/Settings not staying at the bottom',
     details: [
-      'Dashboard/Minecraft Servers, Cluster Dashboard, Players, Log and Settings all use real line-art icons now (What\'s New keeps its bell emoji - no matching artwork for that one yet), instead of plain text.',
-      'The current page is now highlighted with a rounded pill instead of the old flat rectangle/left-border strip, matching the rounded-corner look the rest of the app already uses (cards, title bar menus, buttons).'
+      'The sidebar is now a narrow icon-only dock - no more text labels, just a bigger icon per item (hover for its name as a tooltip). Dashboard/Minecraft Servers, Cluster Dashboard, Players, Log and Settings use real line-art icons (What\'s New keeps its bell emoji - no matching artwork for that one yet).',
+      'The current page is highlighted with a rounded pill instead of the old flat rectangle/left-border strip, matching the rounded-corner look the rest of the app already uses (cards, title bar menus, buttons).',
+      'Fixed: What\'s New/Log/Settings had stopped staying pinned to the bottom of the sidebar - a CSS rule added for the rounded-pill icon buttons was unintentionally overriding the one that pushes that group down, even though it looked unrelated.'
     ]
   },
   {

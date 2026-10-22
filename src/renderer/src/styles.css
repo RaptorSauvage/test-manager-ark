@@ -352,32 +352,40 @@ label.checkbox {
   min-height: 100vh;
 }
 
+/* Icon-only rail - no text labels, just a centered icon per item (title="" on each button
+   gives a native tooltip instead, see App.tsx) - narrow enough that the sidebar reads as a
+   dock rather than a full nav panel. */
 .app-sidebar {
-  width: 180px;
+  width: 64px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 20px 0;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 0;
   background: var(--panel);
   border-right: 1px solid var(--border);
 }
 
 /* Rounded pill highlight instead of the old flat-rectangle/left-border indicator - matches
    the rounded-corner language the rest of the app uses now (cards, title bar dropdowns,
-   buttons) instead of the sharper edges this sidebar still had. */
+   buttons) instead of the sharper edges this sidebar still had. Margin is left/right only
+   (never top/bottom) so it can never out-specificity .app-sidebar-bottom-group's own
+   margin-top: auto below - a plain `margin: 0 Npx` shorthand would set margin-top: 0 here,
+   and .app-sidebar button's two-part selector (class + tag) beats that group's one-part
+   class selector on specificity regardless of which rule comes later in the file, silently
+   cancelling the bottom-pinning (a real regression a past edit here introduced). */
 .app-sidebar button {
   display: flex;
   align-items: center;
-  gap: 10px;
-  text-align: left;
+  justify-content: center;
   background: transparent;
   border: none;
-  border-radius: 8px;
-  margin: 0 12px;
-  padding: 9px 12px;
+  border-radius: 10px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   color: var(--muted);
-  font-size: 0.95rem;
 }
 
 .app-sidebar button:hover:not(:disabled) {
@@ -392,41 +400,41 @@ label.checkbox {
 
 .sidebar-icon {
   flex-shrink: 0;
-  width: 18px;
+  width: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
+  font-size: 1.3rem;
 }
 
 .sidebar-icon.icon-mask {
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
 }
 
 .app-sidebar-game-switch {
   display: flex;
+  flex-direction: column;
   gap: 4px;
-  padding: 0 12px 14px;
+  padding: 0 0 14px;
   margin-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
 
 .app-sidebar-game-switch button {
-  flex: 1;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  text-align: center;
-  border-left: none;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px;
+  border-radius: 10px;
+  padding: 0;
 }
 
 .app-sidebar-game-switch button img {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   object-fit: contain;
   /* Dims the icon when its mode isn't the active one - same "muted until active" language
      the rest of the sidebar's text buttons already use. */
