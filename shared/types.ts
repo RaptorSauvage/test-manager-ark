@@ -837,9 +837,16 @@ export const IPC = {
   appOpenProfilesFolder: 'app:open-profiles-folder',
   appOpenDataDirFolder: 'app:open-data-dir-folder',
   appFocusWindow: 'app:focus-window',
+  appQuit: 'app:quit',
   serverOpenConfigFolder: 'server:open-config-folder',
   serverOpenSavedArksFolder: 'server:open-savedarks-folder',
   serverOpenSaveGamesFolder: 'server:open-savegames-folder',
+
+  windowMinimize: 'window:minimize',
+  windowToggleMaximize: 'window:toggle-maximize',
+  windowClose: 'window:close',
+  windowIsMaximized: 'window:is-maximized',
+  windowMaximizedChanged: 'window:maximized-changed',
 
   mapManagementList: 'map-management:list',
   mapManagementCreate: 'map-management:create',
@@ -1261,6 +1268,20 @@ export interface Api {
      *  (window.confirm() is one; the file/folder pickers in dialog.ts already call this on
      *  the main-process side directly). See confirmAction() in the renderer. */
     focusWindow: () => Promise<void>
+    /** File > Quit in the custom title bar - same as the tray's own "Quit", a real app.quit()
+     *  rather than the window's close-to-tray behavior. */
+    quit: () => Promise<void>
+  }
+  /** The custom title bar's own minimize/maximize/close, now that the window runs frameless
+   *  (frame: false) to draw a themed bar instead of the OS one. */
+  windowControls: {
+    minimize: () => Promise<void>
+    toggleMaximize: () => Promise<void>
+    /** Same as the old native title bar's close button - still goes through the window's
+     *  'close' handler, so close-to-tray (Settings > Startup & Safety) still applies. */
+    close: () => Promise<void>
+    isMaximized: () => Promise<boolean>
+    onMaximizedChange: (callback: (maximized: boolean) => void) => () => void
   }
   mapManagement: {
     list: (profileId: string) => Promise<MapFolderEntry[]>

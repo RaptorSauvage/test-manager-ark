@@ -15,6 +15,7 @@ import MinecraftDashboard from './pages/MinecraftDashboard'
 import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftServerDetail'
 import { GAME_ICONS } from './lib/gameIcons'
 import minecraftIcon from './assets/games/minecraft.png'
+import TitleBar from './components/TitleBar'
 
 type MainPage = 'dashboard' | 'clusterData' | 'players' | 'managerLog'
 type GameMode = 'ark' | 'minecraft'
@@ -102,8 +103,40 @@ export default function App(): JSX.Element {
     })
   }, [])
 
+  // Settings/SteamCMD/Profile Management/Changelog are all checked ahead of the "selected
+  // server"/"group console" branches below, so just setting their flags from the title bar
+  // already takes over the view regardless of what's currently showing - no extra resetting
+  // needed. "Manager Log" is different: it's a mainPage *inside* the default shell branch,
+  // which is checked last, so reaching it from somewhere like a server's own detail view also
+  // needs that other view's own state cleared first, or the earlier branch would still win.
+  function handleOpenManagerLog(): void {
+    setSelectedId(null)
+    setMinecraftSelectedId(null)
+    setGroupConsoleTarget(null)
+    setShowSteamCmd(false)
+    setShowDataSettings(false)
+    setShowProfileManagement(false)
+    setShowChangelog(false)
+    setMainPage('managerLog')
+  }
+
+  const titleBar = (
+    <TitleBar
+      onOpenSettings={() => setShowDataSettings(true)}
+      onOpenSteamCmd={() => setShowSteamCmd(true)}
+      onOpenProfileManagement={() => setShowProfileManagement(true)}
+      onOpenManagerLog={handleOpenManagerLog}
+      onOpenChangelog={() => setShowChangelog(true)}
+    />
+  )
+
   if (!loaded || !minecraftLoaded) {
-    return <div className="loading">Loading...</div>
+    return (
+      <>
+        {titleBar}
+        <div className="loading">Loading...</div>
+      </>
+    )
   }
 
   const selected = profiles.find((p) => p.id === selectedId) ?? null
@@ -149,49 +182,158 @@ export default function App(): JSX.Element {
   // from either game mode (most importantly Settings, which used to live only in the ARK
   // Dashboard's own header and so was unreachable while in Minecraft mode entirely).
   if (showSteamCmd) {
-    return <SteamCmdView onBack={() => setShowSteamCmd(false)} />
+    return (
+      <>
+        {titleBar}
+        <SteamCmdView onBack={() => setShowSteamCmd(false)} />
+      </>
+    )
   }
 
   if (showDataSettings) {
-    return <DataSettingsView onBack={() => setShowDataSettings(false)} />
+    return (
+      <>
+        {titleBar}
+        <DataSettingsView onBack={() => setShowDataSettings(false)} />
+      </>
+    )
   }
 
   if (showProfileManagement) {
     return (
-      <ProfileManagementView
-        profiles={profiles}
-        onProfilesChange={handleProfilesChange}
-        onBack={() => setShowProfileManagement(false)}
-      />
+      <>
+        {titleBar}
+        <ProfileManagementView
+          profiles={profiles}
+          onProfilesChange={handleProfilesChange}
+          onBack={() => setShowProfileManagement(false)}
+        />
+      </>
     )
   }
 
   if (showChangelog) {
-    return <ChangelogView onBack={() => setShowChangelog(false)} />
+    return (
+      <>
+        {titleBar}
+        <ChangelogView onBack={() => setShowChangelog(false)} />
+      </>
+    )
   }
 
   if (gameMode === 'minecraft') {
     if (minecraftSelected) {
       return (
-        <MinecraftServerDetail
-          profile={minecraftSelected}
-          initialTab={minecraftInitialTab}
-          onBack={() => setMinecraftSelectedId(null)}
-          onProfileChange={handleMinecraftProfileChange}
-        />
+        <>
+          {titleBar}
+          <MinecraftServerDetail
+            profile={minecraftSelected}
+            initialTab={minecraftInitialTab}
+            onBack={() => setMinecraftSelectedId(null)}
+            onProfileChange={handleMinecraftProfileChange}
+          />
+        </>
       )
     }
 
     return (
+      <>
+        {titleBar}
+        <div className="app-shell">
+          <nav className="app-sidebar">
+            <GameSwitch mode={gameMode} onChange={setGameMode} />
+            <button
+              type="button"
+              className={mainPage !== 'managerLog' ? 'active' : ''}
+              onClick={() => setMainPage('dashboard')}
+            >
+              Minecraft Servers
+            </button>
+            <button type="button" className="app-sidebar-bottom-group" onClick={() => setShowChangelog(true)}>
+              What&apos;s New
+            </button>
+            <button
+              type="button"
+              className={mainPage === 'managerLog' ? 'active' : ''}
+              onClick={() => setMainPage('managerLog')}
+            >
+              Log
+            </button>
+            <button type="button" onClick={() => setShowDataSettings(true)}>
+              Settings
+            </button>
+          </nav>
+          <div className="app-content">
+            {mainPage === 'managerLog' ? (
+              <ManagerLogView />
+            ) : (
+              <MinecraftDashboard
+                profiles={minecraftProfiles}
+                onProfilesChange={handleMinecraftProfilesChange}
+                onOpenProfile={handleOpenMinecraftProfile}
+              />
+            )}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  if (selected) {
+    return (
+      <>
+        {titleBar}
+        <ServerDetail
+          profile={selected}
+          initialTab={initialTab}
+          onBack={() => setSelectedId(null)}
+          onProfileChange={handleProfileChange}
+        />
+      </>
+    )
+  }
+
+  if (groupConsoleTarget) {
+    const groupProfiles = profiles.filter((p) => groupConsoleTarget.profileIds.includes(p.id))
+    return (
+      <>
+        {titleBar}
+        <GroupConsoleView
+          groupName={groupConsoleTarget.groupName}
+          profiles={groupProfiles}
+          onBack={() => setGroupConsoleTarget(null)}
+          onOpenProfile={handleOpenProfile}
+        />
+      </>
+    )
+  }
+
+  return (
+    <>
+      {titleBar}
       <div className="app-shell">
         <nav className="app-sidebar">
           <GameSwitch mode={gameMode} onChange={setGameMode} />
           <button
             type="button"
-            className={mainPage !== 'managerLog' ? 'active' : ''}
+            className={mainPage === 'dashboard' ? 'active' : ''}
             onClick={() => setMainPage('dashboard')}
           >
-            Minecraft Servers
+            Dashboard
+          </button>
+          <button
+            type="button"
+            className={mainPage === 'clusterData' ? 'active' : ''}
+            onClick={() => setMainPage('clusterData')}
+          >
+            Cluster Dashboard
+          </button>
+          <button
+            type="button"
+            className={mainPage === 'players' ? 'active' : ''}
+            onClick={() => setMainPage('players')}
+          >
+            Players
           </button>
           <button type="button" className="app-sidebar-bottom-group" onClick={() => setShowChangelog(true)}>
             What&apos;s New
@@ -208,99 +350,23 @@ export default function App(): JSX.Element {
           </button>
         </nav>
         <div className="app-content">
-          {mainPage === 'managerLog' ? (
+          {mainPage === 'clusterData' ? (
+            <ClusterDataView profiles={profiles} onOpenGroup={handleOpenGroup} />
+          ) : mainPage === 'players' ? (
+            <PlayersView profiles={profiles} />
+          ) : mainPage === 'managerLog' ? (
             <ManagerLogView />
           ) : (
-            <MinecraftDashboard
-              profiles={minecraftProfiles}
-              onProfilesChange={handleMinecraftProfilesChange}
-              onOpenProfile={handleOpenMinecraftProfile}
+            <Dashboard
+              profiles={profiles}
+              onProfilesChange={handleProfilesChange}
+              onOpenProfile={handleOpenProfile}
+              onOpenSteamCmd={() => setShowSteamCmd(true)}
+              onOpenProfileManagement={() => setShowProfileManagement(true)}
             />
           )}
         </div>
       </div>
-    )
-  }
-
-  if (selected) {
-    return (
-      <ServerDetail
-        profile={selected}
-        initialTab={initialTab}
-        onBack={() => setSelectedId(null)}
-        onProfileChange={handleProfileChange}
-      />
-    )
-  }
-
-  if (groupConsoleTarget) {
-    const groupProfiles = profiles.filter((p) => groupConsoleTarget.profileIds.includes(p.id))
-    return (
-      <GroupConsoleView
-        groupName={groupConsoleTarget.groupName}
-        profiles={groupProfiles}
-        onBack={() => setGroupConsoleTarget(null)}
-        onOpenProfile={handleOpenProfile}
-      />
-    )
-  }
-
-  return (
-    <div className="app-shell">
-      <nav className="app-sidebar">
-        <GameSwitch mode={gameMode} onChange={setGameMode} />
-        <button
-          type="button"
-          className={mainPage === 'dashboard' ? 'active' : ''}
-          onClick={() => setMainPage('dashboard')}
-        >
-          Dashboard
-        </button>
-        <button
-          type="button"
-          className={mainPage === 'clusterData' ? 'active' : ''}
-          onClick={() => setMainPage('clusterData')}
-        >
-          Cluster Dashboard
-        </button>
-        <button
-          type="button"
-          className={mainPage === 'players' ? 'active' : ''}
-          onClick={() => setMainPage('players')}
-        >
-          Players
-        </button>
-        <button type="button" className="app-sidebar-bottom-group" onClick={() => setShowChangelog(true)}>
-          What&apos;s New
-        </button>
-        <button
-          type="button"
-          className={mainPage === 'managerLog' ? 'active' : ''}
-          onClick={() => setMainPage('managerLog')}
-        >
-          Log
-        </button>
-        <button type="button" onClick={() => setShowDataSettings(true)}>
-          Settings
-        </button>
-      </nav>
-      <div className="app-content">
-        {mainPage === 'clusterData' ? (
-          <ClusterDataView profiles={profiles} onOpenGroup={handleOpenGroup} />
-        ) : mainPage === 'players' ? (
-          <PlayersView profiles={profiles} />
-        ) : mainPage === 'managerLog' ? (
-          <ManagerLogView />
-        ) : (
-          <Dashboard
-            profiles={profiles}
-            onProfilesChange={handleProfilesChange}
-            onOpenProfile={handleOpenProfile}
-            onOpenSteamCmd={() => setShowSteamCmd(true)}
-            onOpenProfileManagement={() => setShowProfileManagement(true)}
-          />
-        )}
-      </div>
-    </div>
+    </>
   )
 }

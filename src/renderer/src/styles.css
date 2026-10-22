@@ -32,6 +32,173 @@ body {
   color: var(--text);
 }
 
+/* App.tsx renders <>{titleBar}{pageContent}</> at the root - a Fragment, so TitleBar and
+   whatever page is showing become direct siblings under #root rather than being wrapped in a
+   div of their own. This keeps the title bar pinned (flex-shrink: 0) while the page below it
+   fills and scrolls the rest of the frameless window (see frame: false in main/index.ts). */
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+#root > .title-bar {
+  flex-shrink: 0;
+}
+
+#root > .title-bar ~ * {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.title-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 40px;
+  padding: 0 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  /* Makes the bar draggable like a normal OS title bar now that frame: false removed the real
+     one - every interactive child below overrides this back to no-drag so it still works. */
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.title-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.title-bar-menu {
+  position: relative;
+}
+
+.title-bar-menu-trigger {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--muted);
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
+
+.title-bar-menu-trigger:hover,
+.title-bar-menu-trigger.open {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.title-bar-dropdown {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  z-index: 50;
+  min-width: 200px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.title-bar-dropdown button {
+  all: unset;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.title-bar-dropdown button:hover {
+  background: var(--bg);
+}
+
+.title-bar-dropdown hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
+.title-bar-version-badge {
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.title-bar-title {
+  justify-self: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.title-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  justify-self: end;
+  -webkit-app-region: no-drag;
+}
+
+.title-bar-icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.title-bar-icon-btn:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.title-bar-window-controls {
+  display: flex;
+  margin-left: 6px;
+}
+
+.title-bar-window-controls button {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--muted);
+  width: 44px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+}
+
+.title-bar-window-controls button:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.title-bar-window-controls button.close:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
 button {
   cursor: pointer;
   background: var(--panel);

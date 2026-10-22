@@ -13,6 +13,17 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-22',
+    title: 'Custom title bar, styled like the rest of the app',
+    details: [
+      'The window no longer uses the OS title bar - it now draws its own, in the same dark theme as everything else, with File/Tools/Help menus, the app version, and its own minimize/maximize/close buttons.',
+      'File: Settings, Open Profiles Folder, Open Data Folder, Quit.',
+      'Tools: SteamCMD, Profile Management, Manager Log.',
+      'Help: What\'s New.',
+      'The bell icon is a shortcut to What\'s New; the grid icon next to it doesn\'t do anything yet.'
+    ]
+  },
+  {
+    date: '2026-10-22',
     title: 'Dashboard redesign: denser cards, hardware stats bar, list view, filters',
     details: [
       'New stats bar at the top of the Dashboard showing the combined CPU/RAM used by your running ARK servers (with the CPU model/core count and total system RAM as context). The CPU percentage is scaled against the machine\'s full thread count (100% = every thread saturated), not the old "100% = one thread" process convention, so it no longer shows numbers like "112%" on a many-core machine.',

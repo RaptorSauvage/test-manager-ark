@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { app, ipcMain, type BrowserWindow } from 'electron'
 import { IPC } from '@shared/types'
 import { getProfile } from '../store'
 import {
@@ -38,4 +38,8 @@ export function registerSystemHandlers(mainWindow: BrowserWindow): void {
   // calls this right after every confirm() as a workaround. See windowFocus.ts's own doc
   // comment for why a plain focus()/webContents.focus() alone wasn't enough on a real repro.
   ipcMain.handle(IPC.appFocusWindow, () => forceRefocus(mainWindow))
+
+  // Same as the tray's own "Quitter" - a real app.quit(), not the window's close-to-tray
+  // behavior (see mainWindow.on('close', ...) in main/index.ts).
+  ipcMain.handle(IPC.appQuit, () => app.quit())
 }

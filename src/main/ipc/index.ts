@@ -16,6 +16,7 @@ import { registerDataDirHandlers } from './dataDir'
 import { registerOfficialServerStatusHandlers } from './officialServerStatus'
 import { registerSystemStatsHandlers } from './systemStats'
 import { registerSystemHandlers } from './system'
+import { registerWindowControlsHandlers } from './windowControls'
 import { registerAppUpdateHandlers } from './appUpdate'
 import { registerMapManagementHandlers } from './mapManagement'
 import { registerGroupConsoleHandlers } from './groupConsole'
@@ -53,6 +54,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerOfficialServerStatusHandlers()
   registerSystemStatsHandlers()
   registerSystemHandlers(mainWindow)
+  registerWindowControlsHandlers(mainWindow)
   registerAppUpdateHandlers(mainWindow.webContents)
   registerMapManagementHandlers()
   registerGroupConsoleHandlers(mainWindow.webContents)

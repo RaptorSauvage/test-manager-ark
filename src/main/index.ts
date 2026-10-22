@@ -197,6 +197,11 @@ function createWindow(): void {
     height: 820,
     show: false,
     icon: iconPath,
+    // No OS title bar - the renderer draws its own (src/renderer/src/components/TitleBar.tsx),
+    // styled like the rest of the app instead of whatever the OS theme looks like. Its
+    // minimize/maximize/close buttons go through the windowControls IPC in
+    // src/main/ipc/windowControls.ts.
+    frame: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false

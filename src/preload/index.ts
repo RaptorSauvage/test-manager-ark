@@ -198,7 +198,19 @@ const api: Api = {
     openServerConfigFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenConfigFolder, profileId),
     openServerSavedArksFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSavedArksFolder, profileId),
     openServerSaveGamesFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSaveGamesFolder, profileId),
-    focusWindow: () => ipcRenderer.invoke(IPC.appFocusWindow)
+    focusWindow: () => ipcRenderer.invoke(IPC.appFocusWindow),
+    quit: () => ipcRenderer.invoke(IPC.appQuit)
+  },
+  windowControls: {
+    minimize: () => ipcRenderer.invoke(IPC.windowMinimize),
+    toggleMaximize: () => ipcRenderer.invoke(IPC.windowToggleMaximize),
+    close: () => ipcRenderer.invoke(IPC.windowClose),
+    isMaximized: () => ipcRenderer.invoke(IPC.windowIsMaximized),
+    onMaximizedChange: (callback: (maximized: boolean) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, maximized: boolean): void => callback(maximized)
+      ipcRenderer.on(IPC.windowMaximizedChanged, listener)
+      return () => ipcRenderer.removeListener(IPC.windowMaximizedChanged, listener)
+    }
   },
   mapManagement: {
     list: (profileId: string) => ipcRenderer.invoke(IPC.mapManagementList, profileId),
