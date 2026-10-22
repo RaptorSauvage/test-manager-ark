@@ -40,7 +40,7 @@ export default function Dashboard({
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | ServerRunState>('all')
   const [mapFilter, setMapFilter] = useState('all')
-  const [sortOrder, setSortOrder] = useState<'name-asc' | 'name-desc'>('name-asc')
+  const [sortOrder, setSortOrder] = useState<'none' | 'name-asc' | 'name-desc'>('none')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   // Only drives the Uptime tile's freshness - a minute is plenty for something shown as
@@ -532,6 +532,7 @@ export default function Dashboard({
     return true
   }
   function sortProfiles(list: ServerProfile[]): ServerProfile[] {
+    if (sortOrder === 'none') return list
     const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name))
     return sortOrder === 'name-desc' ? sorted.reverse() : sorted
   }
@@ -588,6 +589,7 @@ export default function Dashboard({
           ))}
         </select>
         <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}>
+          <option value="none">Default order</option>
           <option value="name-asc">Name (A-Z)</option>
           <option value="name-desc">Name (Z-A)</option>
         </select>

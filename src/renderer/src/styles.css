@@ -1085,8 +1085,11 @@ label.checkbox {
      needing to be as wide as an untightened row would require. The upper bound is a cap,
      not a target - auto-fit still lets a short row's cards grow up to it to fill leftover
      space instead of leaving a gap, it just stops them from ballooning past something
-     reasonable on a very wide window with only one or two cards in a row. */
-  grid-template-columns: repeat(auto-fit, minmax(260px, 460px));
+     reasonable on a very wide window with only one or two cards in a row. 380px (down from
+     460px) keeps 5 cards per row on a 2K-class window instead of 4 - auto-fit picks its
+     column count from this cap, not just the 260px floor, so lowering it is what adds the
+     5th column. */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 380px));
   gap: 16px;
 }
 
