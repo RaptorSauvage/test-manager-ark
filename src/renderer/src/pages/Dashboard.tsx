@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import type { AppSettings, MapDefinition, ServerProfile, ServerRunState, ServerStatus } from '@shared/types'
 import { getGameDefinition, listGameDefinitions } from '@shared/games'
 import { useServerStatuses } from '../lib/useServerStatuses'
-import { createDefaultProfile } from '../lib/profile'
 import type { TabKey } from './ServerDetail'
 import HardwareStatsBar from '../components/HardwareStatsBar'
 import { GAME_ICONS } from '../lib/gameIcons'
 import { confirmAction } from '../lib/confirmAction'
 import updateIcon from '../assets/icons/update.png'
+import CreateServerWizard from '../components/CreateServerWizard'
 
 interface DashboardProps {
   profiles: ServerProfile[]
@@ -44,6 +44,7 @@ export default function Dashboard({
   const [sortOrder, setSortOrder] = useState<'none' | 'name-asc' | 'name-desc'>('none')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [showCreateWizard, setShowCreateWizard] = useState(false)
   // Only drives the Uptime tile's freshness - a minute is plenty for something shown as
   // "1h 9m", unlike the Analytics tab's own per-second ticker which needs second precision.
   const [now, setNow] = useState(() => Date.now())
@@ -145,13 +146,6 @@ export default function Dashboard({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profiles.map((p) => p.id).join(',')])
-
-  async function handleCreate(): Promise<void> {
-    const profile = createDefaultProfile(`Server ${profiles.length + 1}`)
-    const updated = await window.api.profiles.save(profile)
-    onProfilesChange(updated)
-    onOpenProfile(profile.id, 'settings')
-  }
 
   async function handleImport(): Promise<void> {
     setImportError('')
@@ -584,17 +578,24 @@ export default function Dashboard({
         <div className="dashboard-header-actions">
           <button onClick={onOpenSteamCmd}>SteamCMD</button>
           <button onClick={onOpenProfileManagement}>Profile Management</button>
-          <button onClick={() => void handleImport()} disabled={importing}>
-            {importing ? 'Scanning...' : 'Import existing server'}
-          </button>
-          <button onClick={() => void handleImportFromFile()} disabled={importing}>
-            Import profile file...
-          </button>
-          <button onClick={() => void handleCreate()}>+ Add server</button>
+          <button onClick={() => setShowCreateWizard(true)}>+ Add server</button>
         </div>
       </header>
 
-      {importError && <p className="error-message">{importError}</p>}
+      {showCreateWizard && (
+        <CreateServerWizard
+          profiles={profiles}
+          onProfilesChange={onProfilesChange}
+          onImportInstall={handleImport}
+          onImportFile={handleImportFromFile}
+          importing={importing}
+          importError={importError}
+          onClose={() => {
+            setShowCreateWizard(false)
+            setImportError('')
+          }}
+        />
+      )}
 
       <HardwareStatsBar profiles={visibleProfiles} statuses={statuses} />
 

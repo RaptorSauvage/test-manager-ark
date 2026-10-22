@@ -3306,3 +3306,333 @@ label.checkbox {
   display: block;
   opacity: 0.7;
 }
+
+/* CreateServerWizard.tsx - the merged "+ Add server" flow (previously three separate
+   header buttons: Add server / Import existing server / Import profile file...). */
+.wizard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wizard-modal {
+  width: 540px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.wizard-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.wizard-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.wizard-header-icon {
+  font-size: 1.3rem;
+}
+
+.wizard-close {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1rem;
+  padding: 4px 8px;
+}
+
+.wizard-close:hover {
+  color: var(--text);
+}
+
+.wizard-subtitle {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 4px 0 18px;
+}
+
+.wizard-steps {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.wizard-step-indicator {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.wizard-step-indicator:last-child {
+  flex: 0 0 auto;
+}
+
+.wizard-step-circle {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.wizard-step-circle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.wizard-step-circle.done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b1220;
+}
+
+.wizard-step-line {
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  margin: 0 6px;
+}
+
+.wizard-step-line.done {
+  background: var(--accent);
+}
+
+.wizard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 220px;
+}
+
+.wizard-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.wizard-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.wizard-input-row input {
+  flex: 1;
+}
+
+.wizard-valid-ok {
+  color: var(--ok);
+}
+
+.wizard-valid-bad {
+  color: var(--danger);
+}
+
+.wizard-hint-list {
+  list-style: none;
+  margin: -4px 0 6px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wizard-hint-list li::before {
+  content: '- ';
+}
+
+.wizard-hint-list li.ok {
+  color: var(--ok);
+}
+
+.wizard-hint-static {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: -4px 0 0;
+}
+
+.wizard-option-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.wizard-option-card[data-selected='true'] {
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.08);
+}
+
+.wizard-option-card[data-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.wizard-option-card input {
+  margin-top: 3px;
+}
+
+.wizard-option-card strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.wizard-option-card p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.wizard-option-card select {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.wizard-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.wizard-hint-box {
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.8rem;
+}
+
+.wizard-hint-box p {
+  margin: 3px 0;
+}
+
+.wizard-hint-box p::before {
+  content: '';
+}
+
+.wizard-hint-box-review {
+  background: rgba(79, 140, 255, 0.08);
+  border: 1px solid var(--accent);
+  color: var(--text);
+}
+
+.wizard-hint-box-ok {
+  background: rgba(63, 191, 111, 0.12);
+  border: 1px solid var(--ok);
+  color: var(--ok);
+}
+
+.wizard-hint-box-error {
+  background: rgba(224, 85, 91, 0.12);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+.wizard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+.wizard-footer > div {
+  display: flex;
+  gap: 8px;
+}
+
+.wizard-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b1220;
+  font-weight: 600;
+}
+
+.wizard-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.install-progress-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.install-progress-panel h3 {
+  margin: 0;
+}
+
+.install-progress-stage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+.install-progress-stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.install-progress-percent {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.install-progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.install-progress-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: wizard-spin 0.8s linear infinite;
+}
+
+@keyframes wizard-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

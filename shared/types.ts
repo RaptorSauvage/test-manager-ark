@@ -729,6 +729,7 @@ export const IPC = {
   profilesImportFromFile: 'profiles:import-from-file',
   profilesCopy: 'profiles:copy',
   profilesMove: 'profiles:move',
+  profilesCopyConfigFrom: 'profiles:copy-config-from',
   /** Pushed to every renderer window whenever the stored profile list actually changes -
    *  regardless of what triggered it (this window's own IPC calls, or a write from the web
    *  dashboard's HTTP API, which never goes through IPC at all) - so an edit made from the
@@ -1060,6 +1061,10 @@ export interface Api {
     importFromFile: (filePath: string) => Promise<ImportResult>
     copy: (profileId: string, destInstallDir: string, newName: string) => Promise<ImportResult>
     move: (profileId: string, destInstallDir: string, newName: string) => Promise<ImportResult>
+    /** Best-effort copy of GameUserSettings.ini/Game.ini from one profile's install into
+     *  another's - the "Create New Server" wizard's "copy configuration from an existing
+     *  server" path, run after the new profile's own fresh SteamCMD install finishes. */
+    copyConfigFrom: (sourceProfileId: string, destProfileId: string) => Promise<void>
     /** Fires with the full, current profile list whenever it changes for any reason,
      *  including a save made through the web dashboard's HTTP API rather than this window's
      *  own IPC calls. */

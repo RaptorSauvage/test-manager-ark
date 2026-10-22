@@ -30,6 +30,8 @@ const api: Api = {
       ipcRenderer.invoke(IPC.profilesCopy, profileId, destInstallDir, newName),
     move: (profileId: string, destInstallDir: string, newName: string) =>
       ipcRenderer.invoke(IPC.profilesMove, profileId, destInstallDir, newName),
+    copyConfigFrom: (sourceProfileId: string, destProfileId: string) =>
+      ipcRenderer.invoke(IPC.profilesCopyConfigFrom, sourceProfileId, destProfileId),
     onChanged: (callback: (profiles: ServerProfile[]) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, profiles: ServerProfile[]): void => callback(profiles)
       ipcRenderer.on(IPC.profilesChanged, listener)

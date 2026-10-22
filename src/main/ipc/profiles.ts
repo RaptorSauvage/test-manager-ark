@@ -19,6 +19,7 @@ import { serializeProfile, parseImportedProfile } from '../lib/profileExport'
 import { syncPlayerBackupWatch } from '../lib/playerBackupWatch'
 import { syncDiscordChatBridgeWatch } from '../lib/discordChatBridgeWatch'
 import { copyProfile, moveProfile } from '../lib/profileCopyMove'
+import { copyProfileConfigFiles } from '../lib/profileConfigCopy'
 
 function requireProfile(profileId: string): ServerProfile {
   const profile = listProfiles().find((p) => p.id === profileId)
@@ -173,5 +174,9 @@ export function registerProfileHandlers(webContents: WebContents): void {
     applyScheduledRconCommands(moved)
     applyScheduledMaintenance(moved)
     return { profile: moved, profiles }
+  })
+
+  ipcMain.handle(IPC.profilesCopyConfigFrom, (_event, sourceProfileId: string, destProfileId: string) => {
+    copyProfileConfigFiles(requireProfile(sourceProfileId).installDir, requireProfile(destProfileId).installDir)
   })
 }
