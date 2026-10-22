@@ -1079,14 +1079,14 @@ label.checkbox {
 }
 
 .server-grid {
-  /* Flexbox instead of grid's auto-fit: auto-fit only grows a track up to the minmax() cap,
-     so a short last row (e.g. a group with 3 servers) was left with dead space to the right
-     of the last card instead of the remaining cards spreading out to fill it. Flex-grow does
-     fill that leftover space - a row with a full set of cards packs at ~300px each (flex-basis,
-     picked so a 2K-class window gets 6 per row), while a row with only one or two cards grows
-     each of them, up to max-width, to fill the rest of the row instead of leaving it blank. */
-  display: flex;
-  flex-wrap: wrap;
+  /* auto-fill (not auto-fit): auto-fit collapses a short row's unused tracks to 0px, which
+     left a gap of dead space after the last card. auto-fill keeps those tracks in the layout
+     at their normal minmax() size even with no card in them, so a 3-card row's cards are sized
+     exactly like a full row's (not stretched to fill the row, not capped smaller either) and
+     the leftover space is just the trailing empty tracks, not a differently-sized card. 340px
+     (down from the old 460px/380px grid caps) is what makes a 2K-class window fit 6 per row. */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 340px));
   gap: 16px;
 }
 
@@ -1398,9 +1398,6 @@ label.checkbox {
   display: flex;
   flex-direction: column;
   gap: 9px;
-  flex: 1 1 340px;
-  min-width: 260px;
-  max-width: 440px;
 }
 
 .server-card-v2.status-running {
