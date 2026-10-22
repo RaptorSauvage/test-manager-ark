@@ -1079,17 +1079,14 @@ label.checkbox {
 }
 
 .server-grid {
-  display: grid;
-  /* Wide enough that Start/Stop/Restart/Update/Kill still fit on one row (see
-     .server-card-actions-primary's own tighter padding/font-size below) without the card
-     needing to be as wide as an untightened row would require. The upper bound is a cap,
-     not a target - auto-fit still lets a short row's cards grow up to it to fill leftover
-     space instead of leaving a gap, it just stops them from ballooning past something
-     reasonable on a very wide window with only one or two cards in a row. 380px (down from
-     460px) keeps 5 cards per row on a 2K-class window instead of 4 - auto-fit picks its
-     column count from this cap, not just the 260px floor, so lowering it is what adds the
-     5th column. */
-  grid-template-columns: repeat(auto-fit, minmax(260px, 380px));
+  /* Flexbox instead of grid's auto-fit: auto-fit only grows a track up to the minmax() cap,
+     so a short last row (e.g. a group with 3 servers) was left with dead space to the right
+     of the last card instead of the remaining cards spreading out to fill it. Flex-grow does
+     fill that leftover space - a row with a full set of cards packs at ~300px each (flex-basis,
+     picked so a 2K-class window gets 6 per row), while a row with only one or two cards grows
+     each of them, up to max-width, to fill the rest of the row instead of leaving it blank. */
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
 }
 
@@ -1401,6 +1398,9 @@ label.checkbox {
   display: flex;
   flex-direction: column;
   gap: 9px;
+  flex: 1 1 300px;
+  min-width: 260px;
+  max-width: 620px;
 }
 
 .server-card-v2.status-running {
