@@ -1037,48 +1037,6 @@ label.checkbox {
   font-weight: 600;
 }
 
-.server-controls {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px 16px;
-  margin-bottom: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.server-controls h3 {
-  margin: 0;
-}
-
-.server-controls-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.btn-start-all {
-  color: var(--ok);
-  border-color: var(--ok);
-}
-
-.btn-restart-all {
-  color: var(--warn);
-  border-color: var(--warn);
-}
-
-.btn-stop-all {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-.btn-update-all,
-.btn-super-all {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
 .btn-update-restart {
   color: var(--cyan);
   border-color: var(--cyan);
@@ -1115,6 +1073,42 @@ label.checkbox {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.server-group-name {
+  flex: 1;
+}
+
+.group-bulk-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.group-bulk-actions button {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.group-bulk-actions button.start {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.group-bulk-actions button.stop {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.group-bulk-actions button.restart {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.group-bulk-actions button.update {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .server-group.dragging {

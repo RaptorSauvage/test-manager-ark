@@ -233,34 +233,28 @@ export default function Dashboard({
     }
   }
 
-  async function startAll(): Promise<void> {
-    const targets = visibleProfiles.filter((p) => stateOf(p) === 'stopped')
-    await Promise.all(targets.map((p) => runAction(p, () => window.api.server.start(p.id))))
+  async function startAll(targets: ServerProfile[]): Promise<void> {
+    const toStart = targets.filter((p) => stateOf(p) === 'stopped')
+    await Promise.all(toStart.map((p) => runAction(p, () => window.api.server.start(p.id))))
   }
 
-  async function restartAll(): Promise<void> {
-    const targets = visibleProfiles.filter((p) => stateOf(p) === 'running')
-    await Promise.all(targets.map((p) => runAction(p, () => window.api.server.restart(p.id))))
+  async function restartAll(targets: ServerProfile[]): Promise<void> {
+    const toRestart = targets.filter((p) => stateOf(p) === 'running')
+    await Promise.all(toRestart.map((p) => runAction(p, () => window.api.server.restart(p.id))))
   }
 
-  async function stopAll(): Promise<void> {
-    const targets = visibleProfiles.filter((p) => stateOf(p) === 'running')
-    await Promise.all(targets.map((p) => runAction(p, () => window.api.server.stop(p.id))))
+  async function stopAll(targets: ServerProfile[]): Promise<void> {
+    const toStop = targets.filter((p) => stateOf(p) === 'running')
+    await Promise.all(toStop.map((p) => runAction(p, () => window.api.server.stop(p.id))))
   }
 
-  async function updateAll(): Promise<void> {
-    const targets = visibleProfiles.filter((p) => stateOf(p) === 'stopped')
-    await Promise.all(targets.map((p) => runAction(p, () => window.api.server.update(p.id))))
-    await Promise.all(targets.map((p) => refreshInstalled(p.id)))
-  }
-
-  async function stopUpdateRestartAll(): Promise<void> {
-    const wasRunning = visibleProfiles.filter((p) => stateOf(p) === 'running')
+  async function stopUpdateRestartAll(targets: ServerProfile[]): Promise<void> {
+    const wasRunning = targets.filter((p) => stateOf(p) === 'running')
     await Promise.all(wasRunning.map((p) => runAction(p, () => window.api.server.stop(p.id))))
 
     // Stop above waits for each server to actually exit, so every profile is stopped now.
-    await Promise.all(visibleProfiles.map((p) => runAction(p, () => window.api.server.update(p.id))))
-    await Promise.all(visibleProfiles.map((p) => refreshInstalled(p.id)))
+    await Promise.all(targets.map((p) => runAction(p, () => window.api.server.update(p.id))))
+    await Promise.all(targets.map((p) => refreshInstalled(p.id)))
 
     await Promise.all(wasRunning.map((p) => runAction(p, () => window.api.server.start(p.id))))
   }
@@ -347,6 +341,38 @@ export default function Dashboard({
           title="Kill (force, no save)"
         >
           ✕
+        </button>
+      </div>
+    )
+  }
+
+  /** Same icon set/colors as a single card's own Start/Stop/Restart buttons, just scoped to
+   *  every server in this group instead of one - this replaced the old standalone "Server
+   *  Controls" panel, which only ever acted on every visible server at once regardless of
+   *  which group you actually wanted to manage. */
+  function renderGroupBulkActions(groupProfiles: ServerProfile[]): JSX.Element {
+    function run(action: (targets: ServerProfile[]) => Promise<void>): void {
+      void runBulk(() => action(groupProfiles))
+    }
+    return (
+      <div className="group-bulk-actions" onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="start" disabled={bulkBusy} onClick={(e) => { e.preventDefault(); run(startAll) }} title="Start all in this group">
+          ▶
+        </button>
+        <button type="button" className="stop" disabled={bulkBusy} onClick={(e) => { e.preventDefault(); run(stopAll) }} title="Stop all in this group">
+          ■
+        </button>
+        <button type="button" className="restart" disabled={bulkBusy} onClick={(e) => { e.preventDefault(); run(restartAll) }} title="Restart all in this group">
+          ↻
+        </button>
+        <button
+          type="button"
+          className="update"
+          disabled={bulkBusy}
+          onClick={(e) => { e.preventDefault(); run(stopUpdateRestartAll) }}
+          title="Stop every running server in this group, update all of them via SteamCMD, then start the ones that were running back up"
+        >
+          ⇡
         </button>
       </div>
     )
@@ -605,34 +631,6 @@ export default function Dashboard({
 
       <div className="dashboard-body">
         <div className="dashboard-content">
-          {visibleProfiles.length > 0 && (
-            <section className="server-controls">
-              <h3>Server Controls</h3>
-              <div className="server-controls-actions">
-                <button className="btn-start-all" disabled={bulkBusy} onClick={() => void runBulk(startAll)}>
-                  Start All
-                </button>
-                <button className="btn-restart-all" disabled={bulkBusy} onClick={() => void runBulk(restartAll)}>
-                  Restart All
-                </button>
-                <button className="btn-stop-all" disabled={bulkBusy} onClick={() => void runBulk(stopAll)}>
-                  Stop All
-                </button>
-                <button className="btn-update-all" disabled={bulkBusy} onClick={() => void runBulk(updateAll)}>
-                  Update All
-                </button>
-                <button
-                  className="btn-super-all"
-                  disabled={bulkBusy}
-                  onClick={() => void runBulk(stopUpdateRestartAll)}
-                  title="Stops every running server, updates all of them via SteamCMD, then starts the ones that were running back up"
-                >
-                  Stop+Update+Restart All
-                </button>
-              </div>
-            </section>
-          )}
-
           {profiles.length === 0 && (
             <p className="empty-state">No server profiles yet. Click &quot;Add server&quot; to configure one.</p>
           )}
@@ -674,7 +672,8 @@ export default function Dashboard({
                 >
                   ⠿
                 </span>
-                {groupName}
+                <span className="server-group-name">{groupName}</span>
+                {renderGroupBulkActions(groupProfiles)}
               </summary>
               {renderProfileList(matchingGroupProfiles)}
             </details>

@@ -20,6 +20,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       '"Manage/Hide/Delete" moved into a "..." dropdown on each card, now also including a direct "Settings" shortcut.',
       'New Status/Map/Sort filters next to the search box, and a Grid/List toggle - List shows every server as rows in one dense table instead of cards. Sort defaults to "Default order" (your profiles\' own order, unsorted) rather than always alphabetizing them.',
       'A thin divider now separates ungrouped servers from the first cluster group, and between groups.',
+      'The old "Server Controls" panel (Start/Stop/Restart/Update All) is gone - each group now has its own Start/Stop/Restart/Update-all buttons right on its header line, acting only on that group instead of every server at once.',
       '"Global Performance" and "Official Server Status" (the sidebar panels) are temporarily removed while the new layout settles.',
       'Fixed: the stats bar briefly queried whole-machine CPU/RAM/network usage every few seconds, which could get the Manager flagged by some antivirus software (reported with Malwarebytes) for repeatedly spawning background OS queries - it now only reads the ARK servers\' own already-tracked usage, nothing new to poll.'
     ]
