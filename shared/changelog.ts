@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-22',
+    title: 'Sidebar nav icons, rounded active-item highlight',
+    details: [
+      'Dashboard/Minecraft Servers, Cluster Dashboard, Players, What\'s New, Log and Settings all have a small icon next to their label now, instead of plain text.',
+      'The current page is now highlighted with a rounded pill instead of the old flat rectangle/left-border strip, matching the rounded-corner look the rest of the app already uses (cards, title bar menus, buttons).'
+    ]
+  },
+  {
+    date: '2026-10-22',
     title: 'Fixed: a restarting/errored server\'s card kept its stopped (red) side stripe',
     details: [
       'Every other status already had a matching color for the card\'s left-edge stripe, but "restarting" and "error" didn\'t - both fell back to the default stopped color. They now match the same colored badge a card already showed for those two states (orange for restarting, red for error).'

@@ -16,9 +16,24 @@ import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftSe
 import { GAME_ICONS } from './lib/gameIcons'
 import minecraftIcon from './assets/games/minecraft.png'
 import TitleBar from './components/TitleBar'
+import dashboardIcon from './assets/icons/dashboard.svg'
+import clusterIcon from './assets/icons/cluster.png'
 
 type MainPage = 'dashboard' | 'clusterData' | 'players' | 'managerLog'
 type GameMode = 'ark' | 'minecraft'
+
+/** A sidebar nav button's leading icon - either a line-art image (masked into the current
+ *  text color, same technique as the Update button's shield icon) for the ones the user
+ *  supplied real artwork for, or a plain emoji glyph for the rest, matching how the app
+ *  already mixes both elsewhere (card action icons vs. the title bar's bell/grid). */
+function SidebarIcon({ mask, emoji }: { mask?: string; emoji?: string }): JSX.Element {
+  if (mask) {
+    return (
+      <span className="sidebar-icon icon-mask" style={{ WebkitMaskImage: `url("${mask}")`, maskImage: `url("${mask}")` }} />
+    )
+  }
+  return <span className="sidebar-icon">{emoji}</span>
+}
 
 /** The ARK/Minecraft switch - its own small group at the top of the sidebar, visually
  *  separate (a divider below it) from whatever page nav follows, since it toggles the
@@ -265,9 +280,11 @@ export default function App(): JSX.Element {
               className={mainPage !== 'managerLog' ? 'active' : ''}
               onClick={() => setMainPage('dashboard')}
             >
+              <SidebarIcon mask={dashboardIcon} />
               Minecraft Servers
             </button>
             <button type="button" className="app-sidebar-bottom-group" onClick={() => setShowChangelog(true)}>
+              <SidebarIcon emoji="🔔" />
               What&apos;s New
             </button>
             <button
@@ -275,9 +292,11 @@ export default function App(): JSX.Element {
               className={mainPage === 'managerLog' ? 'active' : ''}
               onClick={() => setMainPage('managerLog')}
             >
+              <SidebarIcon emoji="📜" />
               Log
             </button>
             <button type="button" onClick={() => setShowDataSettings(true)}>
+              <SidebarIcon emoji="⚙️" />
               Settings
             </button>
           </nav>
@@ -337,6 +356,7 @@ export default function App(): JSX.Element {
             className={mainPage === 'dashboard' ? 'active' : ''}
             onClick={() => setMainPage('dashboard')}
           >
+            <SidebarIcon mask={dashboardIcon} />
             Dashboard
           </button>
           <button
@@ -344,6 +364,7 @@ export default function App(): JSX.Element {
             className={mainPage === 'clusterData' ? 'active' : ''}
             onClick={() => setMainPage('clusterData')}
           >
+            <SidebarIcon mask={clusterIcon} />
             Cluster Dashboard
           </button>
           <button
@@ -351,9 +372,11 @@ export default function App(): JSX.Element {
             className={mainPage === 'players' ? 'active' : ''}
             onClick={() => setMainPage('players')}
           >
+            <SidebarIcon emoji="👥" />
             Players
           </button>
           <button type="button" className="app-sidebar-bottom-group" onClick={() => setShowChangelog(true)}>
+            <SidebarIcon emoji="🔔" />
             What&apos;s New
           </button>
           <button
@@ -361,9 +384,11 @@ export default function App(): JSX.Element {
             className={mainPage === 'managerLog' ? 'active' : ''}
             onClick={() => setMainPage('managerLog')}
           >
+            <SidebarIcon emoji="📜" />
             Log
           </button>
           <button type="button" onClick={() => setShowDataSettings(true)}>
+            <SidebarIcon emoji="⚙️" />
             Settings
           </button>
         </nav>

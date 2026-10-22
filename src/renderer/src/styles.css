@@ -363,31 +363,51 @@ label.checkbox {
   border-right: 1px solid var(--border);
 }
 
+/* Rounded pill highlight instead of the old flat-rectangle/left-border indicator - matches
+   the rounded-corner language the rest of the app uses now (cards, title bar dropdowns,
+   buttons) instead of the sharper edges this sidebar still had. */
 .app-sidebar button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   text-align: left;
   background: transparent;
   border: none;
-  border-left: 3px solid transparent;
-  border-radius: 0;
-  padding: 10px 20px;
+  border-radius: 8px;
+  margin: 0 12px;
+  padding: 9px 12px;
   color: var(--muted);
   font-size: 0.95rem;
 }
 
 .app-sidebar button:hover:not(:disabled) {
   color: var(--text);
+  background: var(--bg);
 }
 
 .app-sidebar button.active {
   color: var(--text);
-  border-left-color: var(--accent);
-  background: rgba(79, 140, 255, 0.1);
+  background: rgba(79, 140, 255, 0.15);
+}
+
+.sidebar-icon {
+  flex-shrink: 0;
+  width: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+
+.sidebar-icon.icon-mask {
+  width: 16px;
+  height: 16px;
 }
 
 .app-sidebar-game-switch {
   display: flex;
   gap: 4px;
-  padding: 0 16px 14px;
+  padding: 0 12px 14px;
   margin-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
