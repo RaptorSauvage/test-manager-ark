@@ -15,7 +15,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-10-22',
     title: 'Sidebar nav icons, rounded active-item highlight',
     details: [
-      'Dashboard/Minecraft Servers, Cluster Dashboard, Players, What\'s New, Log and Settings all have a small icon next to their label now, instead of plain text.',
+      'Dashboard/Minecraft Servers, Cluster Dashboard, Players, Log and Settings all use real line-art icons now (What\'s New keeps its bell emoji - no matching artwork for that one yet), instead of plain text.',
       'The current page is now highlighted with a rounded pill instead of the old flat rectangle/left-border strip, matching the rounded-corner look the rest of the app already uses (cards, title bar menus, buttons).'
     ]
   },

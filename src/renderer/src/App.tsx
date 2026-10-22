@@ -16,8 +16,11 @@ import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftSe
 import { GAME_ICONS } from './lib/gameIcons'
 import minecraftIcon from './assets/games/minecraft.png'
 import TitleBar from './components/TitleBar'
-import dashboardIcon from './assets/icons/dashboard.svg'
+import dashboardIcon from './assets/icons/dashboard.png'
 import clusterIcon from './assets/icons/cluster.png'
+import playersIcon from './assets/icons/players.png'
+import settingsIcon from './assets/icons/settings.png'
+import logIcon from './assets/icons/log.png'
 
 type MainPage = 'dashboard' | 'clusterData' | 'players' | 'managerLog'
 type GameMode = 'ark' | 'minecraft'
@@ -292,11 +295,11 @@ export default function App(): JSX.Element {
               className={mainPage === 'managerLog' ? 'active' : ''}
               onClick={() => setMainPage('managerLog')}
             >
-              <SidebarIcon emoji="📜" />
+              <SidebarIcon mask={logIcon} />
               Log
             </button>
             <button type="button" onClick={() => setShowDataSettings(true)}>
-              <SidebarIcon emoji="⚙️" />
+              <SidebarIcon mask={settingsIcon} />
               Settings
             </button>
           </nav>
@@ -372,7 +375,7 @@ export default function App(): JSX.Element {
             className={mainPage === 'players' ? 'active' : ''}
             onClick={() => setMainPage('players')}
           >
-            <SidebarIcon emoji="👥" />
+            <SidebarIcon mask={playersIcon} />
             Players
           </button>
           <button type="button" className="app-sidebar-bottom-group" onClick={() => setShowChangelog(true)}>
@@ -384,11 +387,11 @@ export default function App(): JSX.Element {
             className={mainPage === 'managerLog' ? 'active' : ''}
             onClick={() => setMainPage('managerLog')}
           >
-            <SidebarIcon emoji="📜" />
+            <SidebarIcon mask={logIcon} />
             Log
           </button>
           <button type="button" onClick={() => setShowDataSettings(true)}>
-            <SidebarIcon emoji="⚙️" />
+            <SidebarIcon mask={settingsIcon} />
             Settings
           </button>
         </nav>
