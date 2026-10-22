@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-22',
+    title: 'Network usage bar is back, and the Minecraft Dashboard now matches ARK\'s own redesign',
+    details: [
+      'The hardware stats bar has a third card again: Network Usage, with separate upload/download bars and the link interface/speed underneath - this machine\'s whole network link rather than a per-server number (there\'s no reliable way to attribute network traffic to one process the way CPU/RAM already are). Polled far less often than the old version that got flagged by antivirus software, trading a bit of freshness for fewer background queries.',
+      'The Minecraft Dashboard has been rebuilt to match everything the ARK Dashboard already got: the denser server-card layout with a status-colored stripe and icon-only Start/Stop/Restart/Kill buttons, a "..." card menu, Status/Type/Sort filters plus a Grid/List toggle, and per-group bulk action buttons - the old standalone "Server Controls" and "Global Performance" panels are gone, replaced by the same hardware stats bar ARK uses.'
+    ]
+  },
+  {
+    date: '2026-10-22',
     title: 'Map Manager\'s official maps table merged by map, and a restyled Settings screen',
     details: [
       'Map Manager\'s Official Maps table now lists one row per map (Display Name, Map ID (ASA), Map ID (ASE)) instead of a separate row per game - a handful of maps only exist on one of the two (Lost Colony, Dragontopia, Astraeos are ASA-only) and show a dash on the other side.',

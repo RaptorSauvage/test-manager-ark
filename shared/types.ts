@@ -802,6 +802,7 @@ export const IPC = {
 
   officialServerStatusGet: 'official-server-status:get',
   systemStatsGet: 'system-stats:get',
+  systemStatsGetNetworkUsage: 'system-stats:get-network-usage',
 
   webDashboardStatus: 'web-dashboard:status',
   webDashboardLocalIps: 'web-dashboard:local-ips',
@@ -1061,6 +1062,15 @@ export interface SystemStaticInfo {
   networkSpeedMbps: number | null
 }
 
+/** A live sample of the primary network interface's throughput, in bytes/sec each way -
+ *  see src/main/lib/systemStats.ts's getNetworkUsage() doc comment for the background-query
+ *  tradeoff this (re-)introduces. Null on the very first sample of a Manager session, since
+ *  a rate needs two readings apart to compute - populated from the second poll onward. */
+export interface NetworkUsage {
+  rxBytesPerSec: number | null
+  txBytesPerSec: number | null
+}
+
 /** The contextBridge API surface exposed by the preload script as `window.api`. */
 export interface Api {
   profiles: {
@@ -1187,6 +1197,10 @@ export interface Api {
   }
   systemStats: {
     get: () => Promise<SystemStaticInfo>
+    /** Polled on an interval by the Dashboard's hardware stats bar - deliberately not as
+     *  frequent as the CPU/RAM numbers (which are free, already-pushed data), since each
+     *  call here does spawn a background OS query. See getNetworkUsage()'s doc comment. */
+    getNetworkUsage: () => Promise<NetworkUsage>
   }
   webDashboard: {
     getStatus: () => Promise<{ running: boolean; error: string | null; host: string | null }>

@@ -135,7 +135,8 @@ const api: Api = {
     get: () => ipcRenderer.invoke(IPC.officialServerStatusGet)
   },
   systemStats: {
-    get: () => ipcRenderer.invoke(IPC.systemStatsGet)
+    get: () => ipcRenderer.invoke(IPC.systemStatsGet),
+    getNetworkUsage: () => ipcRenderer.invoke(IPC.systemStatsGetNetworkUsage)
   },
   webDashboard: {
     getStatus: () => ipcRenderer.invoke(IPC.webDashboardStatus),

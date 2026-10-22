@@ -674,7 +674,7 @@ export default function Dashboard({
         />
       )}
 
-      <HardwareStatsBar profiles={visibleProfiles} statuses={statuses} />
+      <HardwareStatsBar profiles={visibleProfiles} statuses={statuses} labelPrefix="ARK Servers" />
 
       <div className="toolbar">
         <div className="toolbar-filters">

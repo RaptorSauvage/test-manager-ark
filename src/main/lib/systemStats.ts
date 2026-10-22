@@ -1,5 +1,5 @@
 import si from 'systeminformation'
-import type { SystemStaticInfo } from '@shared/types'
+import type { NetworkUsage, SystemStaticInfo } from '@shared/types'
 
 /** Some platforms already fold the manufacturer into `si.cpu()`'s own `brand` (e.g. "AMD
  *  Ryzen 9 7950X3D"), others don't (brand "Ryzen 9 7950X3D", manufacturer "AMD" reported
@@ -55,4 +55,18 @@ export async function getSystemStaticInfo(): Promise<SystemStaticInfo> {
     networkSpeedMbps: primaryIface?.speed || null
   }
   return staticInfoCache
+}
+
+/** Live upload/download throughput for the machine's default network interface, in
+ *  bytes/sec - re-introduces the exact background-query pattern the doc comment above
+ *  warns about (on Windows, `systeminformation` shells out to read the interface's
+ *  counters), so the Dashboard polls this on a noticeably slower interval than the old
+ *  (removed) 3s one that got flagged, trading off freshness for fewer spawned processes.
+ *  `rx_sec`/`tx_sec` are null until a second sample can be compared against the first. */
+export async function getNetworkUsage(): Promise<NetworkUsage> {
+  const [sample] = await si.networkStats()
+  return {
+    rxBytesPerSec: sample?.rx_sec ?? null,
+    txBytesPerSec: sample?.tx_sec ?? null
+  }
 }
