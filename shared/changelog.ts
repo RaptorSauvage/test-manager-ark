@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-22',
+    title: 'Fixed: Dashboard and Cluster Dashboard sidebar icons were swapped',
+    details: [
+      'The grid icon now correctly points to Dashboard/Minecraft Servers, and the server-rack icon to Cluster Dashboard - they had ended up swapped in the previous sidebar icon pass.'
+    ]
+  },
+  {
+    date: '2026-10-22',
     title: 'Sidebar: icon-only, bigger icons, fixed What\'s New/Log/Settings not staying at the bottom',
     details: [
       'The sidebar is now a narrow icon-only dock - no more text labels, just a bigger icon per item (hover for its name as a tooltip). Dashboard/Minecraft Servers, Cluster Dashboard, Players, Log and Settings use real line-art icons (What\'s New keeps its bell emoji - no matching artwork for that one yet).',
