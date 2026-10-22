@@ -1579,14 +1579,31 @@ label.checkbox {
 
 .action-row button.update,
 .action-row-list button.update {
-  color: var(--status-updating);
-  border-color: var(--status-updating);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .action-row button.kill,
 .action-row-list button.kill {
   color: var(--danger-dark);
   border-color: var(--danger-dark);
+}
+
+/* Renders the Update button's shield icon in the button's own color (currentColor) instead of
+   whatever color the source PNG happens to be - mask-image clips a solid-color box to the
+   icon's alpha shape, so the icon always matches button.update's blue even if the source art
+   changes again later. */
+.icon-mask {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
 }
 
 .server-list-table {

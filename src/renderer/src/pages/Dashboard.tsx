@@ -7,6 +7,7 @@ import type { TabKey } from './ServerDetail'
 import HardwareStatsBar from '../components/HardwareStatsBar'
 import { GAME_ICONS } from '../lib/gameIcons'
 import { confirmAction } from '../lib/confirmAction'
+import updateIcon from '../assets/icons/update.png'
 
 interface DashboardProps {
   profiles: ServerProfile[]
@@ -332,7 +333,7 @@ export default function Dashboard({
           onClick={() => void handleUpdate(profile)}
           title={`${updateLabel} - ${updateTitle}`}
         >
-          ⇡
+          <span className="icon-mask" style={{ WebkitMaskImage: `url(${updateIcon})`, maskImage: `url(${updateIcon})` }} />
         </button>
         <button
           className="kill"
@@ -372,7 +373,7 @@ export default function Dashboard({
           onClick={(e) => { e.preventDefault(); run(stopUpdateRestartAll) }}
           title="Stop every running server in this group, update all of them via SteamCMD, then start the ones that were running back up"
         >
-          ⇡
+          <span className="icon-mask" style={{ WebkitMaskImage: `url(${updateIcon})`, maskImage: `url(${updateIcon})` }} />
         </button>
       </div>
     )
