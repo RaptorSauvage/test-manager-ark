@@ -15,7 +15,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-10-22',
     title: 'Dashboard redesign: denser cards, hardware stats bar, list view, filters',
     details: [
-      'New stats bar at the top of the Dashboard showing the combined CPU/RAM used by your running ARK servers (with the CPU model/core count and total system RAM as context).',
+      'New stats bar at the top of the Dashboard showing the combined CPU/RAM used by your running ARK servers (with the CPU model/core count and total system RAM as context). The CPU percentage is scaled against the machine\'s full thread count (100% = every thread saturated), not the old "100% = one thread" process convention, so it no longer shows numbers like "112%" on a many-core machine.',
       'Server cards are denser (Port/Map/Players/Uptime/CPU/Memory as a small grid), show the installed game version next to the name, use icon-only Start/Stop/Restart/Update/Kill buttons with the same colors as before, and pack up to 6 per row on a wide window - a group with fewer servers than that (e.g. a 3-server "Testing" group) keeps the exact same card size as a full row instead of stretching to fill the rest of the row.',
       '"Manage/Hide/Delete" moved into a "..." dropdown on each card, now also including a direct "Settings" shortcut.',
       'New Status/Map/Sort filters next to the search box, and a Grid/List toggle - List shows every server as rows in one dense table instead of cards. Sort defaults to "Default order" (your profiles\' own order, unsorted) rather than always alphabetizing them.',

@@ -35,7 +35,15 @@ export default function HardwareStatsBar({ profiles, statuses }: HardwareStatsBa
       })
   }, [])
 
+  // Each server's own cpu% is process-style (100% = one fully-busy thread, so a handful of
+  // servers can sum past 100 on a many-core machine) - rescale that sum against every thread
+  // the CPU has so 100% here means "every thread this machine has is saturated," matching how
+  // Task Manager reads overall CPU usage, instead of a number that's meaningless without
+  // knowing the core count.
   const totalCpu = profiles.reduce((sum, p) => sum + (statuses[p.id]?.cpu ?? 0), 0)
+  const cpuCapacityPercent = staticInfo?.logicalCores
+    ? Math.min(totalCpu / staticInfo.logicalCores, 100)
+    : Math.min(totalCpu, 100)
   const totalMemoryBytes = profiles.reduce((sum, p) => sum + (statuses[p.id]?.memoryMB ?? 0) * 1024 ** 2, 0)
   const memoryPercent =
     staticInfo?.totalMemoryBytes ? Math.min((totalMemoryBytes / staticInfo.totalMemoryBytes) * 100, 100) : 0
@@ -49,11 +57,11 @@ export default function HardwareStatsBar({ profiles, statuses }: HardwareStatsBa
           </div>
           <div>
             <div className="hw-card-label">ARK Servers - CPU</div>
-            <div className="hw-card-value">{totalCpu.toFixed(1)}%</div>
+            <div className="hw-card-value">{cpuCapacityPercent.toFixed(1)}%</div>
           </div>
         </div>
         <div className="hw-bar">
-          <div className="hw-bar-fill" style={{ width: `${Math.min(totalCpu, 100)}%`, background: 'var(--accent)' }} />
+          <div className="hw-bar-fill" style={{ width: `${cpuCapacityPercent}%`, background: 'var(--accent)' }} />
         </div>
         <div className="hw-card-sub">
           {staticInfo
