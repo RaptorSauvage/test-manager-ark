@@ -1398,9 +1398,9 @@ label.checkbox {
   display: flex;
   flex-direction: column;
   gap: 9px;
-  flex: 1 1 300px;
+  flex: 1 1 340px;
   min-width: 260px;
-  max-width: 620px;
+  max-width: 440px;
 }
 
 .server-card-v2.status-running {
