@@ -1024,29 +1024,21 @@ export interface OfficialServerStatus {
   color: string
 }
 
-/** Live, host-wide CPU/RAM/network snapshot for the Dashboard's hardware stats bar - see
- *  src/main/lib/systemStats.ts. Distinct from the pre-existing "Global Performance" panel,
- *  which sums only this app's own managed server processes rather than the whole machine. */
-export interface SystemStats {
-  cpu: {
-    usagePercent: number
-    model: string
-    physicalCores: number | null
-    logicalCores: number
-  }
-  memory: {
-    usagePercent: number
-    usedBytes: number
-    totalBytes: number
-    type: string | null
-    speedMHz: number | null
-  }
-  network: {
-    interfaceLabel: string | null
-    speedMbps: number | null
-    rxBytesPerSec: number
-    txBytesPerSec: number
-  }
+/** One-time static machine info for the Dashboard's hardware stats bar - CPU model/core
+ *  count, total RAM/module type, and the primary network interface's name/speed. Fetched
+ *  once per Manager session and never re-polled (see src/main/lib/systemStats.ts's own doc
+ *  comment for why: polling `systeminformation`'s *live* usage numbers every few seconds
+ *  triggered antivirus false positives on Windows). The bar's actual "usage" numbers come
+ *  from the managed ARK servers' own CPU/RAM instead, already available from their status. */
+export interface SystemStaticInfo {
+  cpuModel: string
+  physicalCores: number | null
+  logicalCores: number
+  totalMemoryBytes: number
+  memoryType: string | null
+  memorySpeedMHz: number | null
+  networkInterfaceLabel: string | null
+  networkSpeedMbps: number | null
 }
 
 /** The contextBridge API surface exposed by the preload script as `window.api`. */
@@ -1164,7 +1156,7 @@ export interface Api {
     get: () => Promise<OfficialServerStatus>
   }
   systemStats: {
-    get: () => Promise<SystemStats>
+    get: () => Promise<SystemStaticInfo>
   }
   webDashboard: {
     getStatus: () => Promise<{ running: boolean; error: string | null; host: string | null }>

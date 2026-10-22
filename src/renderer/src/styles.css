@@ -909,11 +909,12 @@ label.checkbox {
   font-size: 0.9rem;
 }
 
-/* HardwareStatsBar.tsx - host-wide CPU/RAM/network usage, separate from the sidebar's own
-   "Global Performance" panel (which only sums this app's managed server processes). */
+/* HardwareStatsBar.tsx - the managed ARK servers' own summed CPU/RAM usage (not the whole
+   machine's - see that component's own doc comment for why). Two cards, not three - there's
+   no meaningful per-server network number to show a third card for. */
 .hw-stats-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 14px;
   margin-bottom: 18px;
 }
@@ -1081,8 +1082,11 @@ label.checkbox {
   display: grid;
   /* Wide enough that Start/Stop/Restart/Update/Kill still fit on one row (see
      .server-card-actions-primary's own tighter padding/font-size below) without the card
-     needing to be as wide as an untightened row would require. */
-  grid-template-columns: repeat(auto-fit, minmax(260px, 380px));
+     needing to be as wide as an untightened row would require. The upper bound is a cap,
+     not a target - auto-fit still lets a short row's cards grow up to it to fill leftover
+     space instead of leaving a gap, it just stops them from ballooning past something
+     reasonable on a very wide window with only one or two cards in a row. */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 460px));
   gap: 16px;
 }
 

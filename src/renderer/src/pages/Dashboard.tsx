@@ -568,7 +568,7 @@ export default function Dashboard({
 
       {importError && <p className="error-message">{importError}</p>}
 
-      <HardwareStatsBar />
+      <HardwareStatsBar profiles={visibleProfiles} statuses={statuses} />
 
       <div className="toolbar">
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
