@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ServerProfile, ServerStatus, SystemStaticInfo } from '@shared/types'
+import cpuIcon from '../assets/icons/cpu.png'
+import ramIcon from '../assets/icons/ram.png'
 
 function formatBytes(bytes: number): string {
   const gb = bytes / 1024 ** 3
@@ -42,7 +44,9 @@ export default function HardwareStatsBar({ profiles, statuses }: HardwareStatsBa
     <div className="hw-stats-row">
       <div className="hw-card">
         <div className="hw-card-top">
-          <div className="hw-icon">🧠</div>
+          <div className="hw-icon">
+            <img src={cpuIcon} alt="" />
+          </div>
           <div>
             <div className="hw-card-label">ARK Servers - CPU</div>
             <div className="hw-card-value">{totalCpu.toFixed(1)}%</div>
@@ -60,7 +64,9 @@ export default function HardwareStatsBar({ profiles, statuses }: HardwareStatsBa
 
       <div className="hw-card">
         <div className="hw-card-top">
-          <div className="hw-icon">💾</div>
+          <div className="hw-icon">
+            <img src={ramIcon} alt="" />
+          </div>
           <div>
             <div className="hw-card-label">ARK Servers - Memory</div>
             <div className="hw-card-value">{formatBytes(totalMemoryBytes)}</div>
