@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-22',
+    title: 'Fixed: a restarting/errored server\'s card kept its stopped (red) side stripe',
+    details: [
+      'Every other status already had a matching color for the card\'s left-edge stripe, but "restarting" and "error" didn\'t - both fell back to the default stopped color. They now match the same colored badge a card already showed for those two states (orange for restarting, red for error).'
+    ]
+  },
+  {
+    date: '2026-10-22',
     title: 'A proper "Create New Server" wizard, merged with Import',
     details: [
       'The 3 separate header buttons (+ Add server / Import existing server / Import profile file...) are now one "+ Add Profile" button, opening a 3-step wizard: Basic Information (name + install directory, with live validation), Copy Configuration (fresh install, copy settings from an existing profile, or - the two old import buttons, now folded in here - import an existing install or a profile file), and Additional Options (an "Install ArkAPI automatically" checkbox - not wired up to anything real yet - plus a Review & Confirm summary).',

@@ -1611,6 +1611,17 @@ label.checkbox {
   border-left-color: var(--status-stopping);
 }
 
+/* No --status-restarting/--status-error custom property exists (unlike the other states) -
+   .badge-restarting/.badge-error already use --warn/--danger directly instead, so this
+   matches that rather than inventing new colors nothing else would share. */
+.server-card-v2.status-restarting {
+  border-left-color: var(--warn);
+}
+
+.server-card-v2.status-error {
+  border-left-color: var(--danger);
+}
+
 .server-card-v2.dragging {
   opacity: 0.4;
 }
