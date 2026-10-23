@@ -106,7 +106,7 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('applies the generic template verbatim, then force-sets SessionName to the profile name', async () => {
+  it('applies the generic template, then force-sets SessionName to the profile name', async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nServerPVE=False\nMaxPlayers=70', gameIni: '' }
     applyIniTemplate(makeProfile({ installDir, name: 'My Cool Server' }))
@@ -118,7 +118,7 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     expect(content).toContain('SessionName=My Cool Server')
   })
 
-  it('sets SessionName by replacing its value in place, not by adding a separate trailing block for it', async () => {
+  it('sets SessionName by replacing its value in place, not by adding a separate block for it', async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     fs.writeFileSync(gusPath, '[SessionSettings]\nSessionName=Old Name\nPort=7777\n', 'utf-8')
     mockGeneric.value = { gameUserSettingsIni: '', gameIni: '' }
@@ -128,50 +128,63 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     expect(content).toContain('SessionName=My Cool Server')
     expect(content).not.toContain('Old Name')
     expect(content.match(/SessionName=/g)).toHaveLength(1)
-    expect(content).not.toMatch(/;.*Server Name/i)
+    expect(content.match(/\[SessionSettings\]/g)).toHaveLength(1)
   })
 
-  it('preserves comments and blank lines from the generic template and the override exactly as typed/imported', async () => {
+  it("merges a new key into a section the real file already has, instead of creating a second copy of that section - the exact bug report: DifficultyOffset and the existing XPMultiplier end up together", async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
-    mockGeneric.value = {
-      gameUserSettingsIni: '; Rates for the whole cluster\n[ServerSettings]\n; max concurrent players\nMaxPlayers=70',
-      gameIni: ''
-    }
-    mockOverrides.value.set('p1', {
-      profileId: 'p1',
-      gameUserSettingsIni: '; This server runs a smaller cap\n[ServerSettings]\nMaxPlayers=10',
-      gameIni: '',
-      sessionName: ''
-    })
+    fs.writeFileSync(gusPath, '[ServerSettings]\nXPMultiplier=10.0\n', 'utf-8')
+    mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nDifficultyOffset=1.0', gameIni: '' }
     applyIniTemplate(makeProfile({ installDir }))
 
     const content = fs.readFileSync(gusPath, 'utf-8')
-    expect(content).toContain('; Rates for the whole cluster')
-    expect(content).toContain('; max concurrent players')
-    expect(content).toContain('; This server runs a smaller cap')
+    expect(content.match(/\[ServerSettings\]/g)).toHaveLength(1)
+    expect(content).toContain('XPMultiplier=10.0')
+    expect(content).toContain('DifficultyOffset=1.0')
   })
 
-  it("the profile's own override is appended behind a ';Server Specific INI' marker, after the generic template", async () => {
+  it('re-applying updates an already-applied key in place instead of leaving the old value sitting there too', async () => {
+    const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
+    mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nDifficultyOffset=1.0', gameIni: '' }
+    applyIniTemplate(makeProfile({ installDir }))
+    mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nDifficultyOffset=2.0', gameIni: '' }
+    applyIniTemplate(makeProfile({ installDir }))
+
+    const content = fs.readFileSync(gusPath, 'utf-8')
+    expect(content.match(/DifficultyOffset=/g)).toHaveLength(1)
+    expect(content).toContain('DifficultyOffset=2.0')
+    expect(content).not.toContain('DifficultyOffset=1.0')
+  })
+
+  it("carries a template key's own comment along only when that key is new to the real file", async () => {
+    const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
+    fs.writeFileSync(gusPath, '[ServerSettings]\nXPMultiplier=10.0\n', 'utf-8')
+    mockGeneric.value = {
+      gameUserSettingsIni: '[ServerSettings]\n; Harvest rate for the whole cluster\nHarvestAmountMultiplier=3.0',
+      gameIni: ''
+    }
+    applyIniTemplate(makeProfile({ installDir }))
+
+    const lines = fs.readFileSync(gusPath, 'utf-8').split(/\r\n|\n/)
+    const commentIndex = lines.indexOf('; Harvest rate for the whole cluster')
+    expect(commentIndex).toBeGreaterThan(-1)
+    expect(lines[commentIndex + 1]).toBe('HarvestAmountMultiplier=3.0')
+  })
+
+  it("the override's own value wins over the generic template for the same key, merged into the same section", async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=70', gameIni: '' }
     mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '', sessionName: '' })
     applyIniTemplate(makeProfile({ installDir }))
 
     const content = fs.readFileSync(gusPath, 'utf-8')
-    const genericMarkerIndex = content.indexOf(';Generic Template')
-    const overrideMarkerIndex = content.indexOf(';Server Specific INI')
-    expect(genericMarkerIndex).toBeGreaterThan(-1)
-    expect(overrideMarkerIndex).toBeGreaterThan(genericMarkerIndex)
-    // The generic value is written first; the override is appended after its own marker, so
-    // a game reading the file top-to-bottom sees the override's value last and keeps it.
-    expect(content.indexOf('MaxPlayers=70')).toBeLessThan(overrideMarkerIndex)
-    expect(content.indexOf('MaxPlayers=10')).toBeGreaterThan(overrideMarkerIndex)
+    expect(content.match(/\[ServerSettings\]/g)).toHaveLength(1)
+    expect(content.match(/MaxPlayers=/g)).toHaveLength(1)
+    expect(content).toContain('MaxPlayers=10')
+    expect(content).not.toContain('MaxPlayers=70')
   })
 
   it("the forced SessionName always wins, even if the server's own override or generic template tries to set its own", async () => {
-    // A real imported file (see the "existing INI files" use case) very plausibly carries its
-    // own SessionName line - without stripping it, that line could end up physically last and
-    // win under ARK's own last-value-wins ini parsing.
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[SessionSettings]\nSessionName=Generic Placeholder', gameIni: '' }
     mockOverrides.value.set('p1', {
@@ -186,6 +199,7 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     expect(content).toContain('SessionName=My Cool Server')
     expect(content).not.toContain('Generic Placeholder')
     expect(content).not.toContain('Some Other Name')
+    expect(content.match(/SessionName=/g)).toHaveLength(1)
     expect(content).toContain('MaxPlayers=10')
   })
 
@@ -209,7 +223,7 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     expect(fs.readFileSync(gusPath, 'utf-8')).toContain('SessionName=Island')
   })
 
-  it('re-applying replaces the previous blocks instead of appending second copies', async () => {
+  it('re-applying with a changed override updates the same key in place instead of leaving the old value too', async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=70', gameIni: '' }
     mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '', sessionName: '' })
@@ -218,13 +232,13 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     applyIniTemplate(makeProfile({ installDir }))
 
     const content = fs.readFileSync(gusPath, 'utf-8')
-    expect(content.match(/;Generic Template/g)).toHaveLength(1)
-    expect(content.match(/;Server Specific INI/g)).toHaveLength(1)
+    expect(content.match(/\[ServerSettings\]/g)).toHaveLength(1)
+    expect(content.match(/MaxPlayers=/g)).toHaveLength(1)
     expect(content).toContain('MaxPlayers=20')
     expect(content).not.toContain('MaxPlayers=10')
   })
 
-  it('removes the server-specific marker and block entirely once the override is cleared', async () => {
+  it('clearing the override and re-applying reverts the key to whatever the generic template alone says', async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=70', gameIni: '' }
     mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '', sessionName: '' })
@@ -233,9 +247,9 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     applyIniTemplate(makeProfile({ installDir }))
 
     const content = fs.readFileSync(gusPath, 'utf-8')
-    expect(content).not.toContain(';Server Specific INI')
-    expect(content).not.toContain('MaxPlayers=10')
+    expect(content.match(/MaxPlayers=/g)).toHaveLength(1)
     expect(content).toContain('MaxPlayers=70')
+    expect(content).not.toContain('MaxPlayers=10')
   })
 
   it('writes to Game.ini too, independently of GameUserSettings.ini, keeping its own dotted section name intact', async () => {
@@ -283,8 +297,8 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     ]
 
     // A real disk/permission failure (e.g. the config dir locked read-only while the server
-    // is running) rather than relying on ini.parse to throw, which it never actually does -
-    // same reasoning as upsertIniKey's own disk-failure test in gameConfigWrite.test.ts.
+    // is running) - same reasoning as upsertIniKey's own disk-failure test in
+    // gameConfigWrite.test.ts.
     const realWriteFileSync = fs.writeFileSync
     const spy = vi.spyOn(fs, 'writeFileSync').mockImplementation((filePath, ...rest: unknown[]) => {
       if (String(filePath).includes('install-bad')) throw new Error('simulated disk failure')

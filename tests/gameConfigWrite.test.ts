@@ -4,8 +4,8 @@ import path from 'node:path'
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import {
   upsertIniKey,
+  upsertIniKeys,
   upsertIniRepeatedKey,
-  writeTrailingSections,
   syncAseModsToIni,
   reconcileAseModsFromIni
 } from '../src/main/lib/gameConfigWrite'
@@ -150,7 +150,7 @@ describe('upsertIniKey', () => {
   })
 })
 
-describe('writeTrailingSections', () => {
+describe('upsertIniKeys', () => {
   let tmpDir: string
   let filePath: string
 
@@ -163,74 +163,88 @@ describe('writeTrailingSections', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('never creates the file when every section is blank and it does not already exist', () => {
-    writeTrailingSections(filePath, [{ marker: ';Generic', body: '' }])
+  it('is a no-op for an empty entry list - never even touches the file', () => {
+    upsertIniKeys(filePath, [])
     expect(fs.existsSync(filePath)).toBe(false)
   })
 
-  it('appends a single section behind its marker without touching what came before it', () => {
-    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
-    writeTrailingSections(filePath, [{ marker: ';Generic', body: '[ServerSettings]\nMaxPlayers=10' }])
+  it('updates an existing key right where it already is, staying grouped with its neighbors', () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nServerPassword=hello\nXPMultiplier=10.0\nServerPVE=False\n', 'utf-8')
+    upsertIniKeys(filePath, [{ section: 'ServerSettings', key: 'XPMultiplier', value: '2.0' }])
     const content = fs.readFileSync(filePath, 'utf-8')
-    const markerIndex = content.indexOf(';Generic')
-    expect(markerIndex).toBeGreaterThan(-1)
-    expect(content.indexOf('MaxPlayers=70')).toBeLessThan(markerIndex)
-    expect(content.indexOf('MaxPlayers=10')).toBeGreaterThan(markerIndex)
+    expect(content).toBe('[ServerSettings]\nServerPassword=hello\nXPMultiplier=2.0\nServerPVE=False\n')
   })
 
-  it('writes several sections in the given order, each behind its own marker', () => {
-    writeTrailingSections(filePath, [
-      { marker: ';Generic', body: '[ServerSettings]\nMaxPlayers=70' },
-      { marker: ';Override', body: '[ServerSettings]\nMaxPlayers=10' }
+  it('inserts a new key into an already-existing section instead of creating a second one', () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nXPMultiplier=10.0\n', 'utf-8')
+    upsertIniKeys(filePath, [{ section: 'ServerSettings', key: 'DifficultyOffset', value: '1.0' }])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    expect(content.match(/\[ServerSettings\]/g)).toHaveLength(1)
+    expect(content).toContain('XPMultiplier=10.0')
+    expect(content).toContain('DifficultyOffset=1.0')
+  })
+
+  it('applies several entries across existing and brand new sections in one pass', () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
+    upsertIniKeys(filePath, [
+      { section: 'ServerSettings', key: 'MaxPlayers', value: '100' },
+      { section: 'ServerSettings', key: 'ServerPVE', value: 'False' },
+      { section: 'SessionSettings', key: 'SessionName', value: 'My Server' }
     ])
     const content = fs.readFileSync(filePath, 'utf-8')
-    const genericIndex = content.indexOf(';Generic')
-    const overrideIndex = content.indexOf(';Override')
-    expect(genericIndex).toBeGreaterThan(-1)
-    expect(overrideIndex).toBeGreaterThan(genericIndex)
-    expect(content.indexOf('MaxPlayers=70')).toBeLessThan(overrideIndex)
-    expect(content.indexOf('MaxPlayers=10')).toBeGreaterThan(overrideIndex)
+    expect(content).toContain('MaxPlayers=100')
+    expect(content).toContain('ServerPVE=False')
+    expect(content).toContain('[SessionSettings]')
+    expect(content).toContain('SessionName=My Server')
   })
 
-  it('preserves comments and exact formatting within a section body verbatim', () => {
-    const body = '; XP rate for the whole cluster\nXPMultiplier=2.0\n\n; Taming rate\nTamingSpeedMultiplier=3.0'
-    writeTrailingSections(filePath, [{ marker: ';Generic', body }])
-    const content = fs.readFileSync(filePath, 'utf-8')
-    expect(content).toContain('; XP rate for the whole cluster')
-    expect(content).toContain('; Taming rate')
-    expect(content).toContain('XPMultiplier=2.0')
-    expect(content).toContain('TamingSpeedMultiplier=3.0')
-  })
-
-  it('drops a blank section entirely instead of writing an empty marker', () => {
-    writeTrailingSections(filePath, [
-      { marker: ';Generic', body: '' },
-      { marker: ';Override', body: 'MaxPlayers=10' }
+  it('a later entry for a brand new section finds the block an earlier entry in the same batch just created', () => {
+    upsertIniKeys(filePath, [
+      { section: 'ServerSettings', key: 'MaxPlayers', value: '70' },
+      { section: 'ServerSettings', key: 'ServerPVE', value: 'False' }
     ])
     const content = fs.readFileSync(filePath, 'utf-8')
-    expect(content).not.toContain(';Generic')
-    expect(content).toContain(';Override')
+    expect(content.match(/\[ServerSettings\]/g)).toHaveLength(1)
+    expect(content).toContain('MaxPlayers=70')
+    expect(content).toContain('ServerPVE=False')
   })
 
-  it('replaces the previous set of blocks in place instead of appending a second copy', () => {
-    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
-    writeTrailingSections(filePath, [{ marker: ';Generic', body: 'MaxPlayers=10' }])
-    writeTrailingSections(filePath, [{ marker: ';Generic', body: 'MaxPlayers=20' }])
+  it('leaves every line not covered by an entry completely untouched', () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\nServerPassword=hello\n[Other]\nFoo=1\n', 'utf-8')
+    upsertIniKeys(filePath, [{ section: 'ServerSettings', key: 'MaxPlayers', value: '100' }])
     const content = fs.readFileSync(filePath, 'utf-8')
-    expect(content.match(/;Generic/g)).toHaveLength(1)
-    expect(content).toContain('MaxPlayers=70')
-    expect(content).toContain('MaxPlayers=20')
-    expect(content).not.toContain('MaxPlayers=10')
+    expect(content).toContain('ServerPassword=hello')
+    expect(content).toContain('[Other]\nFoo=1')
   })
 
-  it('removes every marker and block once all sections go blank, leaving the rest of the file intact', () => {
-    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
-    writeTrailingSections(filePath, [{ marker: ';Generic', body: 'MaxPlayers=10' }])
-    writeTrailingSections(filePath, [{ marker: ';Generic', body: '' }])
+  it("inserts an entry's comments right above it when the key is new, in a new section", () => {
+    upsertIniKeys(filePath, [
+      { section: 'ServerSettings', key: 'DifficultyOffset', value: '1.0', comments: ['; Difficulty for the whole cluster'] }
+    ])
+    const lines = fs.readFileSync(filePath, 'utf-8').split(/\r\n|\n/)
+    const commentIndex = lines.indexOf('; Difficulty for the whole cluster')
+    expect(commentIndex).toBeGreaterThan(-1)
+    expect(lines[commentIndex + 1]).toBe('DifficultyOffset=1.0')
+  })
+
+  it("inserts an entry's comments right above it when the key is new, in an already-existing section", () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nXPMultiplier=10.0\n', 'utf-8')
+    upsertIniKeys(filePath, [
+      { section: 'ServerSettings', key: 'DifficultyOffset', value: '1.0', comments: ['; Difficulty for the whole cluster'] }
+    ])
     const content = fs.readFileSync(filePath, 'utf-8')
-    expect(content).not.toContain(';Generic')
-    expect(content).not.toContain('MaxPlayers=10')
-    expect(content).toContain('MaxPlayers=70')
+    expect(content).toContain('; Difficulty for the whole cluster\nDifficultyOffset=1.0')
+    expect(content).toContain('XPMultiplier=10.0')
+  })
+
+  it('never duplicates a comment above an already-existing key, even if the entry has one', () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nDifficultyOffset=1.0\n', 'utf-8')
+    upsertIniKeys(filePath, [
+      { section: 'ServerSettings', key: 'DifficultyOffset', value: '2.0', comments: ['; This would be a duplicate'] }
+    ])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    expect(content).not.toContain('; This would be a duplicate')
+    expect(content).toBe('[ServerSettings]\nDifficultyOffset=2.0\n')
   })
 })
 

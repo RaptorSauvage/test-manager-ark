@@ -89,56 +89,53 @@ export function upsertIniKey(filePath: string, section: string, key: string, val
   writeFileEnsuringDir(filePath, lines.join(eol))
 }
 
-export interface TrailingSection {
-  marker: string
-  body: string
+export interface IniUpsertEntry {
+  section: string
+  key: string
+  value: string
+  /** Comment lines (verbatim, including the leading `;`/`#`) to put directly above this key
+   *  when it's being newly inserted - ignored when the key already exists in the
+   *  destination, so re-applying never duplicates a comment next to an already-updated
+   *  line. See iniTemplates.ts, the only current caller, for where these come from. */
+  comments?: string[]
 }
 
 /**
- * Rebuilds the trailing region of a file as one or more raw-text blocks, each introduced by
- * its own comment marker, in the given order - used by the INI Templates tool
- * (iniTemplates.ts) instead of parsing/re-emitting `key=value` lines one at a time, so
- * whatever the caller already has as a whole block of text (a user's own pre-made .ini file,
- * comments and all) is written byte-for-byte rather than decomposed and losing anything that
- * isn't itself a `key=value` line. A later section wins over an earlier one for the same key
- * under the game's own last-value-wins ini parsing (the same trick ARK server owners already
- * use by hand), so pass sections weakest-first. Everything above the first of these markers -
- * anything that predates using this at all, or that the user later added above it by hand -
- * is left completely untouched. Re-running this replaces the previous set of blocks in place
- * rather than appending a new set below the old one; a section with a blank body is dropped
- * entirely (and its old block, if any, removed) rather than writing an empty marker with
- * nothing under it. Never creates the file at all if every section is blank and it doesn't
- * already exist.
+ * Same idea as upsertIniKey, but applies a whole batch of section+key+value entries in one
+ * read-modify-write pass instead of one round-trip per key - used by the INI Templates tool
+ * (iniTemplates.ts), which can have dozens of entries to apply to the same file at once.
+ * Still leaves every other line completely untouched: an existing key's line is replaced in
+ * place (so it stays with whatever's physically already around it - the same section as its
+ * neighbors, any comment already sitting above it); a key that doesn't exist yet is inserted
+ * into its section (creating the section, appended at the end of the file, if that doesn't
+ * exist yet either) right after the header, along with its own `comments` if it has any. A
+ * later entry in the same batch for a section just created by an earlier one in the same call
+ * finds that same block rather than creating a second copy of it.
  */
-export function writeTrailingSections(filePath: string, sections: TrailingSection[]): void {
-  const nonBlank = sections.filter((s) => s.body.trim() !== '')
-  if (!fs.existsSync(filePath) && nonBlank.length === 0) return
-
+export function upsertIniKeys(filePath: string, entries: IniUpsertEntry[]): void {
+  if (entries.length === 0) return
   const content = tryReadExistingContent(filePath)
   if (content === null) return
   const eol = content ? detectEol(content) : '\r\n'
-  const lines = content.length > 0 ? content.split(/\r\n|\n/) : []
+  let lines = content.length > 0 ? content.split(/\r\n|\n/) : []
 
-  const markers = new Set(sections.map((s) => s.marker))
-  const firstMarkerIndex = lines.findIndex((line) => markers.has(line.trim()))
-  const baseLines = firstMarkerIndex === -1 ? lines : lines.slice(0, firstMarkerIndex)
-  while (baseLines.length > 0 && baseLines[baseLines.length - 1] === '') baseLines.pop()
-
-  const blockLines: string[] = []
-  for (const { marker, body } of nonBlank) {
-    const bodyLines = body.split(/\r\n|\n/)
-    while (bodyLines.length > 0 && bodyLines[0] === '') bodyLines.shift()
-    while (bodyLines.length > 0 && bodyLines[bodyLines.length - 1] === '') bodyLines.pop()
-    blockLines.push(marker, ...bodyLines)
+  for (const { section, key, value, comments } of entries) {
+    const keyPattern = new RegExp(`^\\s*${key}\\s*=`)
+    const range = findSectionRange(lines, section)
+    if (!range) {
+      const prefix = lines.length > 0 && lines[lines.length - 1] !== '' ? [''] : []
+      lines = [...lines, ...prefix, `[${section}]`, ...(comments ?? []), `${key}=${value}`]
+      continue
+    }
+    const existingIndex = lines.slice(range.start + 1, range.end).findIndex((line) => keyPattern.test(line))
+    if (existingIndex !== -1) {
+      lines[range.start + 1 + existingIndex] = `${key}=${value}`
+    } else {
+      lines.splice(range.start + 1, 0, ...(comments ?? []), `${key}=${value}`)
+    }
   }
 
-  if (blockLines.length === 0) {
-    writeFileEnsuringDir(filePath, baseLines.length > 0 ? baseLines.join(eol) + eol : '')
-    return
-  }
-
-  const allLines = baseLines.length > 0 ? [...baseLines, '', ...blockLines] : blockLines
-  writeFileEnsuringDir(filePath, allLines.join(eol) + eol)
+  writeFileEnsuringDir(filePath, lines.join(eol))
 }
 
 /**

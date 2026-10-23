@@ -17,9 +17,10 @@ interface OverrideFormState {
 }
 
 /** Tools > INI Templates - a cluster-wide generic GameUserSettings.ini/Game.ini template,
- *  plus an optional per-server override, each written verbatim (comments included) as its
- *  own block at the end of the file, the override's block last so it wins over the generic
- *  template (see src/main/lib/iniTemplates.ts). */
+ *  plus an optional per-server override, merged key-by-key into each profile's real config
+ *  files (an existing key is updated right where it already is, a new one is inserted into
+ *  its section), the override winning over the generic template for anything both set (see
+ *  src/main/lib/iniTemplates.ts). */
 export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewProps): JSX.Element {
   // Same convention as the Dashboard/PlayersView: a server hidden there is hidden here too
   // (nothing to apply a template to that the user has deliberately tucked away), and the
@@ -212,13 +213,13 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
         </button>
       </header>
       <p className="empty-state">
-        Write a shared base config once, then only the genuinely server-specific lines per server. Applying appends
-        the generic template, then the server&apos;s own override, to the end of that server&apos;s real
-        GameUserSettings.ini/Game.ini, each behind its own comment marker - written exactly as you typed or
-        imported it, comments included, with the override winning over the generic template for anything both set.
-        Everything already in the file above those markers, including anything you edited by hand, is left
-        completely alone. A server&apos;s own name always wins for SessionName, so you never need to set that
-        yourself.
+        Write a shared base config once, then only the genuinely server-specific lines per server. Applying merges
+        both into that server&apos;s real GameUserSettings.ini/Game.ini: a key the file already has is updated right
+        where it already sits (so it stays grouped with the rest of that section, not split off elsewhere), a key
+        it doesn&apos;t have yet is added to its section - any comment you wrote directly above a key in a template
+        comes along with it when that key is new, and the override wins over the generic template for anything both
+        set. Everything else already in the file, including anything you edited by hand, is left completely alone.
+        A server&apos;s own name always wins for SessionName, so you never need to set that yourself.
       </p>
 
       {applyResults && (
@@ -342,9 +343,9 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
               </button>
             </div>
             <p className="wizard-subtitle">
-              These lines are appended behind a <code>;Server Specific INI</code> comment, after the generic
-              template, so they win for this one server only. You can paste in an existing .ini file wholesale -
-              any SessionName inside it is always ignored in favor of the Server Name set below.
+              These lines win over the generic template for this one server only - merged into the same real
+              GameUserSettings.ini/Game.ini keys, not a separate block. You can paste in an existing .ini file
+              wholesale - any SessionName inside it is always ignored in favor of the Server Name set below.
             </p>
             {overrideError && <p className="error-message">{overrideError}</p>}
             <div className="wizard-body">

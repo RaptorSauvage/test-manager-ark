@@ -3,34 +3,82 @@ import path from 'node:path'
 import type { IniTemplateApplyResult, ServerProfile } from '@shared/types'
 import { listProfiles, getIniTemplateGeneric, getIniTemplateOverride, recordConfigFileHistory } from '../store'
 import { resolveConfigDir } from './config'
-import { upsertIniKey, writeTrailingSections } from './gameConfigWrite'
+import { upsertIniKeys, type IniUpsertEntry } from './gameConfigWrite'
 
 /**
- * INI Templates - a cluster-wide "generic" template and a profile's own "override" are each
- * written as their own raw-text block at the end of the real GameUserSettings.ini/Game.ini,
- * behind their own comment marker (see writeTrailingSections) - verbatim, comments and all,
- * rather than parsed into individual `key=value` entries and losing anything that isn't
- * itself a setting. The override's block comes after the generic one, so it wins for any key
- * both define, under the game's own last-value-wins ini parsing - the same convention ARK
- * server owners already use by hand. SessionName is different: rather than another trailing
- * block, the Manager just replaces that one line's value in place (see upsertIniKey) with
- * the override's own `sessionName`, if it set one, or the profile's own Manager name
- * otherwise - same as any other single setting it owns outright. A line matching SessionName
- * is stripped out of both templates' raw text before they're written, so an imported file
- * that happens to carry its own SessionName (very likely, since that's an ordinary line in
- * any real GameUserSettings.ini) can never reintroduce a second, conflicting one. Everything
- * above the first of the two trailing markers, including anything the user wrote in by hand
- * before ever using this tool, is left completely untouched.
+ * INI Templates - a cluster-wide "generic" template is merged with a profile's own "override"
+ * (override wins per `[Section]` key on a collision) and applied as a surgical, per-key
+ * upsert into that profile's real GameUserSettings.ini/Game.ini (see upsertIniKeys): an
+ * already-existing key's line is updated in place, staying right where it already is among
+ * its neighbors, rather than being duplicated into a separate block elsewhere in the file - a
+ * key the destination doesn't have yet is inserted into its section (or a brand new section,
+ * appended at the end, if that doesn't exist yet either). Any line in either file that isn't
+ * covered by either template, including something the user wrote in by hand, is left
+ * completely untouched. SessionName is always force-set last, to the override's own
+ * `sessionName` if it set one or the profile's own Manager name otherwise, regardless of what
+ * either template itself says for that key.
+ *
+ * Templates are parsed with a small line-scanner of our own (parseIniEntries) rather than the
+ * `ini` package - besides sidestepping that package's own quirks (it silently drops comments,
+ * and expands a dotted section name like ARK's own `/script/shootergame.shootergamemode`
+ * into nested objects), it lets each key keep whatever comment lines were written directly
+ * above it in the source template, carried along only when that key is new to the
+ * destination (an update to an already-existing line never touches whatever comment, if any,
+ * already sits above it there - avoids a duplicate on every re-apply).
  */
 
-const GENERIC_MARKER = ';Generic Template (Bober Server Manager)'
-const OVERRIDE_MARKER = ';Server Specific INI'
+function parseIniEntries(text: string): IniUpsertEntry[] {
+  const entries: IniUpsertEntry[] = []
+  let currentSection: string | null = null
+  let pendingComments: string[] = []
 
-function stripSessionNameLines(text: string): string {
-  return text
-    .split(/\r\n|\n/)
-    .filter((line) => !/^\s*SessionName\s*=/i.test(line))
-    .join('\n')
+  for (const rawLine of text.split(/\r\n|\n/)) {
+    const trimmed = rawLine.trim()
+    if (trimmed === '') {
+      pendingComments = []
+      continue
+    }
+    const sectionMatch = /^\[(.+)\]$/.exec(trimmed)
+    if (sectionMatch) {
+      currentSection = sectionMatch[1]
+      pendingComments = []
+      continue
+    }
+    if (trimmed.startsWith(';') || trimmed.startsWith('#')) {
+      pendingComments.push(rawLine)
+      continue
+    }
+    const eqIndex = rawLine.indexOf('=')
+    if (eqIndex === -1 || currentSection === null) {
+      // Not a recognizable `key=value` line, or one with no section to belong to yet (a
+      // sectionless line never legitimately appears in GameUserSettings.ini/Game.ini) -
+      // silently skipped rather than guessed at, same as a stray comment with nothing
+      // following it.
+      pendingComments = []
+      continue
+    }
+    entries.push({
+      section: currentSection,
+      key: rawLine.slice(0, eqIndex).trim(),
+      value: rawLine.slice(eqIndex + 1),
+      comments: pendingComments.length > 0 ? pendingComments : undefined
+    })
+    pendingComments = []
+  }
+
+  return entries
+}
+
+/** `override` entries win over `base` ones for the same section+key - a plain Map keyed by
+ *  "section::key" rather than relying on upsertIniKeys itself to dedupe, so a key present in
+ *  both ends up applied exactly once with its final value (and that entry's own comments, if
+ *  any), not written twice in a row. */
+function mergeEntries(base: IniUpsertEntry[], override: IniUpsertEntry[]): IniUpsertEntry[] {
+  const merged = new Map<string, IniUpsertEntry>()
+  for (const entry of [...base, ...override]) {
+    merged.set(`${entry.section}::${entry.key}`, entry)
+  }
+  return Array.from(merged.values())
 }
 
 function snapshotBeforeApply(profileId: string, installDir: string, filePath: string): void {
@@ -52,29 +100,30 @@ export function applyIniTemplate(profile: ServerProfile): void {
   const generic = getIniTemplateGeneric()
   const override = getIniTemplateOverride(profile.id)
 
+  const gusEntries = mergeEntries(parseIniEntries(generic.gameUserSettingsIni), parseIniEntries(override?.gameUserSettingsIni ?? ''))
+  // Always wins, regardless of what either template says for this one key - see this
+  // module's own doc comment.
+  gusEntries.push({ section: 'SessionSettings', key: 'SessionName', value: override?.sessionName.trim() || profile.name })
+  const gameEntries = mergeEntries(parseIniEntries(generic.gameIni), parseIniEntries(override?.gameIni ?? ''))
+
   const configDir = resolveConfigDir(profile.installDir)
   const gusPath = path.join(configDir, 'GameUserSettings.ini')
   const gamePath = path.join(configDir, 'Game.ini')
 
   try {
     snapshotBeforeApply(profile.id, profile.installDir, gusPath)
-    writeTrailingSections(gusPath, [
-      { marker: GENERIC_MARKER, body: stripSessionNameLines(generic.gameUserSettingsIni) },
-      { marker: OVERRIDE_MARKER, body: stripSessionNameLines(override?.gameUserSettingsIni ?? '') }
-    ])
-    upsertIniKey(gusPath, 'SessionSettings', 'SessionName', override?.sessionName.trim() || profile.name)
+    upsertIniKeys(gusPath, gusEntries)
   } catch (err) {
     throw new Error(`GameUserSettings.ini: ${(err as Error).message}`)
   }
 
-  try {
-    snapshotBeforeApply(profile.id, profile.installDir, gamePath)
-    writeTrailingSections(gamePath, [
-      { marker: GENERIC_MARKER, body: generic.gameIni },
-      { marker: OVERRIDE_MARKER, body: override?.gameIni ?? '' }
-    ])
-  } catch (err) {
-    throw new Error(`Game.ini: ${(err as Error).message}`)
+  if (gameEntries.length > 0) {
+    try {
+      snapshotBeforeApply(profile.id, profile.installDir, gamePath)
+      upsertIniKeys(gamePath, gameEntries)
+    } catch (err) {
+      throw new Error(`Game.ini: ${(err as Error).message}`)
+    }
   }
 }
 
