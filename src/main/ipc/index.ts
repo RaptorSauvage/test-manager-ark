@@ -32,6 +32,7 @@ import { registerPlayerBansHandlers } from './playerBans'
 import { registerPlayerWhitelistHandlers } from './playerWhitelist'
 import { registerPlayerRosterHandlers } from './playerRoster'
 import { registerWatchedPlayersHandlers } from './watchedPlayers'
+import { registerModEventsHandlers } from './modEvents'
 import { registerPlayerActivityHandlers } from './playerActivity'
 import { registerFileBrowserHandlers } from './fileBrowser'
 
@@ -69,6 +70,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerPlayerWhitelistHandlers()
   registerPlayerRosterHandlers()
   registerWatchedPlayersHandlers()
+  registerModEventsHandlers()
   registerPlayerActivityHandlers()
   registerFileBrowserHandlers()
 }

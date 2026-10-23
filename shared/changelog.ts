@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-10-23',
+    title: 'Event Scheduler (Tools menu) - automatic seasonal mod events',
+    details: [
+      'New Tools > Event Scheduler: create events that automatically add a set of mod IDs to your servers\' mod lists when the event starts, and remove them again when it ends - e.g. a Halloween or Christmas mod pack that only runs during that window.',
+      'Each event can repeat every year on the same date (handles a window that crosses the year boundary, like Dec 18 - Jan 5, correctly) or fire once; target all servers or a specific few; and optionally trigger a graceful shutdown-then-restart when it starts/ends so the mod change takes effect immediately instead of on the next manual restart.',
+      'A reconciliation pass runs whenever an event is created/edited and every time the Manager starts, so the right mods are present (or absent) immediately even if the Manager was closed through an event\'s start or end - not just when a timer happened to be running.',
+      'A History tab records every time an event actually added or removed mods, including any per-server failures.'
+    ]
+  },
+  {
     date: '2026-10-22',
     title: 'Network usage bar is back, and the Minecraft Dashboard now matches ARK\'s own redesign',
     details: [

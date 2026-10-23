@@ -12,6 +12,7 @@ import ChangelogView from './pages/ChangelogView'
 import PlayersView from './pages/PlayersView'
 import ProfileManagementView from './pages/ProfileManagementView'
 import MapManagerView from './pages/MapManagerView'
+import EventSchedulerView from './pages/EventSchedulerView'
 import MinecraftDashboard from './pages/MinecraftDashboard'
 import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftServerDetail'
 import { GAME_ICONS } from './lib/gameIcons'
@@ -77,6 +78,7 @@ export default function App(): JSX.Element {
   const [showDataSettings, setShowDataSettings] = useState(false)
   const [showProfileManagement, setShowProfileManagement] = useState(false)
   const [showMapManager, setShowMapManager] = useState(false)
+  const [showEventScheduler, setShowEventScheduler] = useState(false)
   const [showChangelog, setShowChangelog] = useState(false)
   const [showManageGroups, setShowManageGroups] = useState(false)
   const [showCreateWizard, setShowCreateWizard] = useState(false)
@@ -162,13 +164,15 @@ export default function App(): JSX.Element {
     setShowCreateWizard(true)
   }
 
-  // Settings/SteamCMD/Profile Management/Map Manager now render as a right-side drawer (see
-  // SidePanel) over whatever page is already showing, rather than replacing it outright - so
-  // opening one just needs the other three closed first, nothing else to reset.
+  // Settings/SteamCMD/Profile Management/Map Manager/Event Scheduler now render as a
+  // right-side drawer (see SidePanel) over whatever page is already showing, rather than
+  // replacing it outright - so opening one just needs the others closed first, nothing else
+  // to reset.
   function openSteamCmd(): void {
     setShowDataSettings(false)
     setShowProfileManagement(false)
     setShowMapManager(false)
+    setShowEventScheduler(false)
     setShowSteamCmd(true)
   }
 
@@ -176,6 +180,7 @@ export default function App(): JSX.Element {
     setShowSteamCmd(false)
     setShowProfileManagement(false)
     setShowMapManager(false)
+    setShowEventScheduler(false)
     setShowDataSettings(true)
   }
 
@@ -183,6 +188,7 @@ export default function App(): JSX.Element {
     setShowSteamCmd(false)
     setShowDataSettings(false)
     setShowMapManager(false)
+    setShowEventScheduler(false)
     setShowProfileManagement(true)
   }
 
@@ -190,7 +196,16 @@ export default function App(): JSX.Element {
     setShowSteamCmd(false)
     setShowDataSettings(false)
     setShowProfileManagement(false)
+    setShowEventScheduler(false)
     setShowMapManager(true)
+  }
+
+  function openEventScheduler(): void {
+    setShowSteamCmd(false)
+    setShowDataSettings(false)
+    setShowProfileManagement(false)
+    setShowMapManager(false)
+    setShowEventScheduler(true)
   }
 
   const titleBar = (
@@ -199,6 +214,7 @@ export default function App(): JSX.Element {
       onOpenSteamCmd={openSteamCmd}
       onOpenProfileManagement={openProfileManagement}
       onOpenMapManager={openMapManager}
+      onOpenEventScheduler={openEventScheduler}
       onOpenManageGroups={() => setShowManageGroups(true)}
       onOpenManagerLog={handleOpenManagerLog}
       onOpenChangelog={() => setShowChangelog(true)}
@@ -447,6 +463,11 @@ export default function App(): JSX.Element {
       {showMapManager && (
         <SidePanel onClose={() => setShowMapManager(false)}>
           <MapManagerView onBack={() => setShowMapManager(false)} />
+        </SidePanel>
+      )}
+      {showEventScheduler && (
+        <SidePanel onClose={() => setShowEventScheduler(false)}>
+          <EventSchedulerView profiles={profiles} onBack={() => setShowEventScheduler(false)} />
         </SidePanel>
       )}
       {showManageGroups && (

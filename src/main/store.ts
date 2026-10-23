@@ -11,7 +11,9 @@ import type {
   WatchedPlayerAlert,
   PlayerActivityRecord,
   PlayerActivitySession,
-  ConfigFileHistoryEntry
+  ConfigFileHistoryEntry,
+  ModEvent,
+  ModEventHistoryEntry
 } from '@shared/types'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { migrateProfile } from './lib/profileMigration'
@@ -64,6 +66,10 @@ interface StoreSchema {
   playerSessions: PlayerActivitySession[]
   /** Config file edit history - see ConfigFileHistoryEntry and recordConfigFileHistory. */
   configFileHistory: ConfigFileHistoryEntry[]
+  /** Event Scheduler's own events and capped firing history - see ModEvent's own doc
+   *  comment (shared/types.ts) and src/main/lib/modEvents.ts. */
+  modEvents: ModEvent[]
+  modEventHistory: ModEventHistoryEntry[]
   /** Set once the pre-4-tier-role migration (legacy 'admin' -> globalAdmin, 'operator' ->
    *  moderator) has actually been written back to the two lists above. Must run at most
    *  once, ever: 'admin' is now also the current, intentional value for the new scoped
@@ -143,6 +149,8 @@ const store = new Store<StoreSchema>({
     playerActivity: {},
     playerSessions: [],
     configFileHistory: [],
+    modEvents: [],
+    modEventHistory: [],
     webDashboardRolesMigrated: false,
     profilesMigratedToDisk: false
   }
@@ -565,4 +573,37 @@ export function setMinecraftRunningStartedAt(profileId: string, startedAt: numbe
     }
     store.set('minecraftRunningStartedAt', startedAtByProfile)
   })
+}
+
+export function listModEvents(): ModEvent[] {
+  return store.get('modEvents') ?? []
+}
+
+export function saveModEvent(event: ModEvent): ModEvent[] {
+  const events = listModEvents()
+  const idx = events.findIndex((e) => e.id === event.id)
+  if (idx >= 0) events[idx] = event
+  else events.push(event)
+  store.set('modEvents', events)
+  return events
+}
+
+export function deleteModEvent(id: string): ModEvent[] {
+  const events = listModEvents().filter((e) => e.id !== id)
+  store.set('modEvents', events)
+  return events
+}
+
+/** Capped like listPlayerSessions/MAX_PLAYER_SESSIONS above - the Event Scheduler's History
+ *  tab only ever needs recent activity, not a forever-growing log. */
+const MAX_MOD_EVENT_HISTORY = 200
+
+export function listModEventHistory(limit = MAX_MOD_EVENT_HISTORY): ModEventHistoryEntry[] {
+  const history = store.get('modEventHistory') ?? []
+  return history.slice(-limit).reverse()
+}
+
+export function recordModEventHistory(entry: ModEventHistoryEntry): void {
+  const history = [...(store.get('modEventHistory') ?? []), entry]
+  store.set('modEventHistory', history.length > MAX_MOD_EVENT_HISTORY ? history.slice(history.length - MAX_MOD_EVENT_HISTORY) : history)
 }

@@ -182,6 +182,12 @@ const api: Api = {
     list: () => ipcRenderer.invoke(IPC.playerActivityList),
     sessions: () => ipcRenderer.invoke(IPC.playerActivitySessions)
   },
+  modEvents: {
+    list: () => ipcRenderer.invoke(IPC.modEventsList),
+    save: (event) => ipcRenderer.invoke(IPC.modEventsSave, event),
+    delete: (id) => ipcRenderer.invoke(IPC.modEventsDelete, id),
+    history: () => ipcRenderer.invoke(IPC.modEventsHistoryList)
+  },
   fileBrowser: {
     list: (profileId: string, relativePath: string) => ipcRenderer.invoke(IPC.fileBrowserList, profileId, relativePath),
     open: (profileId: string, relativePath: string) => ipcRenderer.invoke(IPC.fileBrowserOpen, profileId, relativePath),

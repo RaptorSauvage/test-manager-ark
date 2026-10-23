@@ -520,6 +520,58 @@ export interface WatchedPlayerAlert {
 }
 
 /**
+ * Event Scheduler (ARK only, Tools menu) - automatically adds a set of CurseForge mod ids
+ * to the target servers' mod lists when the event starts, and removes them again when it
+ * ends (e.g. a seasonal event like "Fear Ascended" for Halloween). Cluster-wide, not tied to
+ * one profile - see src/main/lib/modEvents.ts for the scheduling engine.
+ */
+export interface ModEvent {
+  id: string
+  name: string
+  /** CurseForge mod ids - the same id format ServerMod.id already uses. */
+  modIds: string[]
+  /** When true, startAt/endAt's year is ignored - the event fires every year on the same
+   *  month/day/hour/minute instead of once. A preset holiday event (Halloween, Christmas,
+   *  ...) is normally recurring; a one-off is not. */
+  recurringYearly: boolean
+  /** ISO 8601 datetime the event activates (mods added) at. */
+  startAt: string
+  /** ISO 8601 datetime the event deactivates (mods removed) at. */
+  endAt: string
+  /** 'all' = every ARK profile, now and any created later; an array = only those profile
+   *  ids, fixed at save time (a profile deleted afterward is just silently skipped when the
+   *  event fires). */
+  targetServers: 'all' | string[]
+  /** If true, a running target server is stopped before the mods are added at the event's
+   *  start, then started back up afterward - so the mod actually takes effect immediately
+   *  instead of only on the next manual restart. If false, the mod list is updated but a
+   *  running server is left alone. */
+  shutdownOnStart: boolean
+  /** Same idea as shutdownOnStart, for removing the mods when the event ends. */
+  shutdownOnEnd: boolean
+  enabled: boolean
+}
+
+export type ModEventAction = 'activated' | 'deactivated'
+
+/** One past firing of a ModEvent - shown in the Event Scheduler's own History tab. */
+export interface ModEventHistoryEntry {
+  id: string
+  eventId: string
+  /** Copied at fire time rather than looked up live, so history still reads correctly after
+   *  the event itself is renamed or deleted. */
+  eventName: string
+  action: ModEventAction
+  timestamp: number
+  /** Every profile id the event actually targeted this firing (after resolving 'all'). */
+  profileIds: string[]
+  /** Profile id -> error message, for any target that failed - a per-server failure doesn't
+   *  stop the others from being processed, so this can be non-empty alongside a firing that
+   *  still succeeded for every other target. */
+  errors?: Record<string, string>
+}
+
+/**
  * One entry of a server's generic RCON command scheduler (ARK only) - see
  * ServerProfile.scheduledRconCommands and scheduledActions.ts's own applyScheduledRconCommands.
  */
@@ -831,6 +883,11 @@ export const IPC = {
   watchedPlayersList: 'watched-players:list',
   watchedPlayersAdd: 'watched-players:add',
   watchedPlayersRemove: 'watched-players:remove',
+
+  modEventsList: 'mod-events:list',
+  modEventsSave: 'mod-events:save',
+  modEventsDelete: 'mod-events:delete',
+  modEventsHistoryList: 'mod-events:history-list',
 
   playerActivityList: 'player-activity:list',
   playerActivitySessions: 'player-activity:sessions',
@@ -1267,6 +1324,17 @@ export interface Api {
     list: () => Promise<PlayerActivityRecord[]>
     /** Most recent sessions first, capped (see recordPlayerSession in store.ts). */
     sessions: () => Promise<PlayerActivitySession[]>
+  }
+  /** Event Scheduler (Tools menu, ARK only) - see ModEvent's own doc comment. */
+  modEvents: {
+    list: () => Promise<ModEvent[]>
+    /** Upserts by id - an id not already in the list is a new event. Re-arms that event's
+     *  schedule immediately (see src/main/lib/modEvents.ts), so an edit to an already-armed
+     *  event takes effect without restarting the Manager. */
+    save: (event: ModEvent) => Promise<ModEvent[]>
+    delete: (id: string) => Promise<ModEvent[]>
+    /** Most recent firings first. */
+    history: () => Promise<ModEventHistoryEntry[]>
   }
   /** Desktop mirror of the web dashboard's own Files tab - same underlying logic
    *  (src/main/lib/fileBrowser.ts), exposed over IPC instead of HTTP. Every call can reject;

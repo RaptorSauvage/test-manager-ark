@@ -27,6 +27,7 @@ import {
   applyScheduledRconCommands,
   applyScheduledMaintenance
 } from './lib/scheduledActions'
+import { armAllModEvents } from './lib/modEvents'
 import { adoptPersistedProcesses, isRunning, getStatus } from './lib/serverProcess'
 import { startMonitoring } from './lib/monitor'
 import { registerPlayerBackupWatch, startPlayerBackupWatch } from './lib/playerBackupWatch'
@@ -292,6 +293,12 @@ app.whenReady().then(() => {
       startDiscordChatBridgeWatch(profile)
     }
   }
+
+  // Event Scheduler - cluster-wide, not per-profile, so armed once rather than inside the
+  // loop above. Also reconciles each event's mods right now (see armModEvent's own doc
+  // comment), so a Manager that was closed through an event's start/end still ends up
+  // correct immediately instead of waiting for the next occurrence.
+  armAllModEvents()
 
   runAutoStart(profiles, getSettings().serverAutoStartStaggerSeconds, isRunning, doStartServer)
 

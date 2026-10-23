@@ -8,6 +8,7 @@ interface TitleBarProps {
   onOpenProfileManagement: () => void
   onOpenMapManager: () => void
   onOpenManageGroups: () => void
+  onOpenEventScheduler: () => void
   onOpenManagerLog: () => void
   onOpenChangelog: () => void
   onOpenCreateWizard: () => void
@@ -24,6 +25,7 @@ export default function TitleBar({
   onOpenProfileManagement,
   onOpenMapManager,
   onOpenManageGroups,
+  onOpenEventScheduler,
   onOpenManagerLog,
   onOpenChangelog,
   onOpenCreateWizard
@@ -117,6 +119,9 @@ export default function TitleBar({
               </button>
               <button type="button" onClick={() => runAndClose(onOpenMapManager)}>
                 Map Manager
+              </button>
+              <button type="button" onClick={() => runAndClose(onOpenEventScheduler)}>
+                Event Scheduler
               </button>
               <button type="button" onClick={() => runAndClose(onOpenManagerLog)}>
                 Manager Log
