@@ -643,18 +643,25 @@ export function saveIniTemplateGeneric(content: IniTemplateContent): IniTemplate
   return content
 }
 
+/** `sessionName` defaults to '' for an override saved before that field existed - without
+ *  this, a record from an earlier version of the app would be missing it entirely (not just
+ *  blank), and every call site that does `override.sessionName.trim()` would crash on it. */
 export function listIniTemplateOverrides(): IniTemplateProfileOverride[] {
-  return store.get('iniTemplateOverrides') ?? []
+  const raw = (store.get('iniTemplateOverrides') ?? []) as Array<
+    Omit<IniTemplateProfileOverride, 'sessionName'> & { sessionName?: string }
+  >
+  return raw.map((o) => ({ ...o, sessionName: o.sessionName ?? '' }))
 }
 
 export function getIniTemplateOverride(profileId: string): IniTemplateProfileOverride | undefined {
   return listIniTemplateOverrides().find((o) => o.profileId === profileId)
 }
 
-/** Blank text for both files is treated as "no override" and deletes the record instead of
- *  keeping an empty one around - see the Api surface's own doc comment (shared/types.ts). */
+/** Blank text for both files, with a blank sessionName too, is treated as "no override" and
+ *  deletes the record instead of keeping an empty one around - see the Api surface's own doc
+ *  comment (shared/types.ts). */
 export function saveIniTemplateOverride(override: IniTemplateProfileOverride): IniTemplateProfileOverride[] {
-  if (!override.gameUserSettingsIni.trim() && !override.gameIni.trim()) {
+  if (!override.gameUserSettingsIni.trim() && !override.gameIni.trim() && !override.sessionName.trim()) {
     return deleteIniTemplateOverride(override.profileId)
   }
   const overrides = listIniTemplateOverrides()

@@ -140,7 +140,8 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     mockOverrides.value.set('p1', {
       profileId: 'p1',
       gameUserSettingsIni: '; This server runs a smaller cap\n[ServerSettings]\nMaxPlayers=10',
-      gameIni: ''
+      gameIni: '',
+      sessionName: ''
     })
     applyIniTemplate(makeProfile({ installDir }))
 
@@ -153,7 +154,7 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
   it("the profile's own override is appended behind a ';Server Specific INI' marker, after the generic template", async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=70', gameIni: '' }
-    mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '' })
+    mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '', sessionName: '' })
     applyIniTemplate(makeProfile({ installDir }))
 
     const content = fs.readFileSync(gusPath, 'utf-8')
@@ -176,7 +177,8 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     mockOverrides.value.set('p1', {
       profileId: 'p1',
       gameUserSettingsIni: '[SessionSettings]\nSessionName=Some Other Name\n[ServerSettings]\nMaxPlayers=10',
-      gameIni: ''
+      gameIni: '',
+      sessionName: ''
     })
     applyIniTemplate(makeProfile({ installDir, name: 'My Cool Server' }))
 
@@ -187,12 +189,32 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     expect(content).toContain('MaxPlayers=10')
   })
 
+  it("an override's own sessionName field wins over the profile's Manager name", async () => {
+    const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
+    mockGeneric.value = { gameUserSettingsIni: '', gameIni: '' }
+    mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '', gameIni: '', sessionName: '[EU] My Cluster - Island PvE' })
+    applyIniTemplate(makeProfile({ installDir, name: 'Island' }))
+
+    const content = fs.readFileSync(gusPath, 'utf-8')
+    expect(content).toContain('SessionName=[EU] My Cluster - Island PvE')
+    expect(content).not.toMatch(/SessionName=Island\b/)
+  })
+
+  it('falls back to the Manager profile name when the override has no sessionName of its own', async () => {
+    const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
+    mockGeneric.value = { gameUserSettingsIni: '', gameIni: '' }
+    mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '', sessionName: '' })
+    applyIniTemplate(makeProfile({ installDir, name: 'Island' }))
+
+    expect(fs.readFileSync(gusPath, 'utf-8')).toContain('SessionName=Island')
+  })
+
   it('re-applying replaces the previous blocks instead of appending second copies', async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=70', gameIni: '' }
-    mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '' })
+    mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '', sessionName: '' })
     applyIniTemplate(makeProfile({ installDir }))
-    mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=20', gameIni: '' })
+    mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=20', gameIni: '', sessionName: '' })
     applyIniTemplate(makeProfile({ installDir }))
 
     const content = fs.readFileSync(gusPath, 'utf-8')
@@ -205,7 +227,7 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
   it('removes the server-specific marker and block entirely once the override is cleared', async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=70', gameIni: '' }
-    mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '' })
+    mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '', sessionName: '' })
     applyIniTemplate(makeProfile({ installDir }))
     mockOverrides.value.delete('p1')
     applyIniTemplate(makeProfile({ installDir }))

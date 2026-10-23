@@ -14,8 +14,9 @@ import { upsertIniKey, writeTrailingSections } from './gameConfigWrite'
  * both define, under the game's own last-value-wins ini parsing - the same convention ARK
  * server owners already use by hand. SessionName is different: rather than another trailing
  * block, the Manager just replaces that one line's value in place (see upsertIniKey) with
- * the profile's own name, same as any other single setting it owns outright. A line matching
- * SessionName is stripped out of both templates before they're written, so an imported file
+ * the override's own `sessionName`, if it set one, or the profile's own Manager name
+ * otherwise - same as any other single setting it owns outright. A line matching SessionName
+ * is stripped out of both templates' raw text before they're written, so an imported file
  * that happens to carry its own SessionName (very likely, since that's an ordinary line in
  * any real GameUserSettings.ini) can never reintroduce a second, conflicting one. Everything
  * above the first of the two trailing markers, including anything the user wrote in by hand
@@ -61,7 +62,7 @@ export function applyIniTemplate(profile: ServerProfile): void {
       { marker: GENERIC_MARKER, body: stripSessionNameLines(generic.gameUserSettingsIni) },
       { marker: OVERRIDE_MARKER, body: stripSessionNameLines(override?.gameUserSettingsIni ?? '') }
     ])
-    upsertIniKey(gusPath, 'SessionSettings', 'SessionName', profile.name)
+    upsertIniKey(gusPath, 'SessionSettings', 'SessionName', override?.sessionName.trim() || profile.name)
   } catch (err) {
     throw new Error(`GameUserSettings.ini: ${(err as Error).message}`)
   }

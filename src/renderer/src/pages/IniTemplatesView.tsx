@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import type { IniTemplateApplyResult, IniTemplateContent, ServerProfile } from '@shared/types'
+import type { IniTemplateApplyResult, IniTemplateContent, IniTemplateProfileOverride, ServerProfile } from '@shared/types'
 import { confirmAction } from '../lib/confirmAction'
 
 interface IniTemplatesViewProps {
@@ -12,6 +12,8 @@ const EMPTY_CONTENT: IniTemplateContent = { gameUserSettingsIni: '', gameIni: ''
 interface OverrideFormState {
   profile: ServerProfile
   content: IniTemplateContent
+  /** Independent of the profile's own name in the Manager - blank falls back to it. */
+  sessionName: string
 }
 
 /** Tools > INI Templates - a cluster-wide generic GameUserSettings.ini/Game.ini template,
@@ -34,7 +36,7 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
   const [savingGeneric, setSavingGeneric] = useState(false)
   const [genericStatus, setGenericStatus] = useState('')
   const [genericImportError, setGenericImportError] = useState('')
-  const [overridesByProfile, setOverridesByProfile] = useState<Record<string, boolean>>({})
+  const [overridesByProfile, setOverridesByProfile] = useState<Record<string, IniTemplateProfileOverride | null>>({})
 
   const [applyingId, setApplyingId] = useState<string | null>(null)
   const [applyingAll, setApplyingAll] = useState(false)
@@ -54,12 +56,12 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
   async function refresh(): Promise<void> {
     setLoading(true)
     try {
-      const [genericContent, overrideFlags] = await Promise.all([
+      const [genericContent, overrideEntries] = await Promise.all([
         window.api.iniTemplates.getGeneric(),
         Promise.all(visibleProfiles.map(async (p) => [p.id, await window.api.iniTemplates.getOverride(p.id)] as const))
       ])
       setGeneric(genericContent)
-      setOverridesByProfile(Object.fromEntries(overrideFlags.map(([id, o]) => [id, o !== null])))
+      setOverridesByProfile(Object.fromEntries(overrideEntries))
     } finally {
       setLoading(false)
     }
@@ -93,7 +95,7 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
   async function openOverrideForm(profile: ServerProfile): Promise<void> {
     setOverrideError('')
     const existing = await window.api.iniTemplates.getOverride(profile.id)
-    setOverrideForm({ profile, content: existing ?? { ...EMPTY_CONTENT } })
+    setOverrideForm({ profile, content: existing ?? { ...EMPTY_CONTENT }, sessionName: existing?.sessionName ?? '' })
   }
 
   async function saveOverride(): Promise<void> {
@@ -101,9 +103,13 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
     setSavingOverride(true)
     setOverrideError('')
     try {
-      await window.api.iniTemplates.saveOverride({ profileId: overrideForm.profile.id, ...overrideForm.content })
-      const hasContent = Boolean(overrideForm.content.gameUserSettingsIni.trim() || overrideForm.content.gameIni.trim())
-      setOverridesByProfile((prev) => ({ ...prev, [overrideForm.profile.id]: hasContent }))
+      const updated = await window.api.iniTemplates.saveOverride({
+        profileId: overrideForm.profile.id,
+        ...overrideForm.content,
+        sessionName: overrideForm.sessionName
+      })
+      const saved = updated.find((o) => o.profileId === overrideForm.profile.id) ?? null
+      setOverridesByProfile((prev) => ({ ...prev, [overrideForm.profile.id]: saved }))
       setOverrideForm(null)
     } catch (err) {
       setOverrideError((err as Error).message)
@@ -123,7 +129,7 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
     setSavingOverride(true)
     try {
       await window.api.iniTemplates.deleteOverride(overrideForm.profile.id)
-      setOverridesByProfile((prev) => ({ ...prev, [overrideForm.profile.id]: false }))
+      setOverridesByProfile((prev) => ({ ...prev, [overrideForm.profile.id]: null }))
       setOverrideForm(null)
     } finally {
       setSavingOverride(false)
@@ -162,10 +168,21 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
   }
 
   function renderOverrideRow(profile: ServerProfile): JSX.Element {
+    const override = overridesByProfile[profile.id]
+    const customSessionName = override?.sessionName.trim()
     return (
       <tr key={profile.id}>
         <td>{profile.name}</td>
-        <td>{overridesByProfile[profile.id] ? 'Yes' : <span className="muted">None</span>}</td>
+        <td>
+          {customSessionName ? (
+            customSessionName
+          ) : (
+            <span className="muted" title="No override - falls back to the profile name above">
+              {profile.name}
+            </span>
+          )}
+        </td>
+        <td>{override ? 'Yes' : <span className="muted">None</span>}</td>
         <td className="ini-templates-row-actions">
           {applyErrorById[profile.id] && <span className="error-message">{applyErrorById[profile.id]}</span>}
           {applySuccessId === profile.id && <span className="status-message">Applied</span>}
@@ -292,6 +309,7 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
                 <thead>
                   <tr>
                     <th>Server</th>
+                    <th>Server Name (SessionName)</th>
                     <th>Override</th>
                     <th></th>
                   </tr>
@@ -301,7 +319,7 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
                   {groupNames.map((groupName) => (
                     <Fragment key={groupName}>
                       <tr className="ini-templates-group-row">
-                        <td colSpan={3}>{groupName}</td>
+                        <td colSpan={4}>{groupName}</td>
                       </tr>
                       {visibleProfiles.filter((p) => p.group.trim() === groupName).map((profile) => renderOverrideRow(profile))}
                     </Fragment>
@@ -326,10 +344,22 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
             <p className="wizard-subtitle">
               These lines are appended behind a <code>;Server Specific INI</code> comment, after the generic
               template, so they win for this one server only. You can paste in an existing .ini file wholesale -
-              its own SessionName, if it has one, is always ignored in favor of this server&apos;s real name.
+              any SessionName inside it is always ignored in favor of the Server Name set below.
             </p>
             {overrideError && <p className="error-message">{overrideError}</p>}
             <div className="wizard-body">
+              <label className="wizard-field">
+                Server Name (SessionName)
+                <input
+                  type="text"
+                  value={overrideForm.sessionName}
+                  onChange={(e) => setOverrideForm({ ...overrideForm, sessionName: e.target.value })}
+                  placeholder={overrideForm.profile.name}
+                />
+                <p className="wizard-hint-static">
+                  Leave blank to use this server&apos;s own name in the Manager (&quot;{overrideForm.profile.name}&quot;).
+                </p>
+              </label>
               <label className="wizard-field">
                 <div className="ini-template-field-header">
                   <span>GameUserSettings.ini override</span>

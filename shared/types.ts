@@ -601,6 +601,12 @@ export interface IniTemplateContent {
 
 export interface IniTemplateProfileOverride extends IniTemplateContent {
   profileId: string
+  /** The name written to SessionName when this override is applied, independent of the
+   *  profile's own name in the Manager - e.g. a short internal label in the sidebar
+   *  ("Island") vs a longer public name in the server browser ("[EU] My Cluster - Island
+   *  PvE"). Blank (the default) falls back to the profile's own name, same as before this
+   *  field existed. */
+  sessionName: string
 }
 
 /** Per-profile result of applying the INI templates - surfaced by the "Apply to All" bulk
@@ -1393,9 +1399,10 @@ export interface Api {
     getGeneric: () => Promise<IniTemplateContent>
     saveGeneric: (content: IniTemplateContent) => Promise<IniTemplateContent>
     getOverride: (profileId: string) => Promise<IniTemplateProfileOverride | null>
-    /** Saving blank text for both files is treated as "no override" - deletes it rather
-     *  than keeping an empty record around, same as saveWebDashboardAccessToken's siblings
-     *  don't store a token with nothing meaningful left in it. */
+    /** Saving blank text for both files and a blank sessionName is treated as "no override" -
+     *  deletes it rather than keeping an empty record around, same as
+     *  saveWebDashboardAccessToken's siblings don't store a token with nothing meaningful
+     *  left in it. */
     saveOverride: (override: IniTemplateProfileOverride) => Promise<IniTemplateProfileOverride[]>
     deleteOverride: (profileId: string) => Promise<IniTemplateProfileOverride[]>
     /** Applies the generic template plus this one profile's own override - rejects with a

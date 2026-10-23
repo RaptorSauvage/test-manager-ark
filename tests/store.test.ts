@@ -25,7 +25,8 @@ import {
   saveModEvent,
   deleteModEvent,
   getModEventSchedulerState,
-  setModEventSchedulerState
+  setModEventSchedulerState,
+  listIniTemplateOverrides
 } from '../src/main/store'
 
 describe('setRunningPid/setRunningStartedAt', () => {
@@ -213,5 +214,26 @@ describe('listConfigFileHistory/getConfigFileHistoryEntry/recordConfigFileHistor
     expect(busyHistory[0].content).toBe('version 24')
     expect(busyHistory[busyHistory.length - 1].content).toBe('version 5')
     expect(listConfigFileHistory(profileId, 'Quiet.ini')).toHaveLength(1)
+  })
+})
+
+describe('listIniTemplateOverrides', () => {
+  it('fills in sessionName for an override record saved before that field existed', () => {
+    // A real override saved by an earlier version of the app (sessionName didn't exist yet)
+    // would be missing the key entirely, not just blank - without defaulting it here, every
+    // call site that does override.sessionName.trim() would crash on one of these.
+    const spy = vi.spyOn(Store.prototype, 'get').mockImplementation((key: unknown) => {
+      if (key === 'iniTemplateOverrides') {
+        return [{ profileId: 'legacy', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '' }]
+      }
+      return undefined
+    })
+    try {
+      expect(listIniTemplateOverrides()).toEqual([
+        { profileId: 'legacy', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '', sessionName: '' }
+      ])
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
