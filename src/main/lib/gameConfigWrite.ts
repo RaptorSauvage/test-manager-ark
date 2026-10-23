@@ -89,6 +89,90 @@ export function upsertIniKey(filePath: string, section: string, key: string, val
   writeFileEnsuringDir(filePath, lines.join(eol))
 }
 
+export interface IniUpsertEntry {
+  section: string
+  key: string
+  value: string
+}
+
+/**
+ * Same idea as upsertIniKey, but applies a whole batch of section+key+value entries in one
+ * read-modify-write pass instead of one round-trip per key - used by the INI Templates tool
+ * (iniTemplates.ts), which can have dozens of entries to apply to the same file at once.
+ * Still leaves every other line completely untouched. An entry for a section that doesn't
+ * exist yet is appended as a new `[section]` block; a later entry in the same batch for that
+ * same new section finds the block the earlier one just appended, same as an already-
+ * existing section.
+ */
+export function upsertIniKeys(filePath: string, entries: IniUpsertEntry[]): void {
+  if (entries.length === 0) return
+  const content = tryReadExistingContent(filePath)
+  if (content === null) return
+  const eol = content ? detectEol(content) : '\r\n'
+  let lines = content.length > 0 ? content.split(/\r\n|\n/) : []
+
+  for (const { section, key, value } of entries) {
+    const keyPattern = new RegExp(`^\\s*${key}\\s*=`)
+    const range = findSectionRange(lines, section)
+    if (!range) {
+      const prefix = lines.length > 0 && lines[lines.length - 1] !== '' ? [''] : []
+      lines = [...lines, ...prefix, `[${section}]`, `${key}=${value}`]
+      continue
+    }
+    const existingIndex = lines.slice(range.start + 1, range.end).findIndex((line) => keyPattern.test(line))
+    if (existingIndex !== -1) {
+      lines[range.start + 1 + existingIndex] = `${key}=${value}`
+    } else {
+      lines.splice(range.start + 1, 0, `${key}=${value}`)
+    }
+  }
+
+  writeFileEnsuringDir(filePath, lines.join(eol))
+}
+
+const SERVER_SPECIFIC_MARKER = ';Server Specific INI'
+
+/**
+ * Writes (or replaces) a trailing block of `entries`, grouped by `[section]`, behind a
+ * `;Server Specific INI` comment marker at the end of the file - the same trick ARK server
+ * owners already use by hand: a later `key=value` wins over an earlier one with the same key
+ * elsewhere in the file, so a block appended after everything else reliably overrides it
+ * without having to find and edit that earlier line in place. Everything above the marker
+ * (including whatever upsertIniKeys/upsertIniKey last wrote there) is left completely
+ * untouched. Re-running this replaces the previous block in place rather than appending a
+ * second one; an empty `entries` removes the marker and block entirely.
+ */
+export function writeServerSpecificBlock(filePath: string, entries: IniUpsertEntry[]): void {
+  const content = tryReadExistingContent(filePath)
+  if (content === null) return
+  const eol = content ? detectEol(content) : '\r\n'
+  const lines = content.length > 0 ? content.split(/\r\n|\n/) : []
+  const markerIndex = lines.findIndex((line) => line.trim() === SERVER_SPECIFIC_MARKER)
+  const baseLines = markerIndex === -1 ? lines : lines.slice(0, markerIndex)
+  while (baseLines.length > 0 && baseLines[baseLines.length - 1] === '') baseLines.pop()
+
+  if (entries.length === 0) {
+    writeFileEnsuringDir(filePath, baseLines.length > 0 ? baseLines.join(eol) + eol : '')
+    return
+  }
+
+  const bySection = new Map<string, IniUpsertEntry[]>()
+  for (const entry of entries) {
+    const list = bySection.get(entry.section)
+    if (list) list.push(entry)
+    else bySection.set(entry.section, [entry])
+  }
+
+  const blockLines: string[] = [SERVER_SPECIFIC_MARKER]
+  for (const [section, sectionEntries] of bySection) {
+    blockLines.push(`[${section}]`)
+    for (const { key, value } of sectionEntries) blockLines.push(`${key}=${value}`)
+  }
+
+  const allLines = baseLines.length > 0 ? [...baseLines, '', ...blockLines] : blockLines
+  writeFileEnsuringDir(filePath, allLines.join(eol) + eol)
+}
+
 /**
  * Same idea, but for a key that appears multiple times in a row (Game.ini's [ModInstaller]
  * `ModIDS=` lines) - replaces the whole run of `key=` lines inside `[section]` with one line

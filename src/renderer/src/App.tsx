@@ -13,6 +13,7 @@ import PlayersView from './pages/PlayersView'
 import ProfileManagementView from './pages/ProfileManagementView'
 import MapManagerView from './pages/MapManagerView'
 import EventSchedulerView from './pages/EventSchedulerView'
+import IniTemplatesView from './pages/IniTemplatesView'
 import MinecraftDashboard from './pages/MinecraftDashboard'
 import MinecraftServerDetail, { type MinecraftTabKey } from './pages/MinecraftServerDetail'
 import { GAME_ICONS } from './lib/gameIcons'
@@ -79,6 +80,7 @@ export default function App(): JSX.Element {
   const [showProfileManagement, setShowProfileManagement] = useState(false)
   const [showMapManager, setShowMapManager] = useState(false)
   const [showEventScheduler, setShowEventScheduler] = useState(false)
+  const [showIniTemplates, setShowIniTemplates] = useState(false)
   const [showChangelog, setShowChangelog] = useState(false)
   const [showManageGroups, setShowManageGroups] = useState(false)
   const [showCreateWizard, setShowCreateWizard] = useState(false)
@@ -164,15 +166,16 @@ export default function App(): JSX.Element {
     setShowCreateWizard(true)
   }
 
-  // Settings/SteamCMD/Profile Management/Map Manager/Event Scheduler now render as a
-  // right-side drawer (see SidePanel) over whatever page is already showing, rather than
-  // replacing it outright - so opening one just needs the others closed first, nothing else
-  // to reset.
+  // Settings/SteamCMD/Profile Management/Map Manager/Event Scheduler/INI Templates now
+  // render as a right-side drawer (see SidePanel) over whatever page is already showing,
+  // rather than replacing it outright - so opening one just needs the others closed first,
+  // nothing else to reset.
   function openSteamCmd(): void {
     setShowDataSettings(false)
     setShowProfileManagement(false)
     setShowMapManager(false)
     setShowEventScheduler(false)
+    setShowIniTemplates(false)
     setShowSteamCmd(true)
   }
 
@@ -181,6 +184,7 @@ export default function App(): JSX.Element {
     setShowProfileManagement(false)
     setShowMapManager(false)
     setShowEventScheduler(false)
+    setShowIniTemplates(false)
     setShowDataSettings(true)
   }
 
@@ -189,6 +193,7 @@ export default function App(): JSX.Element {
     setShowDataSettings(false)
     setShowMapManager(false)
     setShowEventScheduler(false)
+    setShowIniTemplates(false)
     setShowProfileManagement(true)
   }
 
@@ -197,6 +202,7 @@ export default function App(): JSX.Element {
     setShowDataSettings(false)
     setShowProfileManagement(false)
     setShowEventScheduler(false)
+    setShowIniTemplates(false)
     setShowMapManager(true)
   }
 
@@ -205,7 +211,17 @@ export default function App(): JSX.Element {
     setShowDataSettings(false)
     setShowProfileManagement(false)
     setShowMapManager(false)
+    setShowIniTemplates(false)
     setShowEventScheduler(true)
+  }
+
+  function openIniTemplates(): void {
+    setShowSteamCmd(false)
+    setShowDataSettings(false)
+    setShowProfileManagement(false)
+    setShowMapManager(false)
+    setShowEventScheduler(false)
+    setShowIniTemplates(true)
   }
 
   const titleBar = (
@@ -215,6 +231,7 @@ export default function App(): JSX.Element {
       onOpenProfileManagement={openProfileManagement}
       onOpenMapManager={openMapManager}
       onOpenEventScheduler={openEventScheduler}
+      onOpenIniTemplates={openIniTemplates}
       onOpenManageGroups={() => setShowManageGroups(true)}
       onOpenManagerLog={handleOpenManagerLog}
       onOpenChangelog={() => setShowChangelog(true)}
@@ -468,6 +485,11 @@ export default function App(): JSX.Element {
       {showEventScheduler && (
         <SidePanel onClose={() => setShowEventScheduler(false)}>
           <EventSchedulerView profiles={profiles} onBack={() => setShowEventScheduler(false)} />
+        </SidePanel>
+      )}
+      {showIniTemplates && (
+        <SidePanel onClose={() => setShowIniTemplates(false)}>
+          <IniTemplatesView profiles={profiles} onBack={() => setShowIniTemplates(false)} />
         </SidePanel>
       )}
       {showManageGroups && (

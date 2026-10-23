@@ -14,7 +14,9 @@ import type {
   ConfigFileHistoryEntry,
   ModEvent,
   ModEventHistoryEntry,
-  ModEventSchedulerState
+  ModEventSchedulerState,
+  IniTemplateContent,
+  IniTemplateProfileOverride
 } from '@shared/types'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { migrateProfile } from './lib/profileMigration'
@@ -73,6 +75,9 @@ interface StoreSchema {
   modEventHistory: ModEventHistoryEntry[]
   /** Keyed by ModEvent.id - see ModEventSchedulerState's own doc comment. */
   modEventSchedulerState: Record<string, ModEventSchedulerState>
+  /** INI Templates (Tools menu) - see IniTemplateContent's own doc comment. */
+  iniTemplateGeneric: IniTemplateContent
+  iniTemplateOverrides: IniTemplateProfileOverride[]
   /** Set once the pre-4-tier-role migration (legacy 'admin' -> globalAdmin, 'operator' ->
    *  moderator) has actually been written back to the two lists above. Must run at most
    *  once, ever: 'admin' is now also the current, intentional value for the new scoped
@@ -155,6 +160,8 @@ const store = new Store<StoreSchema>({
     modEvents: [],
     modEventHistory: [],
     modEventSchedulerState: {},
+    iniTemplateGeneric: { gameUserSettingsIni: '', gameIni: '' },
+    iniTemplateOverrides: [],
     webDashboardRolesMigrated: false,
     profilesMigratedToDisk: false
   }
@@ -625,4 +632,41 @@ export function listModEventHistory(limit = MAX_MOD_EVENT_HISTORY): ModEventHist
 export function recordModEventHistory(entry: ModEventHistoryEntry): void {
   const history = [...(store.get('modEventHistory') ?? []), entry]
   store.set('modEventHistory', history.length > MAX_MOD_EVENT_HISTORY ? history.slice(history.length - MAX_MOD_EVENT_HISTORY) : history)
+}
+
+export function getIniTemplateGeneric(): IniTemplateContent {
+  return store.get('iniTemplateGeneric') ?? { gameUserSettingsIni: '', gameIni: '' }
+}
+
+export function saveIniTemplateGeneric(content: IniTemplateContent): IniTemplateContent {
+  store.set('iniTemplateGeneric', content)
+  return content
+}
+
+export function listIniTemplateOverrides(): IniTemplateProfileOverride[] {
+  return store.get('iniTemplateOverrides') ?? []
+}
+
+export function getIniTemplateOverride(profileId: string): IniTemplateProfileOverride | undefined {
+  return listIniTemplateOverrides().find((o) => o.profileId === profileId)
+}
+
+/** Blank text for both files is treated as "no override" and deletes the record instead of
+ *  keeping an empty one around - see the Api surface's own doc comment (shared/types.ts). */
+export function saveIniTemplateOverride(override: IniTemplateProfileOverride): IniTemplateProfileOverride[] {
+  if (!override.gameUserSettingsIni.trim() && !override.gameIni.trim()) {
+    return deleteIniTemplateOverride(override.profileId)
+  }
+  const overrides = listIniTemplateOverrides()
+  const idx = overrides.findIndex((o) => o.profileId === override.profileId)
+  if (idx >= 0) overrides[idx] = override
+  else overrides.push(override)
+  store.set('iniTemplateOverrides', overrides)
+  return overrides
+}
+
+export function deleteIniTemplateOverride(profileId: string): IniTemplateProfileOverride[] {
+  const overrides = listIniTemplateOverrides().filter((o) => o.profileId !== profileId)
+  store.set('iniTemplateOverrides', overrides)
+  return overrides
 }

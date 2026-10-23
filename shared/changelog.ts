@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-23',
+    title: 'INI Templates (Tools menu) - a shared base config plus per-server overrides',
+    details: [
+      'New Tools > INI Templates: write a generic GameUserSettings.ini/Game.ini template once for the whole cluster, then apply it to any server (or every ARK server at once) as a surgical upsert - only the keys you actually set are touched, everything else already in the file (including anything you edited by hand) is left alone. SessionName is always set to that server\'s own name automatically, so you never need to repeat it in a template.',
+      'Each server can also have its own override, for the genuinely server-specific lines. Applying writes those behind a `;Server Specific INI` comment at the end of the file, the same convention server owners already use by hand, so they reliably win over the generic template for that one server.',
+      'Every Apply snapshots the previous file content into that server\'s own config history, so an applied template shows up right alongside manual edits in the Files tab\'s history/diff view.'
+    ]
+  },
+  {
+    date: '2026-10-23',
     title: 'Event Scheduler: a manual mod change during an event\'s window now sticks',
     details: [
       'Fixed: restarting the Manager (or saving/re-enabling an event) while one of its mod(s) had been added/removed by hand partway through its active window used to force that mod back to whatever the schedule said it "should" be right now - undoing the manual change. The scheduler now only replays a start/end transition it actually missed (e.g. the Manager was closed through it), not one that already happened, so a deliberate manual change in between is left alone until the event\'s next real transition.'

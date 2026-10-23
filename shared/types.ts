@@ -585,6 +585,32 @@ export interface ModEventSchedulerState {
 }
 
 /**
+ * INI Templates (ARK only, Tools menu) - a cluster-wide "generic" template plus an optional
+ * per-profile "override", each raw GameUserSettings.ini/Game.ini text, merged (override wins
+ * per `[Section]` key on a collision) and applied as a surgical upsert into a profile's real
+ * config files - see src/main/lib/iniTemplates.ts. Lets a shared base config (rates,
+ * difficulty, rules, ...) be written once and reused across every server, with only the
+ * genuinely server-specific lines kept in that one profile's own override.
+ */
+export interface IniTemplateContent {
+  gameUserSettingsIni: string
+  gameIni: string
+}
+
+export interface IniTemplateProfileOverride extends IniTemplateContent {
+  profileId: string
+}
+
+/** Per-profile result of applying the INI templates - surfaced by the "Apply to All" bulk
+ *  action, which can't just throw on the first failure the way a single-profile Apply does. */
+export interface IniTemplateApplyResult {
+  profileId: string
+  profileName: string
+  ok: boolean
+  error?: string
+}
+
+/**
  * One entry of a server's generic RCON command scheduler (ARK only) - see
  * ServerProfile.scheduledRconCommands and scheduledActions.ts's own applyScheduledRconCommands.
  */
@@ -901,6 +927,14 @@ export const IPC = {
   modEventsSave: 'mod-events:save',
   modEventsDelete: 'mod-events:delete',
   modEventsHistoryList: 'mod-events:history-list',
+
+  iniTemplatesGetGeneric: 'ini-templates:get-generic',
+  iniTemplatesSaveGeneric: 'ini-templates:save-generic',
+  iniTemplatesGetOverride: 'ini-templates:get-override',
+  iniTemplatesSaveOverride: 'ini-templates:save-override',
+  iniTemplatesDeleteOverride: 'ini-templates:delete-override',
+  iniTemplatesApply: 'ini-templates:apply',
+  iniTemplatesApplyAll: 'ini-templates:apply-all',
 
   playerActivityList: 'player-activity:list',
   playerActivitySessions: 'player-activity:sessions',
@@ -1348,6 +1382,23 @@ export interface Api {
     delete: (id: string) => Promise<ModEvent[]>
     /** Most recent firings first. */
     history: () => Promise<ModEventHistoryEntry[]>
+  }
+  /** INI Templates (Tools menu, ARK only) - see IniTemplateContent's own doc comment. */
+  iniTemplates: {
+    getGeneric: () => Promise<IniTemplateContent>
+    saveGeneric: (content: IniTemplateContent) => Promise<IniTemplateContent>
+    getOverride: (profileId: string) => Promise<IniTemplateProfileOverride | null>
+    /** Saving blank text for both files is treated as "no override" - deletes it rather
+     *  than keeping an empty record around, same as saveWebDashboardAccessToken's siblings
+     *  don't store a token with nothing meaningful left in it. */
+    saveOverride: (override: IniTemplateProfileOverride) => Promise<IniTemplateProfileOverride[]>
+    deleteOverride: (profileId: string) => Promise<IniTemplateProfileOverride[]>
+    /** Applies the generic template plus this one profile's own override - rejects with a
+     *  readable error (e.g. the config dir is locked while the server's running) on failure. */
+    apply: (profileId: string) => Promise<void>
+    /** Same, for every ARK profile at once - never rejects itself; each profile's own
+     *  success/failure is reported in the returned array instead. */
+    applyAll: () => Promise<IniTemplateApplyResult[]>
   }
   /** Desktop mirror of the web dashboard's own Files tab - same underlying logic
    *  (src/main/lib/fileBrowser.ts), exposed over IPC instead of HTTP. Every call can reject;

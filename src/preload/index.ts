@@ -188,6 +188,15 @@ const api: Api = {
     delete: (id) => ipcRenderer.invoke(IPC.modEventsDelete, id),
     history: () => ipcRenderer.invoke(IPC.modEventsHistoryList)
   },
+  iniTemplates: {
+    getGeneric: () => ipcRenderer.invoke(IPC.iniTemplatesGetGeneric),
+    saveGeneric: (content) => ipcRenderer.invoke(IPC.iniTemplatesSaveGeneric, content),
+    getOverride: (profileId) => ipcRenderer.invoke(IPC.iniTemplatesGetOverride, profileId),
+    saveOverride: (override) => ipcRenderer.invoke(IPC.iniTemplatesSaveOverride, override),
+    deleteOverride: (profileId) => ipcRenderer.invoke(IPC.iniTemplatesDeleteOverride, profileId),
+    apply: (profileId) => ipcRenderer.invoke(IPC.iniTemplatesApply, profileId),
+    applyAll: () => ipcRenderer.invoke(IPC.iniTemplatesApplyAll)
+  },
   fileBrowser: {
     list: (profileId: string, relativePath: string) => ipcRenderer.invoke(IPC.fileBrowserList, profileId, relativePath),
     open: (profileId: string, relativePath: string) => ipcRenderer.invoke(IPC.fileBrowserOpen, profileId, relativePath),

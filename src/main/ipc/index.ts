@@ -33,6 +33,7 @@ import { registerPlayerWhitelistHandlers } from './playerWhitelist'
 import { registerPlayerRosterHandlers } from './playerRoster'
 import { registerWatchedPlayersHandlers } from './watchedPlayers'
 import { registerModEventsHandlers } from './modEvents'
+import { registerIniTemplatesHandlers } from './iniTemplates'
 import { registerPlayerActivityHandlers } from './playerActivity'
 import { registerFileBrowserHandlers } from './fileBrowser'
 
@@ -71,6 +72,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerPlayerRosterHandlers()
   registerWatchedPlayersHandlers()
   registerModEventsHandlers()
+  registerIniTemplatesHandlers()
   registerPlayerActivityHandlers()
   registerFileBrowserHandlers()
 }

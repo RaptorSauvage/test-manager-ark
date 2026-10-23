@@ -2,7 +2,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
-import { upsertIniKey, upsertIniRepeatedKey, syncAseModsToIni, reconcileAseModsFromIni } from '../src/main/lib/gameConfigWrite'
+import {
+  upsertIniKey,
+  upsertIniKeys,
+  upsertIniRepeatedKey,
+  writeServerSpecificBlock,
+  syncAseModsToIni,
+  reconcileAseModsFromIni
+} from '../src/main/lib/gameConfigWrite'
 import type { ServerProfile } from '../shared/types'
 
 function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
@@ -141,6 +148,114 @@ describe('upsertIniKey', () => {
       spy.mockRestore()
     }
     expect(fs.readFileSync(filePath, 'utf-8')).toBe(original)
+  })
+})
+
+describe('upsertIniKeys', () => {
+  let tmpDir: string
+  let filePath: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ini-write-test-'))
+    filePath = path.join(tmpDir, 'GameUserSettings.ini')
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('is a no-op for an empty entry list - never even touches the file', () => {
+    upsertIniKeys(filePath, [])
+    expect(fs.existsSync(filePath)).toBe(false)
+  })
+
+  it('applies several entries across existing and brand new sections in one pass', () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
+    upsertIniKeys(filePath, [
+      { section: 'ServerSettings', key: 'MaxPlayers', value: '100' },
+      { section: 'ServerSettings', key: 'ServerPVE', value: 'False' },
+      { section: 'SessionSettings', key: 'SessionName', value: 'My Server' }
+    ])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    expect(content).toContain('MaxPlayers=100')
+    expect(content).toContain('ServerPVE=False')
+    expect(content).toContain('[SessionSettings]')
+    expect(content).toContain('SessionName=My Server')
+  })
+
+  it('a later entry for a brand new section finds the block an earlier entry in the same batch just created', () => {
+    upsertIniKeys(filePath, [
+      { section: 'ServerSettings', key: 'MaxPlayers', value: '70' },
+      { section: 'ServerSettings', key: 'ServerPVE', value: 'False' }
+    ])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    expect(content.match(/\[ServerSettings\]/g)).toHaveLength(1)
+    expect(content).toContain('MaxPlayers=70')
+    expect(content).toContain('ServerPVE=False')
+  })
+
+  it('leaves every line not covered by an entry completely untouched', () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\nServerPassword=hello\n[Other]\nFoo=1\n', 'utf-8')
+    upsertIniKeys(filePath, [{ section: 'ServerSettings', key: 'MaxPlayers', value: '100' }])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    expect(content).toContain('ServerPassword=hello')
+    expect(content).toContain('[Other]\nFoo=1')
+  })
+})
+
+describe('writeServerSpecificBlock', () => {
+  let tmpDir: string
+  let filePath: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ini-write-test-'))
+    filePath = path.join(tmpDir, 'GameUserSettings.ini')
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('appends a marker + block at the end of the file without touching what came before it', () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
+    writeServerSpecificBlock(filePath, [{ section: 'ServerSettings', key: 'MaxPlayers', value: '10' }])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    const markerIndex = content.indexOf(';Server Specific INI')
+    expect(markerIndex).toBeGreaterThan(-1)
+    expect(content.indexOf('MaxPlayers=70')).toBeLessThan(markerIndex)
+    expect(content.indexOf('MaxPlayers=10')).toBeGreaterThan(markerIndex)
+  })
+
+  it('groups several entries for the same section under one [Section] header in the block', () => {
+    writeServerSpecificBlock(filePath, [
+      { section: 'ServerSettings', key: 'MaxPlayers', value: '10' },
+      { section: 'ServerSettings', key: 'DifficultyOffset', value: '1.0' }
+    ])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    expect(content.match(/\[ServerSettings\]/g)).toHaveLength(1)
+    expect(content).toContain('MaxPlayers=10')
+    expect(content).toContain('DifficultyOffset=1.0')
+  })
+
+  it('replaces a previous block in place instead of appending a second marker', () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
+    writeServerSpecificBlock(filePath, [{ section: 'ServerSettings', key: 'MaxPlayers', value: '10' }])
+    writeServerSpecificBlock(filePath, [{ section: 'ServerSettings', key: 'MaxPlayers', value: '20' }])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    expect(content.match(/;Server Specific INI/g)).toHaveLength(1)
+    expect(content).toContain('MaxPlayers=70')
+    expect(content).toContain('MaxPlayers=20')
+    expect(content).not.toContain('MaxPlayers=10')
+  })
+
+  it('removes the marker and block entirely when entries is empty, leaving the rest of the file intact', () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
+    writeServerSpecificBlock(filePath, [{ section: 'ServerSettings', key: 'MaxPlayers', value: '10' }])
+    writeServerSpecificBlock(filePath, [])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    expect(content).not.toContain(';Server Specific INI')
+    expect(content).not.toContain('MaxPlayers=10')
+    expect(content).toContain('MaxPlayers=70')
   })
 })
 

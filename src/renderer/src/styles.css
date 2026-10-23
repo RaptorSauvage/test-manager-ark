@@ -3938,6 +3938,38 @@ label.checkbox {
   color: var(--text);
 }
 
+.ini-templates-apply-all-btn {
+  margin-left: auto;
+}
+
+.ini-template-textarea {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: pre;
+}
+
+.ini-templates-apply-summary {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.ini-templates-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .event-scheduler-view .server-detail-header {
   position: relative;
 }
