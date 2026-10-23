@@ -15,9 +15,9 @@ interface OverrideFormState {
 }
 
 /** Tools > INI Templates - a cluster-wide generic GameUserSettings.ini/Game.ini template,
- *  applied as a surgical upsert into each profile's real config files, plus an optional
- *  per-server override appended behind a `;Server Specific INI` marker at the end of the
- *  file so it wins over the generic template (see src/main/lib/iniTemplates.ts). */
+ *  plus an optional per-server override, each written verbatim (comments included) as its
+ *  own block at the end of the file, the override's block last so it wins over the generic
+ *  template (see src/main/lib/iniTemplates.ts). */
 export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewProps): JSX.Element {
   const [generic, setGeneric] = useState<IniTemplateContent>(EMPTY_CONTENT)
   const [loading, setLoading] = useState(true)
@@ -166,11 +166,13 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
         </button>
       </header>
       <p className="empty-state">
-        Write a shared base config once, then only the genuinely server-specific lines per server. Applying writes
-        the generic template into that server&apos;s real GameUserSettings.ini/Game.ini (a surgical upsert: only the
-        keys you&apos;ve actually set are touched, everything else in the file is left alone), then appends the
-        server&apos;s own override behind a <code>;Server Specific INI</code> comment at the end of the file so it
-        wins. A server&apos;s own name always wins for SessionName, so you never need to set that yourself.
+        Write a shared base config once, then only the genuinely server-specific lines per server. Applying appends
+        the generic template, then the server&apos;s own override, to the end of that server&apos;s real
+        GameUserSettings.ini/Game.ini, each behind its own comment marker - written exactly as you typed or
+        imported it, comments included, with the override winning over the generic template for anything both set.
+        Everything already in the file above those markers, including anything you edited by hand, is left
+        completely alone. A server&apos;s own name always wins for SessionName, so you never need to set that
+        yourself.
       </p>
 
       {applyResults && (

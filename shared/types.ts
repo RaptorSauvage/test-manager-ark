@@ -586,11 +586,13 @@ export interface ModEventSchedulerState {
 
 /**
  * INI Templates (ARK only, Tools menu) - a cluster-wide "generic" template plus an optional
- * per-profile "override", each raw GameUserSettings.ini/Game.ini text, merged (override wins
- * per `[Section]` key on a collision) and applied as a surgical upsert into a profile's real
- * config files - see src/main/lib/iniTemplates.ts. Lets a shared base config (rates,
- * difficulty, rules, ...) be written once and reused across every server, with only the
- * genuinely server-specific lines kept in that one profile's own override.
+ * per-profile "override", each raw GameUserSettings.ini/Game.ini text written verbatim
+ * (comments and all) as its own block at the end of a profile's real config files, the
+ * override's block after the generic one so it wins for any key both define - see
+ * src/main/lib/iniTemplates.ts. Lets a shared base config (rates, difficulty, rules, ...) be
+ * written once (or imported from a file the user already has) and reused across every
+ * server, with only the genuinely server-specific lines kept in that one profile's own
+ * override.
  */
 export interface IniTemplateContent {
   gameUserSettingsIni: string

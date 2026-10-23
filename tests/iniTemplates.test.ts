@@ -106,7 +106,7 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('applies the generic template and force-sets SessionName to the profile name', async () => {
+  it('applies the generic template verbatim, then force-sets SessionName to the profile name', async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nServerPVE=False\nMaxPlayers=70', gameIni: '' }
     applyIniTemplate(makeProfile({ installDir, name: 'My Cool Server' }))
@@ -118,6 +118,25 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     expect(content).toContain('SessionName=My Cool Server')
   })
 
+  it('preserves comments and blank lines from the generic template and the override exactly as typed/imported', async () => {
+    const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
+    mockGeneric.value = {
+      gameUserSettingsIni: '; Rates for the whole cluster\n[ServerSettings]\n; max concurrent players\nMaxPlayers=70',
+      gameIni: ''
+    }
+    mockOverrides.value.set('p1', {
+      profileId: 'p1',
+      gameUserSettingsIni: '; This server runs a smaller cap\n[ServerSettings]\nMaxPlayers=10',
+      gameIni: ''
+    })
+    applyIniTemplate(makeProfile({ installDir }))
+
+    const content = fs.readFileSync(gusPath, 'utf-8')
+    expect(content).toContain('; Rates for the whole cluster')
+    expect(content).toContain('; max concurrent players')
+    expect(content).toContain('; This server runs a smaller cap')
+  })
+
   it("the profile's own override is appended behind a ';Server Specific INI' marker, after the generic template", async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=70', gameIni: '' }
@@ -125,20 +144,22 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     applyIniTemplate(makeProfile({ installDir }))
 
     const content = fs.readFileSync(gusPath, 'utf-8')
-    const markerIndex = content.indexOf(';Server Specific INI')
-    expect(markerIndex).toBeGreaterThan(-1)
-    // The generic value is left exactly where it was written; the override is appended after
-    // the marker, so a game reading the file top-to-bottom sees the override's value last.
-    expect(content.indexOf('MaxPlayers=70')).toBeLessThan(markerIndex)
-    expect(content.indexOf('MaxPlayers=10')).toBeGreaterThan(markerIndex)
+    const genericMarkerIndex = content.indexOf(';Generic Template')
+    const overrideMarkerIndex = content.indexOf(';Server Specific INI')
+    expect(genericMarkerIndex).toBeGreaterThan(-1)
+    expect(overrideMarkerIndex).toBeGreaterThan(genericMarkerIndex)
+    // The generic value is written first; the override is appended after its own marker, so
+    // a game reading the file top-to-bottom sees the override's value last and keeps it.
+    expect(content.indexOf('MaxPlayers=70')).toBeLessThan(overrideMarkerIndex)
+    expect(content.indexOf('MaxPlayers=10')).toBeGreaterThan(overrideMarkerIndex)
   })
 
-  it("the forced SessionName always wins, even if the server's own override tries to set its own", async () => {
-    // A real imported override file (see the "existing INI files" use case) very plausibly
-    // carries its own SessionName line - without stripping it, that line would be the file's
-    // last occurrence of the key and win under ARK's own last-value-wins ini parsing.
+  it("the forced SessionName always wins, even if the server's own override or generic template tries to set its own", async () => {
+    // A real imported file (see the "existing INI files" use case) very plausibly carries its
+    // own SessionName line - without stripping it, that line could end up physically last and
+    // win under ARK's own last-value-wins ini parsing.
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
-    mockGeneric.value = { gameUserSettingsIni: '', gameIni: '' }
+    mockGeneric.value = { gameUserSettingsIni: '[SessionSettings]\nSessionName=Generic Placeholder', gameIni: '' }
     mockOverrides.value.set('p1', {
       profileId: 'p1',
       gameUserSettingsIni: '[SessionSettings]\nSessionName=Some Other Name\n[ServerSettings]\nMaxPlayers=10',
@@ -148,11 +169,12 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
 
     const content = fs.readFileSync(gusPath, 'utf-8')
     expect(content).toContain('SessionName=My Cool Server')
+    expect(content).not.toContain('Generic Placeholder')
     expect(content).not.toContain('Some Other Name')
     expect(content).toContain('MaxPlayers=10')
   })
 
-  it('re-applying replaces the previous server-specific block instead of appending a second one', async () => {
+  it('re-applying replaces the previous blocks instead of appending second copies', async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=70', gameIni: '' }
     mockOverrides.value.set('p1', { profileId: 'p1', gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=10', gameIni: '' })
@@ -161,6 +183,7 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     applyIniTemplate(makeProfile({ installDir }))
 
     const content = fs.readFileSync(gusPath, 'utf-8')
+    expect(content.match(/;Generic Template/g)).toHaveLength(1)
     expect(content.match(/;Server Specific INI/g)).toHaveLength(1)
     expect(content).toContain('MaxPlayers=20')
     expect(content).not.toContain('MaxPlayers=10')
@@ -180,15 +203,18 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     expect(content).toContain('MaxPlayers=70')
   })
 
-  it('writes to Game.ini too, independently of GameUserSettings.ini', async () => {
+  it('writes to Game.ini too, independently of GameUserSettings.ini, keeping its own dotted section name intact', async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = {
       gameUserSettingsIni: '',
-      gameIni: '[/script/shootergame.shootergamemode]\nXPMultiplier=2.0'
+      gameIni: '[/script/shootergame.shootergamemode]\nXPMultiplier=2.0\nTamingSpeedMultiplier=3.0'
     }
     applyIniTemplate(makeProfile({ installDir }))
 
-    expect(fs.readFileSync(gamePath, 'utf-8')).toContain('XPMultiplier=2.0')
+    const content = fs.readFileSync(gamePath, 'utf-8')
+    expect(content).toContain('[/script/shootergame.shootergamemode]')
+    expect(content).toContain('XPMultiplier=2.0')
+    expect(content).toContain('TamingSpeedMultiplier=3.0')
   })
 
   it('leaves Game.ini untouched entirely when neither template has anything for it', async () => {
@@ -206,30 +232,6 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     applyIniTemplate(makeProfile({ installDir }))
 
     expect(fs.readFileSync(gusPath, 'utf-8')).toContain('ServerAdminPassword=secret')
-  })
-
-  it('treats a dotted section name (ARK\'s own /script/shootergame.shootergamemode) as one flat literal, not a nested path', async () => {
-    // The `ini` package expands a dotted key/section into nested objects by default - without
-    // escapeSectionDots, this would either crash flattening a nested object or silently drop
-    // the setting, for what's actually the single most common section in a real Game.ini.
-    const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
-    mockGeneric.value = {
-      gameUserSettingsIni: '',
-      gameIni: '[/script/shootergame.shootergamemode]\nXPMultiplier=2.0\nTamingSpeedMultiplier=3.0'
-    }
-    applyIniTemplate(makeProfile({ installDir }))
-
-    const content = fs.readFileSync(gamePath, 'utf-8')
-    expect(content).toContain('[/script/shootergame.shootergamemode]')
-    expect(content).toContain('XPMultiplier=2.0')
-    expect(content).toContain('TamingSpeedMultiplier=3.0')
-  })
-
-  it('silently ignores a sectionless/malformed line instead of erroring - ini.parse itself never throws on one', async () => {
-    const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
-    mockGeneric.value = { gameUserSettingsIni: 'NotAValidLineWithoutASection', gameIni: '' }
-    expect(() => applyIniTemplate(makeProfile({ installDir }))).not.toThrow()
-    expect(fs.readFileSync(gusPath, 'utf-8')).not.toContain('NotAValidLineWithoutASection')
   })
 
   it("applyIniTemplateToAll reports each profile's own outcome without one failure blocking the rest", async () => {

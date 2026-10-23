@@ -4,9 +4,8 @@ import path from 'node:path'
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import {
   upsertIniKey,
-  upsertIniKeys,
   upsertIniRepeatedKey,
-  writeServerSpecificBlock,
+  writeTrailingSections,
   syncAseModsToIni,
   reconcileAseModsFromIni
 } from '../src/main/lib/gameConfigWrite'
@@ -151,7 +150,7 @@ describe('upsertIniKey', () => {
   })
 })
 
-describe('upsertIniKeys', () => {
+describe('writeTrailingSections', () => {
   let tmpDir: string
   let filePath: string
 
@@ -164,96 +163,72 @@ describe('upsertIniKeys', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('is a no-op for an empty entry list - never even touches the file', () => {
-    upsertIniKeys(filePath, [])
+  it('never creates the file when every section is blank and it does not already exist', () => {
+    writeTrailingSections(filePath, [{ marker: ';Generic', body: '' }])
     expect(fs.existsSync(filePath)).toBe(false)
   })
 
-  it('applies several entries across existing and brand new sections in one pass', () => {
+  it('appends a single section behind its marker without touching what came before it', () => {
     fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
-    upsertIniKeys(filePath, [
-      { section: 'ServerSettings', key: 'MaxPlayers', value: '100' },
-      { section: 'ServerSettings', key: 'ServerPVE', value: 'False' },
-      { section: 'SessionSettings', key: 'SessionName', value: 'My Server' }
-    ])
+    writeTrailingSections(filePath, [{ marker: ';Generic', body: '[ServerSettings]\nMaxPlayers=10' }])
     const content = fs.readFileSync(filePath, 'utf-8')
-    expect(content).toContain('MaxPlayers=100')
-    expect(content).toContain('ServerPVE=False')
-    expect(content).toContain('[SessionSettings]')
-    expect(content).toContain('SessionName=My Server')
-  })
-
-  it('a later entry for a brand new section finds the block an earlier entry in the same batch just created', () => {
-    upsertIniKeys(filePath, [
-      { section: 'ServerSettings', key: 'MaxPlayers', value: '70' },
-      { section: 'ServerSettings', key: 'ServerPVE', value: 'False' }
-    ])
-    const content = fs.readFileSync(filePath, 'utf-8')
-    expect(content.match(/\[ServerSettings\]/g)).toHaveLength(1)
-    expect(content).toContain('MaxPlayers=70')
-    expect(content).toContain('ServerPVE=False')
-  })
-
-  it('leaves every line not covered by an entry completely untouched', () => {
-    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\nServerPassword=hello\n[Other]\nFoo=1\n', 'utf-8')
-    upsertIniKeys(filePath, [{ section: 'ServerSettings', key: 'MaxPlayers', value: '100' }])
-    const content = fs.readFileSync(filePath, 'utf-8')
-    expect(content).toContain('ServerPassword=hello')
-    expect(content).toContain('[Other]\nFoo=1')
-  })
-})
-
-describe('writeServerSpecificBlock', () => {
-  let tmpDir: string
-  let filePath: string
-
-  beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ini-write-test-'))
-    filePath = path.join(tmpDir, 'GameUserSettings.ini')
-  })
-
-  afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true })
-  })
-
-  it('appends a marker + block at the end of the file without touching what came before it', () => {
-    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
-    writeServerSpecificBlock(filePath, [{ section: 'ServerSettings', key: 'MaxPlayers', value: '10' }])
-    const content = fs.readFileSync(filePath, 'utf-8')
-    const markerIndex = content.indexOf(';Server Specific INI')
+    const markerIndex = content.indexOf(';Generic')
     expect(markerIndex).toBeGreaterThan(-1)
     expect(content.indexOf('MaxPlayers=70')).toBeLessThan(markerIndex)
     expect(content.indexOf('MaxPlayers=10')).toBeGreaterThan(markerIndex)
   })
 
-  it('groups several entries for the same section under one [Section] header in the block', () => {
-    writeServerSpecificBlock(filePath, [
-      { section: 'ServerSettings', key: 'MaxPlayers', value: '10' },
-      { section: 'ServerSettings', key: 'DifficultyOffset', value: '1.0' }
+  it('writes several sections in the given order, each behind its own marker', () => {
+    writeTrailingSections(filePath, [
+      { marker: ';Generic', body: '[ServerSettings]\nMaxPlayers=70' },
+      { marker: ';Override', body: '[ServerSettings]\nMaxPlayers=10' }
     ])
     const content = fs.readFileSync(filePath, 'utf-8')
-    expect(content.match(/\[ServerSettings\]/g)).toHaveLength(1)
-    expect(content).toContain('MaxPlayers=10')
-    expect(content).toContain('DifficultyOffset=1.0')
+    const genericIndex = content.indexOf(';Generic')
+    const overrideIndex = content.indexOf(';Override')
+    expect(genericIndex).toBeGreaterThan(-1)
+    expect(overrideIndex).toBeGreaterThan(genericIndex)
+    expect(content.indexOf('MaxPlayers=70')).toBeLessThan(overrideIndex)
+    expect(content.indexOf('MaxPlayers=10')).toBeGreaterThan(overrideIndex)
   })
 
-  it('replaces a previous block in place instead of appending a second marker', () => {
-    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
-    writeServerSpecificBlock(filePath, [{ section: 'ServerSettings', key: 'MaxPlayers', value: '10' }])
-    writeServerSpecificBlock(filePath, [{ section: 'ServerSettings', key: 'MaxPlayers', value: '20' }])
+  it('preserves comments and exact formatting within a section body verbatim', () => {
+    const body = '; XP rate for the whole cluster\nXPMultiplier=2.0\n\n; Taming rate\nTamingSpeedMultiplier=3.0'
+    writeTrailingSections(filePath, [{ marker: ';Generic', body }])
     const content = fs.readFileSync(filePath, 'utf-8')
-    expect(content.match(/;Server Specific INI/g)).toHaveLength(1)
+    expect(content).toContain('; XP rate for the whole cluster')
+    expect(content).toContain('; Taming rate')
+    expect(content).toContain('XPMultiplier=2.0')
+    expect(content).toContain('TamingSpeedMultiplier=3.0')
+  })
+
+  it('drops a blank section entirely instead of writing an empty marker', () => {
+    writeTrailingSections(filePath, [
+      { marker: ';Generic', body: '' },
+      { marker: ';Override', body: 'MaxPlayers=10' }
+    ])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    expect(content).not.toContain(';Generic')
+    expect(content).toContain(';Override')
+  })
+
+  it('replaces the previous set of blocks in place instead of appending a second copy', () => {
+    fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
+    writeTrailingSections(filePath, [{ marker: ';Generic', body: 'MaxPlayers=10' }])
+    writeTrailingSections(filePath, [{ marker: ';Generic', body: 'MaxPlayers=20' }])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    expect(content.match(/;Generic/g)).toHaveLength(1)
     expect(content).toContain('MaxPlayers=70')
     expect(content).toContain('MaxPlayers=20')
     expect(content).not.toContain('MaxPlayers=10')
   })
 
-  it('removes the marker and block entirely when entries is empty, leaving the rest of the file intact', () => {
+  it('removes every marker and block once all sections go blank, leaving the rest of the file intact', () => {
     fs.writeFileSync(filePath, '[ServerSettings]\nMaxPlayers=70\n', 'utf-8')
-    writeServerSpecificBlock(filePath, [{ section: 'ServerSettings', key: 'MaxPlayers', value: '10' }])
-    writeServerSpecificBlock(filePath, [])
+    writeTrailingSections(filePath, [{ marker: ';Generic', body: 'MaxPlayers=10' }])
+    writeTrailingSections(filePath, [{ marker: ';Generic', body: '' }])
     const content = fs.readFileSync(filePath, 'utf-8')
-    expect(content).not.toContain(';Server Specific INI')
+    expect(content).not.toContain(';Generic')
     expect(content).not.toContain('MaxPlayers=10')
     expect(content).toContain('MaxPlayers=70')
   })

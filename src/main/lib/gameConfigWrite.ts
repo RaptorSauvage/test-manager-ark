@@ -89,84 +89,52 @@ export function upsertIniKey(filePath: string, section: string, key: string, val
   writeFileEnsuringDir(filePath, lines.join(eol))
 }
 
-export interface IniUpsertEntry {
-  section: string
-  key: string
-  value: string
+export interface TrailingSection {
+  marker: string
+  body: string
 }
 
 /**
- * Same idea as upsertIniKey, but applies a whole batch of section+key+value entries in one
- * read-modify-write pass instead of one round-trip per key - used by the INI Templates tool
- * (iniTemplates.ts), which can have dozens of entries to apply to the same file at once.
- * Still leaves every other line completely untouched. An entry for a section that doesn't
- * exist yet is appended as a new `[section]` block; a later entry in the same batch for that
- * same new section finds the block the earlier one just appended, same as an already-
- * existing section.
+ * Rebuilds the trailing region of a file as one or more raw-text blocks, each introduced by
+ * its own comment marker, in the given order - used by the INI Templates tool
+ * (iniTemplates.ts) instead of parsing/re-emitting `key=value` lines one at a time, so
+ * whatever the caller already has as a whole block of text (a user's own pre-made .ini file,
+ * comments and all) is written byte-for-byte rather than decomposed and losing anything that
+ * isn't itself a `key=value` line. A later section wins over an earlier one for the same key
+ * under the game's own last-value-wins ini parsing (the same trick ARK server owners already
+ * use by hand), so pass sections weakest-first. Everything above the first of these markers -
+ * anything that predates using this at all, or that the user later added above it by hand -
+ * is left completely untouched. Re-running this replaces the previous set of blocks in place
+ * rather than appending a new set below the old one; a section with a blank body is dropped
+ * entirely (and its old block, if any, removed) rather than writing an empty marker with
+ * nothing under it. Never creates the file at all if every section is blank and it doesn't
+ * already exist.
  */
-export function upsertIniKeys(filePath: string, entries: IniUpsertEntry[]): void {
-  if (entries.length === 0) return
-  const content = tryReadExistingContent(filePath)
-  if (content === null) return
-  const eol = content ? detectEol(content) : '\r\n'
-  let lines = content.length > 0 ? content.split(/\r\n|\n/) : []
+export function writeTrailingSections(filePath: string, sections: TrailingSection[]): void {
+  const nonBlank = sections.filter((s) => s.body.trim() !== '')
+  if (!fs.existsSync(filePath) && nonBlank.length === 0) return
 
-  for (const { section, key, value } of entries) {
-    const keyPattern = new RegExp(`^\\s*${key}\\s*=`)
-    const range = findSectionRange(lines, section)
-    if (!range) {
-      const prefix = lines.length > 0 && lines[lines.length - 1] !== '' ? [''] : []
-      lines = [...lines, ...prefix, `[${section}]`, `${key}=${value}`]
-      continue
-    }
-    const existingIndex = lines.slice(range.start + 1, range.end).findIndex((line) => keyPattern.test(line))
-    if (existingIndex !== -1) {
-      lines[range.start + 1 + existingIndex] = `${key}=${value}`
-    } else {
-      lines.splice(range.start + 1, 0, `${key}=${value}`)
-    }
-  }
-
-  writeFileEnsuringDir(filePath, lines.join(eol))
-}
-
-const SERVER_SPECIFIC_MARKER = ';Server Specific INI'
-
-/**
- * Writes (or replaces) a trailing block of `entries`, grouped by `[section]`, behind a
- * `;Server Specific INI` comment marker at the end of the file - the same trick ARK server
- * owners already use by hand: a later `key=value` wins over an earlier one with the same key
- * elsewhere in the file, so a block appended after everything else reliably overrides it
- * without having to find and edit that earlier line in place. Everything above the marker
- * (including whatever upsertIniKeys/upsertIniKey last wrote there) is left completely
- * untouched. Re-running this replaces the previous block in place rather than appending a
- * second one; an empty `entries` removes the marker and block entirely.
- */
-export function writeServerSpecificBlock(filePath: string, entries: IniUpsertEntry[]): void {
   const content = tryReadExistingContent(filePath)
   if (content === null) return
   const eol = content ? detectEol(content) : '\r\n'
   const lines = content.length > 0 ? content.split(/\r\n|\n/) : []
-  const markerIndex = lines.findIndex((line) => line.trim() === SERVER_SPECIFIC_MARKER)
-  const baseLines = markerIndex === -1 ? lines : lines.slice(0, markerIndex)
+
+  const markers = new Set(sections.map((s) => s.marker))
+  const firstMarkerIndex = lines.findIndex((line) => markers.has(line.trim()))
+  const baseLines = firstMarkerIndex === -1 ? lines : lines.slice(0, firstMarkerIndex)
   while (baseLines.length > 0 && baseLines[baseLines.length - 1] === '') baseLines.pop()
 
-  if (entries.length === 0) {
+  const blockLines: string[] = []
+  for (const { marker, body } of nonBlank) {
+    const bodyLines = body.split(/\r\n|\n/)
+    while (bodyLines.length > 0 && bodyLines[0] === '') bodyLines.shift()
+    while (bodyLines.length > 0 && bodyLines[bodyLines.length - 1] === '') bodyLines.pop()
+    blockLines.push(marker, ...bodyLines)
+  }
+
+  if (blockLines.length === 0) {
     writeFileEnsuringDir(filePath, baseLines.length > 0 ? baseLines.join(eol) + eol : '')
     return
-  }
-
-  const bySection = new Map<string, IniUpsertEntry[]>()
-  for (const entry of entries) {
-    const list = bySection.get(entry.section)
-    if (list) list.push(entry)
-    else bySection.set(entry.section, [entry])
-  }
-
-  const blockLines: string[] = [SERVER_SPECIFIC_MARKER]
-  for (const [section, sectionEntries] of bySection) {
-    blockLines.push(`[${section}]`)
-    for (const { key, value } of sectionEntries) blockLines.push(`${key}=${value}`)
   }
 
   const allLines = baseLines.length > 0 ? [...baseLines, '', ...blockLines] : blockLines
