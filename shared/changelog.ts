@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-23',
+    title: 'Fixed a flash when returning to the Dashboard from a server\'s own page',
+    details: [
+      'Clicking Back used to briefly show wrong information on the Dashboard before correcting itself a moment later - map names as raw ids ("TheIsland_WP" instead of "The Island"), the hardware cards\' subtext as generic placeholder text, and worst of all a server that was actually running could flash "Stopped" again for a bit. All three now load once and stay loaded across navigation instead of resetting every time you come back to the Dashboard.'
+    ]
+  },
+  {
+    date: '2026-10-23',
     title: 'INI Templates (Tools menu) - a shared base config plus per-server overrides',
     details: [
       'New Tools > INI Templates: write a generic GameUserSettings.ini/Game.ini template once for the whole cluster, then apply it to any server (or every ARK server at once). Applying merges it key by key into that server\'s real config files - a setting it already has is updated right where it already sits (so it stays together with the rest of that section instead of splitting off into a separate block), a new one is added to its section, and any comment written directly above a key in the template comes along with it when that key is new. Everything else already in the file, including anything edited by hand, is left completely alone. SessionName is always set to that server\'s own name automatically, so you never need to repeat it in a template.',

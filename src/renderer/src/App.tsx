@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { ServerProfile } from '@shared/types'
+import type { MapDefinition, ServerProfile, SystemStaticInfo } from '@shared/types'
 import type { MinecraftProfile } from '@shared/minecraft'
+import { listGameDefinitions } from '@shared/games'
+import { useServerStatuses } from './lib/useServerStatuses'
+import { useMinecraftServerStatuses } from './lib/useMinecraftServerStatuses'
 import Dashboard from './pages/Dashboard'
 import ClusterDataView from './pages/ClusterDataView'
 import GroupConsoleView from './pages/GroupConsoleView'
@@ -94,6 +97,37 @@ export default function App(): JSX.Element {
   const [minecraftSelectedId, setMinecraftSelectedId] = useState<string | null>(null)
   const [minecraftInitialTab, setMinecraftInitialTab] = useState<MinecraftTabKey | undefined>(undefined)
   const [minecraftLoaded, setMinecraftLoaded] = useState(false)
+
+  // Lifted up here (rather than living inside Dashboard/MinecraftDashboard/HardwareStatsBar
+  // themselves) specifically because App.tsx never unmounts, while Dashboard does: navigating
+  // to a server's own detail view and back is a full unmount+remount of Dashboard (see the
+  // mutually exclusive `if (selected) { return <ServerDetail ... /> }` branch below), so state
+  // that lived inside it reset to its defaults and had to re-fetch/re-settle on every single
+  // visit. That showed up as a real, visible flash: map names briefly showing raw ids
+  // ("TheIsland_WP") before the friendly ones loaded, hardware cards briefly showing generic
+  // placeholder text, and worst of all a server that's actually running briefly showing
+  // "STOPPED" again until its real status re-arrived - exactly what a user caught on video.
+  const statuses = useServerStatuses(profiles.map((p) => p.id))
+  const minecraftStatuses = useMinecraftServerStatuses(minecraftProfiles.map((p) => p.id))
+  const [maps, setMaps] = useState<MapDefinition[]>([])
+  const [hardwareStaticInfo, setHardwareStaticInfo] = useState<SystemStaticInfo | null>(null)
+
+  useEffect(() => {
+    // Merged across every known game, not just whichever profiles happen to be loaded - map
+    // ids don't collide between games (ARK: Survival Ascended's carry a _WP suffix ARK:
+    // Survival Evolved's don't), so one combined lookup covers every card correctly.
+    void Promise.all(listGameDefinitions().map((g) => window.api.maps.list(g.id))).then((lists) => setMaps(lists.flat()))
+  }, [])
+
+  useEffect(() => {
+    window.api.systemStats
+      .get()
+      .then(setHardwareStaticInfo)
+      .catch(() => {
+        // Best-effort - the hardware stats bar just renders without the "16 Cores / 32
+        // Threads • ..." and "X GB total RAM" context lines if this one-time fetch fails.
+      })
+  }, [])
 
   useEffect(() => {
     window.api.profiles.list().then((list) => {
@@ -354,6 +388,8 @@ export default function App(): JSX.Element {
                 profiles={minecraftProfiles}
                 onProfilesChange={handleMinecraftProfilesChange}
                 onOpenProfile={handleOpenMinecraftProfile}
+                statuses={minecraftStatuses}
+                staticInfo={hardwareStaticInfo}
               />
             )}
           </div>
@@ -447,6 +483,9 @@ export default function App(): JSX.Element {
               showCreateWizard={showCreateWizard}
               onOpenCreateWizard={() => setShowCreateWizard(true)}
               onCloseCreateWizard={() => setShowCreateWizard(false)}
+              statuses={statuses}
+              maps={maps}
+              staticInfo={hardwareStaticInfo}
             />
           )}
         </div>

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { AppSettings, MapDefinition, ServerProfile, ServerRunState, ServerStatus } from '@shared/types'
-import { getGameDefinition, listGameDefinitions } from '@shared/games'
-import { useServerStatuses } from '../lib/useServerStatuses'
+import type { AppSettings, MapDefinition, ServerProfile, ServerRunState, ServerStatus, SystemStaticInfo } from '@shared/types'
+import { getGameDefinition } from '@shared/games'
 import type { TabKey } from './ServerDetail'
 import HardwareStatsBar from '../components/HardwareStatsBar'
 import { GAME_ICONS } from '../lib/gameIcons'
@@ -18,6 +17,14 @@ interface DashboardProps {
   showCreateWizard: boolean
   onOpenCreateWizard: () => void
   onCloseCreateWizard: () => void
+  /** These three also live in App.tsx rather than here, specifically because App.tsx never
+   *  unmounts while this page does (every visit to a server's own detail view and back is a
+   *  full unmount+remount) - keeping them here meant each one reset to its default and had to
+   *  re-fetch/re-settle on every single navigation, a real visible flash (raw map ids,
+   *  placeholder hardware text, a running server briefly showing "stopped" again). */
+  statuses: Record<string, ServerStatus>
+  maps: MapDefinition[]
+  staticInfo: SystemStaticInfo | null
 }
 
 export default function Dashboard({
@@ -26,9 +33,11 @@ export default function Dashboard({
   onOpenProfile,
   showCreateWizard,
   onOpenCreateWizard,
-  onCloseCreateWizard
+  onCloseCreateWizard,
+  statuses,
+  maps,
+  staticInfo
 }: DashboardProps): JSX.Element {
-  const statuses = useServerStatuses(profiles.map((p) => p.id))
   const visibleProfiles = profiles.filter((p) => !p.hidden)
   const hiddenProfiles = profiles.filter((p) => p.hidden)
   const ungroupedProfiles = visibleProfiles.filter((p) => !p.group.trim())
@@ -40,7 +49,6 @@ export default function Dashboard({
   const [bulkBusy, setBulkBusy] = useState(false)
   const [installedById, setInstalledById] = useState<Record<string, boolean>>({})
   const [gameVersionById, setGameVersionById] = useState<Record<string, string | null>>({})
-  const [maps, setMaps] = useState<MapDefinition[]>([])
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | ServerRunState>('all')
@@ -129,15 +137,6 @@ export default function Dashboard({
     reordered.splice(toIndex, 0, reordered.splice(fromIndex, 1)[0])
     await persistSettings({ ...settings, groupOrder: reordered })
   }
-
-  useEffect(() => {
-    // Merged across every known game, not just the profiles currently on this dashboard - map
-    // ids don't collide between games (ARK: Survival Ascended's carry a _WP suffix ARK:
-    // Survival Evolved's don't), so one combined lookup covers every card correctly.
-    void Promise.all(listGameDefinitions().map((g) => window.api.maps.list(g.id))).then((lists) =>
-      setMaps(lists.flat())
-    )
-  }, [])
 
   function mapDisplayName(mapId: string): string {
     return maps.find((m) => m.id === mapId)?.displayName ?? mapId
@@ -674,7 +673,7 @@ export default function Dashboard({
         />
       )}
 
-      <HardwareStatsBar profiles={visibleProfiles} statuses={statuses} labelPrefix="ARK Servers" />
+      <HardwareStatsBar profiles={visibleProfiles} statuses={statuses} labelPrefix="ARK Servers" staticInfo={staticInfo} />
 
       <div className="toolbar">
         <div className="toolbar-filters">

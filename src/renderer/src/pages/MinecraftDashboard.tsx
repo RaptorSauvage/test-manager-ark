@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { AppSettings } from '@shared/types'
+import type { AppSettings, SystemStaticInfo } from '@shared/types'
 import type { MinecraftProfile, MinecraftRunState, MinecraftServerStatus, MinecraftServerType } from '@shared/minecraft'
-import { useMinecraftServerStatuses } from '../lib/useMinecraftServerStatuses'
 import { createDefaultMinecraftProfile } from '../lib/minecraftProfile'
 import { confirmAction } from '../lib/confirmAction'
 import type { MinecraftTabKey } from './MinecraftServerDetail'
@@ -26,14 +25,19 @@ interface MinecraftDashboardProps {
   profiles: MinecraftProfile[]
   onProfilesChange: (profiles: MinecraftProfile[]) => void
   onOpenProfile: (id: string, tab?: MinecraftTabKey) => void
+  /** Lifted up to App.tsx - see Dashboard.tsx's own DashboardProps doc comment for why
+   *  (the short version: App.tsx never unmounts, this page does). */
+  statuses: Record<string, MinecraftServerStatus>
+  staticInfo: SystemStaticInfo | null
 }
 
 export default function MinecraftDashboard({
   profiles,
   onProfilesChange,
-  onOpenProfile
+  onOpenProfile,
+  statuses,
+  staticInfo
 }: MinecraftDashboardProps): JSX.Element {
-  const statuses = useMinecraftServerStatuses(profiles.map((p) => p.id))
   const visibleProfiles = profiles.filter((p) => !p.hidden)
   const hiddenProfiles = profiles.filter((p) => p.hidden)
   const ungroupedProfiles = visibleProfiles.filter((p) => !p.group.trim())
@@ -578,7 +582,7 @@ export default function MinecraftDashboard({
         </>
       )}
 
-      <HardwareStatsBar profiles={visibleProfiles} statuses={statuses} labelPrefix="Minecraft Servers" />
+      <HardwareStatsBar profiles={visibleProfiles} statuses={statuses} labelPrefix="Minecraft Servers" staticInfo={staticInfo} />
 
       <div className="toolbar">
         <div className="toolbar-filters">

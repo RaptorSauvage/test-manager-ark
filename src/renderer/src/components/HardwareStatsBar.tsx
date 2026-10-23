@@ -39,6 +39,12 @@ interface HardwareStatsBarProps {
    *  it's clear those two numbers are scoped to this Dashboard's own servers specifically
    *  (unlike the Network card, which is host-wide either way). */
   labelPrefix: string
+  /** Fetched once in App.tsx (not here) and passed down - this component gets freshly
+   *  mounted every time its owning Dashboard does (e.g. navigating to a server's own detail
+   *  view and back), and fetching this one-time static info locally meant it reset to null
+   *  and had to re-fetch on every single visit, a visible flash from the placeholder subtext
+   *  back to the real one each time. */
+  staticInfo: SystemStaticInfo | null
 }
 
 /** CPU/RAM used by this Manager's own running ARK servers, not the whole machine - a real
@@ -47,21 +53,10 @@ interface HardwareStatsBarProps {
  *  repeatedly spawning OS query processes in the background. These numbers instead come
  *  straight from `statuses` (already pushed from the main process via server status events,
  *  same as every other live card on the Dashboard), so there's nothing new to poll at all -
- *  only the static machine info (CPU model, total RAM) is fetched, once, from
- *  system.getStats(). */
-export default function HardwareStatsBar({ profiles, statuses, labelPrefix }: HardwareStatsBarProps): JSX.Element | null {
-  const [staticInfo, setStaticInfo] = useState<SystemStaticInfo | null>(null)
+ *  only the static machine info (CPU model, total RAM) is fetched at all, once, in App.tsx
+ *  (see `staticInfo`'s own doc comment above for why it isn't fetched here instead). */
+export default function HardwareStatsBar({ profiles, statuses, labelPrefix, staticInfo }: HardwareStatsBarProps): JSX.Element | null {
   const [networkUsage, setNetworkUsage] = useState<NetworkUsage>({ rxBytesPerSec: null, txBytesPerSec: null })
-
-  useEffect(() => {
-    window.api.systemStats
-      .get()
-      .then(setStaticInfo)
-      .catch(() => {
-        // Best-effort - the bar just renders without the "16 Cores / 32 Threads • ..." and
-        // "X GB total RAM" context lines if this one-time fetch fails.
-      })
-  }, [])
 
   useEffect(() => {
     let cancelled = false
