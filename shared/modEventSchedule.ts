@@ -1,4 +1,4 @@
-import type { ModEvent } from '@shared/types'
+import type { ModEvent, ModEventAction } from '@shared/types'
 
 /** Pure date math for the Event Scheduler - kept free of any store/process imports so it's
  *  trivially unit-testable, same split as shared/scheduleTime.ts (pure) vs
@@ -42,24 +42,36 @@ export function lastOccurrenceAtOrBefore(iso: string, recurringYearly: boolean, 
   return thisYear <= now ? thisYear : new Date(now.getFullYear() - 1, c.month - 1, c.day, c.hour, c.minute, 0, 0)
 }
 
+export interface EventBoundary {
+  /** The instant this boundary occurred (a past start or end trigger). */
+  at: Date
+  action: ModEventAction
+}
+
 /**
- * Whether the event's mods should currently be applied: the most recent start trigger
- * happened more recently than the most recent end trigger. This is what lets the Event
- * Scheduler reconcile state on arm (app startup, an event just saved/enabled) regardless of
- * how long the Manager was closed or the event was disabled - it isn't only "did a timer
- * happen to fire while something was listening". Also doubles as the Status column's
- * Active/Scheduled distinction in the UI.
+ * The most recent start-or-end trigger that has already happened, and which action it
+ * implies - the single source of truth both isEventActive below and the scheduling engine's
+ * own reconciliation (src/main/lib/modEvents.ts's reconcile()) build on. Null if neither has
+ * happened yet (a one-time event whose start is still in the future).
  *
  * Correctly handles a window that crosses a year boundary (e.g. Dec 18 -> Jan 5) without any
  * special-casing: start and end are each just their own independently-recurring point in
- * time, and whichever one most recently fired determines the current state.
+ * time, and whichever one most recently fired wins.
  */
-export function isEventActive(event: Pick<ModEvent, 'startAt' | 'endAt' | 'recurringYearly'>, now: Date): boolean {
+export function mostRecentBoundary(event: Pick<ModEvent, 'startAt' | 'endAt' | 'recurringYearly'>, now: Date): EventBoundary | null {
   const lastStart = lastOccurrenceAtOrBefore(event.startAt, event.recurringYearly, now)
-  if (!lastStart) return false
   const lastEnd = lastOccurrenceAtOrBefore(event.endAt, event.recurringYearly, now)
-  if (!lastEnd) return true
-  return lastStart.getTime() > lastEnd.getTime()
+  if (!lastStart) return lastEnd ? { at: lastEnd, action: 'deactivated' } : null
+  if (!lastEnd) return { at: lastStart, action: 'activated' }
+  return lastStart.getTime() > lastEnd.getTime() ? { at: lastStart, action: 'activated' } : { at: lastEnd, action: 'deactivated' }
+}
+
+/** Whether the event's mods should currently be applied - see mostRecentBoundary above.
+ *  Used for the Event Scheduler table's Status column (Active/Scheduled); the scheduling
+ *  engine itself uses mostRecentBoundary directly, since reconciliation also needs the exact
+ *  boundary instant, not just which side of it "now" falls on. */
+export function isEventActive(event: Pick<ModEvent, 'startAt' | 'endAt' | 'recurringYearly'>, now: Date): boolean {
+  return mostRecentBoundary(event, now)?.action === 'activated'
 }
 
 /** Milliseconds from `now` until `iso`'s exact instant, or null if it's already passed. Only

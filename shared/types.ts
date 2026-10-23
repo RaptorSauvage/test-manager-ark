@@ -571,6 +571,19 @@ export interface ModEventHistoryEntry {
   errors?: Record<string, string>
 }
 
+/** Internal scheduling-engine bookkeeping (src/main/lib/modEvents.ts) - which boundary
+ *  (start or end trigger instant) was last actually processed for a given event, so a
+ *  restart/re-arm only replays a transition that's genuinely new, not one already handled.
+ *  Without this, reconciling against "what should be true right now" on every arm would
+ *  silently undo a mod a user removed/added by hand partway through an event's window.
+ *  Purely internal - never exposed through the Api surface, the renderer has no use for it. */
+export interface ModEventSchedulerState {
+  /** ISO instant of the boundary (a specific start-or-end occurrence) that was last
+   *  processed for this event. */
+  lastBoundaryAt: string
+  lastAction: ModEventAction
+}
+
 /**
  * One entry of a server's generic RCON command scheduler (ARK only) - see
  * ServerProfile.scheduledRconCommands and scheduledActions.ts's own applyScheduledRconCommands.

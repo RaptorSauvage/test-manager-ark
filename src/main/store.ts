@@ -13,7 +13,8 @@ import type {
   PlayerActivitySession,
   ConfigFileHistoryEntry,
   ModEvent,
-  ModEventHistoryEntry
+  ModEventHistoryEntry,
+  ModEventSchedulerState
 } from '@shared/types'
 import type { MinecraftProfile } from '@shared/minecraft'
 import { migrateProfile } from './lib/profileMigration'
@@ -70,6 +71,8 @@ interface StoreSchema {
    *  comment (shared/types.ts) and src/main/lib/modEvents.ts. */
   modEvents: ModEvent[]
   modEventHistory: ModEventHistoryEntry[]
+  /** Keyed by ModEvent.id - see ModEventSchedulerState's own doc comment. */
+  modEventSchedulerState: Record<string, ModEventSchedulerState>
   /** Set once the pre-4-tier-role migration (legacy 'admin' -> globalAdmin, 'operator' ->
    *  moderator) has actually been written back to the two lists above. Must run at most
    *  once, ever: 'admin' is now also the current, intentional value for the new scoped
@@ -151,6 +154,7 @@ const store = new Store<StoreSchema>({
     configFileHistory: [],
     modEvents: [],
     modEventHistory: [],
+    modEventSchedulerState: {},
     webDashboardRolesMigrated: false,
     profilesMigratedToDisk: false
   }
@@ -591,7 +595,22 @@ export function saveModEvent(event: ModEvent): ModEvent[] {
 export function deleteModEvent(id: string): ModEvent[] {
   const events = listModEvents().filter((e) => e.id !== id)
   store.set('modEvents', events)
+  const state = store.get('modEventSchedulerState') ?? {}
+  if (state[id]) {
+    delete state[id]
+    store.set('modEventSchedulerState', state)
+  }
   return events
+}
+
+export function getModEventSchedulerState(eventId: string): ModEventSchedulerState | undefined {
+  return (store.get('modEventSchedulerState') ?? {})[eventId]
+}
+
+export function setModEventSchedulerState(eventId: string, state: ModEventSchedulerState): void {
+  const all = store.get('modEventSchedulerState') ?? {}
+  all[eventId] = state
+  store.set('modEventSchedulerState', all)
 }
 
 /** Capped like listPlayerSessions/MAX_PLAYER_SESSIONS above - the Event Scheduler's History

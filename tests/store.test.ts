@@ -20,7 +20,12 @@ import {
   recordPlayerSession,
   listConfigFileHistory,
   getConfigFileHistoryEntry,
-  recordConfigFileHistory
+  recordConfigFileHistory,
+  listModEvents,
+  saveModEvent,
+  deleteModEvent,
+  getModEventSchedulerState,
+  setModEventSchedulerState
 } from '../src/main/store'
 
 describe('setRunningPid/setRunningStartedAt', () => {
@@ -101,6 +106,44 @@ describe('listWatchedPlayers/addWatchedPlayer/removeWatchedPlayer', () => {
 
     removeWatchedPlayer('watch-resilience-1')
     expect(listWatchedPlayers().some((p) => p.id === 'watch-resilience-1')).toBe(false)
+  })
+})
+
+describe('listModEvents/saveModEvent/deleteModEvent', () => {
+  const event = {
+    id: 'mod-event-resilience-1',
+    name: 'Resilience Test Event',
+    modIds: ['123456'],
+    recurringYearly: true,
+    startAt: '2026-10-24T00:00:00.000Z',
+    endAt: '2026-11-03T23:59:00.000Z',
+    targetServers: 'all' as const,
+    shutdownOnStart: false,
+    shutdownOnEnd: false,
+    enabled: true
+  }
+
+  it('adds, updates in place, and removes an event', () => {
+    saveModEvent(event)
+    expect(listModEvents().find((e) => e.id === event.id)).toEqual(event)
+
+    saveModEvent({ ...event, enabled: false })
+    expect(listModEvents().find((e) => e.id === event.id)?.enabled).toBe(false)
+
+    deleteModEvent(event.id)
+    expect(listModEvents().some((e) => e.id === event.id)).toBe(false)
+  })
+
+  it('deleting an event also clears its scheduler-state bookkeeping', () => {
+    saveModEvent(event)
+    setModEventSchedulerState(event.id, { lastBoundaryAt: '2026-10-24T00:00:00.000Z', lastAction: 'activated' })
+    expect(getModEventSchedulerState(event.id)).toEqual({
+      lastBoundaryAt: '2026-10-24T00:00:00.000Z',
+      lastAction: 'activated'
+    })
+
+    deleteModEvent(event.id)
+    expect(getModEventSchedulerState(event.id)).toBeUndefined()
   })
 })
 

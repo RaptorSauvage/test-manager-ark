@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildYearlyCron, lastOccurrenceAtOrBefore, isEventActive, msUntil } from '../shared/modEventSchedule'
+import { buildYearlyCron, lastOccurrenceAtOrBefore, mostRecentBoundary, isEventActive, msUntil } from '../shared/modEventSchedule'
 
 describe('buildYearlyCron', () => {
   it('builds a 5-field cron firing every year on the given month/day/hour/minute', () => {
@@ -33,6 +33,35 @@ describe('lastOccurrenceAtOrBefore', () => {
     const now = new Date(2026, 9, 20)
     const result = lastOccurrenceAtOrBefore('2020-10-24T00:00:00', true, now)
     expect(result?.getTime()).toBe(new Date(2025, 9, 24).getTime())
+  })
+})
+
+describe('mostRecentBoundary', () => {
+  it('returns the activated boundary once the start has passed with no end yet', () => {
+    const event = { startAt: '2026-10-24T00:00:00', endAt: '2026-11-03T23:59:00', recurringYearly: false }
+    const result = mostRecentBoundary(event, new Date(2026, 9, 28))
+    expect(result?.action).toBe('activated')
+    expect(result?.at.getTime()).toBe(new Date(2026, 9, 24).getTime())
+  })
+
+  it('returns the deactivated boundary once the end has also passed', () => {
+    const event = { startAt: '2026-10-24T00:00:00', endAt: '2026-11-03T23:59:00', recurringYearly: false }
+    const result = mostRecentBoundary(event, new Date(2026, 10, 10))
+    expect(result?.action).toBe('deactivated')
+    expect(result?.at.getTime()).toBe(new Date(2026, 10, 3, 23, 59).getTime())
+  })
+
+  it('returns null before anything has happened', () => {
+    const event = { startAt: '2026-10-24T00:00:00', endAt: '2026-11-03T23:59:00', recurringYearly: false }
+    expect(mostRecentBoundary(event, new Date(2026, 9, 1))).toBeNull()
+  })
+
+  it('is the single source isEventActive is built on (same boundary, derived action)', () => {
+    const event = { startAt: '2020-12-18T00:00:00', endAt: '2020-01-05T23:59:00', recurringYearly: true }
+    const now = new Date(2026, 11, 27)
+    const boundary = mostRecentBoundary(event, now)
+    expect(boundary?.action).toBe('activated')
+    expect(isEventActive(event, now)).toBe(boundary?.action === 'activated')
   })
 })
 

@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-23',
+    title: 'Event Scheduler: a manual mod change during an event\'s window now sticks',
+    details: [
+      'Fixed: restarting the Manager (or saving/re-enabling an event) while one of its mod(s) had been added/removed by hand partway through its active window used to force that mod back to whatever the schedule said it "should" be right now - undoing the manual change. The scheduler now only replays a start/end transition it actually missed (e.g. the Manager was closed through it), not one that already happened, so a deliberate manual change in between is left alone until the event\'s next real transition.'
+    ]
+  },
+  {
+    date: '2026-10-23',
     title: 'Event Scheduler (Tools menu) - automatic seasonal mod events',
     details: [
       'New Tools > Event Scheduler: create events that automatically add a set of mod IDs to your servers\' mod lists when the event starts, and remove them again when it ends - e.g. a Halloween or Christmas mod pack that only runs during that window.',
