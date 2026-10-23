@@ -15,7 +15,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-10-23',
     title: 'Fixed a flash when returning to the Dashboard from a server\'s own page',
     details: [
-      'Clicking Back used to briefly show wrong information on the Dashboard before correcting itself a moment later - map names as raw ids ("TheIsland_WP" instead of "The Island"), the hardware cards\' subtext as generic placeholder text, and worst of all a server that was actually running could flash "Stopped" again for a bit. All three now load once and stay loaded across navigation instead of resetting every time you come back to the Dashboard.'
+      'Clicking Back used to briefly show wrong information on the Dashboard before correcting itself a moment later - map names as raw ids ("TheIsland_WP" instead of "The Island"), the hardware cards\' subtext as generic placeholder text, a server\'s detected game version, whether its install was even found, and worst of all a server that was actually running could flash "Stopped" again for a bit. All of that now loads once and stays loaded across navigation instead of resetting every time you come back to the Dashboard.'
     ]
   },
   {

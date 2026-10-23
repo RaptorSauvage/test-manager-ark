@@ -129,6 +129,45 @@ export default function App(): JSX.Element {
       })
   }, [])
 
+  // Same remount-reset problem as above, for the two bits of per-server info Dashboard's own
+  // cards show beyond live status: whether a profile's install is actually present on disk,
+  // and the detected game version string.
+  const [installedById, setInstalledById] = useState<Record<string, boolean>>({})
+  const [gameVersionById, setGameVersionById] = useState<Record<string, string | null>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all(profiles.map(async (p) => [p.id, await window.api.server.isInstalled(p.id)] as const)).then(
+      (entries) => {
+        if (!cancelled) setInstalledById(Object.fromEntries(entries))
+      }
+    )
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles.map((p) => `${p.id}:${p.installDir}`).join(',')])
+
+  async function refreshInstalled(profileId: string): Promise<void> {
+    const installed = await window.api.server.isInstalled(profileId)
+    setInstalledById((prev) => ({ ...prev, [profileId]: installed }))
+  }
+
+  // One-shot per profile list change - reads whatever's already cached/known (or reads it
+  // once from the log if not), no polling/"Detecting..." here like the Analytics tab does.
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all(profiles.map(async (p) => [p.id, await window.api.server.getGameVersion(p.id)] as const)).then(
+      (entries) => {
+        if (!cancelled) setGameVersionById(Object.fromEntries(entries))
+      }
+    )
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles.map((p) => p.id).join(',')])
+
   useEffect(() => {
     window.api.profiles.list().then((list) => {
       setProfiles(list)
@@ -486,6 +525,9 @@ export default function App(): JSX.Element {
               statuses={statuses}
               maps={maps}
               staticInfo={hardwareStaticInfo}
+              installedById={installedById}
+              gameVersionById={gameVersionById}
+              refreshInstalled={refreshInstalled}
             />
           )}
         </div>

@@ -25,6 +25,12 @@ interface DashboardProps {
   statuses: Record<string, ServerStatus>
   maps: MapDefinition[]
   staticInfo: SystemStaticInfo | null
+  /** Same reasoning as statuses/maps/staticInfo above - lifted to App.tsx so a Start/Update
+   *  action's refresh (see handleUpdate/stopUpdateRestartAll below) can actually stick instead
+   *  of being thrown away the moment this page remounts. */
+  installedById: Record<string, boolean>
+  gameVersionById: Record<string, string | null>
+  refreshInstalled: (profileId: string) => Promise<void>
 }
 
 export default function Dashboard({
@@ -36,7 +42,10 @@ export default function Dashboard({
   onCloseCreateWizard,
   statuses,
   maps,
-  staticInfo
+  staticInfo,
+  installedById,
+  gameVersionById,
+  refreshInstalled
 }: DashboardProps): JSX.Element {
   const visibleProfiles = profiles.filter((p) => !p.hidden)
   const hiddenProfiles = profiles.filter((p) => p.hidden)
@@ -47,8 +56,6 @@ export default function Dashboard({
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragGroupName, setDragGroupName] = useState<string | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
-  const [installedById, setInstalledById] = useState<Record<string, boolean>>({})
-  const [gameVersionById, setGameVersionById] = useState<Record<string, string | null>>({})
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | ServerRunState>('all')
@@ -141,39 +148,6 @@ export default function Dashboard({
   function mapDisplayName(mapId: string): string {
     return maps.find((m) => m.id === mapId)?.displayName ?? mapId
   }
-
-  useEffect(() => {
-    let cancelled = false
-    void Promise.all(
-      profiles.map(async (p) => [p.id, await window.api.server.isInstalled(p.id)] as const)
-    ).then((entries) => {
-      if (!cancelled) setInstalledById(Object.fromEntries(entries))
-    })
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profiles.map((p) => `${p.id}:${p.installDir}`).join(',')])
-
-  async function refreshInstalled(profileId: string): Promise<void> {
-    const installed = await window.api.server.isInstalled(profileId)
-    setInstalledById((prev) => ({ ...prev, [profileId]: installed }))
-  }
-
-  // One-shot per profile list change - reads whatever's already cached/known (or reads it
-  // once from the log if not), no polling/"Detecting..." here like the Analytics tab does.
-  useEffect(() => {
-    let cancelled = false
-    void Promise.all(
-      profiles.map(async (p) => [p.id, await window.api.server.getGameVersion(p.id)] as const)
-    ).then((entries) => {
-      if (!cancelled) setGameVersionById(Object.fromEntries(entries))
-    })
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profiles.map((p) => p.id).join(',')])
 
   async function handleImport(): Promise<void> {
     setImportError('')
