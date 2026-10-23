@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import type { IniTemplateApplyResult, IniTemplateContent, ServerProfile } from '@shared/types'
 import { confirmAction } from '../lib/confirmAction'
 
@@ -19,6 +19,16 @@ interface OverrideFormState {
  *  own block at the end of the file, the override's block last so it wins over the generic
  *  template (see src/main/lib/iniTemplates.ts). */
 export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewProps): JSX.Element {
+  // Same convention as the Dashboard/PlayersView: a server hidden there is hidden here too
+  // (nothing to apply a template to that the user has deliberately tucked away), and the
+  // rest are organized by their own ServerProfile.group - ungrouped first, then each named
+  // group alphabetically - instead of one long flat list.
+  const visibleProfiles = profiles.filter((p) => !p.hidden)
+  const ungroupedProfiles = visibleProfiles.filter((p) => !p.group.trim())
+  const groupNames = Array.from(new Set(visibleProfiles.filter((p) => p.group.trim()).map((p) => p.group.trim()))).sort(
+    (a, b) => a.localeCompare(b)
+  )
+
   const [generic, setGeneric] = useState<IniTemplateContent>(EMPTY_CONTENT)
   const [loading, setLoading] = useState(true)
   const [savingGeneric, setSavingGeneric] = useState(false)
@@ -46,7 +56,7 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
     try {
       const [genericContent, overrideFlags] = await Promise.all([
         window.api.iniTemplates.getGeneric(),
-        Promise.all(profiles.map(async (p) => [p.id, await window.api.iniTemplates.getOverride(p.id)] as const))
+        Promise.all(visibleProfiles.map(async (p) => [p.id, await window.api.iniTemplates.getOverride(p.id)] as const))
       ])
       setGeneric(genericContent)
       setOverridesByProfile(Object.fromEntries(overrideFlags.map(([id, o]) => [id, o !== null])))
@@ -149,6 +159,25 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
     } finally {
       setApplyingAll(false)
     }
+  }
+
+  function renderOverrideRow(profile: ServerProfile): JSX.Element {
+    return (
+      <tr key={profile.id}>
+        <td>{profile.name}</td>
+        <td>{overridesByProfile[profile.id] ? 'Yes' : <span className="muted">None</span>}</td>
+        <td className="ini-templates-row-actions">
+          {applyErrorById[profile.id] && <span className="error-message">{applyErrorById[profile.id]}</span>}
+          {applySuccessId === profile.id && <span className="status-message">Applied</span>}
+          <button type="button" onClick={() => void openOverrideForm(profile)}>
+            Edit Override
+          </button>
+          <button type="button" onClick={() => void applyOne(profile)} disabled={applyingId === profile.id}>
+            {applyingId === profile.id ? 'Applying...' : 'Apply'}
+          </button>
+        </td>
+      </tr>
+    )
   }
 
   return (
@@ -256,7 +285,7 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
 
           <section className="cluster-section">
             <h3>Per-Server Overrides</h3>
-            {profiles.length === 0 ? (
+            {visibleProfiles.length === 0 ? (
               <p className="empty-state">No ARK servers yet.</p>
             ) : (
               <table className="map-manager-table">
@@ -268,21 +297,14 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
                   </tr>
                 </thead>
                 <tbody>
-                  {profiles.map((profile) => (
-                    <tr key={profile.id}>
-                      <td>{profile.name}</td>
-                      <td>{overridesByProfile[profile.id] ? 'Yes' : <span className="muted">None</span>}</td>
-                      <td className="ini-templates-row-actions">
-                        {applyErrorById[profile.id] && <span className="error-message">{applyErrorById[profile.id]}</span>}
-                        {applySuccessId === profile.id && <span className="status-message">Applied</span>}
-                        <button type="button" onClick={() => void openOverrideForm(profile)}>
-                          Edit Override
-                        </button>
-                        <button type="button" onClick={() => void applyOne(profile)} disabled={applyingId === profile.id}>
-                          {applyingId === profile.id ? 'Applying...' : 'Apply'}
-                        </button>
-                      </td>
-                    </tr>
+                  {ungroupedProfiles.map((profile) => renderOverrideRow(profile))}
+                  {groupNames.map((groupName) => (
+                    <Fragment key={groupName}>
+                      <tr className="ini-templates-group-row">
+                        <td colSpan={3}>{groupName}</td>
+                      </tr>
+                      {visibleProfiles.filter((p) => p.group.trim() === groupName).map((profile) => renderOverrideRow(profile))}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

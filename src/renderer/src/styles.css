@@ -3964,6 +3964,16 @@ label.checkbox {
   padding: 2px 8px;
 }
 
+.ini-templates-group-row td {
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 6px 10px;
+}
+
 .ini-templates-apply-summary {
   border: 1px solid var(--border);
   border-radius: 8px;
