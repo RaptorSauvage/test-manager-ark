@@ -133,6 +133,25 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     expect(content.indexOf('MaxPlayers=10')).toBeGreaterThan(markerIndex)
   })
 
+  it("the forced SessionName always wins, even if the server's own override tries to set its own", async () => {
+    // A real imported override file (see the "existing INI files" use case) very plausibly
+    // carries its own SessionName line - without stripping it, that line would be the file's
+    // last occurrence of the key and win under ARK's own last-value-wins ini parsing.
+    const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
+    mockGeneric.value = { gameUserSettingsIni: '', gameIni: '' }
+    mockOverrides.value.set('p1', {
+      profileId: 'p1',
+      gameUserSettingsIni: '[SessionSettings]\nSessionName=Some Other Name\n[ServerSettings]\nMaxPlayers=10',
+      gameIni: ''
+    })
+    applyIniTemplate(makeProfile({ installDir, name: 'My Cool Server' }))
+
+    const content = fs.readFileSync(gusPath, 'utf-8')
+    expect(content).toContain('SessionName=My Cool Server')
+    expect(content).not.toContain('Some Other Name')
+    expect(content).toContain('MaxPlayers=10')
+  })
+
   it('re-applying replaces the previous server-specific block instead of appending a second one', async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = { gameUserSettingsIni: '[ServerSettings]\nMaxPlayers=70', gameIni: '' }

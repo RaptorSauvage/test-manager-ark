@@ -14,8 +14,9 @@ import { upsertIniKeys, writeServerSpecificBlock, type IniUpsertEntry } from './
  * appended as a dedicated block behind a `;Server Specific INI` comment at the end of the
  * file (see writeServerSpecificBlock) - the same convention ARK server owners already use by
  * hand, since a later `key=value` wins over an earlier one with the same key. SessionName is
- * always force-set to the profile's own name as part of the generic pass, so a server's
- * display name only has to be typed once, in the Manager itself, rather than in any template.
+ * always force-set to the profile's own name as part of the generic pass, and stripped out
+ * of the override if present there too (see stripSessionName), so a server's display name
+ * is controlled by the Manager alone, never by anything pasted or imported into a template.
  */
 
 /** The `ini` package expands a dotted section name into nested objects by default (e.g.
@@ -54,6 +55,19 @@ function flatten(parsed: Record<string, unknown>): IniUpsertEntry[] {
   return entries
 }
 
+/** The server's display name is owned entirely by its profile in the Manager, never by a
+ *  template - dropped from the override before it's written so a pasted/imported override
+ *  file that happens to carry its own SessionName (very likely, since that's an ordinary
+ *  line in any real GameUserSettings.ini) can never win over the forced one. Doing this here
+ *  rather than relying on write order matters because the override is written in its own
+ *  trailing block (see writeServerSpecificBlock) - physically after the forced SessionName
+ *  upsertIniKeys already placed higher in the file, so an un-stripped override SessionName
+ *  would otherwise be the file's last occurrence of that key and win under ARK's own
+ *  last-value-wins ini parsing. */
+function stripSessionName(entries: IniUpsertEntry[]): IniUpsertEntry[] {
+  return entries.filter((entry) => !(entry.section.toLowerCase() === 'sessionsettings' && entry.key.toLowerCase() === 'sessionname'))
+}
+
 function snapshotBeforeApply(profileId: string, installDir: string, filePath: string): void {
   try {
     const previous = fs.readFileSync(filePath, 'utf-8')
@@ -79,7 +93,9 @@ function buildGeneric(generic: IniTemplateContent): { gus: IniUpsertEntry[]; gam
 export function applyIniTemplate(profile: ServerProfile): void {
   const generic = buildGeneric(getIniTemplateGeneric())
   const override = getIniTemplateOverride(profile.id)
-  const overrideGus = flatten(parseTemplateText(override?.gameUserSettingsIni ?? '', `${profile.name}'s GameUserSettings.ini override`))
+  const overrideGus = stripSessionName(
+    flatten(parseTemplateText(override?.gameUserSettingsIni ?? '', `${profile.name}'s GameUserSettings.ini override`))
+  )
   const overrideGame = flatten(parseTemplateText(override?.gameIni ?? '', `${profile.name}'s Game.ini override`))
 
   // Always wins, regardless of what either template says for this one key - see this

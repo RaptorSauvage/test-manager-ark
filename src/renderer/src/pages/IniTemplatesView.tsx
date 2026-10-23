@@ -23,6 +23,7 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
   const [loading, setLoading] = useState(true)
   const [savingGeneric, setSavingGeneric] = useState(false)
   const [genericStatus, setGenericStatus] = useState('')
+  const [genericImportError, setGenericImportError] = useState('')
   const [overridesByProfile, setOverridesByProfile] = useState<Record<string, boolean>>({})
 
   const [applyingId, setApplyingId] = useState<string | null>(null)
@@ -51,6 +52,20 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
       setOverridesByProfile(Object.fromEntries(overrideFlags.map(([id, o]) => [id, o !== null])))
     } finally {
       setLoading(false)
+    }
+  }
+
+  /** Opens the native file picker and, if a file was chosen, hands its raw text to
+   *  `onLoaded` - lets any of the four textareas below be filled from a .ini file the user
+   *  already has on disk instead of retyping it. */
+  async function importIniFile(onLoaded: (text: string) => void, onError: (message: string) => void): Promise<void> {
+    onError('')
+    const filePath = await window.api.dialog.selectIniFile()
+    if (!filePath) return
+    try {
+      onLoaded(await window.api.iniTemplates.readFile(filePath))
+    } catch (err) {
+      onError((err as Error).message)
     }
   }
 
@@ -183,9 +198,24 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
         <>
           <section className="cluster-section">
             <h3>Generic Template (every server)</h3>
+            {genericImportError && <p className="error-message">{genericImportError}</p>}
             <div className="settings-grid">
               <label className="wizard-field">
-                GameUserSettings.ini
+                <div className="ini-template-field-header">
+                  <span>GameUserSettings.ini</span>
+                  <button
+                    type="button"
+                    className="ini-template-import-btn"
+                    onClick={() =>
+                      void importIniFile(
+                        (text) => setGeneric((g) => ({ ...g, gameUserSettingsIni: text })),
+                        setGenericImportError
+                      )
+                    }
+                  >
+                    Import from file...
+                  </button>
+                </div>
                 <textarea
                   className="ini-template-textarea"
                   value={generic.gameUserSettingsIni}
@@ -195,7 +225,16 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
                 />
               </label>
               <label className="wizard-field">
-                Game.ini
+                <div className="ini-template-field-header">
+                  <span>Game.ini</span>
+                  <button
+                    type="button"
+                    className="ini-template-import-btn"
+                    onClick={() => void importIniFile((text) => setGeneric((g) => ({ ...g, gameIni: text })), setGenericImportError)}
+                  >
+                    Import from file...
+                  </button>
+                </div>
                 <textarea
                   className="ini-template-textarea"
                   value={generic.gameIni}
@@ -262,12 +301,30 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
             </div>
             <p className="wizard-subtitle">
               These lines are appended behind a <code>;Server Specific INI</code> comment, after the generic
-              template, so they win for this one server only.
+              template, so they win for this one server only. You can paste in an existing .ini file wholesale -
+              its own SessionName, if it has one, is always ignored in favor of this server&apos;s real name.
             </p>
             {overrideError && <p className="error-message">{overrideError}</p>}
             <div className="wizard-body">
               <label className="wizard-field">
-                GameUserSettings.ini override
+                <div className="ini-template-field-header">
+                  <span>GameUserSettings.ini override</span>
+                  <button
+                    type="button"
+                    className="ini-template-import-btn"
+                    onClick={() =>
+                      void importIniFile(
+                        (text) =>
+                          setOverrideForm((prev) =>
+                            prev ? { ...prev, content: { ...prev.content, gameUserSettingsIni: text } } : prev
+                          ),
+                        setOverrideError
+                      )
+                    }
+                  >
+                    Import from file...
+                  </button>
+                </div>
                 <textarea
                   className="ini-template-textarea"
                   value={overrideForm.content.gameUserSettingsIni}
@@ -278,7 +335,21 @@ export default function IniTemplatesView({ profiles, onBack }: IniTemplatesViewP
                 />
               </label>
               <label className="wizard-field">
-                Game.ini override
+                <div className="ini-template-field-header">
+                  <span>Game.ini override</span>
+                  <button
+                    type="button"
+                    className="ini-template-import-btn"
+                    onClick={() =>
+                      void importIniFile(
+                        (text) => setOverrideForm((prev) => (prev ? { ...prev, content: { ...prev.content, gameIni: text } } : prev)),
+                        setOverrideError
+                      )
+                    }
+                  >
+                    Import from file...
+                  </button>
+                </div>
                 <textarea
                   className="ini-template-textarea"
                   value={overrideForm.content.gameIni}

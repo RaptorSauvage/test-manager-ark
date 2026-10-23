@@ -1033,7 +1033,9 @@ export const IPC = {
   clusterExport: 'cluster:export',
   clusterImport: 'cluster:import',
   dialogSaveClusterBundleFile: 'dialog:save-cluster-bundle-file',
-  dialogSelectClusterBundleFile: 'dialog:select-cluster-bundle-file'
+  dialogSelectClusterBundleFile: 'dialog:select-cluster-bundle-file',
+  dialogSelectIniFile: 'dialog:select-ini-file',
+  iniTemplatesReadFile: 'ini-templates:read-file'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
@@ -1203,6 +1205,7 @@ export interface Api {
     selectProfileFile: () => Promise<string | null>
     saveClusterBundleFile: () => Promise<string | null>
     selectClusterBundleFile: () => Promise<string | null>
+    selectIniFile: () => Promise<string | null>
   }
   cluster: {
     export: (filePath: string) => Promise<void>
@@ -1399,6 +1402,10 @@ export interface Api {
     /** Same, for every ARK profile at once - never rejects itself; each profile's own
      *  success/failure is reported in the returned array instead. */
     applyAll: () => Promise<IniTemplateApplyResult[]>
+    /** Reads back an existing .ini file's raw text, picked via dialog.selectIniFile - lets
+     *  a template/override textarea be filled from a file the user already has on disk
+     *  instead of retyping it. Rejects with a readable error if the file can't be read. */
+    readFile: (filePath: string) => Promise<string>
   }
   /** Desktop mirror of the web dashboard's own Files tab - same underlying logic
    *  (src/main/lib/fileBrowser.ts), exposed over IPC instead of HTTP. Every call can reject;

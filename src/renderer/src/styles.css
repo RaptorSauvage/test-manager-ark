@@ -3952,6 +3952,18 @@ label.checkbox {
   white-space: pre;
 }
 
+.ini-template-field-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ini-template-import-btn {
+  font-size: 0.78rem;
+  padding: 2px 8px;
+}
+
 .ini-templates-apply-summary {
   border: 1px solid var(--border);
   border-radius: 8px;

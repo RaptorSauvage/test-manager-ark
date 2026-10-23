@@ -78,4 +78,18 @@ export function registerDialogHandlers(mainWindow: BrowserWindow): void {
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
   })
+
+  ipcMain.handle(IPC.dialogSelectIniFile, async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      title: 'Import an existing .ini file',
+      filters: [
+        { name: 'INI files', extensions: ['ini'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+    refocus(mainWindow)
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
 }

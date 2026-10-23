@@ -44,7 +44,8 @@ const api: Api = {
     saveProfileFile: (defaultName: string) => ipcRenderer.invoke(IPC.dialogSaveProfileFile, defaultName),
     selectProfileFile: () => ipcRenderer.invoke(IPC.dialogSelectProfileFile),
     saveClusterBundleFile: () => ipcRenderer.invoke(IPC.dialogSaveClusterBundleFile),
-    selectClusterBundleFile: () => ipcRenderer.invoke(IPC.dialogSelectClusterBundleFile)
+    selectClusterBundleFile: () => ipcRenderer.invoke(IPC.dialogSelectClusterBundleFile),
+    selectIniFile: () => ipcRenderer.invoke(IPC.dialogSelectIniFile)
   },
   cluster: {
     export: (filePath: string) => ipcRenderer.invoke(IPC.clusterExport, filePath),
@@ -195,7 +196,8 @@ const api: Api = {
     saveOverride: (override) => ipcRenderer.invoke(IPC.iniTemplatesSaveOverride, override),
     deleteOverride: (profileId) => ipcRenderer.invoke(IPC.iniTemplatesDeleteOverride, profileId),
     apply: (profileId) => ipcRenderer.invoke(IPC.iniTemplatesApply, profileId),
-    applyAll: () => ipcRenderer.invoke(IPC.iniTemplatesApplyAll)
+    applyAll: () => ipcRenderer.invoke(IPC.iniTemplatesApplyAll),
+    readFile: (filePath) => ipcRenderer.invoke(IPC.iniTemplatesReadFile, filePath)
   },
   fileBrowser: {
     list: (profileId: string, relativePath: string) => ipcRenderer.invoke(IPC.fileBrowserList, profileId, relativePath),

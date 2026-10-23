@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { ipcMain } from 'electron'
 import { IPC, type IniTemplateContent, type IniTemplateProfileOverride } from '@shared/types'
 import {
@@ -30,4 +31,12 @@ export function registerIniTemplatesHandlers(): void {
   ipcMain.handle(IPC.iniTemplatesApply, (_event, profileId: string) => applyIniTemplate(requireProfile(profileId)))
 
   ipcMain.handle(IPC.iniTemplatesApplyAll, () => applyIniTemplateToAll())
+
+  ipcMain.handle(IPC.iniTemplatesReadFile, (_event, filePath: string) => {
+    try {
+      return fs.readFileSync(filePath, 'utf-8')
+    } catch (err) {
+      throw new Error(`Couldn't read ${filePath}: ${(err as Error).message}`)
+    }
+  })
 }
