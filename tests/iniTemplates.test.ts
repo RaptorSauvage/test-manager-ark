@@ -118,6 +118,19 @@ describe('applyIniTemplate/applyIniTemplateToAll', () => {
     expect(content).toContain('SessionName=My Cool Server')
   })
 
+  it('sets SessionName by replacing its value in place, not by adding a separate trailing block for it', async () => {
+    const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
+    fs.writeFileSync(gusPath, '[SessionSettings]\nSessionName=Old Name\nPort=7777\n', 'utf-8')
+    mockGeneric.value = { gameUserSettingsIni: '', gameIni: '' }
+    applyIniTemplate(makeProfile({ installDir, name: 'My Cool Server' }))
+
+    const content = fs.readFileSync(gusPath, 'utf-8')
+    expect(content).toContain('SessionName=My Cool Server')
+    expect(content).not.toContain('Old Name')
+    expect(content.match(/SessionName=/g)).toHaveLength(1)
+    expect(content).not.toMatch(/;.*Server Name/i)
+  })
+
   it('preserves comments and blank lines from the generic template and the override exactly as typed/imported', async () => {
     const { applyIniTemplate } = await import('../src/main/lib/iniTemplates')
     mockGeneric.value = {

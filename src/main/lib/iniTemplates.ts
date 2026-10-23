@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { IniTemplateApplyResult, ServerProfile } from '@shared/types'
 import { listProfiles, getIniTemplateGeneric, getIniTemplateOverride, recordConfigFileHistory } from '../store'
 import { resolveConfigDir } from './config'
-import { writeTrailingSections } from './gameConfigWrite'
+import { upsertIniKey, writeTrailingSections } from './gameConfigWrite'
 
 /**
  * INI Templates - a cluster-wide "generic" template and a profile's own "override" are each
@@ -12,18 +12,18 @@ import { writeTrailingSections } from './gameConfigWrite'
  * rather than parsed into individual `key=value` entries and losing anything that isn't
  * itself a setting. The override's block comes after the generic one, so it wins for any key
  * both define, under the game's own last-value-wins ini parsing - the same convention ARK
- * server owners already use by hand. SessionName is always written as its own block, last of
- * all, forcing the profile's own name regardless of what either template says - a line
- * matching SessionName is also stripped out of both templates before they're written, so an
- * imported file that happens to carry its own SessionName (very likely, since that's an
- * ordinary line in any real GameUserSettings.ini) can never end up physically last and win
- * instead. Everything above the first of these three markers, including anything the user
- * wrote in by hand before ever using this tool, is left completely untouched.
+ * server owners already use by hand. SessionName is different: rather than another trailing
+ * block, the Manager just replaces that one line's value in place (see upsertIniKey) with
+ * the profile's own name, same as any other single setting it owns outright. A line matching
+ * SessionName is stripped out of both templates before they're written, so an imported file
+ * that happens to carry its own SessionName (very likely, since that's an ordinary line in
+ * any real GameUserSettings.ini) can never reintroduce a second, conflicting one. Everything
+ * above the first of the two trailing markers, including anything the user wrote in by hand
+ * before ever using this tool, is left completely untouched.
  */
 
 const GENERIC_MARKER = ';Generic Template (Bober Server Manager)'
 const OVERRIDE_MARKER = ';Server Specific INI'
-const NAME_MARKER = ';Server Name (set by Bober Server Manager - do not edit)'
 
 function stripSessionNameLines(text: string): string {
   return text
@@ -59,9 +59,9 @@ export function applyIniTemplate(profile: ServerProfile): void {
     snapshotBeforeApply(profile.id, profile.installDir, gusPath)
     writeTrailingSections(gusPath, [
       { marker: GENERIC_MARKER, body: stripSessionNameLines(generic.gameUserSettingsIni) },
-      { marker: OVERRIDE_MARKER, body: stripSessionNameLines(override?.gameUserSettingsIni ?? '') },
-      { marker: NAME_MARKER, body: `[SessionSettings]\nSessionName=${profile.name}` }
+      { marker: OVERRIDE_MARKER, body: stripSessionNameLines(override?.gameUserSettingsIni ?? '') }
     ])
+    upsertIniKey(gusPath, 'SessionSettings', 'SessionName', profile.name)
   } catch (err) {
     throw new Error(`GameUserSettings.ini: ${(err as Error).message}`)
   }
