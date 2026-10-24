@@ -4176,3 +4176,13 @@ label.checkbox {
     transform: rotate(360deg);
   }
 }
+
+/* Keeps a mutually-exclusive top-level view (Dashboard/MinecraftDashboard's own shell)
+   mounted in the background instead of being torn down and rebuilt by React every time
+   ServerDetail/GroupConsoleView takes over - see App.tsx's own comment where this is used.
+   Plain `display: none` rather than unmounting: the hidden tree keeps its state/effects
+   alive, so navigating back shows it exactly as it was instead of flashing through a fresh
+   mount's defaults while everything re-fetches. */
+.app-view-hidden {
+  display: none;
+}

@@ -374,21 +374,20 @@ export default function App(): JSX.Element {
   // Settings/SteamCMD/Profile Management/Map Manager render as a right-side drawer (see
   // SidePanel) layered on top of whatever mainContent below ends up being, instead of
   // replacing it outright - so this page tree no longer needs to special-case them.
-  const mainContent = (() => {
-    if (gameMode === 'minecraft') {
-      if (minecraftSelected) {
-        return (
-          <MinecraftServerDetail
-            profile={minecraftSelected}
-            initialTab={minecraftInitialTab}
-            onBack={() => setMinecraftSelectedId(null)}
-            onProfileChange={handleMinecraftProfileChange}
-          />
-        )
-      }
-
-      return (
-        <div className="app-shell">
+  //
+  // The Dashboard/MinecraftDashboard shell below is always rendered once gameMode first
+  // reaches it, merely hidden (via .app-view-hidden, plain CSS display:none) rather than
+  // conditionally unmounted whenever ServerDetail/GroupConsoleView takes over - it used to be
+  // a genuine `if (selected) return <ServerDetail ... />` early return, which meant every
+  // single Back click fully tore down Dashboard and rebuilt it from an empty default state,
+  // visibly flashing through placeholder data (raw map ids, "Stopped" for a server that was
+  // actually running, generic hardware-card text) while everything it needs re-fetched from
+  // scratch. Keeping it mounted in the background means it's already showing the right thing
+  // the instant it's shown again, same as it would if you'd just never navigated away.
+  const mainContent =
+    gameMode === 'minecraft' ? (
+      <>
+        <div className={minecraftSelected ? 'app-shell app-view-hidden' : 'app-shell'}>
           <nav className="app-sidebar">
             <GameSwitch mode={gameMode} onChange={setGameMode} />
             <button
@@ -433,107 +432,108 @@ export default function App(): JSX.Element {
             )}
           </div>
         </div>
-      )
-    }
-
-    if (selected) {
-      return (
-        <ServerDetail
-          profile={selected}
-          initialTab={initialTab}
-          onBack={() => setSelectedId(null)}
-          onProfileChange={handleProfileChange}
-        />
-      )
-    }
-
-    if (groupConsoleTarget) {
-      const groupProfiles = profiles.filter((p) => groupConsoleTarget.profileIds.includes(p.id))
-      return (
-        <GroupConsoleView
-          groupName={groupConsoleTarget.groupName}
-          profiles={groupProfiles}
-          onBack={() => setGroupConsoleTarget(null)}
-          onOpenProfile={handleOpenProfile}
-        />
-      )
-    }
-
-    return (
-      <div className="app-shell">
-        <nav className="app-sidebar">
-          <GameSwitch mode={gameMode} onChange={setGameMode} />
-          <button
-            type="button"
-            className={mainPage === 'dashboard' ? 'active' : ''}
-            onClick={() => setMainPage('dashboard')}
-            title="Dashboard"
-          >
-            <SidebarIcon mask={dashboardIcon} />
-          </button>
-          <button
-            type="button"
-            className={mainPage === 'clusterData' ? 'active' : ''}
-            onClick={() => setMainPage('clusterData')}
-            title="Cluster Dashboard"
-          >
-            <SidebarIcon mask={clusterIcon} />
-          </button>
-          <button
-            type="button"
-            className={mainPage === 'players' ? 'active' : ''}
-            onClick={() => setMainPage('players')}
-            title="Players"
-          >
-            <SidebarIcon mask={playersIcon} />
-          </button>
-          <button
-            type="button"
-            className="app-sidebar-bottom-group"
-            onClick={() => setShowChangelog(true)}
-            title="What's New"
-          >
-            <SidebarIcon emoji="🔔" />
-          </button>
-          <button
-            type="button"
-            className={mainPage === 'managerLog' ? 'active' : ''}
-            onClick={() => setMainPage('managerLog')}
-            title="Log"
-          >
-            <SidebarIcon mask={logIcon} />
-          </button>
-          <button type="button" onClick={openDataSettings} title="Settings">
-            <SidebarIcon mask={settingsIcon} />
-          </button>
-        </nav>
-        <div className="app-content">
-          {mainPage === 'clusterData' ? (
-            <ClusterDataView profiles={profiles} onOpenGroup={handleOpenGroup} />
-          ) : mainPage === 'players' ? (
-            <PlayersView profiles={profiles} />
-          ) : mainPage === 'managerLog' ? (
-            <ManagerLogView />
-          ) : (
-            <Dashboard
-              profiles={profiles}
-              onProfilesChange={handleProfilesChange}
-              onOpenProfile={handleOpenProfile}
-              showCreateWizard={showCreateWizard}
-              onOpenCreateWizard={() => setShowCreateWizard(true)}
-              onCloseCreateWizard={() => setShowCreateWizard(false)}
-              statuses={statuses}
-              maps={maps}
-              staticInfo={hardwareStaticInfo}
-              installedById={installedById}
-              gameVersionById={gameVersionById}
-              refreshInstalled={refreshInstalled}
-            />
-          )}
+        {minecraftSelected && (
+          <MinecraftServerDetail
+            profile={minecraftSelected}
+            initialTab={minecraftInitialTab}
+            onBack={() => setMinecraftSelectedId(null)}
+            onProfileChange={handleMinecraftProfileChange}
+          />
+        )}
+      </>
+    ) : (
+      <>
+        <div className={selected || groupConsoleTarget ? 'app-shell app-view-hidden' : 'app-shell'}>
+          <nav className="app-sidebar">
+            <GameSwitch mode={gameMode} onChange={setGameMode} />
+            <button
+              type="button"
+              className={mainPage === 'dashboard' ? 'active' : ''}
+              onClick={() => setMainPage('dashboard')}
+              title="Dashboard"
+            >
+              <SidebarIcon mask={dashboardIcon} />
+            </button>
+            <button
+              type="button"
+              className={mainPage === 'clusterData' ? 'active' : ''}
+              onClick={() => setMainPage('clusterData')}
+              title="Cluster Dashboard"
+            >
+              <SidebarIcon mask={clusterIcon} />
+            </button>
+            <button
+              type="button"
+              className={mainPage === 'players' ? 'active' : ''}
+              onClick={() => setMainPage('players')}
+              title="Players"
+            >
+              <SidebarIcon mask={playersIcon} />
+            </button>
+            <button
+              type="button"
+              className="app-sidebar-bottom-group"
+              onClick={() => setShowChangelog(true)}
+              title="What's New"
+            >
+              <SidebarIcon emoji="🔔" />
+            </button>
+            <button
+              type="button"
+              className={mainPage === 'managerLog' ? 'active' : ''}
+              onClick={() => setMainPage('managerLog')}
+              title="Log"
+            >
+              <SidebarIcon mask={logIcon} />
+            </button>
+            <button type="button" onClick={openDataSettings} title="Settings">
+              <SidebarIcon mask={settingsIcon} />
+            </button>
+          </nav>
+          <div className="app-content">
+            {mainPage === 'clusterData' ? (
+              <ClusterDataView profiles={profiles} onOpenGroup={handleOpenGroup} />
+            ) : mainPage === 'players' ? (
+              <PlayersView profiles={profiles} />
+            ) : mainPage === 'managerLog' ? (
+              <ManagerLogView />
+            ) : (
+              <Dashboard
+                profiles={profiles}
+                onProfilesChange={handleProfilesChange}
+                onOpenProfile={handleOpenProfile}
+                showCreateWizard={showCreateWizard}
+                onOpenCreateWizard={() => setShowCreateWizard(true)}
+                onCloseCreateWizard={() => setShowCreateWizard(false)}
+                statuses={statuses}
+                maps={maps}
+                staticInfo={hardwareStaticInfo}
+                installedById={installedById}
+                gameVersionById={gameVersionById}
+                refreshInstalled={refreshInstalled}
+              />
+            )}
+          </div>
         </div>
-      </div>
+        {selected ? (
+          <ServerDetail
+            profile={selected}
+            initialTab={initialTab}
+            onBack={() => setSelectedId(null)}
+            onProfileChange={handleProfileChange}
+          />
+        ) : (
+          groupConsoleTarget && (
+            <GroupConsoleView
+              groupName={groupConsoleTarget.groupName}
+              profiles={profiles.filter((p) => groupConsoleTarget.profileIds.includes(p.id))}
+              onBack={() => setGroupConsoleTarget(null)}
+              onOpenProfile={handleOpenProfile}
+            />
+          )
+        )}
+      </>
     )
-  })()
 
   return (
     <>

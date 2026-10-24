@@ -12,6 +12,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-10-24',
+    title: 'The Dashboard no longer rebuilds itself every time you come back to it',
+    details: [
+      'Going further than yesterday\'s fix: the Dashboard (and the Minecraft Dashboard) now stay loaded in the background while you\'re on a server\'s own page, instead of being torn down and rebuilt from scratch every time you click Back. Besides finishing off the data flash from before, this also smooths out the brief jolt everything (icons included) used to have when the whole grid repainted at once on every single visit.'
+    ]
+  },
+  {
     date: '2026-10-23',
     title: 'Fixed a flash when returning to the Dashboard from a server\'s own page',
     details: [
