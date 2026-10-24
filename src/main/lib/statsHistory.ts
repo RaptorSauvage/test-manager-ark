@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import path from 'node:path'
 import type { StatSample } from '@shared/types'
 import { getDataDir } from './dataDir'
@@ -131,8 +132,16 @@ export function recordStatSample(profileId: string, sample: StatSample): void {
 }
 
 /** Callers only ever .filter()/.map() this into a new array, never mutate it in place, so
- *  handing back the cached array by reference (once loaded) is safe. */
-function readAllSamples(): StoredStatSample[] {
+ *  handing back the cached array by reference (once loaded) is safe.
+ *
+ *  Async (fs.promises), not fs.readFileSync - the cache above only helps from the *second*
+ *  read onward; the first read after app start (or the rare read right after an age-based
+ *  trim invalidates the cache) still has to load the whole file, which can be up to
+ *  AppSettings.statsHistoryMaxSizeMB (1GB by default) - a sync read of that size blocks the
+ *  entire Electron main process (every window, every other IPC call) for however long the
+ *  disk I/O takes, exactly the kind of freeze a real report tied to opening the Cluster Data
+ *  tab for the first time after startup. */
+async function readAllSamples(): Promise<StoredStatSample[]> {
   if (cachedSamples) return cachedSamples
 
   const logPath = getStatsHistoryPath()
@@ -142,7 +151,7 @@ function readAllSamples(): StoredStatSample[] {
   }
   let raw: string
   try {
-    raw = fs.readFileSync(logPath, 'utf-8')
+    raw = await fsPromises.readFile(logPath, 'utf-8')
   } catch (err) {
     // A disk-level read failure must not crash whatever asked for this history - a real
     // report on Windows showed exactly this throwing out of the stats-history:get IPC
@@ -238,13 +247,13 @@ function computeBucketWidth(start: number, now: number, maxPoints: number): numb
  *  recorded sample, if `sinceMs` is null - the "All" time scale), downsampled to at most
  *  `maxPoints` points. `now` defaults to the real current time - only ever overridden by
  *  tests, so bucket width math doesn't depend on wall-clock timing during a test run. */
-export function readStatsHistory(
+export async function readStatsHistory(
   profileId: string,
   sinceMs: number | null,
   maxPoints = 500,
   now = Date.now()
-): StatSample[] {
-  const filtered = readAllSamples()
+): Promise<StatSample[]> {
+  const filtered = (await readAllSamples())
     .filter((s) => s.profileId === profileId && (sinceMs === null || s.time >= sinceMs))
     .map(({ time, cpu, memoryMB, players }) => ({ time, cpu, memoryMB, players }))
   if (filtered.length === 0) return []
@@ -341,13 +350,13 @@ function combineClusterHistory(
  * This mirrors the live Cluster Dashboard's own "combined CPU/RAM/players across running
  * servers" aggregation, just applied to history instead of a single live snapshot.
  */
-export function readClusterStatsHistory(
+export async function readClusterStatsHistory(
   profileIds: string[],
   sinceMs: number | null,
   maxPoints = 500,
   now = Date.now()
-): StatSample[] {
-  return combineClusterHistory(readAllSamples(), profileIds, sinceMs, maxPoints, now)
+): Promise<StatSample[]> {
+  return combineClusterHistory(await readAllSamples(), profileIds, sinceMs, maxPoints, now)
 }
 
 /**
@@ -359,13 +368,13 @@ export function readClusterStatsHistory(
  * each group multiplied that cost by the group count on every single poll, for no benefit
  * over doing it once.
  */
-export function readClusterStatsHistoryForGroups(
+export async function readClusterStatsHistoryForGroups(
   groupProfileIds: Record<string, string[]>,
   sinceMs: number | null,
   maxPoints = 500,
   now = Date.now()
-): Record<string, StatSample[]> {
-  const allSamples = readAllSamples()
+): Promise<Record<string, StatSample[]>> {
+  const allSamples = await readAllSamples()
   const result: Record<string, StatSample[]> = {}
   for (const [group, profileIds] of Object.entries(groupProfileIds)) {
     result[group] = combineClusterHistory(allSamples, profileIds, sinceMs, maxPoints, now)

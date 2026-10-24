@@ -22,16 +22,23 @@ function sortKey(event: GroupConsoleEvent): string {
  * Falls back to the live log for a profile that's never been archived yet (a fresh install,
  * or one that simply hasn't started since this feature shipped), so nothing regresses from
  * before this existed.
+ *
+ * Reads every profile's backlog concurrently (Promise.all), not one after another - each
+ * read is already bounded in size, but doing them one at a time on Electron's single main
+ * thread still meant the whole app (every window, every other IPC call) sat blocked for the
+ * sum of all of them whenever the Cluster Data group console was opened on a cluster with
+ * many profiles. Concurrently, it's bounded by the slowest single read instead.
  */
-export function getGroupConsoleBacklog(profiles: ServerProfile[]): GroupConsoleEvent[] {
-  const tagged: GroupConsoleEvent[] = []
-  for (const profile of profiles) {
-    const events = hasClusterLogArchive(profile.id) ? readClusterLogArchiveBacklog(profile.id) : readLogBacklog(profile.installDir)
-    for (const event of events) {
-      tagged.push({ ...event, profileId: profile.id, profileName: profile.name })
-    }
-  }
-  return tagged.sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
+export async function getGroupConsoleBacklog(profiles: ServerProfile[]): Promise<GroupConsoleEvent[]> {
+  const perProfile = await Promise.all(
+    profiles.map(async (profile) => {
+      const events = hasClusterLogArchive(profile.id)
+        ? await readClusterLogArchiveBacklog(profile.id)
+        : await readLogBacklog(profile.installDir)
+      return events.map((event) => ({ ...event, profileId: profile.id, profileName: profile.name }))
+    })
+  )
+  return perProfile.flat().sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
 }
 
 /**

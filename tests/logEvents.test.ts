@@ -1,5 +1,6 @@
 import { describe, expect, it, afterEach, vi } from 'vitest'
 import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import {
@@ -270,11 +271,11 @@ describe('readLogBacklog', () => {
     fs.rmSync(testDir, { recursive: true, force: true })
   })
 
-  it('returns an empty array when the log file does not exist yet', () => {
-    expect(readLogBacklog(testDir)).toEqual([])
+  it('returns an empty array when the log file does not exist yet', async () => {
+    expect(await readLogBacklog(testDir)).toEqual([])
   })
 
-  it('reads and parses every classifiable line in the file', () => {
+  it('reads and parses every classifiable line in the file', async () => {
     fs.mkdirSync(logDir, { recursive: true })
     fs.writeFileSync(
       logPath,
@@ -283,11 +284,11 @@ describe('readLogBacklog', () => {
         '[2026.07.27-21.25.35:084][345]2026.07.27_21.25.35: LeRaptorSauvage [UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] left this ARK!'
       ].join('\n')
     )
-    const events = readLogBacklog(testDir)
+    const events = await readLogBacklog(testDir)
     expect(events.map((e) => e.label)).toEqual(['JOIN', 'LEFT'])
   })
 
-  it('drops events matching a given disabled-labels set', () => {
+  it('drops events matching a given disabled-labels set', async () => {
     fs.mkdirSync(logDir, { recursive: true })
     fs.writeFileSync(
       logPath,
@@ -296,31 +297,31 @@ describe('readLogBacklog', () => {
         '[2026.07.27-21.25.35:084][345]2026.07.27_21.25.35: LeRaptorSauvage [UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] left this ARK!'
       ].join('\n')
     )
-    const events = readLogBacklog(testDir, new Set(['JOIN']))
+    const events = await readLogBacklog(testDir, new Set(['JOIN']))
     expect(events.map((e) => e.label)).toEqual(['LEFT'])
   })
 
-  it('keeps every event when no disabled-labels set is given', () => {
+  it('keeps every event when no disabled-labels set is given', async () => {
     fs.mkdirSync(logDir, { recursive: true })
     fs.writeFileSync(
       logPath,
       '[2026.07.27-21.25.23:191][991]2026.07.27_21.25.23: LeRaptorSauvage [UniqueNetId:0002dbe9ab20413e9b8e7e1562b76868 Platform:None] joined this ARK!'
     )
-    expect(readLogBacklog(testDir)).toHaveLength(1)
+    expect(await readLogBacklog(testDir)).toHaveLength(1)
   })
 
-  it('returns an empty backlog instead of throwing when the disk read itself fails', () => {
+  it('returns an empty backlog instead of throwing when the disk read itself fails', async () => {
     // readFileTail (used by readLogBacklog, and reused by clusterLogArchive.ts for its own
     // archive file) is called from the desktop Console tab, the Web Dashboard's own console,
     // and the Cluster Data group console - a real report on Windows showed a disk-level read
     // failure crashing an IPC/HTTP handler that read through here.
     fs.mkdirSync(logDir, { recursive: true })
     fs.writeFileSync(logPath, 'some content')
-    const spy = vi.spyOn(fs, 'statSync').mockImplementation(() => {
+    const spy = vi.spyOn(fsPromises, 'stat').mockImplementation(() => {
       throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
     })
     try {
-      expect(readLogBacklog(testDir)).toEqual([])
+      expect(await readLogBacklog(testDir)).toEqual([])
     } finally {
       spy.mockRestore()
     }
@@ -335,14 +336,14 @@ describe('readFileTail', () => {
     fs.rmSync(testDir, { recursive: true, force: true })
   })
 
-  it('never throws when the disk read itself fails', () => {
+  it('never throws when the disk read itself fails', async () => {
     fs.mkdirSync(testDir, { recursive: true })
     fs.writeFileSync(filePath, 'some content')
-    const spy = vi.spyOn(fs, 'openSync').mockImplementation(() => {
+    const spy = vi.spyOn(fsPromises, 'open').mockImplementation(() => {
       throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
     })
     try {
-      expect(readFileTail(filePath, 1000)).toBe('')
+      expect(await readFileTail(filePath, 1000)).toBe('')
     } finally {
       spy.mockRestore()
     }

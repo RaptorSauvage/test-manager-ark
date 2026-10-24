@@ -15,7 +15,7 @@ function requireProfile(profileId: string): ServerProfile {
 let stopWatching: (() => void) | null = null
 
 export function registerGroupConsoleHandlers(webContents: WebContents): void {
-  ipcMain.handle(IPC.groupConsoleSubscribe, (_event, profileIds: string[]) => {
+  ipcMain.handle(IPC.groupConsoleSubscribe, async (_event, profileIds: string[]) => {
     stopWatching?.()
     const profiles = profileIds
       .map((id) => getProfile(id))

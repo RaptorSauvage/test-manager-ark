@@ -80,9 +80,9 @@ describe('clusterLogArchive', () => {
     expect(p.endsWith('some-profile-id.jsonl')).toBe(true)
   })
 
-  it('reports no archive and an empty backlog before anything has ever been watched', () => {
+  it('reports no archive and an empty backlog before anything has ever been watched', async () => {
     expect(hasClusterLogArchive('never-watched')).toBe(false)
-    expect(readClusterLogArchiveBacklog('never-watched')).toEqual([])
+    expect(await readClusterLogArchiveBacklog('never-watched')).toEqual([])
   })
 
   it('appends new log growth to the permanent archive while watching, surviving after the watch stops', async () => {
@@ -98,7 +98,7 @@ describe('clusterLogArchive', () => {
     stopClusterLogArchiveWatch(profile.id)
 
     expect(hasClusterLogArchive(profile.id)).toBe(true)
-    expect(readClusterLogArchiveBacklog(profile.id)).toContainEqual(expect.objectContaining({ label: 'JOIN' }))
+    expect(await readClusterLogArchiveBacklog(profile.id)).toContainEqual(expect.objectContaining({ label: 'JOIN' }))
   })
 
   it('only archives events susceptible to being displayed, not raw/noise log lines', async () => {
@@ -113,7 +113,7 @@ describe('clusterLogArchive', () => {
     await wait(150)
     stopClusterLogArchiveWatch(profile.id)
 
-    const backlog = readClusterLogArchiveBacklog(profile.id)
+    const backlog = await readClusterLogArchiveBacklog(profile.id)
     expect(backlog).toHaveLength(1)
     expect(backlog[0]).toMatchObject({ label: 'JOIN' })
 
@@ -154,7 +154,7 @@ describe('clusterLogArchive', () => {
     await wait(150)
     stopClusterLogArchiveWatch(profile.id)
 
-    expect(readClusterLogArchiveBacklog(profile.id)).toContainEqual(expect.objectContaining({ label: 'JOIN' }))
+    expect(await readClusterLogArchiveBacklog(profile.id)).toContainEqual(expect.objectContaining({ label: 'JOIN' }))
   })
 
   it('trims the oldest content once the per-profile size cap is exceeded', async () => {
@@ -246,27 +246,27 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
     return (id) => (id === profile.id ? profile : undefined)
   }
 
-  it('archives a START event the first time a profile is observed transitioning into running', () => {
+  it('archives a START event the first time a profile is observed transitioning into running', async () => {
     const profile = makeNotifyProfile()
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
 
-    const backlog = readClusterLogArchiveBacklog(profile.id)
+    const backlog = await readClusterLogArchiveBacklog(profile.id)
     expect(backlog).toContainEqual(expect.objectContaining({ label: 'START', cls: 'start', text: `${profile.name} started` }))
   })
 
-  it('archives a STOP event the moment a running profile transitions into stopped', () => {
+  it('archives a STOP event the moment a running profile transitions into stopped', async () => {
     const profile = makeNotifyProfile()
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopping' } as ServerStatus, lookup(profile))
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopped' } as ServerStatus, lookup(profile))
 
-    const backlog = readClusterLogArchiveBacklog(profile.id)
+    const backlog = await readClusterLogArchiveBacklog(profile.id)
     expect(backlog).toContainEqual(expect.objectContaining({ label: 'STOP', cls: 'stop', text: `${profile.name} stopped` }))
   })
 
-  it('archives an UPDATE event (not a second STOP) when an update finishes without restarting', () => {
+  it('archives an UPDATE event (not a second STOP) when an update finishes without restarting', async () => {
     const profile = makeNotifyProfile()
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
@@ -275,7 +275,7 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'updating' } as ServerStatus, lookup(profile))
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopped' } as ServerStatus, lookup(profile))
 
-    const backlog = readClusterLogArchiveBacklog(profile.id)
+    const backlog = await readClusterLogArchiveBacklog(profile.id)
     expect(backlog).toContainEqual(expect.objectContaining({ label: 'STOP', cls: 'stop', text: `${profile.name} stopped` }))
     expect(backlog).toContainEqual(expect.objectContaining({ label: 'UPDATE', cls: 'update', text: `${profile.name} updated` }))
     expect(backlog.filter((e) => e.label === 'STOP')).toHaveLength(1)
@@ -288,7 +288,7 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
     expect(hasClusterLogArchive(profile.id)).toBe(false)
   })
 
-  it('ignores intermediate states and repeated ticks of the same state', () => {
+  it('ignores intermediate states and repeated ticks of the same state', async () => {
     const profile = makeNotifyProfile()
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
@@ -297,7 +297,7 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'restarting' } as ServerStatus, lookup(profile))
     handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'updating' } as ServerStatus, lookup(profile))
 
-    const backlog = readClusterLogArchiveBacklog(profile.id)
+    const backlog = await readClusterLogArchiveBacklog(profile.id)
     expect(backlog).toHaveLength(1)
     expect(backlog[0]).toMatchObject({ label: 'START' })
   })
@@ -314,7 +314,7 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
     expect(hasClusterLogArchive(id)).toBe(false)
   })
 
-  it('treats each profile independently', () => {
+  it('treats each profile independently', async () => {
     const profileA = makeNotifyProfile()
     const profileB = makeNotifyProfile()
     const lookupBoth = (id: string): ServerProfile | undefined =>
@@ -324,7 +324,7 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
     handleStatusForClusterLogArchiveNotification({ profileId: profileB.id, state: 'starting' } as ServerStatus, lookupBoth)
     handleStatusForClusterLogArchiveNotification({ profileId: profileA.id, state: 'running' } as ServerStatus, lookupBoth)
 
-    expect(readClusterLogArchiveBacklog(profileA.id)).toContainEqual(expect.objectContaining({ label: 'START' }))
+    expect(await readClusterLogArchiveBacklog(profileA.id)).toContainEqual(expect.objectContaining({ label: 'START' }))
     expect(hasClusterLogArchive(profileB.id)).toBe(false)
   })
 
@@ -386,7 +386,7 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
       serverEvents.emit('status', { profileId: profile.id, state: 'stopped' } as ServerStatus)
       await wait(30)
 
-      const backlog = readClusterLogArchiveBacklog(profile.id)
+      const backlog = await readClusterLogArchiveBacklog(profile.id)
       expect(backlog).toContainEqual(expect.objectContaining({ label: 'START' }))
       expect(backlog).toContainEqual(expect.objectContaining({ label: 'STOP' }))
     } finally {

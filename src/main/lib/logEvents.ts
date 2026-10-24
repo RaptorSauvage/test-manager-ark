@@ -1,4 +1,4 @@
-import fs from 'node:fs'
+import fsPromises, { type FileHandle } from 'node:fs/promises'
 import { PLAYER_NAME_OPEN, PLAYER_NAME_CLOSE, type LogEvent } from '@shared/types'
 import { getLogFilePath } from './serverProcess'
 
@@ -174,20 +174,25 @@ const BACKLOG_MAX_LINES = 60
 /** Reads up to `maxBytes` from the end of a file, dropping a possibly-truncated first line
  *  when starting mid-file. Empty string if the file doesn't exist. Exported for
  *  clusterLogArchive.ts, which reuses just this byte-tail-reading part on its own
- *  differently-formatted (JSON Lines, not raw ShooterGame.log text) archive file. */
-export function readFileTail(filePath: string, maxBytes: number): string {
-  if (!fs.existsSync(filePath)) return ''
-
+ *  differently-formatted (JSON Lines, not raw ShooterGame.log text) archive file.
+ *
+ *  Async (fs.promises), not fs.*Sync - this is called once per profile whenever the Cluster
+ *  Data group console is opened (getGroupConsoleBacklog, run concurrently across every
+ *  profile in the group), and a sync read blocks the entire Electron main process - every
+ *  window, every other IPC call - for as long as that disk I/O takes, for every profile in
+ *  turn. Bounded to maxBytes either way, but a freeze report on a 10+-profile cluster showed
+ *  that bound alone isn't enough once it's multiplied by profile count on the single main
+ *  thread - the same class of bug as getGameVersion's own full-file read, just one level
+ *  removed (bounded size, but still synchronous and still multiplied by profile count). */
+export async function readFileTail(filePath: string, maxBytes: number): Promise<string> {
+  let handle: FileHandle | undefined
   try {
-    const size = fs.statSync(filePath).size
+    const stat = await fsPromises.stat(filePath)
+    const size = stat.size
     const readSize = Math.min(size, maxBytes)
     const buffer = Buffer.alloc(readSize)
-    const fd = fs.openSync(filePath, 'r')
-    try {
-      fs.readSync(fd, buffer, 0, readSize, size - readSize)
-    } finally {
-      fs.closeSync(fd)
-    }
+    handle = await fsPromises.open(filePath, 'r')
+    await handle.read(buffer, 0, readSize, size - readSize)
 
     let text = buffer.toString('utf-8')
     if (readSize < size) {
@@ -196,14 +201,18 @@ export function readFileTail(filePath: string, maxBytes: number): string {
     }
     return text
   } catch (err) {
-    // A disk-level read failure must not crash whatever asked for this backlog - the
-    // desktop Console tab, the Web Dashboard's own console, and the Cluster Data group
-    // console all read through here (readLogBacklog below, and clusterLogArchive.ts's own
-    // reuse of this for its differently-formatted archive file). Same reasoning as every
-    // other read/write call this session already made resilient to a real report of Windows
-    // disk-level failures - '' here just means "nothing to show right now", not "empty log".
-    console.error(`Failed to read from ${filePath}:`, (err as Error).message)
+    // Doubles as "the file doesn't exist yet" (ENOENT) and as the same disk-level-failure
+    // resilience every other read/write call this session already got - the desktop Console
+    // tab, the Web Dashboard's own console, and the Cluster Data group console all read
+    // through here (readLogBacklog below, and clusterLogArchive.ts's own reuse of this for its
+    // differently-formatted archive file). '' here just means "nothing to show right now",
+    // not "empty log".
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.error(`Failed to read from ${filePath}:`, (err as Error).message)
+    }
     return ''
+  } finally {
+    await handle?.close()
   }
 }
 
@@ -215,8 +224,8 @@ export function readFileTail(filePath: string, maxBytes: number): string {
  * per-label toggle); omit it for a caller with its own independent filtering, like the
  * Cluster Data group console.
  */
-export function readLogBacklog(installDir: string, disabledLabels?: ReadonlySet<string>): DatedLogEvent[] {
-  const text = readFileTail(getLogFilePath(installDir), BACKLOG_BYTES)
+export async function readLogBacklog(installDir: string, disabledLabels?: ReadonlySet<string>): Promise<DatedLogEvent[]> {
+  const text = await readFileTail(getLogFilePath(installDir), BACKLOG_BYTES)
   const events = parseLogChunkWithDate(text, createLogEventCaches())
   const filtered = disabledLabels ? events.filter((event) => !disabledLabels.has(event.label)) : events
   return filtered.slice(-BACKLOG_MAX_LINES)

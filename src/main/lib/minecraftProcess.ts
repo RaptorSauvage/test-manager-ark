@@ -129,8 +129,8 @@ export function isPidTracked(profileId: string): boolean {
 /** Reads the tail of the on-disk archive (minecraftConsoleArchive.ts) rather than an
  *  in-memory buffer - survives both a Manager restart and the Minecraft server's own
  *  restarts, since nothing clears the archive file on a fresh start (see startServer below). */
-export function getConsoleBacklog(profileId: string): MinecraftConsoleLine[] {
-  return readMinecraftConsoleArchive(profileId).slice(-CONSOLE_BACKLOG_LIMIT)
+export async function getConsoleBacklog(profileId: string): Promise<MinecraftConsoleLine[]> {
+  return (await readMinecraftConsoleArchive(profileId)).slice(-CONSOLE_BACKLOG_LIMIT)
 }
 
 function appendConsoleLine(profileId: string, text: string): void {

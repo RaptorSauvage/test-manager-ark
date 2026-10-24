@@ -85,8 +85,11 @@ function appendEventsToArchive(profileId: string, events: DatedLogEvent[], maxBy
  *  ShooterGame.log), this survives the server having been restarted since, as long as the
  *  archive watch below was running through that restart. `disabledLabels` is passed through
  *  to the parser the same way readLogBacklog itself takes it. */
-export function readClusterLogArchiveBacklog(profileId: string, disabledLabels?: ReadonlySet<string>): DatedLogEvent[] {
-  const text = readFileTail(getClusterLogArchivePath(profileId), ARCHIVE_READ_BYTES)
+export async function readClusterLogArchiveBacklog(
+  profileId: string,
+  disabledLabels?: ReadonlySet<string>
+): Promise<DatedLogEvent[]> {
+  const text = await readFileTail(getClusterLogArchivePath(profileId), ARCHIVE_READ_BYTES)
   const events: DatedLogEvent[] = []
   for (const line of text.split('\n')) {
     const event = parseArchiveLine(line)

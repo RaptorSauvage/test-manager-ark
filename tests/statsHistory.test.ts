@@ -1,5 +1,6 @@
 import { describe, expect, it, afterEach, vi } from 'vitest'
 import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -39,86 +40,86 @@ describe('statsHistory', () => {
     __resetStatsHistoryCacheForTests()
   })
 
-  it('reports no history before anything has ever been recorded', () => {
-    expect(readStatsHistory('never-recorded', null)).toEqual([])
+  it('reports no history before anything has ever been recorded', async () => {
+    expect(await readStatsHistory('never-recorded', null)).toEqual([])
   })
 
-  it('records and reads back a single sample for a profile', () => {
+  it('records and reads back a single sample for a profile', async () => {
     recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 500, players: 2 })
 
-    const history = readStatsHistory('server-a', null)
+    const history = await readStatsHistory('server-a', null)
     expect(history).toEqual([{ time: 1000, cpu: 10, memoryMB: 500, players: 2 }])
   })
 
-  it('keeps the in-memory cache in sync with a sample recorded after an earlier read warmed it', () => {
+  it('keeps the in-memory cache in sync with a sample recorded after an earlier read warmed it', async () => {
     recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
-    expect(readStatsHistory('server-a', null, 500, 1000)).toHaveLength(1) // warms the cache
+    expect(await readStatsHistory('server-a', null, 500, 1000)).toHaveLength(1) // warms the cache
 
     recordStatSample('server-a', { time: 2000, cpu: 20, memoryMB: 200, players: 2 })
-    expect(readStatsHistory('server-a', null, 500, 2000)).toEqual([
+    expect(await readStatsHistory('server-a', null, 500, 2000)).toEqual([
       { time: 1000, cpu: 10, memoryMB: 100, players: 1 },
       { time: 2000, cpu: 20, memoryMB: 200, players: 2 }
     ])
   })
 
-  it('drops samples older than statsHistoryMaxAgeHours once the age-trim check runs', () => {
+  it('drops samples older than statsHistoryMaxAgeHours once the age-trim check runs', async () => {
     mockSettings.statsHistoryMaxAgeHours = 1 // keep the numbers small: a 1-hour window
     const HOUR = 60 * 60 * 1000
 
     recordStatSample('server-a', { time: 0, cpu: 1, memoryMB: 1, players: 0 })
-    expect(readStatsHistory('server-a', null, 500, 0)).toHaveLength(1) // warms the cache
+    expect(await readStatsHistory('server-a', null, 500, 0)).toHaveLength(1) // warms the cache
 
     // 2 hours later - past both the 1h retention window and the 5-minute throttle on the
     // trim check itself - the next recordStatSample should drop the now-stale first sample.
     recordStatSample('server-a', { time: 2 * HOUR, cpu: 2, memoryMB: 2, players: 0 })
 
-    const history = readStatsHistory('server-a', null, 500, 2 * HOUR)
+    const history = await readStatsHistory('server-a', null, 500, 2 * HOUR)
     expect(history).toEqual([{ time: 2 * HOUR, cpu: 2, memoryMB: 2, players: 0 }])
     // Not just the cache - the file on disk must reflect the same trim.
     expect(fs.readFileSync(logPath(), 'utf-8')).not.toContain('"time":0')
   })
 
-  it('leaves history alone regardless of age when statsHistoryMaxAgeHours is 0 (disabled)', () => {
+  it('leaves history alone regardless of age when statsHistoryMaxAgeHours is 0 (disabled)', async () => {
     mockSettings.statsHistoryMaxAgeHours = 0
     const YEAR = 365 * 24 * 60 * 60 * 1000
 
     recordStatSample('server-a', { time: 0, cpu: 1, memoryMB: 1, players: 0 })
-    expect(readStatsHistory('server-a', null, 500, 0)).toHaveLength(1)
+    expect(await readStatsHistory('server-a', null, 500, 0)).toHaveLength(1)
 
     recordStatSample('server-a', { time: YEAR, cpu: 2, memoryMB: 2, players: 0 })
-    expect(readStatsHistory('server-a', null, 500, YEAR)).toHaveLength(2)
+    expect(await readStatsHistory('server-a', null, 500, YEAR)).toHaveLength(2)
   })
 
-  it('throttles the age-trim check so it only actually rewrites at most once every 5 minutes', () => {
+  it('throttles the age-trim check so it only actually rewrites at most once every 5 minutes', async () => {
     mockSettings.statsHistoryMaxAgeHours = 1 // 1-hour retention
     const MINUTE = 60 * 1000
     const T0 = 100 * MINUTE
 
     // Already 58 minutes old at T0 - still within the 1h cap once the check below runs.
     recordStatSample('server-old', { time: T0 - 58 * MINUTE, cpu: 1, memoryMB: 1, players: 0 })
-    expect(readStatsHistory('server-old', null, 500, T0)).toHaveLength(1) // warms the cache
+    expect(await readStatsHistory('server-old', null, 500, T0)).toHaveLength(1) // warms the cache
 
     // lastAgeTrimCheckAt starts at 0, so T0 is nowhere near the 5-minute throttle - this is
     // the first real trim check. Nothing is over an hour old yet, so nothing is dropped, but
     // lastAgeTrimCheckAt does become T0.
     recordStatSample('server-b', { time: T0, cpu: 2, memoryMB: 2, players: 0 })
-    expect(readStatsHistory('server-old', null, 500, T0)).toHaveLength(1)
+    expect(await readStatsHistory('server-old', null, 500, T0)).toHaveLength(1)
 
     // 4 minutes later server-old's sample is 62 minutes old - past the cap - but only 4
     // minutes have passed since the check at T0, well inside the 5-minute throttle, so this
     // must not trigger another trim pass yet.
     recordStatSample('server-c', { time: T0 + 4 * MINUTE, cpu: 3, memoryMB: 3, players: 0 })
-    expect(readStatsHistory('server-old', null, 500, T0 + 4 * MINUTE)).toHaveLength(1)
+    expect(await readStatsHistory('server-old', null, 500, T0 + 4 * MINUTE)).toHaveLength(1)
 
     // 10 minutes after T0 - past the throttle - the next call finally re-checks and drops it.
     recordStatSample('server-d', { time: T0 + 10 * MINUTE, cpu: 4, memoryMB: 4, players: 0 })
-    expect(readStatsHistory('server-old', null, 500, T0 + 10 * MINUTE)).toHaveLength(0)
+    expect(await readStatsHistory('server-old', null, 500, T0 + 10 * MINUTE)).toHaveLength(0)
   })
 
-  it('reflects a trim even when an earlier read had already warmed the cache beforehand', () => {
+  it('reflects a trim even when an earlier read had already warmed the cache beforehand', async () => {
     mockSettings.statsHistoryMaxSizeMB = 1
     recordStatSample('server-a', { time: 1, cpu: 1, memoryMB: 1, players: 1 })
-    expect(readStatsHistory('server-a', null)).toHaveLength(1) // warms the cache pre-trim
+    expect(await readStatsHistory('server-a', null)).toHaveLength(1) // warms the cache pre-trim
 
     const filler = 'x'.repeat(2000)
     for (let i = 0; i < 1000; i++) {
@@ -128,25 +129,25 @@ describe('statsHistory', () => {
 
     // A cache left stale from the pre-trim read would still have server-a's long-gone
     // sample; the trim must invalidate it so this reflects the file as it is now.
-    expect(readStatsHistory('server-a', null)).toEqual([])
+    expect(await readStatsHistory('server-a', null)).toEqual([])
     expect(fs.statSync(logPath()).size).toBeLessThanOrEqual(1024 * 1024)
   })
 
-  it('only returns samples belonging to the requested profile', () => {
+  it('only returns samples belonging to the requested profile', async () => {
     recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 500, players: 2 })
     recordStatSample('server-b', { time: 1000, cpu: 99, memoryMB: 999, players: 9 })
 
-    expect(readStatsHistory('server-a', null)).toEqual([{ time: 1000, cpu: 10, memoryMB: 500, players: 2 }])
+    expect(await readStatsHistory('server-a', null)).toEqual([{ time: 1000, cpu: 10, memoryMB: 500, players: 2 }])
   })
 
-  it('excludes samples before sinceMs', () => {
+  it('excludes samples before sinceMs', async () => {
     recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 500, players: 2 })
     recordStatSample('server-a', { time: 5000, cpu: 20, memoryMB: 600, players: 3 })
 
-    expect(readStatsHistory('server-a', 3000)).toEqual([{ time: 5000, cpu: 20, memoryMB: 600, players: 3 }])
+    expect(await readStatsHistory('server-a', 3000)).toEqual([{ time: 5000, cpu: 20, memoryMB: 600, players: 3 }])
   })
 
-  it('downsamples to at most maxPoints, averaging within each bucket', () => {
+  it('downsamples to at most maxPoints, averaging within each bucket', async () => {
     for (let i = 0; i < 100; i++) {
       recordStatSample('server-a', { time: i * 1000, cpu: i, memoryMB: i * 10, players: 1 })
     }
@@ -154,7 +155,7 @@ describe('statsHistory', () => {
     // now = the last sample's own time, so the [0, 99000] window matches the actual data span
     // instead of being dwarfed by the real wall-clock "now" (which would collapse everything
     // into a single, enormous bucket).
-    const history = readStatsHistory('server-a', 0, 10, 99000)
+    const history = await readStatsHistory('server-a', 0, 10, 99000)
     expect(history.length).toBeGreaterThan(1)
     expect(history.length).toBeLessThanOrEqual(10)
     // Chronological order preserved.
@@ -163,7 +164,7 @@ describe('statsHistory', () => {
     }
   })
 
-  it('does not stack-overflow finding the earliest sample on a large "All" query', () => {
+  it('does not stack-overflow finding the earliest sample on a large "All" query', async () => {
     // A naive Math.min(...samples.map(s => s.time)) spreads every element as its own
     // function argument, which throws "Maximum call stack size exceeded" well before this
     // many samples - a single profile with stats enabled reaches six figures of recorded
@@ -178,70 +179,69 @@ describe('statsHistory', () => {
     fs.mkdirSync(path.dirname(logPath()), { recursive: true })
     fs.writeFileSync(logPath(), lines.join('\n') + '\n')
 
-    expect(() => readStatsHistory('server-a', null, 500, SAMPLE_COUNT)).not.toThrow()
-    const history = readStatsHistory('server-a', null, 500, SAMPLE_COUNT)
+    // A naive implementation would throw (or reject) here - letting the `await` below
+    // propagate that is enough to fail the test, same intent as the old toThrow() check.
+    const history = await readStatsHistory('server-a', null, 500, SAMPLE_COUNT)
     expect(history.length).toBeGreaterThan(0)
     // The first bucket's own reported time is its *last* sample (see bucketAverage) - just
     // confirm it's the earliest bucket, not that the whole 200,000-sample range got lost.
     expect(history[0].time).toBeLessThan(SAMPLE_COUNT / 100)
 
-    expect(() => readClusterStatsHistory(['server-a'], null, 500, SAMPLE_COUNT)).not.toThrow()
-    expect(() =>
-      readClusterStatsHistoryForGroups({ SomeGroup: ['server-a'] }, null, 500, SAMPLE_COUNT)
-    ).not.toThrow()
+    await readClusterStatsHistory(['server-a'], null, 500, SAMPLE_COUNT)
+    await readClusterStatsHistoryForGroups({ SomeGroup: ['server-a'] }, null, 500, SAMPLE_COUNT)
   })
 
-  it('sums CPU/RAM/players across multiple profiles per time bucket for a group query', () => {
+  it('sums CPU/RAM/players across multiple profiles per time bucket for a group query', async () => {
     recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
     recordStatSample('server-b', { time: 1000, cpu: 20, memoryMB: 200, players: 2 })
 
-    const combined = readClusterStatsHistory(['server-a', 'server-b'], null, 1, 1000)
+    const combined = await readClusterStatsHistory(['server-a', 'server-b'], null, 1, 1000)
     expect(combined).toHaveLength(1)
     expect(combined[0]).toMatchObject({ cpu: 30, memoryMB: 300, players: 3 })
   })
 
-  it('a group query ignores profiles not in the requested list', () => {
+  it('a group query ignores profiles not in the requested list', async () => {
     recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
     recordStatSample('server-other', { time: 1000, cpu: 999, memoryMB: 999, players: 9 })
 
-    const combined = readClusterStatsHistory(['server-a'], null, 1, 1000)
+    const combined = await readClusterStatsHistory(['server-a'], null, 1, 1000)
     expect(combined).toEqual([{ time: 1000, cpu: 10, memoryMB: 100, players: 1 }])
   })
 
-  it('readClusterStatsHistoryForGroups returns the same result per group as readClusterStatsHistory would individually', () => {
+  it('readClusterStatsHistoryForGroups returns the same result per group as readClusterStatsHistory would individually', async () => {
     recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
     recordStatSample('server-b', { time: 1000, cpu: 20, memoryMB: 200, players: 2 })
     recordStatSample('server-c', { time: 1000, cpu: 5, memoryMB: 50, players: 0 })
 
-    const byGroup = readClusterStatsHistoryForGroups(
+    const byGroup = await readClusterStatsHistoryForGroups(
       { GroupOne: ['server-a', 'server-b'], GroupTwo: ['server-c'] },
       null,
       1,
       1000
     )
-    expect(byGroup.GroupOne).toEqual(readClusterStatsHistory(['server-a', 'server-b'], null, 1, 1000))
-    expect(byGroup.GroupTwo).toEqual(readClusterStatsHistory(['server-c'], null, 1, 1000))
+    expect(byGroup.GroupOne).toEqual(await readClusterStatsHistory(['server-a', 'server-b'], null, 1, 1000))
+    expect(byGroup.GroupTwo).toEqual(await readClusterStatsHistory(['server-c'], null, 1, 1000))
     expect(byGroup.GroupOne[0]).toMatchObject({ cpu: 30, memoryMB: 300, players: 3 })
   })
 
-  it('readClusterStatsHistoryForGroups only reads the history file once regardless of group count', () => {
-    const readFileSyncSpy = vi.spyOn(fs, 'readFileSync')
+  it('readClusterStatsHistoryForGroups only reads the history file once regardless of group count', async () => {
+    const readFileSpy = vi.spyOn(fsPromises, 'readFile')
     recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
     recordStatSample('server-b', { time: 1000, cpu: 20, memoryMB: 200, players: 2 })
-    readFileSyncSpy.mockClear()
+    readFileSpy.mockClear()
 
-    readClusterStatsHistoryForGroups(
+    await readClusterStatsHistoryForGroups(
       { GroupOne: ['server-a'], GroupTwo: ['server-b'], GroupThree: ['server-a', 'server-b'] },
       null,
       1,
       1000
     )
 
-    expect(readFileSyncSpy).toHaveBeenCalledTimes(1)
-    readFileSyncSpy.mockRestore()
+    expect(readFileSpy).toHaveBeenCalledTimes(1)
+    readFileSpy.mockRestore()
   })
 
-  it('drops a trailing bucket that only some profiles have reported into yet, rather than understating the total', () => {
+  it('drops a trailing bucket that only some profiles have reported into yet, rather than understating the total', async () => {
     // Both profiles land a sample in every 1000ms bucket up through t=3000 - a settled,
     // fully-populated tail. Only server-a has reported into the newest bucket (t=4000) by
     // the time this is read; server-b's own recording tick just hasn't fired yet. Without
@@ -253,12 +253,12 @@ describe('statsHistory', () => {
     }
     recordStatSample('server-a', { time: 4000, cpu: 10, memoryMB: 100, players: 1 })
 
-    const combined = readClusterStatsHistory(['server-a', 'server-b'], null, 4, 4000)
+    const combined = await readClusterStatsHistory(['server-a', 'server-b'], null, 4, 4000)
     expect(combined).toHaveLength(3)
     expect(combined[combined.length - 1]).toMatchObject({ time: 3000, cpu: 30, memoryMB: 300, players: 3 })
   })
 
-  it('keeps a trailing bucket once every profile that is still reporting has landed a sample in it', () => {
+  it('keeps a trailing bucket once every profile that is still reporting has landed a sample in it', async () => {
     for (const time of [1000, 2000]) {
       recordStatSample('server-a', { time, cpu: 10, memoryMB: 100, players: 1 })
       recordStatSample('server-b', { time, cpu: 20, memoryMB: 200, players: 2 })
@@ -268,7 +268,7 @@ describe('statsHistory', () => {
     recordStatSample('server-a', { time: 3000, cpu: 10, memoryMB: 100, players: 1 })
     recordStatSample('server-b', { time: 3000, cpu: 20, memoryMB: 200, players: 2 })
 
-    const combined = readClusterStatsHistory(['server-a', 'server-b'], null, 3, 3000)
+    const combined = await readClusterStatsHistory(['server-a', 'server-b'], null, 3, 3000)
     expect(combined).toHaveLength(3)
     expect(combined[combined.length - 1]).toMatchObject({ time: 3000, cpu: 30, memoryMB: 300, players: 3 })
   })
@@ -296,12 +296,12 @@ describe('statsHistory', () => {
     expect(fs.statSync(logPath()).size).toBeLessThanOrEqual(1024 * 1024)
   })
 
-  it('skips a corrupt line instead of losing the whole history to it', () => {
+  it('skips a corrupt line instead of losing the whole history to it', async () => {
     recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
     fs.appendFileSync(logPath(), 'not valid json\n')
     recordStatSample('server-a', { time: 2000, cpu: 20, memoryMB: 200, players: 2 })
 
-    expect(readStatsHistory('server-a', null, 500, 2000)).toEqual([
+    expect(await readStatsHistory('server-a', null, 500, 2000)).toEqual([
       { time: 1000, cpu: 10, memoryMB: 100, players: 1 },
       { time: 2000, cpu: 20, memoryMB: 200, players: 2 }
     ])
@@ -321,22 +321,22 @@ describe('statsHistory', () => {
     }
   })
 
-  it('returns an empty history instead of throwing when the disk read itself fails - a real report on Windows had this crash the stats-history:get IPC handler', () => {
+  it('returns an empty history instead of throwing when the disk read itself fails - a real report on Windows had this crash the stats-history:get IPC handler', async () => {
     recordStatSample('server-a', { time: 1000, cpu: 10, memoryMB: 100, players: 1 })
     __resetStatsHistoryCacheForTests() // force the next read to actually hit disk, not the warm cache
 
-    const spy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+    const spy = vi.spyOn(fsPromises, 'readFile').mockImplementation(() => {
       throw Object.assign(new Error('unknown error, read'), { code: 'UNKNOWN', errno: -4094 })
     })
     try {
-      expect(readStatsHistory('server-a', null, 500, 2000)).toEqual([])
+      expect(await readStatsHistory('server-a', null, 500, 2000)).toEqual([])
     } finally {
       spy.mockRestore()
     }
 
     // The failed read must not have been cached as "no history" - now that reads work again,
     // the real sample from before the failure is still there.
-    expect(readStatsHistory('server-a', null, 500, 2000)).toEqual([
+    expect(await readStatsHistory('server-a', null, 500, 2000)).toEqual([
       { time: 1000, cpu: 10, memoryMB: 100, players: 1 }
     ])
   })

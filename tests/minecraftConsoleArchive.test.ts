@@ -39,19 +39,19 @@ describe('minecraftConsoleArchive', () => {
     expect(p.endsWith(`${profileId}.jsonl`)).toBe(true)
   })
 
-  it('reads back appended lines in order', () => {
+  it('reads back appended lines in order', async () => {
     appendConsoleLineToArchive(profileId, { text: 'first line', ts: 1 })
     appendConsoleLineToArchive(profileId, { text: 'second line', ts: 2 })
 
-    const lines = readMinecraftConsoleArchive(profileId)
+    const lines = await readMinecraftConsoleArchive(profileId)
     expect(lines.map((l) => l.text)).toEqual(['first line', 'second line'])
   })
 
-  it('returns an empty array when nothing has been archived yet', () => {
-    expect(readMinecraftConsoleArchive(profileId)).toEqual([])
+  it('returns an empty array when nothing has been archived yet', async () => {
+    expect(await readMinecraftConsoleArchive(profileId)).toEqual([])
   })
 
-  it('trims the archive back under maxBytes once it grows past it, keeping the most recent lines', () => {
+  it('trims the archive back under maxBytes once it grows past it, keeping the most recent lines', async () => {
     const maxBytes = 200
     for (let i = 0; i < 50; i++) {
       appendConsoleLineToArchive(profileId, { text: `line-${i}`, ts: i }, maxBytes)
@@ -61,7 +61,7 @@ describe('minecraftConsoleArchive', () => {
     const size = fs.statSync(archivePath).size
     expect(size).toBeLessThanOrEqual(maxBytes)
 
-    const lines = readMinecraftConsoleArchive(profileId)
+    const lines = await readMinecraftConsoleArchive(profileId)
     expect(lines.length).toBeGreaterThan(0)
     // The most recent line must always survive a trim.
     expect(lines.at(-1)?.text).toBe('line-49')

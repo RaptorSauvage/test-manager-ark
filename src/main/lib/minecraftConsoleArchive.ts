@@ -67,8 +67,11 @@ export function appendConsoleLineToArchive(profileId: string, line: MinecraftCon
 /** Reads this profile's persistent console archive - survives both a Manager restart and
  *  (since nothing clears this file on a fresh start - see minecraftProcess.ts's startServer)
  *  the Minecraft server's own restarts too. */
-export function readMinecraftConsoleArchive(profileId: string, maxBytes = ARCHIVE_READ_BYTES): MinecraftConsoleLine[] {
-  const text = readFileTail(getMinecraftConsoleArchivePath(profileId), maxBytes)
+export async function readMinecraftConsoleArchive(
+  profileId: string,
+  maxBytes = ARCHIVE_READ_BYTES
+): Promise<MinecraftConsoleLine[]> {
+  const text = await readFileTail(getMinecraftConsoleArchivePath(profileId), maxBytes)
   const lines: MinecraftConsoleLine[] = []
   for (const rawLine of text.split('\n')) {
     const line = parseArchiveLine(rawLine)

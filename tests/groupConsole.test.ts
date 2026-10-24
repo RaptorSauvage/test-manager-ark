@@ -56,11 +56,11 @@ describe('getGroupConsoleBacklog', () => {
     fs.rmSync(getClusterLogArchivePath('b'), { force: true })
   })
 
-  it('tags every event with its profile and merges them sorted by time', () => {
+  it('tags every event with its profile and merges them sorted by time', async () => {
     writeLog(dirA, joinLine) // ts 21:25:23
     writeLog(dirB, leaveLineEarlier) // ts 21:10:35, earlier
 
-    const result = getGroupConsoleBacklog([makeProfile('a', 'ServerA', dirA), makeProfile('b', 'ServerB', dirB)])
+    const result = await getGroupConsoleBacklog([makeProfile('a', 'ServerA', dirA), makeProfile('b', 'ServerB', dirB)])
 
     expect(result).toEqual([
       expect.objectContaining({ profileId: 'b', profileName: 'ServerB', label: 'LEFT', ts: '21:10:35' }),
@@ -68,20 +68,20 @@ describe('getGroupConsoleBacklog', () => {
     ])
   })
 
-  it('sorts by date first, not just by time-of-day, so a later day sorts after an earlier one despite the same HH:MM:SS', () => {
+  it('sorts by date first, not just by time-of-day, so a later day sorts after an earlier one despite the same HH:MM:SS', async () => {
     writeLog(dirA, leaveLineSameTimeNextDay) // 2026.07.28, ts 21:25:23
     writeLog(dirB, joinLine) // 2026.07.27, ts 21:25:23 - earlier day, same time
 
-    const result = getGroupConsoleBacklog([makeProfile('a', 'ServerA', dirA), makeProfile('b', 'ServerB', dirB)])
+    const result = await getGroupConsoleBacklog([makeProfile('a', 'ServerA', dirA), makeProfile('b', 'ServerB', dirB)])
 
     expect(result.map((e) => e.profileId)).toEqual(['b', 'a'])
   })
 
-  it('returns an empty array when none of the profiles have a log file yet', () => {
-    expect(getGroupConsoleBacklog([makeProfile('a', 'ServerA', dirA)])).toEqual([])
+  it('returns an empty array when none of the profiles have a log file yet', async () => {
+    expect(await getGroupConsoleBacklog([makeProfile('a', 'ServerA', dirA)])).toEqual([])
   })
 
-  it('prefers a profile\'s persistent archive over its live ShooterGame.log once one exists', () => {
+  it('prefers a profile\'s persistent archive over its live ShooterGame.log once one exists', async () => {
     // The live log only has the current (post-restart) session's content...
     writeLog(dirA, leaveLineEarlier)
     // ...but the permanent archive (one already-parsed event per line - see
@@ -99,7 +99,7 @@ describe('getGroupConsoleBacklog', () => {
         .join('\n') + '\n'
     )
 
-    const result = getGroupConsoleBacklog([makeProfile('a', 'ServerA', dirA)])
+    const result = await getGroupConsoleBacklog([makeProfile('a', 'ServerA', dirA)])
 
     expect(result).toContainEqual(expect.objectContaining({ label: 'JOIN' }))
     expect(result).toContainEqual(expect.objectContaining({ label: 'LEFT' }))

@@ -521,10 +521,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return
     }
     if (found.kind === 'minecraft') {
-      sendJson(res, 200, getMinecraftConsoleBacklog(found.profile.id).map(toMinecraftLogEvent))
+      sendJson(res, 200, (await getMinecraftConsoleBacklog(found.profile.id)).map(toMinecraftLogEvent))
       return
     }
-    sendJson(res, 200, readLogBacklog(found.profile.installDir, getDisabledLabels()))
+    sendJson(res, 200, await readLogBacklog(found.profile.installDir, getDisabledLabels()))
     return
   }
 
@@ -627,7 +627,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     sendJson(
       res,
       200,
-      getGroupConsoleBacklog(profiles).filter((event) => !disabled.has(event.label))
+      (await getGroupConsoleBacklog(profiles)).filter((event) => !disabled.has(event.label))
     )
     return
   }
@@ -663,7 +663,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     sendJson(
       res,
       200,
-      readClusterStatsHistory(
+      await readClusterStatsHistory(
         profiles.map((p) => p.id),
         Number.isFinite(sinceMs) ? sinceMs : null,
         maxPoints
@@ -685,7 +685,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const sinceMs = sinceParam === null || sinceParam === 'null' ? null : Number(sinceParam)
     const maxPointsParam = url.searchParams.get('maxPoints')
     const maxPoints = maxPointsParam !== null ? Number(maxPointsParam) : undefined
-    sendJson(res, 200, readStatsHistory(profileId, Number.isFinite(sinceMs) ? sinceMs : null, maxPoints))
+    sendJson(res, 200, await readStatsHistory(profileId, Number.isFinite(sinceMs) ? sinceMs : null, maxPoints))
     return
   }
 

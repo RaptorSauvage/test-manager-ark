@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-24',
+    title: 'Fixed a freeze when opening the Cluster Data view or a server group\'s console',
+    details: [
+      'Opening Cluster Data (or a group\'s own live Console) used to lock up the whole Manager for a moment while it read every server\'s recent log history and - the first time since launch - the whole stats history file, which can grow quite large on a long-running cluster. Both are now read in the background instead of freezing the app while they load.'
+    ]
+  },
+  {
+    date: '2026-10-24',
     title: 'Fixed a multi-minute freeze at startup with a cluster of servers',
     details: [
       'For a server that had been running a long time, the Manager was reading that server\'s entire log file from disk just to detect which game version it\'s running - for a log that had grown to hundreds of megabytes or more, and done for every server at once on every startup, this could lock up the whole app for several minutes. It now only reads the small part of the log where that information actually is.'

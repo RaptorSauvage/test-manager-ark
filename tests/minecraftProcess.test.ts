@@ -38,13 +38,13 @@ function wait(ms: number): Promise<void> {
 /** Waits (polling) until `check()` is true, or throws once `timeoutMs` elapses - `startServer`
  *  transitions from 'starting' to 'running' asynchronously (once the fake server below prints
  *  its own "Done (...)!" line), so tests can't just assert state synchronously after calling it. */
-async function waitUntil(check: () => boolean, timeoutMs = 5000, stepMs = 20): Promise<void> {
+async function waitUntil(check: () => boolean | Promise<boolean>, timeoutMs = 5000, stepMs = 20): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    if (check()) return
+    if (await check()) return
     await wait(stepMs)
   }
-  if (!check()) throw new Error('waitUntil: condition never became true')
+  if (!(await check())) throw new Error('waitUntil: condition never became true')
 }
 
 /** A tiny stand-in for a real Minecraft server process: prints Minecraft's own "ready" log
@@ -139,7 +139,7 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
 
     await waitUntil(() => getStatus(profile.id).state === 'running')
 
-    const backlog = getConsoleBacklog(profile.id)
+    const backlog = await getConsoleBacklog(profile.id)
     expect(backlog.some((l) => l.text.includes('Starting minecraft server'))).toBe(true)
     expect(backlog.some((l) => l.text.includes('Done (1.234s)! For help, type "help"'))).toBe(true)
 
@@ -173,7 +173,7 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
     const sent = sendStdinCommand(profile.id, 'say hello')
     expect(sent).toBe(true)
 
-    await waitUntil(() => getConsoleBacklog(profile.id).some((l) => l.text === 'echo:say hello'))
+    await waitUntil(async () => (await getConsoleBacklog(profile.id)).some((l) => l.text === 'echo:say hello'))
 
     await stopServer(profile)
   })
@@ -188,7 +188,7 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
 
     const status = await stopServer(profile)
     expect(status.state).toBe('stopped')
-    expect(getConsoleBacklog(profile.id).some((l) => l.text === 'Stopping the server')).toBe(true)
+    expect((await getConsoleBacklog(profile.id)).some((l) => l.text === 'Stopping the server')).toBe(true)
   })
 
   it('stopServer does not report a lastError even though the process itself exits with a non-zero code', async () => {
@@ -306,7 +306,7 @@ describe('adoptPersistedMinecraftProcesses (re-attaching after a Manager restart
     expect(status.pid).toBe(adoptedPid)
     expect(status.startedAt).toBe(12345)
     expect(status.consoleAvailable).toBe(false)
-    expect(getConsoleBacklog(profile.id)).toEqual([])
+    expect(await getConsoleBacklog(profile.id)).toEqual([])
   })
 
   it('does not adopt a pid that is no longer alive', () => {
