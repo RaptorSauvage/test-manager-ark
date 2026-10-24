@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-24',
+    title: 'Fixed a multi-minute freeze at startup with a cluster of servers',
+    details: [
+      'For a server that had been running a long time, the Manager was reading that server\'s entire log file from disk just to detect which game version it\'s running - for a log that had grown to hundreds of megabytes or more, and done for every server at once on every startup, this could lock up the whole app for several minutes. It now only reads the small part of the log where that information actually is.'
+    ]
+  },
+  {
+    date: '2026-10-24',
     title: 'The Dashboard no longer rebuilds itself every time you come back to it',
     details: [
       'Going further than yesterday\'s fix: the Dashboard (and the Minecraft Dashboard) now stay loaded in the background while you\'re on a server\'s own page, instead of being torn down and rebuilt from scratch every time you click Back. Besides finishing off the data flash from before, this also smooths out the brief jolt everything (icons included) used to have when the whole grid repainted at once on every single visit.'

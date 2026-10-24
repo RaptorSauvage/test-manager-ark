@@ -15,12 +15,25 @@ export function parseArkVersionFromLog(content: string): string | null {
   return match ? match[1] : null
 }
 
+// The version line is always near the very top of the log (see this file's own doc comment),
+// so there's never a reason to read the rest of it - for a server that's been running a long
+// time, ShooterGame.log can grow to hundreds of MB or more, and this is called via Promise.all
+// for every profile at once (Dashboard/App mount, every Analytics tab poll); reading each one
+// in full really can add up to a multi-minute stall across a cluster of any size, all to find
+// a line that's always within the first few KB.
+const VERSION_SCAN_BYTES = 64 * 1024
+
 export async function getGameVersion(installDir: string): Promise<string | null> {
+  let handle: fs.FileHandle | undefined
   try {
-    const content = await fs.readFile(getLogFilePath(installDir), 'utf-8')
-    return parseArkVersionFromLog(content)
+    handle = await fs.open(getLogFilePath(installDir), 'r')
+    const buffer = Buffer.alloc(VERSION_SCAN_BYTES)
+    const { bytesRead } = await handle.read(buffer, 0, VERSION_SCAN_BYTES, 0)
+    return parseArkVersionFromLog(buffer.toString('utf-8', 0, bytesRead))
   } catch {
     return null
+  } finally {
+    await handle?.close()
   }
 }
 

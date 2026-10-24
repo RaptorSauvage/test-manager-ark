@@ -74,6 +74,22 @@ describe('getGameVersion', () => {
     writeLog('ARK Version: 92.28\n' + 'JOIN: SomePlayer\n'.repeat(200))
     expect(await getGameVersion(installDir)).toBe('92.28')
   })
+
+  it("finds the version in a multi-hundred-MB log without reading the whole thing", async () => {
+    // A real, long-running server's ShooterGame.log can grow far past what's reasonable to
+    // load into memory and regex-scan in full - the version line is always near the very
+    // top, so only a small bounded prefix of the file should ever actually be read.
+    const logDir = path.join(installDir, 'ShooterGame', 'Saved', 'Logs')
+    fs.mkdirSync(logDir, { recursive: true })
+    const logPath = path.join(logDir, 'ShooterGame.log')
+    const fd = fs.openSync(logPath, 'w')
+    fs.writeSync(fd, 'ARK Version: 92.28\n')
+    const chunk = 'JOIN: SomePlayer\n'.repeat(5000) // ~85KB per chunk
+    for (let i = 0; i < 2000; i++) fs.writeSync(fd, chunk) // ~170MB total
+    fs.closeSync(fd)
+
+    expect(await getGameVersion(installDir)).toBe('92.28')
+  }, 20000)
 })
 
 describe('game version cache', () => {
