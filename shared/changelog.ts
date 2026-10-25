@@ -12,6 +12,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-10-25',
+    title: 'Fixed a freeze in a Minecraft server\'s Console tab on a fast-scrolling log',
+    details: [
+      'Leaving a Minecraft server\'s Console tab open on a busy server could make the whole Manager become unresponsive: the feed kept every line it had ever seen instead of a bounded window, and redrew the entire growing list on every single new line. It now keeps only the most recent 500 lines, same as the ARK Cluster Console, and redraws just what actually changed.'
+    ]
+  },
+  {
     date: '2026-10-24',
     title: 'Fixed a freeze when opening the Cluster Data view or a server group\'s console',
     details: [
