@@ -159,6 +159,21 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
     await stopServer(profile)
   })
 
+  it('clamps min memory down to max instead of writing -Xms greater than -Xmx, which the JVM refuses to start on at all', async () => {
+    // Easy to end up in by accident since both fields auto-save on every keystroke
+    // (StartSettingsTab.tsx) - the real-world report was the server crash-looping forever
+    // ("Initial heap size set to a larger value than the maximum heap size").
+    profile.minMemoryMB = 6144
+    profile.maxMemoryMB = 2048
+    startServer(profile)
+    await waitUntil(() => getStatus(profile.id).state === 'running')
+
+    const content = fs.readFileSync(path.join(tmpDir, 'user_jvm_args.txt'), 'utf-8')
+    expect(content).toBe('-Xms2048M\n-Xmx2048M\n')
+
+    await stopServer(profile)
+  })
+
   it('does not return a second entry when starting an already-running profile', async () => {
     const first = startServer(profile)
     const second = startServer(profile)

@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-25',
+    title: 'Fixed a Minecraft server crash-looping forever when Min memory was set above Max memory',
+    details: [
+      'If a Minecraft server\'s Min memory ended up set higher than its Max memory - easy to do by accident since both fields save instantly as you type - Java refused to start at all and the server kept restarting every few seconds in an endless loop. Min memory is now automatically capped to Max memory, so this can no longer happen.'
+    ]
+  },
+  {
+    date: '2026-10-25',
     title: 'Fixed a freeze in a Minecraft server\'s Console tab on a fast-scrolling log',
     details: [
       'Leaving a Minecraft server\'s Console tab open on a busy server could make the whole Manager become unresponsive: the feed kept every line it had ever seen instead of a bounded window, and redrew the entire growing list on every single new line. It now keeps only the most recent 500 lines, same as the ARK Cluster Console, and redraws just what actually changed.'

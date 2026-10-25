@@ -156,9 +156,17 @@ function makeLineSplitter(onLine: (line: string) => void): (chunk: Buffer) => vo
 
 /** -Xms/-Xmx plus any extra JVM flags - shared between jar mode (built straight onto the
  *  java command line below) and script mode (written to user_jvm_args.txt instead, since
- *  the Manager doesn't control that command line - see minecraftProperties.ts). */
+ *  the Manager doesn't control that command line - see minecraftProperties.ts).
+ *
+ *  Clamps min down to max when min > max - the JVM itself refuses to start at all with
+ *  "Initial heap size set to a larger value than the maximum heap size" and keeps
+ *  crash-looping (restarting every few seconds, forever) rather than just ignoring it. That
+ *  combination is easy to end up in by accident: both fields auto-save on every keystroke
+ *  (see StartSettingsTab.tsx), so even typing a smaller max memory value momentarily saves
+ *  min > max the instant the field is cleared before the new digits are typed. */
 function buildJvmArgs(profile: MinecraftProfile): string[] {
-  const args = [`-Xms${profile.minMemoryMB}M`, `-Xmx${profile.maxMemoryMB}M`]
+  const minMB = Math.min(profile.minMemoryMB, profile.maxMemoryMB)
+  const args = [`-Xms${minMB}M`, `-Xmx${profile.maxMemoryMB}M`]
   if (profile.extraJvmArgs.trim()) args.push(...profile.extraJvmArgs.trim().split(/\s+/))
   return args
 }
