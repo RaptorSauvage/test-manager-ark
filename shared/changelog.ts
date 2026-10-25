@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-25',
+    title: 'Fixed a Minecraft memory setting conflict on CurseForge/Overwolf-exported server packs',
+    details: [
+      'A modern CurseForge/Overwolf-exported server pack keeps its own Min/Max memory in its variables.txt file (JAVA_ARGS) rather than the user_jvm_args.txt the Manager was writing to - on a pack like that, editing Min/Max memory in Start Settings had no effect on the running server, and in some cases left two different, conflicting memory settings sitting in two different files at once. The Manager now writes to whichever of the two files that server\'s own launch script actually uses.'
+    ]
+  },
+  {
+    date: '2026-10-25',
     title: 'Fixed a Minecraft server crash-looping forever when Min memory was set above Max memory',
     details: [
       'If a Minecraft server\'s Min memory ended up set higher than its Max memory - easy to do by accident since both fields save instantly as you type - Java refused to start at all and the server kept restarting every few seconds in an endless loop. Min memory is now automatically capped to Max memory, so this can no longer happen.'

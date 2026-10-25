@@ -92,7 +92,14 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-process-test-'))
     fs.writeFileSync(path.join(tmpDir, 'fakeServer.js'), FAKE_SERVER_JS)
     const scriptPath = path.join(tmpDir, 'run.sh')
-    fs.writeFileSync(scriptPath, `#!/bin/sh\nexec node "${path.join(tmpDir, 'fakeServer.js')}"\n`)
+    // Same shape as modern Forge/NeoForge's own generated run.sh - reads user_jvm_args.txt,
+    // which is what lets the Manager's own memory-writing tests below actually apply (see
+    // scriptReadsUserJvmArgs in minecraftProcess.ts) - the fake server itself never reads
+    // this, only the detection logic cares that the string is present in the script.
+    fs.writeFileSync(
+      scriptPath,
+      `#!/bin/sh\n# @user_jvm_args.txt\nexec node "${path.join(tmpDir, 'fakeServer.js')}"\n`
+    )
     fs.chmodSync(scriptPath, 0o755)
 
     profile = {
@@ -170,6 +177,60 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
 
     const content = fs.readFileSync(path.join(tmpDir, 'user_jvm_args.txt'), 'utf-8')
     expect(content).toBe('-Xms2048M\n-Xmx2048M\n')
+
+    await stopServer(profile)
+  })
+
+  it('does not write user_jvm_args.txt for a script that never reads it, to avoid a second, conflicting source of memory settings', async () => {
+    // A real report: a CurseForge-exported modpack's generated script sets its own -Xms/-Xmx
+    // directly on the command line, with no @user_jvm_args.txt reference anywhere - writing
+    // the file regardless risked exactly the "two sources of truth for memory" overlap that
+    // was reported, for a script set up like that.
+    const scriptPath = path.join(tmpDir, 'run.sh')
+    fs.writeFileSync(scriptPath, `#!/bin/sh\nexec node "${path.join(tmpDir, 'fakeServer.js')}"\n`)
+    fs.chmodSync(scriptPath, 0o755)
+
+    startServer(profile)
+    await waitUntil(() => getStatus(profile.id).state === 'running')
+
+    expect(fs.existsSync(path.join(tmpDir, 'user_jvm_args.txt'))).toBe(false)
+
+    await stopServer(profile)
+  })
+
+  it('writes memory to variables.txt\'s own JAVA_ARGS line for a ServerStarterJar-style pack (CurseForge/Overwolf export), instead of user_jvm_args.txt', async () => {
+    // variables.txt's own documentation comment literally contains the string
+    // "user_jvm_args.txt" (explaining that JAVA_ARGS also gets copied there for some
+    // modloaders) - the real report was the Manager false-positive-detecting that mention as
+    // "the script reads user_jvm_args.txt" and writing its own, independent memory settings
+    // there on top of this file's JAVA_ARGS, creating two conflicting sources of truth.
+    fs.writeFileSync(
+      path.join(tmpDir, 'variables.txt'),
+      [
+        '###',
+        "# JAVA_ARGS are arguments to pass to the JVM... also written to the 'user_jvm_args.txt' when using modloaders such as Forge.",
+        '###',
+        'MINECRAFT_VERSION=1.20.1',
+        'MODLOADER=Fabric',
+        'JAVA="java"',
+        'JAVA_ARGS="-Xmx16G -Xms16G"',
+        'RESTART=true',
+        ''
+      ].join('\n')
+    )
+    profile.minMemoryMB = 2048
+    profile.maxMemoryMB = 4096
+    profile.extraJvmArgs = '-XX:+UseG1GC'
+
+    startServer(profile)
+    await waitUntil(() => getStatus(profile.id).state === 'running')
+
+    expect(fs.existsSync(path.join(tmpDir, 'user_jvm_args.txt'))).toBe(false)
+    const content = fs.readFileSync(path.join(tmpDir, 'variables.txt'), 'utf-8')
+    expect(content).toContain('JAVA_ARGS="-Xms2048M -Xmx4096M -XX:+UseG1GC"')
+    // Everything else in the file is left exactly as it was.
+    expect(content).toContain('MODLOADER=Fabric')
+    expect(content).toContain('RESTART=true')
 
     await stopServer(profile)
   })

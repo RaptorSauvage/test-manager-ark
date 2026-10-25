@@ -1,10 +1,11 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import fs from 'node:fs'
 import path from 'node:path'
 import { platform } from 'node:process'
 import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine } from '@shared/minecraft'
 import { findListeningPid, isPidAlive } from './serverProcess'
-import { getMinecraftServerPort, writeUserJvmArgs } from './minecraftProperties'
+import { getMinecraftServerPort, writeUserJvmArgs, hasVariablesTxt, writeVariablesTxtJavaArgs } from './minecraftProperties'
 import { sendMinecraftRconCommand } from './minecraftRcon'
 import { setMinecraftRunningPid, setMinecraftRunningStartedAt } from '../store'
 import { appendConsoleLineToArchive, readMinecraftConsoleArchive } from './minecraftConsoleArchive'
@@ -227,6 +228,37 @@ function killByPid(pid: number): void {
   }
 }
 
+/**
+ * Whether `scriptPath` actually reads user_jvm_args.txt as a java "argfile" (modern
+ * Forge/NeoForge's generated run.bat/run.sh does, via `@user_jvm_args.txt` right on its own
+ * java command line) - checked before startServer below writes to that file at all. Not
+ * every script does: a real report came from a CurseForge-exported pack whose generated
+ * script has its own -Xms/-Xmx written directly on the command line instead, with no
+ * `@user_jvm_args.txt` anywhere - writing the file regardless just leaves a dead one sitting
+ * there for a script like that, harmless on its own, but it's exactly how a *different* pack
+ * can end up with two independent, conflicting sources of truth for memory if its own script
+ * happens to combine both approaches (its own hardcoded flags alongside also reading this
+ * file) - this check means the Manager only ever writes the file for a script actually set
+ * up to read it, instead of unconditionally.
+ *
+ * Specifically the `@`-prefixed argfile form, not a bare mention of the filename - the
+ * ServerStarterJar script (see hasVariablesTxt/writeVariablesTxtJavaArgs in
+ * minecraftProperties.ts, checked first by the caller) documents in its own comments that
+ * *it* writes to user_jvm_args.txt for some modloaders, which would otherwise read as a
+ * false positive here and have the Manager write the same file independently right alongside
+ * it - precisely the overlap this check exists to prevent.
+ *
+ * Errors on the side of still writing it (returns true) if the script can't be read at all,
+ * rather than silently stop applying a Settings change that was already working.
+ */
+function scriptReadsUserJvmArgs(scriptPath: string): boolean {
+  try {
+    return fs.readFileSync(scriptPath, 'utf-8').toLowerCase().includes('@user_jvm_args.txt')
+  } catch {
+    return true
+  }
+}
+
 export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
   const existing = running.get(profile.id)
   if (existing) return existing.status
@@ -242,13 +274,24 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
   let child: ChildProcess
   try {
     if (profile.launchMode === 'script') {
-      // Modern Forge's generated run.bat/run.sh reads this file for -Xms/-Xmx/extra JVM
-      // args - the Manager can't put them on the command line itself in script mode (it
-      // executes the script as-is), so this is what makes editing memory in Settings
-      // actually take effect for a script-launched server.
-      writeUserJvmArgs(profile.installDir, buildJvmArgs(profile))
-
       const scriptPath = path.join(profile.installDir, profile.scriptFileName)
+
+      // The Manager can't put -Xms/-Xmx/extra JVM args on the command line itself in script
+      // mode (it executes the script as-is), so one of these files is what makes editing
+      // memory in Settings actually take effect for a script-launched server - whichever one
+      // the script in `profile.installDir` actually reads for it:
+      //  - variables.txt's own JAVA_ARGS, for a CurseForge/Overwolf-exported pack's
+      //    "ServerStarterJar" universal script (every modloader uses this one nowadays).
+      //  - user_jvm_args.txt, for modern Forge/NeoForge's own older generated run.bat/run.sh.
+      // Checked as two mutually-exclusive branches, never both - writing memory to the one
+      // this particular script doesn't read is harmless on its own, but a real report showed
+      // writing *both* independently creates two conflicting sources of truth for the exact
+      // same setting on a script that happens to read one of them in terms of the other.
+      if (hasVariablesTxt(profile.installDir)) {
+        writeVariablesTxtJavaArgs(profile.installDir, buildJvmArgs(profile))
+      } else if (scriptReadsUserJvmArgs(scriptPath)) {
+        writeUserJvmArgs(profile.installDir, buildJvmArgs(profile))
+      }
       // Same cmd.exe /d /c launch shape as ARK: Survival Evolved's own .bat launch (see
       // serverProcess.ts's writeLaunchBatchFile) - spawning a .bat directly is unreliable on
       // Windows, going through cmd.exe is the confirmed-working way to run one. stdio: 'pipe'

@@ -8,7 +8,9 @@ import {
   getMinecraftRconConfig,
   isEulaAccepted,
   writeUserJvmArgs,
-  upsertServerPropertiesKeys
+  upsertServerPropertiesKeys,
+  hasVariablesTxt,
+  writeVariablesTxtJavaArgs
 } from '../src/main/lib/minecraftProperties'
 
 describe('minecraft properties reading', () => {
@@ -96,6 +98,66 @@ describe('writeUserJvmArgs', () => {
     writeUserJvmArgs(tmpDir, ['-Xms2048M', '-Xmx8192M'])
     const content = fs.readFileSync(path.join(tmpDir, 'user_jvm_args.txt'), 'utf-8')
     expect(content).toBe('-Xms2048M\n-Xmx8192M\n')
+  })
+})
+
+describe('hasVariablesTxt / writeVariablesTxtJavaArgs', () => {
+  let tmpDir: string
+  let filePath: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-variables-test-'))
+    filePath = path.join(tmpDir, 'variables.txt')
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('reports false when variables.txt does not exist', () => {
+    expect(hasVariablesTxt(tmpDir)).toBe(false)
+  })
+
+  it('reports true once variables.txt exists', () => {
+    fs.writeFileSync(filePath, 'JAVA_ARGS=""')
+    expect(hasVariablesTxt(tmpDir)).toBe(true)
+  })
+
+  it("replaces the JAVA_ARGS line in place, leaving every other line (and the file's own documentation comments) untouched", () => {
+    fs.writeFileSync(
+      filePath,
+      [
+        '###',
+        "# JAVA_ARGS are arguments to pass to the JVM. Also written to 'user_jvm_args.txt' for some modloaders.",
+        '###',
+        'MODLOADER=Fabric',
+        'JAVA_ARGS="-Xmx16G -Xms16G"',
+        'RESTART=true'
+      ].join('\n')
+    )
+    writeVariablesTxtJavaArgs(tmpDir, ['-Xms2048M', '-Xmx4096M', '-XX:+UseG1GC'])
+    const content = fs.readFileSync(filePath, 'utf-8')
+    expect(content).toBe(
+      [
+        '###',
+        "# JAVA_ARGS are arguments to pass to the JVM. Also written to 'user_jvm_args.txt' for some modloaders.",
+        '###',
+        'MODLOADER=Fabric',
+        'JAVA_ARGS="-Xms2048M -Xmx4096M -XX:+UseG1GC"',
+        'RESTART=true'
+      ].join('\n')
+    )
+  })
+
+  it('does nothing when the file has no JAVA_ARGS line at all', () => {
+    fs.writeFileSync(filePath, 'MODLOADER=Fabric\nRESTART=true')
+    writeVariablesTxtJavaArgs(tmpDir, ['-Xms2048M', '-Xmx4096M'])
+    expect(fs.readFileSync(filePath, 'utf-8')).toBe('MODLOADER=Fabric\nRESTART=true')
+  })
+
+  it('does nothing (never throws) when variables.txt does not exist at all', () => {
+    expect(() => writeVariablesTxtJavaArgs(tmpDir, ['-Xms2048M', '-Xmx4096M'])).not.toThrow()
+    expect(fs.existsSync(filePath)).toBe(false)
   })
 })
 
