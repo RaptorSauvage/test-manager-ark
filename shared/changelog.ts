@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-25',
+    title: 'Fixed a brief Manager freeze when starting a Minecraft server',
+    details: [
+      'Clicking Start on a Minecraft server could freeze the whole Manager for a few seconds while it checked which file that server\'s script actually uses for its memory settings. That check now runs in the background instead of blocking the app.'
+    ]
+  },
+  {
+    date: '2026-10-25',
     title: 'Fixed a Minecraft memory setting conflict on CurseForge/Overwolf-exported server packs',
     details: [
       'A modern CurseForge/Overwolf-exported server pack keeps its own Min/Max memory in its variables.txt file (JAVA_ARGS) rather than the user_jvm_args.txt the Manager was writing to - on a pack like that, editing Min/Max memory in Start Settings had no effect on the running server, and in some cases left two different, conflicting memory settings sitting in two different files at once. The Manager now writes to whichever of the two files that server\'s own launch script actually uses.'

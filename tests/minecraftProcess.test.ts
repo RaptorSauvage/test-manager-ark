@@ -142,7 +142,10 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
   it('goes starting -> running once the ready marker is seen, and captures console output', async () => {
     const started = startServer(profile)
     expect(started.state).toBe('starting')
-    expect(started.pid).toBeGreaterThan(0)
+    // pid isn't known synchronously any more - the actual spawn is deferred behind an async
+    // memory-settings file check (see minecraftProcess.ts's doSpawn) so it never blocks the
+    // Electron main process on Start. Settles moments later, once the real process exists.
+    await waitUntil(() => (getStatus(profile.id).pid ?? 0) > 0)
 
     await waitUntil(() => getStatus(profile.id).state === 'running')
 

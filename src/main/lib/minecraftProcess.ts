@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import path from 'node:path'
 import { platform } from 'node:process'
 import type { MinecraftProfile, MinecraftServerStatus, MinecraftConsoleLine } from '@shared/minecraft'
@@ -50,6 +50,14 @@ interface RunningMinecraftServer {
    *  launch - see serverProcess.ts's watchForBatchPidHandoff). */
   pidTracked: boolean
   status: MinecraftServerStatus
+  /** Set only on the placeholder entry startServer reserves synchronously before the async
+   *  memory-file checks (see doSpawn) - there's no real process yet (`process` is null, `pid`
+   *  is 0, which must never reach killByPid/isPidAlive: pid 0 means "this whole process
+   *  group" to POSIX kill()). Lets stop/kill requested during that brief window cancel the
+   *  pending spawn outright instead of racing it, or (worse) trying to kill pid 0 - same
+   *  pattern as ARK's own cancelQueuedSpawn for its staggered-start queue slot
+   *  (serverProcess.ts). */
+  cancelPendingSpawn?: () => void
 }
 
 const running = new Map<string, RunningMinecraftServer>()
@@ -249,11 +257,14 @@ function killByPid(pid: number): void {
  * it - precisely the overlap this check exists to prevent.
  *
  * Errors on the side of still writing it (returns true) if the script can't be read at all,
- * rather than silently stop applying a Settings change that was already working.
+ * rather than silently stop applying a Settings change that was already working. Async
+ * (fs.promises), not fs.readFileSync - called from doSpawn below on every single Start, and
+ * a sync read blocks the entire Electron main process for however long the disk I/O takes.
  */
-function scriptReadsUserJvmArgs(scriptPath: string): boolean {
+async function scriptReadsUserJvmArgs(scriptPath: string): Promise<boolean> {
   try {
-    return fs.readFileSync(scriptPath, 'utf-8').toLowerCase().includes('@user_jvm_args.txt')
+    const content = await fsPromises.readFile(scriptPath, 'utf-8')
+    return content.toLowerCase().includes('@user_jvm_args.txt')
   } catch {
     return true
   }
@@ -263,8 +274,41 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
   const existing = running.get(profile.id)
   if (existing) return existing.status
 
-  emitStatus({ profileId: profile.id, state: 'starting', startedAt: Date.now() })
+  const startedAt = Date.now()
+  let cancelled = false
+  const placeholder: MinecraftServerStatus = { profileId: profile.id, state: 'starting', startedAt }
+  // Reserved synchronously, before doSpawn's async memory-file checks below ever run - a
+  // second startServer call for the same profile during that window must see this and dedupe
+  // immediately (the `existing` check above), not race the pending spawn. pid 0 / process
+  // null here means "nothing real yet" - see cancelPendingSpawn's own doc comment and
+  // stopServer/killServer's guard for it below.
+  running.set(profile.id, {
+    process: null,
+    pid: 0,
+    pidTracked: true,
+    status: placeholder,
+    cancelPendingSpawn: () => {
+      cancelled = true
+    }
+  })
+  emitStatus(placeholder)
 
+  void doSpawn(profile, startedAt, () => cancelled)
+
+  return placeholder
+}
+
+/**
+ * The actual OS-level spawn, deferred out of startServer's own synchronous return - the
+ * memory-settings file checks it needs first (hasVariablesTxt/writeVariablesTxtJavaArgs/
+ * writeUserJvmArgs/scriptReadsUserJvmArgs, all async) must never block the Electron main
+ * process while Start is clicked, same as every other sync-fs-call-on-the-main-thread fix
+ * already made this session - a real report tied exactly this moment to a several-second
+ * freeze. `isCancelled` reflects a Stop/Kill requested for this profile while still in this
+ * async window (see startServer's own cancelPendingSpawn) - checked at each point there's
+ * now something to actually cancel.
+ */
+async function doSpawn(profile: MinecraftProfile, startedAt: number, isCancelled: () => boolean): Promise<void> {
   // cmd.exe spawns java as a *child* process rather than replacing itself (unlike a POSIX
   // shell's `exec`, which the fake test server and Forge's own run.sh both use), so on
   // Windows the pid Node hands back for a script launch is cmd.exe's own wrapper pid, not
@@ -287,11 +331,14 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
       // this particular script doesn't read is harmless on its own, but a real report showed
       // writing *both* independently creates two conflicting sources of truth for the exact
       // same setting on a script that happens to read one of them in terms of the other.
-      if (hasVariablesTxt(profile.installDir)) {
-        writeVariablesTxtJavaArgs(profile.installDir, buildJvmArgs(profile))
-      } else if (scriptReadsUserJvmArgs(scriptPath)) {
-        writeUserJvmArgs(profile.installDir, buildJvmArgs(profile))
+      if (await hasVariablesTxt(profile.installDir)) {
+        await writeVariablesTxtJavaArgs(profile.installDir, buildJvmArgs(profile))
+      } else if (await scriptReadsUserJvmArgs(scriptPath)) {
+        await writeUserJvmArgs(profile.installDir, buildJvmArgs(profile))
       }
+
+      if (isCancelled()) return
+
       // Same cmd.exe /d /c launch shape as ARK: Survival Evolved's own .bat launch (see
       // serverProcess.ts's writeLaunchBatchFile) - spawning a .bat directly is unreliable on
       // Windows, going through cmd.exe is the confirmed-working way to run one. stdio: 'pipe'
@@ -303,22 +350,39 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
           ? spawn('cmd.exe', ['/d', '/c', scriptPath], { cwd: profile.installDir, stdio: 'pipe' })
           : spawn('sh', [scriptPath], { cwd: profile.installDir, stdio: 'pipe' })
     } else {
+      if (isCancelled()) return
       child = spawn('java', buildJavaArgs(profile), { cwd: profile.installDir, stdio: 'pipe' })
     }
   } catch (err) {
-    const failed: MinecraftServerStatus = { profileId: profile.id, state: 'error', lastError: (err as Error).message }
-    emitStatus(failed)
-    return failed
+    running.delete(profile.id)
+    if (!isCancelled()) {
+      const failed: MinecraftServerStatus = { profileId: profile.id, state: 'error', lastError: (err as Error).message }
+      emitStatus(failed)
+    }
+    return
   }
 
   const pid = child.pid
   if (!pid) {
+    running.delete(profile.id)
     const failed: MinecraftServerStatus = { profileId: profile.id, state: 'error', lastError: 'Process started without a pid.' }
     emitStatus(failed)
-    return failed
+    return
   }
 
-  const startedAt = Date.now()
+  if (isCancelled()) {
+    // Stop/Kill landed in the narrow gap between the cancellation check above and the
+    // process actually existing - nothing else is tracking it yet (the listeners below
+    // haven't been wired up), so it has to be force-killed right here instead of leaking an
+    // orphaned process nobody in the Manager knows about.
+    try {
+      child.kill()
+    } catch {
+      // Already gone - nothing to do.
+    }
+    return
+  }
+
   const status: MinecraftServerStatus = { profileId: profile.id, state: 'starting', pid, startedAt, consoleAvailable: true }
   running.set(profile.id, { process: child, pid, pidTracked: !launchedViaWindowsScriptWrapper, status })
   setMinecraftRunningPid(profile.id, pid)
@@ -373,8 +437,6 @@ export function startServer(profile: MinecraftProfile): MinecraftServerStatus {
     setMinecraftRunningStartedAt(profile.id, null)
     emitStatus({ profileId: profile.id, state: 'error', lastError: err.message })
   })
-
-  return status
 }
 
 /** Sends a line of input straight to the running process's stdin - the primary way to send
@@ -448,6 +510,23 @@ async function waitForExitOrKill(entry: RunningMinecraftServer, profileId: strin
   finalizeStopped(profileId)
 }
 
+/** If `entry` is still waiting out its async memory-file checks (see startServer/doSpawn's
+ *  own cancelPendingSpawn), cancels the pending spawn outright and finalizes it as stopped -
+ *  there's no real process yet to gracefully save/exit or force-kill, and `entry.pid` is 0
+ *  for exactly that reason (never pass it to killByPid/isPidAlive - pid 0 has a special
+ *  "whole process group" meaning to POSIX kill()). Same pattern, same reasoning, as ARK's own
+ *  cancelIfQueuedSpawn for its staggered-start queue slot (serverProcess.ts). Returns the
+ *  stopped status if it handled it this way, or null if `entry` is a real, already-spawned
+ *  process the caller should handle normally. */
+function cancelIfPendingSpawn(entry: RunningMinecraftServer, profileId: string): MinecraftServerStatus | null {
+  if (!entry.cancelPendingSpawn) return null
+  entry.cancelPendingSpawn()
+  running.delete(profileId)
+  const stopped: MinecraftServerStatus = { profileId, state: 'stopped' }
+  emitStatus(stopped)
+  return stopped
+}
+
 /** Graceful shutdown: writes "stop" to the process's own stdin, which saves the world, kicks
  *  players, and exits on its own - there's no separate save-then-exit RCON handshake to phase
  *  this into the way ARK's stopServerPhased needs. Waits up to graceMs before force-killing.
@@ -457,6 +536,9 @@ async function waitForExitOrKill(entry: RunningMinecraftServer, profileId: strin
 export async function stopServer(profile: MinecraftProfile, graceMs = STOP_GRACE_MS): Promise<MinecraftServerStatus> {
   const entry = running.get(profile.id)
   if (!entry) return { profileId: profile.id, state: 'stopped' }
+
+  const cancelled = cancelIfPendingSpawn(entry, profile.id)
+  if (cancelled) return cancelled
 
   emitStatus({ ...entry.status, state: 'stopping' })
   if (!sendStdinCommand(profile.id, 'stop')) {
@@ -478,6 +560,8 @@ export async function stopServer(profile: MinecraftProfile, graceMs = STOP_GRACE
 export function killServer(profileId: string): MinecraftServerStatus {
   const entry = running.get(profileId)
   if (!entry) return { profileId, state: 'stopped' }
+  const cancelled = cancelIfPendingSpawn(entry, profileId)
+  if (cancelled) return cancelled
   emitStatus({ ...entry.status, state: 'stopping' })
   // See waitForExitOrKill's comment - entry.pid, not entry.process, for the same reason.
   killByPid(entry.pid)

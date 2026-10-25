@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import path from 'node:path'
 import type { MinecraftPropertiesData } from '@shared/minecraft'
 
@@ -92,11 +93,17 @@ export function isEulaAccepted(installDir: string): boolean {
  * in Settings actually take effect for a script-launched server. Overwritten wholesale on
  * every start; a script from an older Forge version (or a fully custom one) that doesn't
  * happen to read this file simply ignores it, harmlessly.
+ *
+ * Async (fs.promises) - this runs on every single Start click (minecraftProcess.ts's
+ * startServer), and a sync write blocks the entire Electron main process for however long
+ * the disk I/O takes, same class of freeze as every other sync-fs-call-on-the-main-thread
+ * fix already made this session. The file itself is tiny, but slow disk I/O (a network
+ * drive, antivirus scanning a freshly-written file) isn't bounded by file size.
  */
-export function writeUserJvmArgs(installDir: string, args: string[]): void {
+export async function writeUserJvmArgs(installDir: string, args: string[]): Promise<void> {
   const filePath = path.join(installDir, 'user_jvm_args.txt')
   try {
-    fs.writeFileSync(filePath, args.map((arg) => `${arg}\n`).join(''), 'utf-8')
+    await fsPromises.writeFile(filePath, args.map((arg) => `${arg}\n`).join(''), 'utf-8')
   } catch (err) {
     // Best-effort - a failed write here just means the server starts with whatever memory
     // its own script/user_jvm_args.txt already had, not a reason to block Start entirely.
@@ -113,9 +120,15 @@ function getVariablesTxtPath(installDir: string): string {
  *  Fabric, Quilt alike) - variables.txt is that script's own config file, always present for
  *  a pack like that, holding JAVA_ARGS (its own equivalent of -Xms/-Xmx) among other things.
  *  Checked before writeVariablesTxtJavaArgs below so startServer only ever writes memory to
- *  *one* of variables.txt or user_jvm_args.txt for a given server, never both. */
-export function hasVariablesTxt(installDir: string): boolean {
-  return fs.existsSync(getVariablesTxtPath(installDir))
+ *  *one* of variables.txt or user_jvm_args.txt for a given server, never both. Async, same
+ *  "don't block the main process on every Start" reasoning as writeUserJvmArgs above. */
+export async function hasVariablesTxt(installDir: string): Promise<boolean> {
+  try {
+    await fsPromises.access(getVariablesTxtPath(installDir))
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -130,18 +143,19 @@ export function hasVariablesTxt(installDir: string): boolean {
  * conflicting sources of truth for the same setting. Does nothing if the file has no
  * JAVA_ARGS line at all (not this script's format after all, or a hand-edited variant) -
  * best-effort, same as writeUserJvmArgs, since a failed update here just means the server
- * starts with whatever memory variables.txt already had.
+ * starts with whatever memory variables.txt already had. Async, same reasoning as
+ * writeUserJvmArgs/hasVariablesTxt above.
  */
-export function writeVariablesTxtJavaArgs(installDir: string, args: string[]): void {
+export async function writeVariablesTxtJavaArgs(installDir: string, args: string[]): Promise<void> {
   const filePath = getVariablesTxtPath(installDir)
   try {
-    const content = fs.readFileSync(filePath, 'utf-8')
+    const content = await fsPromises.readFile(filePath, 'utf-8')
     const eol = content.includes('\r\n') ? '\r\n' : '\n'
     const lines = content.split(/\r\n|\n/)
     const lineIndex = lines.findIndex((line) => /^\s*JAVA_ARGS\s*=/.test(line))
     if (lineIndex === -1) return
     lines[lineIndex] = `JAVA_ARGS="${args.join(' ')}"`
-    fs.writeFileSync(filePath, lines.join(eol))
+    await fsPromises.writeFile(filePath, lines.join(eol))
   } catch (err) {
     console.error(`Failed to write ${filePath} (non-fatal):`, (err as Error).message)
   }

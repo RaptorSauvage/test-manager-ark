@@ -87,15 +87,15 @@ describe('writeUserJvmArgs', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('writes one argument per line', () => {
-    writeUserJvmArgs(tmpDir, ['-Xms1024M', '-Xmx4096M'])
+  it('writes one argument per line', async () => {
+    await writeUserJvmArgs(tmpDir, ['-Xms1024M', '-Xmx4096M'])
     const content = fs.readFileSync(path.join(tmpDir, 'user_jvm_args.txt'), 'utf-8')
     expect(content).toBe('-Xms1024M\n-Xmx4096M\n')
   })
 
-  it('overwrites whatever was there before (e.g. from a previous start with different memory)', () => {
-    writeUserJvmArgs(tmpDir, ['-Xms1024M', '-Xmx4096M'])
-    writeUserJvmArgs(tmpDir, ['-Xms2048M', '-Xmx8192M'])
+  it('overwrites whatever was there before (e.g. from a previous start with different memory)', async () => {
+    await writeUserJvmArgs(tmpDir, ['-Xms1024M', '-Xmx4096M'])
+    await writeUserJvmArgs(tmpDir, ['-Xms2048M', '-Xmx8192M'])
     const content = fs.readFileSync(path.join(tmpDir, 'user_jvm_args.txt'), 'utf-8')
     expect(content).toBe('-Xms2048M\n-Xmx8192M\n')
   })
@@ -114,16 +114,16 @@ describe('hasVariablesTxt / writeVariablesTxtJavaArgs', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('reports false when variables.txt does not exist', () => {
-    expect(hasVariablesTxt(tmpDir)).toBe(false)
+  it('reports false when variables.txt does not exist', async () => {
+    expect(await hasVariablesTxt(tmpDir)).toBe(false)
   })
 
-  it('reports true once variables.txt exists', () => {
+  it('reports true once variables.txt exists', async () => {
     fs.writeFileSync(filePath, 'JAVA_ARGS=""')
-    expect(hasVariablesTxt(tmpDir)).toBe(true)
+    expect(await hasVariablesTxt(tmpDir)).toBe(true)
   })
 
-  it("replaces the JAVA_ARGS line in place, leaving every other line (and the file's own documentation comments) untouched", () => {
+  it("replaces the JAVA_ARGS line in place, leaving every other line (and the file's own documentation comments) untouched", async () => {
     fs.writeFileSync(
       filePath,
       [
@@ -135,7 +135,7 @@ describe('hasVariablesTxt / writeVariablesTxtJavaArgs', () => {
         'RESTART=true'
       ].join('\n')
     )
-    writeVariablesTxtJavaArgs(tmpDir, ['-Xms2048M', '-Xmx4096M', '-XX:+UseG1GC'])
+    await writeVariablesTxtJavaArgs(tmpDir, ['-Xms2048M', '-Xmx4096M', '-XX:+UseG1GC'])
     const content = fs.readFileSync(filePath, 'utf-8')
     expect(content).toBe(
       [
@@ -149,14 +149,14 @@ describe('hasVariablesTxt / writeVariablesTxtJavaArgs', () => {
     )
   })
 
-  it('does nothing when the file has no JAVA_ARGS line at all', () => {
+  it('does nothing when the file has no JAVA_ARGS line at all', async () => {
     fs.writeFileSync(filePath, 'MODLOADER=Fabric\nRESTART=true')
-    writeVariablesTxtJavaArgs(tmpDir, ['-Xms2048M', '-Xmx4096M'])
+    await writeVariablesTxtJavaArgs(tmpDir, ['-Xms2048M', '-Xmx4096M'])
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('MODLOADER=Fabric\nRESTART=true')
   })
 
-  it('does nothing (never throws) when variables.txt does not exist at all', () => {
-    expect(() => writeVariablesTxtJavaArgs(tmpDir, ['-Xms2048M', '-Xmx4096M'])).not.toThrow()
+  it('does nothing (never throws) when variables.txt does not exist at all', async () => {
+    await writeVariablesTxtJavaArgs(tmpDir, ['-Xms2048M', '-Xmx4096M'])
     expect(fs.existsSync(filePath)).toBe(false)
   })
 })
