@@ -707,6 +707,35 @@ async function mapWithRateLimit<T, R>(items: T[], perSecond: number, fn: (item: 
   return results
 }
 
+/** Runs `fn` over `items`, at most `limit` of them in flight at once - unlike
+ *  mapWithRateLimit above (paces requests to respect an external API's own rate limit), this
+ *  caps concurrency regardless of how fast each one settles. Used for reading mod files off
+ *  disk rather than an unbounded `Promise.all` over every item at once: a modpack with
+ *  hundreds of mods (a real report had 554), each potentially several MB, held entirely in
+ *  memory *all at the same time* while every read is in flight is enough to exhaust the
+ *  Electron main process's own heap outright on a big enough pack - a real report crashed
+ *  with a fatal "JavaScript heap out of memory" right after this app started reading every
+ *  mod file concurrently to fix an earlier, blocking-the-main-thread version of this same
+ *  loop. This keeps the "don't block the main thread" fix while bounding how many full mod
+ *  files are ever resident in memory at once. */
+async function mapWithConcurrency<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let nextIndex = 0
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = nextIndex
+      nextIndex += 1
+      if (index >= items.length) return
+      await fn(items[index])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()))
+}
+
+/** How many mod files mapWithConcurrency reads off disk at once - low enough to keep peak
+ *  memory bounded (a handful of mod jars in memory at a time, not hundreds), high enough that
+ *  this is still clearly faster than one at a time on a normal disk. */
+const MOD_FILE_READ_CONCURRENCY = 8
+
 /** Checks every installed mod/plugin at once, regardless of which ecosystem it belongs to -
  *  for a server type with just one ecosystem this is moot, but for SpongeForge (both at
  *  once) there's no single "Check for updates" button click to scope by; each entry is
@@ -862,26 +891,21 @@ async function preferCurseForgeForSettledModrinthMods(
   const toCheck = profile.installedMods.filter((m) => m.source === 'modrinth' && m.alsoOn === undefined)
   if (toCheck.length === 0) return profile
 
-  // Reads every already-settled mod's bytes concurrently (fs.promises, not fs.*Sync) - a real
-  // report with a 554-mod pack tied exactly this loop (running sequentially, synchronously) to
-  // a very noticeable freeze on Rescan folder: every one of those mods goes through here until
-  // its own alsoOn is settled, which previously meant that many blocking disk reads back to
-  // back on the Electron main thread, one mod at a time.
+  // Reads every already-settled mod's bytes off disk (fs.promises, not fs.*Sync - a real
+  // report with a 554-mod pack tied the old fully-synchronous version of this loop to a very
+  // noticeable freeze on Rescan folder), bounded to MOD_FILE_READ_CONCURRENCY files in memory
+  // at once rather than every one of them at the same time - see mapWithConcurrency's own
+  // comment for why that bound matters on a pack this size.
   const fileByFingerprint = new Map<number, InstalledMinecraftMod>()
-  const buffers = await Promise.all(
-    toCheck.map(async (mod) => {
-      const filePath = path.join(targetDir, diskFileName(mod.fileName, mod.enabled))
-      try {
-        return { mod, buffer: await fsPromises.readFile(filePath) }
-      } catch {
-        return null
-      }
-    })
-  )
-  for (const entry of buffers) {
-    if (!entry) continue
-    fileByFingerprint.set(computeCurseForgeFingerprint(entry.buffer), entry.mod)
-  }
+  await mapWithConcurrency(toCheck, MOD_FILE_READ_CONCURRENCY, async (mod) => {
+    const filePath = path.join(targetDir, diskFileName(mod.fileName, mod.enabled))
+    try {
+      const buffer = await fsPromises.readFile(filePath)
+      fileByFingerprint.set(computeCurseForgeFingerprint(buffer), mod)
+    } catch {
+      // Gone, unreadable, ... - just skip it, same as before.
+    }
+  })
   if (fileByFingerprint.size === 0) return profile
 
   const promotedByProjectId = new Map<string, InstalledMinecraftMod>()
@@ -997,18 +1021,17 @@ export async function scanForInstalledMods(
     return { profile: workingProfile, result: { adopted: [] } }
   }
 
-  // Read every untracked file's bytes exactly once, concurrently (fs.promises, not
-  // fs.*Sync - same reasoning as listUntrackedModFiles/preferCurseForgeForSettledModrinthMods
-  // above), computing both the sha1 (for Modrinth's hash lookup) and the CurseForge
-  // fingerprint (murmur2 of the whitespace-stripped bytes - see curseforgeFingerprint.ts) from
-  // the same buffer, rather than re-reading the file for each source's own identification
-  // scheme.
+  // Read every untracked file's bytes exactly once (fs.promises, not fs.*Sync - same
+  // reasoning as listUntrackedModFiles/preferCurseForgeForSettledModrinthMods above), bounded
+  // to MOD_FILE_READ_CONCURRENCY files in memory at once (see mapWithConcurrency's own
+  // comment) rather than every untracked file at the same time, computing both the sha1 (for
+  // Modrinth's hash lookup) and the CurseForge fingerprint (murmur2 of the whitespace-stripped
+  // bytes - see curseforgeFingerprint.ts) from the same buffer, rather than re-reading the
+  // file for each source's own identification scheme.
   const fileByHash = new Map<string, UntrackedModFile>()
   const fileByFingerprint = new Map<number, UntrackedModFile>()
-  const untrackedBuffers = await Promise.all(
-    untracked.map(async (file) => ({ file, buffer: await fsPromises.readFile(path.join(targetDir, file.diskName)) }))
-  )
-  for (const { file, buffer } of untrackedBuffers) {
+  await mapWithConcurrency(untracked, MOD_FILE_READ_CONCURRENCY, async (file) => {
+    const buffer = await fsPromises.readFile(path.join(targetDir, file.diskName))
     const hash = crypto.createHash('sha1').update(buffer).digest('hex')
     // A hash/fingerprint collision between two different untracked files is astronomically
     // unlikely and not worth guarding - at worst one of them is skipped this scan and picked
@@ -1016,7 +1039,7 @@ export async function scanForInstalledMods(
     // longer "untracked".
     fileByHash.set(hash, file)
     fileByFingerprint.set(computeCurseForgeFingerprint(buffer), file)
-  }
+  })
 
   const versionsByHash = await getModrinthVersionsFromHashes([...fileByHash.keys()], 'sha1')
 

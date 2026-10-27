@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-27',
+    title: 'Fixed a crash ("out of memory") when rescanning a very large mods/plugins folder',
+    details: [
+      "A recent fix meant to stop Rescan folder from freezing the Manager (reading each mod file one at a time) read every mod file into memory all at once instead - fine for a normal pack, but on a very large one (500+ mods) that could hold hundreds of mod files' full contents in memory at the same time and crash the whole Manager with an out-of-memory error. Reads are now limited to a handful at a time, keeping the earlier freeze fix without the memory spike."
+    ]
+  },
+  {
+    date: '2026-10-27',
     title: 'Fixed an escalating freeze from the CPU/RAM monitor piling up on itself',
     details: [
       'The new freeze detector immediately paid off: it caught a real one, pointing straight at the CPU/RAM monitor. On Windows, reading a server\'s CPU/RAM every 5 seconds briefly spawns a small helper process - if a single one of those happened to run slow (antivirus scanning it, the system already busy right after starting a heavy server), the monitor used to start a brand new one on top every 5 seconds anyway instead of waiting, piling more and more of them on top of each other and making the Manager progressively less responsive the longer a server stayed running. It now always waits for the current reading to finish before starting the next one, so a single slow reading can no longer snowball into a long freeze.'

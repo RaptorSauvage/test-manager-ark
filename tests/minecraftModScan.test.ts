@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -624,6 +625,43 @@ describe('scanForInstalledMods', () => {
     expect(result.adopted).toHaveLength(0)
     expect(updated.installedMods).toHaveLength(1)
     expect(mockSaveMinecraftProfile).not.toHaveBeenCalled()
+  })
+
+  // Regression test for a real crash: a big modpack's worth of untracked files used to all be
+  // read into memory at the same time (an unbounded Promise.all, one full file buffer per
+  // mod, all in flight together) - on a pack large enough (the real report had 554 mods) that
+  // was enough to exhaust the Electron main process's own heap outright ("JavaScript heap out
+  // of memory"). Confirms only a bounded number of reads are ever in flight at once.
+  it('never has more than a bounded number of mod-file reads in flight at once, even with many untracked files', async () => {
+    const profile = makeProfile({}, tmpDir)
+    const targetDir = modTargetDir(profile)
+    fs.mkdirSync(targetDir, { recursive: true })
+    const FILE_COUNT = 40
+    for (let i = 0; i < FILE_COUNT; i++) {
+      fs.writeFileSync(path.join(targetDir, `mod-${i}.jar`), `content-${i}`)
+    }
+    mockGetModrinthVersionsFromHashes.mockResolvedValue({})
+
+    let concurrentReads = 0
+    let maxConcurrentReads = 0
+    const readFileSpy = vi.spyOn(fsPromises, 'readFile').mockImplementation(async (...args) => {
+      concurrentReads += 1
+      maxConcurrentReads = Math.max(maxConcurrentReads, concurrentReads)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      concurrentReads -= 1
+      return fs.readFileSync(args[0] as string)
+    })
+
+    try {
+      const { result } = await scanForInstalledMods(profile)
+
+      expect(result.adopted).toHaveLength(FILE_COUNT) // unmatched files still get adopted as source: 'unknown'
+      expect(readFileSpy).toHaveBeenCalledTimes(FILE_COUNT)
+      expect(maxConcurrentReads).toBeGreaterThan(1) // actually ran concurrently, not one at a time
+      expect(maxConcurrentReads).toBeLessThanOrEqual(8) // ...but bounded, not all 40 at once
+    } finally {
+      readFileSpy.mockRestore()
+    }
   })
 })
 
