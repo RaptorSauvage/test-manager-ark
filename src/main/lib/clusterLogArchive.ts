@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import path from 'node:path'
 import type { ServerProfile, ServerRunState, ServerStatus } from '@shared/types'
 import { watchLogFile, serverEvents } from './serverProcess'
@@ -44,28 +45,34 @@ function parseArchiveLine(line: string): DatedLogEvent | null {
  * recent) if it's grown past that - a rolling window rather than letting it grow forever.
  * The trim only does a bounded (maxBytes-sized) read+rewrite, and only on the occasional
  * append that actually crosses the cap, not on every single append.
+ *
+ * Async (fs.promises), not fs.*Sync - called from a continuous ~2s log-tail watch for every
+ * running profile (startClusterLogArchiveWatch below), on the same main thread every other
+ * fix this session has been keeping free of blocking disk I/O. A single log-tail tick can
+ * carry many parsed events at once if a lot happened between polls, same bursty-write
+ * concern as minecraftConsoleArchive.ts's own equivalent fix.
  */
-function appendEventsToArchive(profileId: string, events: DatedLogEvent[], maxBytes: number): void {
+async function appendEventsToArchive(profileId: string, events: DatedLogEvent[], maxBytes: number): Promise<void> {
   if (events.length === 0) return
   try {
     const archivePath = getClusterLogArchivePath(profileId)
-    fs.mkdirSync(path.dirname(archivePath), { recursive: true })
-    fs.appendFileSync(archivePath, events.map(serializeEvent).join(''))
+    await fsPromises.mkdir(path.dirname(archivePath), { recursive: true })
+    await fsPromises.appendFile(archivePath, events.map(serializeEvent).join(''))
 
-    const { size } = fs.statSync(archivePath)
+    const { size } = await fsPromises.stat(archivePath)
     if (size <= maxBytes) return
 
     const buffer = Buffer.alloc(maxBytes)
-    const fd = fs.openSync(archivePath, 'r')
+    const handle = await fsPromises.open(archivePath, 'r')
     try {
-      fs.readSync(fd, buffer, 0, maxBytes, size - maxBytes)
+      await handle.read(buffer, 0, maxBytes, size - maxBytes)
     } finally {
-      fs.closeSync(fd)
+      await handle.close()
     }
     let text = buffer.toString('utf-8')
     const firstNewline = text.indexOf('\n')
     if (firstNewline >= 0) text = text.slice(firstNewline + 1) // drop a truncated first JSON line
-    fs.writeFileSync(archivePath, text)
+    await fsPromises.writeFile(archivePath, text)
   } catch (err) {
     // Best-effort persistence, called from both a per-status-change notification and a
     // continuous ~2s log-tail watch for every running profile - this is a listener on the
@@ -130,20 +137,25 @@ const lastKnownRunState = new Map<string, ServerRunState>()
  * Group Console's own `nowAsLogDateTime`/toast logic). Independent of whether any console is
  * currently open to show it live - this is what makes Start/Stop/Restart/Update show up in a
  * *future* backlog even if nobody was watching when they happened.
+ *
+ * Returns the pending archive write as a Promise - registerClusterLogArchiveWatch's own
+ * 'status' listener below doesn't await it (EventEmitter listeners never are), this is
+ * purely so a test can `await` a deterministic point past the write actually landing on
+ * disk, now that appendEventsToArchive is itself async.
  */
 export function handleStatusForClusterLogArchiveNotification(
   status: ServerStatus,
   lookupProfile: (id: string) => ServerProfile | undefined = getProfile
-): void {
+): Promise<void> {
   const previous = lastKnownRunState.get(status.profileId)
   const current = status.state
   lastKnownRunState.set(status.profileId, current)
 
-  if (previous === undefined || previous === current) return
-  if (current !== 'running' && current !== 'stopped') return
+  if (previous === undefined || previous === current) return Promise.resolve()
+  if (current !== 'running' && current !== 'stopped') return Promise.resolve()
 
   const profile = lookupProfile(status.profileId)
-  if (!profile) return
+  if (!profile) return Promise.resolve()
 
   // An update that didn't restart the server ends by going 'updating' -> 'stopped', same as
   // a real stop - without this it'd archive as a spurious extra STOP right after whichever
@@ -159,7 +171,7 @@ export function handleStatusForClusterLogArchiveNotification(
     cls,
     text: `${profile.name} ${verb}`
   }
-  appendEventsToArchive(profile.id, [event], Math.max(1, profile.clusterLogArchiveMaxSizeMB) * 1024 * 1024)
+  return appendEventsToArchive(profile.id, [event], Math.max(1, profile.clusterLogArchiveMaxSizeMB) * 1024 * 1024)
 }
 
 const stopFns = new Map<string, () => void>()
@@ -191,7 +203,7 @@ export function startClusterLogArchiveWatch(profile: ServerProfile, intervalMs =
         // previous session's stale cache entries.
         if (rotated) caches = createLogEventCaches()
         const events = parseLogChunkWithDate(chunk, caches)
-        appendEventsToArchive(profile.id, events, Math.max(1, profile.clusterLogArchiveMaxSizeMB) * 1024 * 1024)
+        void appendEventsToArchive(profile.id, events, Math.max(1, profile.clusterLogArchiveMaxSizeMB) * 1024 * 1024)
       },
       intervalMs
     )

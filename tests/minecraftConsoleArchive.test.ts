@@ -40,8 +40,8 @@ describe('minecraftConsoleArchive', () => {
   })
 
   it('reads back appended lines in order', async () => {
-    appendConsoleLineToArchive(profileId, { text: 'first line', ts: 1 })
-    appendConsoleLineToArchive(profileId, { text: 'second line', ts: 2 })
+    await appendConsoleLineToArchive(profileId, { text: 'first line', ts: 1 })
+    await appendConsoleLineToArchive(profileId, { text: 'second line', ts: 2 })
 
     const lines = await readMinecraftConsoleArchive(profileId)
     expect(lines.map((l) => l.text)).toEqual(['first line', 'second line'])
@@ -54,7 +54,7 @@ describe('minecraftConsoleArchive', () => {
   it('trims the archive back under maxBytes once it grows past it, keeping the most recent lines', async () => {
     const maxBytes = 200
     for (let i = 0; i < 50; i++) {
-      appendConsoleLineToArchive(profileId, { text: `line-${i}`, ts: i }, maxBytes)
+      await appendConsoleLineToArchive(profileId, { text: `line-${i}`, ts: i }, maxBytes)
     }
 
     const archivePath = getMinecraftConsoleArchivePath(profileId)

@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import path from 'node:path'
 import type { MinecraftConsoleLine } from '@shared/minecraft'
 import { getDataDir } from './dataDir'
@@ -34,27 +35,41 @@ function parseArchiveLine(line: string): MinecraftConsoleLine | null {
  * maxBytes (dropping the oldest content) if it's grown past that - a rolling window, not
  * unbounded growth. The trim only does a bounded read+rewrite, and only on the occasional
  * append that actually crosses the cap.
+ *
+ * Async (fs.promises), not fs.*Sync - this runs on every single console line a server ever
+ * prints, from inside the same synchronous loop that splits a single stdout chunk into
+ * individual lines (minecraftProcess.ts's makeLineSplitter). A burst of many lines at once -
+ * exactly what a server's own shutdown sequence tends to print (save messages, every
+ * player's own disconnect, plugins disabling one by one) - used to mean that many
+ * synchronous disk writes back to back on the Electron main process, blocking it for the
+ * whole burst. Fire-and-forget (the caller doesn't await this) is fine here: the console
+ * pipe itself doesn't depend on the write finishing, same as every other best-effort archive
+ * write in this codebase.
  */
-export function appendConsoleLineToArchive(profileId: string, line: MinecraftConsoleLine, maxBytes = MAX_ARCHIVE_BYTES): void {
+export async function appendConsoleLineToArchive(
+  profileId: string,
+  line: MinecraftConsoleLine,
+  maxBytes = MAX_ARCHIVE_BYTES
+): Promise<void> {
   try {
     const archivePath = getMinecraftConsoleArchivePath(profileId)
-    fs.mkdirSync(path.dirname(archivePath), { recursive: true })
-    fs.appendFileSync(archivePath, JSON.stringify(line) + '\n')
+    await fsPromises.mkdir(path.dirname(archivePath), { recursive: true })
+    await fsPromises.appendFile(archivePath, JSON.stringify(line) + '\n')
 
-    const { size } = fs.statSync(archivePath)
+    const { size } = await fsPromises.stat(archivePath)
     if (size <= maxBytes) return
 
     const buffer = Buffer.alloc(maxBytes)
-    const fd = fs.openSync(archivePath, 'r')
+    const handle = await fsPromises.open(archivePath, 'r')
     try {
-      fs.readSync(fd, buffer, 0, maxBytes, size - maxBytes)
+      await handle.read(buffer, 0, maxBytes, size - maxBytes)
     } finally {
-      fs.closeSync(fd)
+      await handle.close()
     }
     let text = buffer.toString('utf-8')
     const firstNewline = text.indexOf('\n')
     if (firstNewline >= 0) text = text.slice(firstNewline + 1)
-    fs.writeFileSync(archivePath, text)
+    await fsPromises.writeFile(archivePath, text)
   } catch (err) {
     // Best-effort persistence, called on every single console line while a server is
     // running - a disk-level failure here (full disk, locked file, antivirus, ...) must

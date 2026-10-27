@@ -26,9 +26,12 @@ function classifyConsoleLine(text: string): string {
  *  server left running with this tab open accumulates an ever-growing array, and every
  *  single new line re-renders the *entire* feed from scratch (the .map() below has no
  *  per-line memoization) - for a server whose log scrolls by quickly, that turned into a
- *  real "Not Responding" freeze, not just a slow scrollbar. Same number as
- *  minecraftProcess.ts's own CONSOLE_BACKLOG_LIMIT and GroupConsoleView's MAX_EVENTS. */
-const MAX_LINES = 500
+ *  real "Not Responding" freeze, not just a slow scrollbar. Matches
+ *  minecraftProcess.ts's own CONSOLE_BACKLOG_LIMIT - also MCSS's (a well-known Minecraft
+ *  server manager) own convention for its live console, rather than the 500 ARK's Group
+ *  Console uses (GroupConsoleView's MAX_EVENTS) - Minecraft's console tends to scroll by
+ *  faster, so a lighter cap keeps the same "freeze" fix with less to redraw per update. */
+const MAX_LINES = 250
 
 interface KeyedConsoleLine extends MinecraftConsoleLine {
   /** A monotonic id assigned once per line on arrival, independent of its position in

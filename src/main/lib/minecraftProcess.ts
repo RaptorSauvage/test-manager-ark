@@ -19,8 +19,10 @@ const READY_MARKER = /Done \([\d.]+s\)! For help, type "help"/
 
 /** How many of the most recent archived lines getConsoleBacklog actually returns to the
  *  renderer - the archive file itself (minecraftConsoleArchive.ts) holds far more than this,
- *  but the Console tab only needs enough to fill the screen on open, not the whole archive. */
-const CONSOLE_BACKLOG_LIMIT = 500
+ *  but the Console tab only needs enough to fill the screen on open, not the whole archive.
+ *  Matches ConsoleTab.tsx's own MAX_LINES, which in turn matches MCSS's (a well-known
+ *  Minecraft server manager) own 250-line cap on its live console. */
+const CONSOLE_BACKLOG_LIMIT = 250
 
 /** How long stopServer waits for the process to exit on its own (after writing "stop" to
  *  its stdin) before force-killing it. Generous by ARK standards since a world save on
@@ -144,7 +146,7 @@ export async function getConsoleBacklog(profileId: string): Promise<MinecraftCon
 
 function appendConsoleLine(profileId: string, text: string): void {
   const line: MinecraftConsoleLine = { text, ts: Date.now() }
-  appendConsoleLineToArchive(profileId, line)
+  void appendConsoleLineToArchive(profileId, line)
   minecraftConsoleEvents.emit('line', profileId, line)
 }
 

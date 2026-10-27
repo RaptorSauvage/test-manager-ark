@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { ServerProfile, ServerStatus } from '../shared/types'
@@ -248,8 +249,8 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
 
   it('archives a START event the first time a profile is observed transitioning into running', async () => {
     const profile = makeNotifyProfile()
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
 
     const backlog = await readClusterLogArchiveBacklog(profile.id)
     expect(backlog).toContainEqual(expect.objectContaining({ label: 'START', cls: 'start', text: `${profile.name} started` }))
@@ -257,10 +258,10 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
 
   it('archives a STOP event the moment a running profile transitions into stopped', async () => {
     const profile = makeNotifyProfile()
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopping' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopped' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopping' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopped' } as ServerStatus, lookup(profile))
 
     const backlog = await readClusterLogArchiveBacklog(profile.id)
     expect(backlog).toContainEqual(expect.objectContaining({ label: 'STOP', cls: 'stop', text: `${profile.name} stopped` }))
@@ -268,12 +269,12 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
 
   it('archives an UPDATE event (not a second STOP) when an update finishes without restarting', async () => {
     const profile = makeNotifyProfile()
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopping' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopped' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'updating' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopped' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopping' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopped' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'updating' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'stopped' } as ServerStatus, lookup(profile))
 
     const backlog = await readClusterLogArchiveBacklog(profile.id)
     expect(backlog).toContainEqual(expect.objectContaining({ label: 'STOP', cls: 'stop', text: `${profile.name} stopped` }))
@@ -281,36 +282,34 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
     expect(backlog.filter((e) => e.label === 'STOP')).toHaveLength(1)
   })
 
-  it('never fires on a profile\'s very first observed status, even if it is already running or stopped', () => {
+  it('never fires on a profile\'s very first observed status, even if it is already running or stopped', async () => {
     const profile = makeNotifyProfile()
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
 
     expect(hasClusterLogArchive(profile.id)).toBe(false)
   })
 
   it('ignores intermediate states and repeated ticks of the same state', async () => {
     const profile = makeNotifyProfile()
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'restarting' } as ServerStatus, lookup(profile))
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'updating' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'restarting' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'updating' } as ServerStatus, lookup(profile))
 
     const backlog = await readClusterLogArchiveBacklog(profile.id)
     expect(backlog).toHaveLength(1)
     expect(backlog[0]).toMatchObject({ label: 'START' })
   })
 
-  it('does nothing for an unknown/deleted profile instead of throwing', () => {
+  it('does nothing for an unknown/deleted profile instead of throwing', async () => {
     const id = 'notify-unknown-' + Math.random().toString(36).slice(2)
     usedProfileIds.push(id)
-    expect(() =>
-      handleStatusForClusterLogArchiveNotification({ profileId: id, state: 'starting' } as ServerStatus, () => undefined)
-    ).not.toThrow()
-    expect(() =>
-      handleStatusForClusterLogArchiveNotification({ profileId: id, state: 'running' } as ServerStatus, () => undefined)
-    ).not.toThrow()
+    // A rejection from either await would propagate and fail the test on its own - same
+    // intent as the old toThrow() check, now that the write itself is async.
+    await handleStatusForClusterLogArchiveNotification({ profileId: id, state: 'starting' } as ServerStatus, () => undefined)
+    await handleStatusForClusterLogArchiveNotification({ profileId: id, state: 'running' } as ServerStatus, () => undefined)
     expect(hasClusterLogArchive(id)).toBe(false)
   })
 
@@ -320,25 +319,28 @@ describe('handleStatusForClusterLogArchiveNotification', () => {
     const lookupBoth = (id: string): ServerProfile | undefined =>
       id === profileA.id ? profileA : id === profileB.id ? profileB : undefined
 
-    handleStatusForClusterLogArchiveNotification({ profileId: profileA.id, state: 'starting' } as ServerStatus, lookupBoth)
-    handleStatusForClusterLogArchiveNotification({ profileId: profileB.id, state: 'starting' } as ServerStatus, lookupBoth)
-    handleStatusForClusterLogArchiveNotification({ profileId: profileA.id, state: 'running' } as ServerStatus, lookupBoth)
+    await handleStatusForClusterLogArchiveNotification({ profileId: profileA.id, state: 'starting' } as ServerStatus, lookupBoth)
+    await handleStatusForClusterLogArchiveNotification({ profileId: profileB.id, state: 'starting' } as ServerStatus, lookupBoth)
+    await handleStatusForClusterLogArchiveNotification({ profileId: profileA.id, state: 'running' } as ServerStatus, lookupBoth)
 
     expect(await readClusterLogArchiveBacklog(profileA.id)).toContainEqual(expect.objectContaining({ label: 'START' }))
     expect(hasClusterLogArchive(profileB.id)).toBe(false)
   })
 
-  it('never throws when the disk write itself fails - a real report on Windows had this break other serverEvents listeners', () => {
+  it('never throws when the disk write itself fails - a real report on Windows had this break other serverEvents listeners', async () => {
     const profile = makeNotifyProfile()
-    handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
+    await handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'starting' } as ServerStatus, lookup(profile))
 
-    const spy = vi.spyOn(fs, 'appendFileSync').mockImplementation(() => {
+    const spy = vi.spyOn(fsPromises, 'appendFile').mockImplementation(() => {
       throw Object.assign(new Error('unknown error, write'), { code: 'UNKNOWN', errno: -4094 })
     })
     try {
-      expect(() =>
-        handleStatusForClusterLogArchiveNotification({ profileId: profile.id, state: 'running' } as ServerStatus, lookup(profile))
-      ).not.toThrow()
+      // A rejection here would propagate out of this `await` and fail the test on its own -
+      // same intent as the old toThrow() check, now that the write itself is async.
+      await handleStatusForClusterLogArchiveNotification(
+        { profileId: profile.id, state: 'running' } as ServerStatus,
+        lookup(profile)
+      )
     } finally {
       spy.mockRestore()
     }

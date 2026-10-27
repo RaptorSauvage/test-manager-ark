@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-10-27',
+    title: 'More freeze fixes: console logging no longer touches the disk while a server is busy',
+    details: [
+      'Every single console line a server printed (Minecraft and ARK\'s Cluster Console alike) was being saved to disk as it happened, and a burst of many lines at once - exactly what a server tends to print while shutting down - meant that many disk writes back to back, right on the Manager\'s own main thread. That history is now saved in the background instead of blocking anything.',
+      'The Minecraft Console tab\'s line cap is now 250 instead of 500, matching MCSS\'s own convention for its live console - lighter on CPU/RAM while scrolling fast.'
+    ]
+  },
+  {
     date: '2026-10-25',
     title: 'Fixed a brief Manager freeze when starting a Minecraft server',
     details: [
