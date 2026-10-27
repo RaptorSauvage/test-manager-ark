@@ -956,6 +956,21 @@ label.checkbox {
   font-size: 0.85rem;
 }
 
+/** Same look as .group-console-feed above (ARK's own Group Console, still a plain React
+ *  list), but overflow: hidden instead of overflow-y: auto - ConsoleTab.tsx's xterm.js
+ *  terminal manages its own scrollback/scrolling entirely on its own canvas, so the
+ *  container itself must not also try to scroll (xterm sizes its own viewport to fill this
+ *  element via FitAddon). */
+.mc-console-terminal {
+  flex: 1;
+  min-height: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  overflow: hidden;
+}
+
 .console-tab {
   display: flex;
   flex-direction: column;
@@ -964,31 +979,6 @@ label.checkbox {
      (header, tab nav, padding) - a plain 60vh (the previous value) left a large empty gap
      below the feed on anything but a short window. */
   height: calc(100vh - 200px);
-}
-
-.mc-console-line {
-  padding: 1px 0;
-  line-height: 1.4;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.mc-console-line--error,
-.mc-console-line--stopping {
-  color: var(--danger);
-}
-
-.mc-console-line--warn,
-.mc-console-line--leave {
-  color: var(--warn);
-}
-
-.mc-console-line--ready {
-  color: var(--ok);
-}
-
-.mc-console-line--join {
-  color: var(--cyan);
 }
 
 .log-event {

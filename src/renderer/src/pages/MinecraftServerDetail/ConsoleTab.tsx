@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
-import type { MinecraftConsoleLine, MinecraftProfile } from '@shared/minecraft'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import type { MinecraftProfile } from '@shared/minecraft'
 import { useMinecraftServerStatuses } from '../../lib/useMinecraftServerStatuses'
+
+import '@xterm/xterm/css/xterm.css'
 
 interface ConsoleTabProps {
   profile: MinecraftProfile
@@ -21,80 +25,117 @@ function classifyConsoleLine(text: string): string {
   return ''
 }
 
-/** Cap on how many lines are kept/rendered at once - this is a live feed, not a full log
- *  archive (that's what the on-disk console archive is for). Without this, a busy/chatty
- *  server left running with this tab open accumulates an ever-growing array, and every
- *  single new line re-renders the *entire* feed from scratch (the .map() below has no
- *  per-line memoization) - for a server whose log scrolls by quickly, that turned into a
- *  real "Not Responding" freeze, not just a slow scrollbar. Matches
- *  minecraftProcess.ts's own CONSOLE_BACKLOG_LIMIT - also MCSS's (a well-known Minecraft
- *  server manager) own convention for its live console, rather than the 500 ARK's Group
- *  Console uses (GroupConsoleView's MAX_EVENTS) - Minecraft's console tends to scroll by
- *  faster, so a lighter cap keeps the same "freeze" fix with less to redraw per update. */
-const MAX_LINES = 250
-
-interface KeyedConsoleLine extends MinecraftConsoleLine {
-  /** A monotonic id assigned once per line on arrival, independent of its position in
-   *  `lines` - used as the React key below instead of the .map() index. Several lines can
-   *  share the same `ts` (Date.now() in ms) when the log scrolls by quickly, and the index
-   *  of every surviving line shifts by one every time the MAX_LINES cap drops the oldest
-   *  one, so keying by either would make React treat the whole feed as brand new content on
-   *  every single incoming line once the cap is active - tearing down and rebuilding up to
-   *  500 DOM nodes per line instead of just appending one and dropping another. */
-  _seq: number
+/** True-color ANSI foreground codes matching this app's own CSS variables of the same name
+ *  (styles.css's :root) - xterm.js renders onto its own canvas, not the DOM, so a CSS class
+ *  per line (the previous design) has no equivalent here; wrapping the text itself in the
+ *  matching escape sequence is the terminal-native way to get the same color. */
+const ANSI_RESET = '\u001b[0m'
+const CLASS_ANSI_COLOR: Record<string, string> = {
+  error: '\u001b[38;2;224;85;91m', // --danger
+  stopping: '\u001b[38;2;224;85;91m', // --danger
+  warn: '\u001b[38;2;224;166;63m', // --warn
+  leave: '\u001b[38;2;224;166;63m', // --warn
+  ready: '\u001b[38;2;63;191;111m', // --ok
+  join: '\u001b[38;2;34;211;238m' // --cyan
 }
 
-/** Live console - unlike ARK's Group Console (a tailed, parsed log file), this reads
- *  straight from the process's own piped stdout (see minecraftProcess.ts), so lines show up
- *  close to verbatim and a command typed here is written straight to its stdin. */
+function writeLine(terminal: Terminal, text: string): void {
+  const color = CLASS_ANSI_COLOR[classifyConsoleLine(text)]
+  terminal.writeln(color ? `${color}${text}${ANSI_RESET}` : text)
+}
+
+/**
+ * Live console - unlike ARK's Group Console (a tailed, parsed log file), this reads straight
+ * from the process's own piped stdout (see minecraftProcess.ts), so lines show up close to
+ * verbatim and a command typed below is written straight to its stdin.
+ *
+ * Rendered with xterm.js (a real terminal emulator, same library Pterodactyl's panel uses
+ * for this exact job) instead of a React list of <div> lines - a previous version kept the
+ * most recent 250 lines in React state and re-rendered the whole feed on every single
+ * incoming line (even capped and keyed correctly, that's still real reconciliation cost per
+ * line). xterm.js keeps and redraws its own scrollback buffer entirely outside React, so a
+ * fast-scrolling log no longer costs a React render at all - just one `writeln` call.
+ * disableStdin - the terminal itself is output-only; the actual command input is the
+ * separate text box below it, same split Pterodactyl's own console uses.
+ */
 export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
-  const [lines, setLines] = useState<KeyedConsoleLine[]>([])
   const [command, setCommand] = useState('')
   const [sendError, setSendError] = useState('')
-  const [autoScroll, setAutoScroll] = useState(true)
   const [chatMode, setChatMode] = useState(false)
-  const feedRef = useRef<HTMLDivElement>(null)
-  const didInitialScroll = useRef(false)
-  const nextSeq = useRef(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const terminal = useMemo(
+    () =>
+      new Terminal({
+        disableStdin: true,
+        cursorStyle: 'underline',
+        fontSize: 13,
+        fontFamily: "'Cascadia Code', 'Consolas', monospace",
+        scrollback: 1000,
+        theme: {
+          background: '#14161a', // --bg
+          foreground: '#e6e8ec', // --text
+          cursor: 'transparent'
+        }
+      }),
+    []
+  )
   const statuses = useMinecraftServerStatuses([profile.id])
   const status = statuses[profile.id]
   const state = status?.state ?? 'stopped'
+
+  // Mounts the terminal into the DOM once and tears it down on unmount - a fresh Terminal
+  // instance every time this tab is opened (see MinecraftServerDetail/index.tsx, which
+  // unmounts ConsoleTab entirely when another tab is selected), matching the previous
+  // design's own "start from a blank feed, refetch the backlog" behavior on reopen.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const fitAddon = new FitAddon()
+    terminal.loadAddon(fitAddon)
+    terminal.open(el)
+    fitAddon.fit()
+
+    const resizeObserver = new ResizeObserver(() => fitAddon.fit())
+    resizeObserver.observe(el)
+
+    return () => {
+      resizeObserver.disconnect()
+      terminal.dispose()
+    }
+  }, [terminal])
 
   useEffect(() => {
     // Nothing to fetch/subscribe to - minecraftProcess.ts's doSpawn skips the archive write
     // and the live 'line' emit entirely for a profile with this off, so there's never
     // anything in either the backlog or the live feed to begin with.
-    if (!profile.consoleLoggingEnabled) return
+    if (!profile.consoleLoggingEnabled) {
+      terminal.writeln(
+        'Live console log is turned off for this server (Start Settings). Starting/stopping and sending commands below still work either way.'
+      )
+      return
+    }
     let cancelled = false
-    setLines([])
-    didInitialScroll.current = false
-    nextSeq.current = 0
     window.api.minecraft.console.getBacklog(profile.id).then((backlog) => {
-      if (!cancelled) setLines(backlog.map((line) => ({ ...line, _seq: nextSeq.current++ })))
+      if (cancelled) return
+      if (backlog.length === 0) {
+        terminal.writeln(state === 'stopped' ? 'No console output yet - start the server to see it.' : 'No console output yet.')
+      } else {
+        for (const line of backlog) writeLine(terminal, line.text)
+      }
     })
     const unsubscribe = window.api.minecraft.console.onLine((profileId, line) => {
       if (profileId !== profile.id) return
-      setLines((prev) => {
-        const next = [...prev, { ...line, _seq: nextSeq.current++ }]
-        return next.length > MAX_LINES ? next.slice(next.length - MAX_LINES) : next
-      })
+      writeLine(terminal, line.text)
     })
     return () => {
       cancelled = true
       unsubscribe()
     }
+    // `state`/`terminal` deliberately excluded - this effect's own backlog fetch (not a live
+    // status change) decides which placeholder message to show, and it must not re-run (and
+    // re-fetch/re-print the backlog) just because the server's status happened to tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.id, profile.consoleLoggingEnabled])
-
-  useEffect(() => {
-    const el = feedRef.current
-    if (!el || lines.length === 0) return
-    if (!didInitialScroll.current) {
-      el.scrollTop = el.scrollHeight
-      didInitialScroll.current = true
-      return
-    }
-    if (autoScroll) el.scrollTop = el.scrollHeight
-  }, [lines, autoScroll])
 
   async function handleSend(e: FormEvent): Promise<void> {
     e.preventDefault()
@@ -113,35 +154,11 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
 
   return (
     <div className="console-tab">
-      <div className="group-console-feed" ref={feedRef}>
-        {!profile.consoleLoggingEnabled && (
-          <p className="empty-state">
-            Live console log is turned off for this server (Start Settings). Starting/stopping and sending commands
-            below still work either way.
-          </p>
-        )}
-        {profile.consoleLoggingEnabled && lines.length === 0 && (
-          <p className="empty-state">
-            {state === 'stopped' ? 'No console output yet - start the server to see it.' : 'No console output yet.'}
-          </p>
-        )}
-        {lines.map((line) => {
-          const cls = classifyConsoleLine(line.text)
-          return (
-            <div key={line._seq} className={cls ? `mc-console-line mc-console-line--${cls}` : 'mc-console-line'}>
-              {line.text}
-            </div>
-          )
-        })}
-      </div>
+      <div className="mc-console-terminal" ref={containerRef} />
       <div className="group-console-filters mc-console-controls">
         <label className="checkbox">
           <input type="checkbox" checked={chatMode} onChange={(e) => setChatMode(e.target.checked)} />
           Chat mode
-        </label>
-        <label className="checkbox">
-          <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
-          Auto-scroll
         </label>
       </div>
       {sendError && <p className="error-message">{sendError}</p>}

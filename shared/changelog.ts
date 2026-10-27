@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-27',
+    title: 'Minecraft Console tab is much lighter on a fast-scrolling log',
+    details: [
+      'The Console tab now renders with a real terminal component instead of a plain list, the same approach other server panels (e.g. Pterodactyl) use for this. A busy modpack server printing lots of lines no longer has a visible cost in the Manager - previously, even with everything else already optimized, displaying each new line still had a real cost.',
+      'The old "Auto-scroll" checkbox is gone - the new terminal already behaves that way on its own: it follows new output while you\'re at the bottom, and stays put if you\'ve scrolled up to read something.'
+    ]
+  },
+  {
+    date: '2026-10-27',
     title: 'New setting: turn off the live console log for a very chatty Minecraft server',
     details: [
       'Start Settings now has an "Enable live console log" checkbox. For an especially chatty modpack server where the Console tab still causes lag even with everything else already optimized, turning this off skips the console feed and its saved history entirely - Start/Stop, sending commands, and detecting when the server has finished starting all keep working exactly the same either way.'
