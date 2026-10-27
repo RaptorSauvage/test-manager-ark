@@ -222,7 +222,8 @@ const api: Api = {
     openServerSavedArksFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSavedArksFolder, profileId),
     openServerSaveGamesFolder: (profileId: string) => ipcRenderer.invoke(IPC.serverOpenSaveGamesFolder, profileId),
     focusWindow: () => ipcRenderer.invoke(IPC.appFocusWindow),
-    quit: () => ipcRenderer.invoke(IPC.appQuit)
+    quit: () => ipcRenderer.invoke(IPC.appQuit),
+    openDevTools: () => ipcRenderer.invoke(IPC.appOpenDevTools)
   },
   windowControls: {
     minimize: () => ipcRenderer.invoke(IPC.windowMinimize),

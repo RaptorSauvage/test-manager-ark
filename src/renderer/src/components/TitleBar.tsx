@@ -131,6 +131,10 @@ export default function TitleBar({
               <button type="button" onClick={() => runAndClose(onOpenManagerLog)}>
                 Manager Log
               </button>
+              <hr />
+              <button type="button" onClick={() => runAndClose(() => void window.api.system.openDevTools())}>
+                Developer Tools
+              </button>
             </div>
           )}
         </div>

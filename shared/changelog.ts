@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-27',
+    title: 'Added a way to open Developer Tools (the keyboard shortcut had stopped working)',
+    details: [
+      "Replacing the window's own title bar with the Manager's custom one also quietly removed the default F12/Ctrl+Shift+I shortcut for opening Developer Tools, with nothing to replace it - so there was no way left to see a rendering problem's own error message. F12/Ctrl+Shift+I work again, and there's also a new \"Developer Tools\" entry under Tools in the menu bar."
+    ]
+  },
+  {
+    date: '2026-10-27',
     title: 'Found and fixed the actual cause of the long Start-time freeze on very large modpacks',
     details: [
       "Traced with a real Windows performance trace this time: for the first few minutes after starting a server, the Manager repeatedly checks whether the real game process has finished taking over from its own launch script, every couple of seconds. That check used to fire again on its own schedule even if the previous one hadn't finished yet - normally harmless, but if a single check ran slow (antivirus scanning it, the system already busy loading hundreds of mods), the next one piled right on top of it instead of waiting, and then the one after that, snowballing into exactly the kind of multi-minute freeze reported on a very large modpack. It now always waits for one check to finish before starting the next, so a single slow check can no longer spiral into a long freeze. Applies to both Minecraft and ARK: Survival Evolved servers."

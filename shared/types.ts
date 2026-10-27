@@ -964,6 +964,7 @@ export const IPC = {
   appOpenDataDirFolder: 'app:open-data-dir-folder',
   appFocusWindow: 'app:focus-window',
   appQuit: 'app:quit',
+  appOpenDevTools: 'app:open-dev-tools',
   serverOpenConfigFolder: 'server:open-config-folder',
   serverOpenSavedArksFolder: 'server:open-savedarks-folder',
   serverOpenSaveGamesFolder: 'server:open-savegames-folder',
@@ -1456,6 +1457,12 @@ export interface Api {
     /** File > Quit in the custom title bar - same as the tray's own "Quit", a real app.quit()
      *  rather than the window's close-to-tray behavior. */
     quit: () => Promise<void>
+    /** Toggles the renderer's DevTools - the custom title bar replaces Electron's own
+     *  application menu entirely, which also takes the default F12/Ctrl+Shift+I DevTools
+     *  accelerator with it (main/index.ts re-adds the shortcut directly; this is the
+     *  menu-driven way to get there, for diagnosing a rendering bug only visible from the
+     *  renderer's own console). */
+    openDevTools: () => Promise<void>
   }
   /** The custom title bar's own minimize/maximize/close, now that the window runs frameless
    *  (frame: false) to draw a themed bar instead of the OS one. */

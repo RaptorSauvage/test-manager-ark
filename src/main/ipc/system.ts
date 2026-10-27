@@ -42,4 +42,12 @@ export function registerSystemHandlers(mainWindow: BrowserWindow): void {
   // Same as the tray's own "Quitter" - a real app.quit(), not the window's close-to-tray
   // behavior (see mainWindow.on('close', ...) in main/index.ts).
   ipcMain.handle(IPC.appQuit, () => app.quit())
+
+  // The custom title bar (TitleBar.tsx) replaces Electron's own application menu entirely
+  // (Menu.setApplicationMenu(null) in main/index.ts), which also removes the default
+  // F12/Ctrl+Shift+I DevTools accelerator that menu normally provides - main/index.ts re-adds
+  // the keyboard shortcut directly, but a Tools menu entry is a more discoverable way to get
+  // there for diagnosing a rendering bug that can only be seen from the renderer's own
+  // console.
+  ipcMain.handle(IPC.appOpenDevTools, () => mainWindow.webContents.toggleDevTools())
 }

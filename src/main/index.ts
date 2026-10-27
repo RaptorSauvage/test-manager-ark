@@ -218,6 +218,20 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // F12/Ctrl+Shift+I (Cmd+Opt+I on macOS) normally toggle DevTools via Electron's own default
+  // application menu - but Menu.setApplicationMenu(null) above (the custom title bar draws
+  // its own File/Tools/Help menus instead) removes that default menu entirely, taking its
+  // built-in accelerators with it. Without this, there was no way to open DevTools at all -
+  // not even the keyboard shortcut did anything - which came up for real while chasing down a
+  // rendering bug that could only be diagnosed from the renderer's own console.
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.type !== 'keyDown') return
+    const isF12 = input.key === 'F12'
+    const isCtrlShiftI = input.control && input.shift && input.key.toLowerCase() === 'i'
+    const isCmdOptI = input.meta && input.alt && input.key.toLowerCase() === 'i'
+    if (isF12 || isCtrlShiftI || isCmdOptI) mainWindow.webContents.toggleDevTools()
+  })
+
   // "Close to tray" (Settings > Startup & Safety) - checked fresh on every close instead of
   // once at startup, so toggling the setting while the app is running takes effect on the
   // very next close rather than needing a restart. Every managed server tracks its own
