@@ -150,6 +150,16 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
 
     await waitUntil(() => getStatus(profile.id).state === 'running')
 
+    // Archive writes are now queued/batched rather than landing immediately (see
+    // minecraftConsoleArchive.ts's queueConsoleLineForArchive) - poll instead of asserting
+    // right away.
+    await waitUntil(async () => {
+      const backlog = await getConsoleBacklog(profile.id)
+      return (
+        backlog.some((l) => l.text.includes('Starting minecraft server')) &&
+        backlog.some((l) => l.text.includes('Done (1.234s)! For help, type "help"'))
+      )
+    })
     const backlog = await getConsoleBacklog(profile.id)
     expect(backlog.some((l) => l.text.includes('Starting minecraft server'))).toBe(true)
     expect(backlog.some((l) => l.text.includes('Done (1.234s)! For help, type "help"'))).toBe(true)
@@ -285,7 +295,10 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
 
     const status = await stopServer(profile)
     expect(status.state).toBe('stopped')
-    expect((await getConsoleBacklog(profile.id)).some((l) => l.text === 'Stopping the server')).toBe(true)
+    // flushQueuedConsoleLines (called from the child's own 'exit' handler) kicks the final
+    // write off without awaiting it - poll instead of asserting the instant stopServer itself
+    // resolves.
+    await waitUntil(async () => (await getConsoleBacklog(profile.id)).some((l) => l.text === 'Stopping the server'))
   })
 
   it('stopServer does not report a lastError even though the process itself exits with a non-zero code', async () => {

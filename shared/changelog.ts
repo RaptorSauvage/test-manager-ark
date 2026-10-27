@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-27',
+    title: "Fixed the real cause of the long freeze (and blank Console tab) when starting a very modded server",
+    details: [
+      "Found it: starting a very large modpack (hundreds of mods) prints thousands of console lines within seconds, and the console archive was writing each one to disk separately as it arrived - even though each individual write was already non-blocking, firing that many of them at once was enough to flood the Manager's own disk activity and leave it unresponsive for minutes, which is also why the Console tab could show nothing at all during that same window (its own request for the console history was stuck waiting behind the flood). Lines are now batched into a handful of writes instead of thousands, so a chatty startup burst no longer floods anything."
+    ]
+  },
+  {
+    date: '2026-10-27',
     title: 'Fixed a crash ("out of memory") when rescanning a very large mods/plugins folder',
     details: [
       "A recent fix meant to stop Rescan folder from freezing the Manager (reading each mod file one at a time) read every mod file into memory all at once instead - fine for a normal pack, but on a very large one (500+ mods) that could hold hundreds of mod files' full contents in memory at the same time and crash the whole Manager with an out-of-memory error. Reads are now limited to a handful at a time, keeping the earlier freeze fix without the memory spike."

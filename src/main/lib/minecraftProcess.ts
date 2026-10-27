@@ -8,7 +8,7 @@ import { findListeningPid, isPidAlive } from './serverProcess'
 import { getMinecraftServerPort, writeUserJvmArgs, hasVariablesTxt, writeVariablesTxtJavaArgs } from './minecraftProperties'
 import { sendMinecraftRconCommand } from './minecraftRcon'
 import { setMinecraftRunningPid, setMinecraftRunningStartedAt } from '../store'
-import { appendConsoleLineToArchive, readMinecraftConsoleArchive } from './minecraftConsoleArchive'
+import { queueConsoleLineForArchive, flushQueuedConsoleLines, readMinecraftConsoleArchive } from './minecraftConsoleArchive'
 
 /** Minecraft's own log line once the world has finished loading and is ready for players -
  *  every vanilla/Fabric/Paper/Spigot/Forge version prints this exact wording (only the
@@ -146,7 +146,11 @@ export async function getConsoleBacklog(profileId: string): Promise<MinecraftCon
 
 function appendConsoleLine(profileId: string, text: string): void {
   const line: MinecraftConsoleLine = { text, ts: Date.now() }
-  void appendConsoleLineToArchive(profileId, line)
+  // Queued, not written immediately - see queueConsoleLineForArchive's own comment: a big
+  // modpack's startup can print thousands of lines within seconds, and firing one independent
+  // fs round-trip per line (even async ones) was enough to flood the Electron main process's
+  // I/O and freeze the Manager for minutes at a stretch.
+  queueConsoleLineForArchive(profileId, line)
   minecraftConsoleEvents.emit('line', profileId, line)
 }
 
@@ -449,6 +453,10 @@ async function doSpawn(profile: MinecraftProfile, startedAt: number, isCancelled
 
   child.on('exit', (code, signal) => {
     stopPidHandoffWatch()
+    // Writes out whatever's still queued (see queueConsoleLineForArchive) right away rather
+    // than leaving it to land on its own regular flush schedule - nothing is going to add to
+    // this profile's queue once it's stopped, so there's no reason to wait.
+    flushQueuedConsoleLines(profile.id)
     // A deliberate stop/kill already flips the status to 'stopping' before it ever touches the
     // process (see stopServer/killServer) - so a non-zero/non-null exit code seen from that
     // state is expected, not a surprise worth flagging in red on the server card. This matters
