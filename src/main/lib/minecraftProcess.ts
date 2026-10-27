@@ -395,8 +395,15 @@ async function doSpawn(profile: MinecraftProfile, startedAt: number, isCancelled
     ? watchForScriptPidHandoff(profile.id, getMinecraftServerPort(profile.installDir), pid)
     : () => {}
 
+  // Start/Stop, sending stdin commands, and the ready-marker detection right below all keep
+  // working regardless of this setting - only the archive write + live Console tab feed
+  // (appendConsoleLine) are skipped. For a modpack chatty enough that even the capped,
+  // backgrounded version of that pipeline is still real per-line overhead, turning it off
+  // entirely is the actual fix, rather than trying to make an unboundedly chatty feed cheap
+  // enough.
+  const consoleLoggingEnabled = profile.consoleLoggingEnabled
   const onStdoutLine = makeLineSplitter((line) => {
-    appendConsoleLine(profile.id, line)
+    if (consoleLoggingEnabled) appendConsoleLine(profile.id, line)
     if (READY_MARKER.test(line)) {
       const current = running.get(profile.id)
       if (current && current.status.state === 'starting') {
@@ -404,7 +411,9 @@ async function doSpawn(profile: MinecraftProfile, startedAt: number, isCancelled
       }
     }
   })
-  const onStderrLine = makeLineSplitter((line) => appendConsoleLine(profile.id, line))
+  const onStderrLine = makeLineSplitter((line) => {
+    if (consoleLoggingEnabled) appendConsoleLine(profile.id, line)
+  })
   child.stdout?.on('data', onStdoutLine)
   child.stderr?.on('data', onStderrLine)
 

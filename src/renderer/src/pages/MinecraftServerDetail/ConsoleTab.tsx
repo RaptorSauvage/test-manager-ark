@@ -61,6 +61,10 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
   const state = status?.state ?? 'stopped'
 
   useEffect(() => {
+    // Nothing to fetch/subscribe to - minecraftProcess.ts's doSpawn skips the archive write
+    // and the live 'line' emit entirely for a profile with this off, so there's never
+    // anything in either the backlog or the live feed to begin with.
+    if (!profile.consoleLoggingEnabled) return
     let cancelled = false
     setLines([])
     didInitialScroll.current = false
@@ -79,7 +83,7 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
       cancelled = true
       unsubscribe()
     }
-  }, [profile.id])
+  }, [profile.id, profile.consoleLoggingEnabled])
 
   useEffect(() => {
     const el = feedRef.current
@@ -110,7 +114,13 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
   return (
     <div className="console-tab">
       <div className="group-console-feed" ref={feedRef}>
-        {lines.length === 0 && (
+        {!profile.consoleLoggingEnabled && (
+          <p className="empty-state">
+            Live console log is turned off for this server (Start Settings). Starting/stopping and sending commands
+            below still work either way.
+          </p>
+        )}
+        {profile.consoleLoggingEnabled && lines.length === 0 && (
           <p className="empty-state">
             {state === 'stopped' ? 'No console output yet - start the server to see it.' : 'No console output yet.'}
           </p>

@@ -118,6 +118,15 @@ export interface MinecraftProfile {
    *  shared/minecraftMods.ts) - empty for vanilla, or for any server the Mods tab hasn't
    *  been used on yet. */
   installedMods: InstalledMinecraftMod[]
+  /** Whether console output is parsed/saved/shown at all. Defaults to true (existing
+   *  behavior). A very chatty modpack server can print enough lines, fast enough, that even
+   *  after capping and backgrounding every other cost (ConsoleTab.tsx's MAX_LINES, the
+   *  archive write going async) the console pipe itself is still real, ongoing per-line
+   *  overhead - turning it off entirely is the actual escape hatch for a pack like that,
+   *  rather than trying to make an unboundedly chatty feed cheap enough. Start/Stop,
+   *  sending commands (stdin still works regardless), and the "server ready" detection all
+   *  keep working either way - only the archive write + live Console tab feed are skipped. */
+  consoleLoggingEnabled: boolean
 }
 
 export type MinecraftRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error'

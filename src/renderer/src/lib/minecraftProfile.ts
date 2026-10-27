@@ -24,6 +24,7 @@ export function createDefaultMinecraftProfile(name: string): MinecraftProfile {
     backupDir: '',
     maxBackups: 10,
     backupScheduleEnabled: false,
-    installedMods: []
+    installedMods: [],
+    consoleLoggingEnabled: true
   }
 }

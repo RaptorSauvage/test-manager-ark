@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-27',
+    title: 'New setting: turn off the live console log for a very chatty Minecraft server',
+    details: [
+      'Start Settings now has an "Enable live console log" checkbox. For an especially chatty modpack server where the Console tab still causes lag even with everything else already optimized, turning this off skips the console feed and its saved history entirely - Start/Stop, sending commands, and detecting when the server has finished starting all keep working exactly the same either way.'
+    ]
+  },
+  {
+    date: '2026-10-27',
     title: 'More freeze fixes: console logging no longer touches the disk while a server is busy',
     details: [
       'Every single console line a server printed (Minecraft and ARK\'s Cluster Console alike) was being saved to disk as it happened, and a burst of many lines at once - exactly what a server tends to print while shutting down - meant that many disk writes back to back, right on the Manager\'s own main thread. That history is now saved in the background instead of blocking anything.',

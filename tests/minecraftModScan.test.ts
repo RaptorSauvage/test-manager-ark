@@ -72,6 +72,7 @@ function makeProfile(overrides: Partial<MinecraftProfile> = {}, installDir: stri
     maxBackups: 10,
     backupScheduleEnabled: false,
     installedMods: [],
+    consoleLoggingEnabled: true,
     ...overrides
   }
 }

@@ -95,7 +95,8 @@ let mockMinecraftProfiles: any[] = [
     maxBackups: 10,
     backupScheduleEnabled: false,
     backupSchedule: '',
-    installedMods: [] as unknown[]
+    installedMods: [] as unknown[],
+    consoleLoggingEnabled: true
   }
 ]
 

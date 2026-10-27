@@ -125,7 +125,8 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
       backupDir: '',
       maxBackups: 10,
       backupScheduleEnabled: false,
-      installedMods: []
+      installedMods: [],
+      consoleLoggingEnabled: true
     }
   })
 
@@ -152,6 +153,23 @@ describe('minecraftProcess (spawned via launchMode "script")', () => {
     const backlog = await getConsoleBacklog(profile.id)
     expect(backlog.some((l) => l.text.includes('Starting minecraft server'))).toBe(true)
     expect(backlog.some((l) => l.text.includes('Done (1.234s)! For help, type "help"'))).toBe(true)
+
+    await stopServer(profile)
+  })
+
+  it('skips the archive write and live console feed entirely when consoleLoggingEnabled is false, but ready detection and stdin still work', async () => {
+    // The actual escape hatch for a modpack chatty enough that even the capped, backgrounded
+    // archive write is still real per-line overhead - everything else about the server
+    // (starting, detecting it's ready, sending commands) must keep working regardless.
+    profile.consoleLoggingEnabled = false
+    startServer(profile)
+    await waitUntil(() => getStatus(profile.id).state === 'running')
+
+    expect(await getConsoleBacklog(profile.id)).toEqual([])
+    expect(fs.existsSync(path.join(mockDataDir, 'logs', 'minecraft-console', `${profile.id}.jsonl`))).toBe(false)
+
+    const sent = sendStdinCommand(profile.id, 'say hello')
+    expect(sent).toBe(true)
 
     await stopServer(profile)
   })
@@ -353,7 +371,8 @@ describe('adoptPersistedMinecraftProcesses (re-attaching after a Manager restart
       backupDir: '',
       maxBackups: 10,
       backupScheduleEnabled: false,
-      installedMods: []
+      installedMods: [],
+      consoleLoggingEnabled: true
     }
   })
 

@@ -332,6 +332,19 @@ export default function StartSettingsTab({ profile, onProfileChange }: StartSett
           <input type="checkbox" checked={form.hidden} onChange={(e) => update('hidden', e.target.checked)} />
           Hide from the main dashboard
         </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.consoleLoggingEnabled}
+            onChange={(e) => update('consoleLoggingEnabled', e.target.checked)}
+          />
+          Enable live console log
+        </label>
+        <p className="empty-state">
+          Turn this off for a very chatty modpack if the Console tab is still laggy - Start/Stop, sending commands,
+          and detecting when the server is ready all keep working either way; only the Console tab&apos;s own feed
+          (and its saved history) is skipped.
+        </p>
       </section>
     </form>
   )

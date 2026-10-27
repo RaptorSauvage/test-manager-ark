@@ -22,6 +22,7 @@ export function migrateMinecraftProfile(profile: MinecraftProfile): MinecraftPro
     maxBackups: profile.maxBackups ?? 10,
     backupScheduleEnabled: profile.backupScheduleEnabled ?? false,
     minecraftVersion: profile.minecraftVersion ?? '',
-    installedMods: profile.installedMods ?? []
+    installedMods: profile.installedMods ?? [],
+    consoleLoggingEnabled: profile.consoleLoggingEnabled ?? true
   }
 }

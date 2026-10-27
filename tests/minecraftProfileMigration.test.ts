@@ -35,6 +35,7 @@ describe('migrateMinecraftProfile', () => {
     expect(migrated.backupScheduleEnabled).toBe(false)
     expect(migrated.minecraftVersion).toBe('')
     expect(migrated.installedMods).toEqual([])
+    expect(migrated.consoleLoggingEnabled).toBe(true)
     // Untouched fields survive as-is.
     expect(migrated.name).toBe('Old Server')
     expect(migrated.jarFileName).toBe('server.jar')
@@ -64,7 +65,8 @@ describe('migrateMinecraftProfile', () => {
       maxBackups: 5,
       backupScheduleEnabled: true,
       minecraftVersion: '1.20.1',
-      installedMods: []
+      installedMods: [],
+      consoleLoggingEnabled: true
     }
 
     expect(migrateMinecraftProfile(current)).toEqual(current)
