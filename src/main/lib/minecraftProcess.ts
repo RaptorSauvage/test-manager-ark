@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import fsPromises from 'node:fs/promises'
 import path from 'node:path'
@@ -236,6 +236,36 @@ function killByPid(pid: number): void {
   } catch {
     // Already gone - nothing to do.
   }
+}
+
+/**
+ * Force-kills `pid` and every process still under it in the OS's *current* process tree - not
+ * just `pid` itself. Needed specifically for a Windows launchMode 'script' launch: a
+ * CurseForge/Overwolf-exported modpack's generated run.bat commonly wraps the actual
+ * Minecraft server in its own auto-restart loop ("Automatically restarting server in 5
+ * seconds. Press CTRL+C to abort and exit.") that respawns a brand new java process the
+ * instant the one process Manager is tracking exits - including right after a clean, graceful
+ * "stop". Killing only the one pid Manager happens to know about leaves that loop (and
+ * whichever java process it spawns next, a pid Manager never learns about) running completely
+ * unsupervised in the background - which matches a real report of "the process stays running
+ * after the server stops".
+ *
+ * `taskkill /T` walks the live process tree at the moment it actually runs, not a snapshot
+ * Manager took earlier, so it still catches a process that was respawned after Manager last
+ * checked - unlike trying to track pids one at a time ever could. `/F` force-kills outright,
+ * which also means it never triggers the interactive "Terminate batch job (Y/N)?" prompt a
+ * console-attached batch script shows for a *graceful* break signal (there's nothing to
+ * confirm - a forced kill isn't asking).
+ *
+ * Fire-and-forget (uses the async execFile, not execFileSync - a sync call would block the
+ * entire Electron main process on it) - nothing downstream needs to wait for this to actually
+ * finish; the real server process's own 'exit' event (or the adopted-process poll) is what
+ * finalizes this profile's status either way.
+ */
+function killProcessTreeWindows(pid: number): void {
+  execFile('taskkill', ['/PID', String(pid), '/T', '/F'], () => {
+    // Already gone, or nothing left under it - either way, nothing to do.
+  })
 }
 
 /**
@@ -513,7 +543,14 @@ async function waitForExitOrKill(entry: RunningMinecraftServer, profileId: strin
   if (entry.process) {
     if (!exited && running.has(profileId)) killByPid(entry.pid)
     const wrapperPid = entry.process.pid
-    if (wrapperPid && wrapperPid !== entry.pid && isPidAlive(wrapperPid)) killByPid(wrapperPid)
+    if (wrapperPid) {
+      // On Windows, a tree-kill of the wrapper catches both the "hung on a trailing pause"
+      // case this function's own comment describes AND an auto-restart loop that has already
+      // respawned a brand new java process under it (see killProcessTreeWindows) - either way,
+      // nothing should still be alive under this profile once stopServer/killServer returns.
+      if (platform === 'win32') killProcessTreeWindows(wrapperPid)
+      else if (wrapperPid !== entry.pid && isPidAlive(wrapperPid)) killByPid(wrapperPid)
+    }
     return
   }
   // Adopted process: no child.on('exit') handler exists to clean up its bookkeeping for us.
@@ -576,12 +613,17 @@ export function killServer(profileId: string): MinecraftServerStatus {
   emitStatus({ ...entry.status, state: 'stopping' })
   // See waitForExitOrKill's comment - entry.pid, not entry.process, for the same reason.
   killByPid(entry.pid)
-  // Also kill the wrapper (cmd.exe, after a Windows launchMode 'script' handoff) directly if
-  // it's a different pid - it isn't guaranteed to exit just because the real pid above did
-  // (same "hangs on a trailing pause" case as waitForExitOrKill's own comment), and this is a
-  // force-kill, so there's no reason to wait and see before doing it.
+  // Also kill the wrapper (cmd.exe, after a Windows launchMode 'script' handoff) directly -
+  // it isn't guaranteed to exit just because the real pid above did (same "hangs on a
+  // trailing pause", or an auto-restart loop that respawns a replacement java process Manager
+  // never tracked, cases as waitForExitOrKill's own comment), and this is a force-kill, so
+  // there's no reason to wait and see before doing it. Tree-kill on Windows (see
+  // killProcessTreeWindows) for the same reason waitForExitOrKill uses it.
   const wrapperPid = entry.process?.pid
-  if (wrapperPid && wrapperPid !== entry.pid) killByPid(wrapperPid)
+  if (wrapperPid) {
+    if (platform === 'win32') killProcessTreeWindows(wrapperPid)
+    else if (wrapperPid !== entry.pid) killByPid(wrapperPid)
+  }
   // A live process's own child.on('exit') handler (registered in startServer) finalizes it
   // once the kill actually takes effect; an adopted one (entry.process === null) has no
   // such handler, so nothing else would ever clear its bookkeeping without this.

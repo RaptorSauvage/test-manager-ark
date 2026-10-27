@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-27',
+    title: "Fixed: stopping a Minecraft server didn't actually stop a script with auto-restart",
+    details: [
+      'Some modpack server scripts (CurseForge/Overwolf-exported packs in particular) automatically relaunch the server a few seconds after it stops, unless interrupted - so a graceful Stop from the Manager could save the world and exit the server exactly as asked, only for the script to quietly start a brand new instance right back up behind it, invisible to the Manager. Stop and Kill now force-close the whole launch script (not just the server process itself) on Windows, so nothing is left behind to restart on its own.'
+    ]
+  },
+  {
+    date: '2026-10-27',
     title: 'Minecraft Console tab is much lighter on a fast-scrolling log',
     details: [
       'The Console tab now renders with a real terminal component instead of a plain list, the same approach other server panels (e.g. Pterodactyl) use for this. A busy modpack server printing lots of lines no longer has a visible cost in the Manager - previously, even with everything else already optimized, displaying each new line still had a real cost.',

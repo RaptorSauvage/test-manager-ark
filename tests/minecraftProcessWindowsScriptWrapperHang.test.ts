@@ -15,6 +15,12 @@ import type { MinecraftProfile } from '@shared/minecraft'
 // stop/kill logic used to finalize "stopped" only from entry.process's own 'exit' event, which
 // never fired in that case - see waitForExitOrKill's own comment for the fix.
 //
+// Also covers a second, related real report: some generated run.bat scripts (CurseForge/
+// Overwolf-exported modpacks in particular) wrap the server in their own auto-restart loop
+// that respawns a brand new java process the instant the tracked one exits - including right
+// after a clean "stop" - so merely killing the one pid Manager knows about isn't enough; the
+// wrapper itself has to be tree-killed (taskkill /T /F) so nothing is left alive to restart.
+//
 // findListeningPid is Windows-only, so platform is pinned here (independent of whatever OS
 // actually runs the suite) the same way tests/findListeningPid.test.ts pins it for
 // serverProcess.ts's own equivalent handoff logic.
@@ -47,15 +53,31 @@ const { getOnStdinWrite, setOnStdinWrite } = vi.hoisted(() => {
 
 let fakeChild: FakeWrapperChild
 
+let realPidAlive = true
+let wrapperPidAlive = true
+
+// Real code force-kills the wrapper via `execFile('taskkill', ['/PID', pid, '/T', '/F'], cb)`
+// instead of `process.kill` (see minecraftProcess.ts's killProcessTreeWindows) - this fake
+// simulates taskkill actually succeeding: the targeted pid (and, for the wrapper, everything
+// still under it - this test only ever has the one fake child, so there's nothing further to
+// simulate killing) goes away, and the wrapper's own 'exit' event fires, same as a real
+// taskkill /T /F against a tree rooted at that pid would eventually cause.
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(() => {
     fakeChild = new FakeWrapperChild((data: string) => getOnStdinWrite()(data))
     return fakeChild
+  }),
+  execFile: vi.fn((_cmd: string, args: string[], callback: (err: Error | null) => void) => {
+    const pid = Number(args[1])
+    if (pid === WRAPPER_PID) {
+      wrapperPidAlive = false
+      fakeChild.emit('exit', 0, null)
+    } else if (pid === REAL_PID) {
+      realPidAlive = false
+    }
+    callback(null)
   })
 }))
-
-let realPidAlive = true
-let wrapperPidAlive = true
 
 vi.mock('../src/main/lib/serverProcess', () => ({
   findListeningPid: vi.fn(async () => REAL_PID),
@@ -77,6 +99,7 @@ const { mockDataDir } = vi.hoisted(() => {
 })
 vi.mock('../src/main/lib/dataDir', () => ({ getDataDir: () => mockDataDir }))
 
+import { execFile } from 'node:child_process'
 import { startServer, stopServer, killServer, getStatus, minecraftServerEvents } from '../src/main/lib/minecraftProcess'
 
 function wait(ms: number): Promise<void> {
@@ -133,13 +156,10 @@ describe('minecraftProcess - Windows launchMode "script" wrapper hangs after the
     wrapperPidAlive = true
     setOnStdinWrite(() => {})
 
+    // Real code only ever calls process.kill directly for the real java pid now - the wrapper
+    // is force-killed via execFile('taskkill', ...) instead (mocked above), not process.kill.
     killSpy = vi.spyOn(process, 'kill').mockImplementation(((pid: number) => {
-      if (pid === WRAPPER_PID) {
-        wrapperPidAlive = false
-        fakeChild.emit('exit', 0, null)
-      } else if (pid === REAL_PID) {
-        realPidAlive = false
-      }
+      if (pid === REAL_PID) realPidAlive = false
       return true
     }) as typeof process.kill)
 
@@ -170,9 +190,10 @@ describe('minecraftProcess - Windows launchMode "script" wrapper hangs after the
     const status = await stopServer(profile, 5000)
 
     expect(status.state).toBe('stopped')
-    // The hung wrapper is force-killed directly once the real pid is confirmed gone, rather
-    // than being left running forever in the background.
-    expect(killSpy).toHaveBeenCalledWith(WRAPPER_PID)
+    // The hung wrapper is tree-killed directly once the real pid is confirmed gone, rather
+    // than being left running (or, worse, free to auto-restart a replacement) forever in the
+    // background.
+    expect(execFile).toHaveBeenCalledWith('taskkill', ['/PID', String(WRAPPER_PID), '/T', '/F'], expect.any(Function))
   }, 10000)
 
   it('killServer force-kills both the real java pid and the hung cmd.exe wrapper directly, not just whichever pid happens to be tracked', async () => {
@@ -181,6 +202,6 @@ describe('minecraftProcess - Windows launchMode "script" wrapper hangs after the
     await waitUntil(() => getStatus(profile.id).state === 'stopped', 2000)
 
     expect(killSpy).toHaveBeenCalledWith(REAL_PID)
-    expect(killSpy).toHaveBeenCalledWith(WRAPPER_PID)
+    expect(execFile).toHaveBeenCalledWith('taskkill', ['/PID', String(WRAPPER_PID), '/T', '/F'], expect.any(Function))
   }, 10000)
 })
