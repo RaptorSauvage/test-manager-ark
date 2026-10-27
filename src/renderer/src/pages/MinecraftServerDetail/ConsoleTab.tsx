@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import type { MinecraftProfile } from '@shared/minecraft'
@@ -58,38 +58,50 @@ function writeLine(terminal: Terminal, text: string): void {
  * disableStdin - the terminal itself is output-only; the actual command input is the
  * separate text box below it, same split Pterodactyl's own console uses.
  */
+function createTerminal(): Terminal {
+  return new Terminal({
+    disableStdin: true,
+    cursorStyle: 'underline',
+    fontSize: 13,
+    fontFamily: "'Cascadia Code', 'Consolas', monospace",
+    scrollback: 1000,
+    theme: {
+      background: '#14161a', // --bg
+      foreground: '#e6e8ec', // --text
+      cursor: 'transparent'
+    }
+  })
+}
+
 export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
   const [command, setCommand] = useState('')
   const [sendError, setSendError] = useState('')
   const [chatMode, setChatMode] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const terminal = useMemo(
-    () =>
-      new Terminal({
-        disableStdin: true,
-        cursorStyle: 'underline',
-        fontSize: 13,
-        fontFamily: "'Cascadia Code', 'Consolas', monospace",
-        scrollback: 1000,
-        theme: {
-          background: '#14161a', // --bg
-          foreground: '#e6e8ec', // --text
-          cursor: 'transparent'
-        }
-      }),
-    []
-  )
   const statuses = useMinecraftServerStatuses([profile.id])
   const status = statuses[profile.id]
   const state = status?.state ?? 'stopped'
 
-  // Mounts the terminal into the DOM once and tears it down on unmount - a fresh Terminal
-  // instance every time this tab is opened (see MinecraftServerDetail/index.tsx, which
-  // unmounts ConsoleTab entirely when another tab is selected), matching the previous
-  // design's own "start from a blank feed, refetch the backlog" behavior on reopen.
+  // Mounts a *fresh* Terminal instance into the DOM every time this effect runs, and disposes
+  // exactly that instance on cleanup - deliberately not a single Terminal instance held across
+  // the whole component's lifetime (an earlier version built it once via useMemo and relied on
+  // mount/dispose happening exactly once). React 18's Strict Mode intentionally mounts every
+  // component's effects twice in development (mount -> cleanup -> mount again, to catch
+  // exactly this class of bug) - with a single shared Terminal, that second mount reopened an
+  // instance already dispose()'d by the first cleanup, which xterm.js doesn't support and
+  // failed silently (no console error, just a permanently blank Console tab in dev mode only -
+  // a real report traced to this). Creating a new Terminal per effect invocation makes a
+  // dispose-then-reopen cycle a non-issue: there's nothing stale to reopen.
+  //
+  // Also folds in the backlog fetch + live-line subscription (a separate effect before) so
+  // everything that depends on having a live `terminal` lives in the one effect that actually
+  // owns its lifetime - also still refetches/resets on profile.id or consoleLoggingEnabled
+  // changing, same as before.
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+
+    const terminal = createTerminal()
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
     terminal.open(el)
@@ -98,13 +110,9 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
     const resizeObserver = new ResizeObserver(() => fitAddon.fit())
     resizeObserver.observe(el)
 
-    return () => {
-      resizeObserver.disconnect()
-      terminal.dispose()
-    }
-  }, [terminal])
+    let cancelled = false
+    let unsubscribe = (): void => {}
 
-  useEffect(() => {
     // Nothing to fetch/subscribe to - minecraftProcess.ts's doSpawn skips the archive write
     // and the live 'line' emit entirely for a profile with this off, so there's never
     // anything in either the backlog or the live feed to begin with.
@@ -112,28 +120,30 @@ export default function ConsoleTab({ profile }: ConsoleTabProps): JSX.Element {
       terminal.writeln(
         'Live console log is turned off for this server (Start Settings). Starting/stopping and sending commands below still work either way.'
       )
-      return
+    } else {
+      window.api.minecraft.console.getBacklog(profile.id).then((backlog) => {
+        if (cancelled) return
+        if (backlog.length === 0) {
+          terminal.writeln(state === 'stopped' ? 'No console output yet - start the server to see it.' : 'No console output yet.')
+        } else {
+          for (const line of backlog) writeLine(terminal, line.text)
+        }
+      })
+      unsubscribe = window.api.minecraft.console.onLine((profileId, line) => {
+        if (profileId !== profile.id) return
+        writeLine(terminal, line.text)
+      })
     }
-    let cancelled = false
-    window.api.minecraft.console.getBacklog(profile.id).then((backlog) => {
-      if (cancelled) return
-      if (backlog.length === 0) {
-        terminal.writeln(state === 'stopped' ? 'No console output yet - start the server to see it.' : 'No console output yet.')
-      } else {
-        for (const line of backlog) writeLine(terminal, line.text)
-      }
-    })
-    const unsubscribe = window.api.minecraft.console.onLine((profileId, line) => {
-      if (profileId !== profile.id) return
-      writeLine(terminal, line.text)
-    })
+
     return () => {
       cancelled = true
       unsubscribe()
+      resizeObserver.disconnect()
+      terminal.dispose()
     }
-    // `state`/`terminal` deliberately excluded - this effect's own backlog fetch (not a live
-    // status change) decides which placeholder message to show, and it must not re-run (and
-    // re-fetch/re-print the backlog) just because the server's status happened to tick.
+    // `state` deliberately excluded - this effect's own backlog fetch (not a live status
+    // change) decides which placeholder message to show, and it must not re-run (tearing down
+    // and recreating the whole terminal) just because the server's status happened to tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile.id, profile.consoleLoggingEnabled])
 

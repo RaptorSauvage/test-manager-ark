@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-27',
+    title: 'Fixed the Minecraft Console tab staying permanently blank when running from source in development mode',
+    details: [
+      "Specific to running the Manager from source in development mode (not the normal packaged app) - the Console tab's terminal could fail to render anything at all, with no error anywhere to explain why. Caused by a one-time setup/teardown mix-up when the page is drawn twice in a row during startup (a safety check React itself does only in development, to catch exactly this kind of bug) - fixed so it survives that correctly."
+    ]
+  },
+  {
+    date: '2026-10-27',
     title: 'Added a way to open Developer Tools (the keyboard shortcut had stopped working)',
     details: [
       "Replacing the window's own title bar with the Manager's custom one also quietly removed the default F12/Ctrl+Shift+I shortcut for opening Developer Tools, with nothing to replace it - so there was no way left to see a rendering problem's own error message. F12/Ctrl+Shift+I work again, and there's also a new \"Developer Tools\" entry under Tools in the menu bar."
