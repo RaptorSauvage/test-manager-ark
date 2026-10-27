@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-27',
+    title: 'Fixed an escalating freeze from the CPU/RAM monitor piling up on itself',
+    details: [
+      'The new freeze detector immediately paid off: it caught a real one, pointing straight at the CPU/RAM monitor. On Windows, reading a server\'s CPU/RAM every 5 seconds briefly spawns a small helper process - if a single one of those happened to run slow (antivirus scanning it, the system already busy right after starting a heavy server), the monitor used to start a brand new one on top every 5 seconds anyway instead of waiting, piling more and more of them on top of each other and making the Manager progressively less responsive the longer a server stayed running. It now always waits for the current reading to finish before starting the next one, so a single slow reading can no longer snowball into a long freeze.'
+    ]
+  },
+  {
+    date: '2026-10-27',
     title: 'More freeze fixes: Start/Stop/Kill no longer touch the disk synchronously, plus a built-in freeze detector',
     details: [
       'Found another spot doing a blocking disk write on the main thread: the Manager Log entry written on every single Start/Stop/Kill/Backup/Update/... action. On a slow disk or with antivirus scanning that write, this alone could freeze the whole Manager for a moment - it now happens in the background like the console archive fix from before.',

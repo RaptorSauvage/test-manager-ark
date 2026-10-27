@@ -7,13 +7,33 @@ import { recordStatSample } from './statsHistory'
 import { getProfile } from '../store'
 
 const timers = new Map<string, NodeJS.Timeout>()
+const stopped = new Set<string>()
+
+/**
+ * Self-rescheduling (setTimeout, not setInterval) - the next tick is only scheduled once the
+ * current one's promise has actually settled, so there is never more than one tick in flight
+ * for this profile at a time. A plain setInterval here used to fire every intervalMs
+ * regardless of whether the previous tick had finished: getProcessStats spawns a fresh
+ * powershell.exe per tick on Windows (see processStats.ts), and a real report tied an
+ * escalating, self-reinforcing freeze (blocks a few seconds long, then 15-20+ seconds long,
+ * recurring every ~20s) to exactly this - once a single tick's PowerShell spawn is slow
+ * (antivirus scanning it, the system already under load right after a heavy server start),
+ * overlapping intervals would each spawn their own PowerShell on top of the still-running
+ * one(s), compounding the slowdown instead of just waiting it out.
+ */
+function scheduleNextTick(profile: ServerProfile, intervalMs: number): void {
+  const timer = setTimeout(() => {
+    void tick(profile).finally(() => {
+      if (!stopped.has(profile.id)) scheduleNextTick(profile, intervalMs)
+    })
+  }, intervalMs)
+  timers.set(profile.id, timer)
+}
 
 export function startMonitoring(profile: ServerProfile, intervalMs = 5000): void {
   stopMonitoring(profile.id)
-  const timer = setInterval(() => {
-    void tick(profile)
-  }, intervalMs)
-  timers.set(profile.id, timer)
+  stopped.delete(profile.id)
+  scheduleNextTick(profile, intervalMs)
 }
 
 /** Refreshes just the player list against whatever the latest status is right now (not a
@@ -109,9 +129,10 @@ async function tick(profile: ServerProfile): Promise<void> {
 }
 
 export function stopMonitoring(profileId: string): void {
+  stopped.add(profileId)
   const timer = timers.get(profileId)
   if (timer) {
-    clearInterval(timer)
+    clearTimeout(timer)
     timers.delete(profileId)
   }
 }

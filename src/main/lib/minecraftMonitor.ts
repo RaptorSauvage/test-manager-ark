@@ -5,11 +5,27 @@ import { sendMinecraftRconCommand, parseMinecraftPlayerList } from './minecraftR
 import { getMinecraftRconConfig } from './minecraftProperties'
 
 const timers = new Map<string, NodeJS.Timeout>()
+const stopped = new Set<string>()
+
+/** Self-rescheduling (setTimeout, not setInterval) - see monitor.ts's own scheduleNextTick
+ *  for the full reasoning (same bug, same fix, same real report): a plain setInterval fires
+ *  every intervalMs regardless of whether the previous tick finished, which on Windows meant
+ *  overlapping ticks could each spawn their own powershell.exe (getProcessStats) on top of
+ *  one(s) still running, turning one slow PowerShell spawn into a compounding pile-up instead
+ *  of just a late reading. */
+function scheduleNextTick(profile: MinecraftProfile, intervalMs: number): void {
+  const timer = setTimeout(() => {
+    void tick(profile).finally(() => {
+      if (!stopped.has(profile.id)) scheduleNextTick(profile, intervalMs)
+    })
+  }, intervalMs)
+  timers.set(profile.id, timer)
+}
 
 export function startMinecraftMonitoring(profile: MinecraftProfile, intervalMs = 5000): void {
   stopMinecraftMonitoring(profile.id)
-  const timer = setInterval(() => void tick(profile), intervalMs)
-  timers.set(profile.id, timer)
+  stopped.delete(profile.id)
+  scheduleNextTick(profile, intervalMs)
 }
 
 async function tick(profile: MinecraftProfile): Promise<void> {
@@ -63,9 +79,10 @@ async function tick(profile: MinecraftProfile): Promise<void> {
 }
 
 export function stopMinecraftMonitoring(profileId: string): void {
+  stopped.add(profileId)
   const timer = timers.get(profileId)
   if (timer) {
-    clearInterval(timer)
+    clearTimeout(timer)
     timers.delete(profileId)
   }
 }
