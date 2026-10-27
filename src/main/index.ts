@@ -43,6 +43,7 @@ import { registerIniLockWatcher, unlockStoppedProfilesOnStartup, applyIniLockSet
 import { registerCrashWatch } from './lib/crashWatch'
 import { registerZombieDetection } from './lib/zombieDetection'
 import { registerClusterLogArchiveWatch, startClusterLogArchiveWatch } from './lib/clusterLogArchive'
+import { startMainThreadWatchdog } from './lib/mainThreadWatchdog'
 import { doStartMinecraftServer, doStopMinecraftServer } from './lib/minecraftActions'
 import {
   adoptPersistedMinecraftProcesses,
@@ -242,6 +243,10 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // As early as possible, so it also catches a freeze that happens during the rest of this
+  // startup sequence itself, not just later during normal use.
+  startMainThreadWatchdog()
+
   const profiles = listProfiles()
 
   // Registered before adoption below, so it catches the running-status broadcast that

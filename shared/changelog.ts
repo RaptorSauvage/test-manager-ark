@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-27',
+    title: 'More freeze fixes: Start/Stop/Kill no longer touch the disk synchronously, plus a built-in freeze detector',
+    details: [
+      'Found another spot doing a blocking disk write on the main thread: the Manager Log entry written on every single Start/Stop/Kill/Backup/Update/... action. On a slow disk or with antivirus scanning that write, this alone could freeze the whole Manager for a moment - it now happens in the background like the console archive fix from before.',
+      'Rescanning the mods/plugins folder on a very large modpack (500+ mods) could also freeze the Manager for a while, since it read every mod file from disk one at a time, blocking the whole app for each one. Those reads now happen in the background instead.',
+      "Added a built-in freeze detector: if the Manager's own window ever goes unresponsive for half a second or more, for any reason, it's now recorded in the Manager Log with how long it lasted - so a freeze that still happens somewhere shows up with a concrete number instead of just a vague \"it lagged\"."
+    ]
+  },
+  {
+    date: '2026-10-27',
     title: "Fixed: stopping a Minecraft server didn't actually stop a script with auto-restart",
     details: [
       'Some modpack server scripts (CurseForge/Overwolf-exported packs in particular) automatically relaunch the server a few seconds after it stops, unless interrupted - so a graceful Stop from the Manager could save the world and exit the server exactly as asked, only for the script to quietly start a brand new instance right back up behind it, invisible to the Manager. Stop and Kill now force-close the whole launch script (not just the server process itself) on Windows, so nothing is left behind to restart on its own.'

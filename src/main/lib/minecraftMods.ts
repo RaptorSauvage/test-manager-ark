@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { shell } from 'electron'
@@ -781,10 +782,20 @@ interface UntrackedModFile {
   enabled: boolean
 }
 
-function listUntrackedModFiles(targetDir: string, trackedFileNames: ReadonlySet<string>): UntrackedModFile[] {
-  if (!fs.existsSync(targetDir)) return []
-  return fs
-    .readdirSync(targetDir)
+/** Async (fs.promises), not fs.*Sync - called from scanForInstalledMods below on every single
+ *  Rescan folder click, and a sync readdir blocks the entire Electron main process for however
+ *  long that takes. A single readdir call is normally fast even for a big folder, but it's on
+ *  the exact same hot path as the per-mod reads right below it, which a real report (a 554-mod
+ *  pack) tied to a very noticeable freeze - kept consistent with the rest of that path rather
+ *  than leaving just this one call synchronous. */
+async function listUntrackedModFiles(targetDir: string, trackedFileNames: ReadonlySet<string>): Promise<UntrackedModFile[]> {
+  let names: string[]
+  try {
+    names = await fsPromises.readdir(targetDir)
+  } catch {
+    return []
+  }
+  return names
     .filter((name) => name.endsWith('.jar') || name.endsWith(`.jar${DISABLED_SUFFIX}`))
     .map((diskName) => {
       const enabled = !diskName.endsWith(DISABLED_SUFFIX)
@@ -851,12 +862,25 @@ async function preferCurseForgeForSettledModrinthMods(
   const toCheck = profile.installedMods.filter((m) => m.source === 'modrinth' && m.alsoOn === undefined)
   if (toCheck.length === 0) return profile
 
+  // Reads every already-settled mod's bytes concurrently (fs.promises, not fs.*Sync) - a real
+  // report with a 554-mod pack tied exactly this loop (running sequentially, synchronously) to
+  // a very noticeable freeze on Rescan folder: every one of those mods goes through here until
+  // its own alsoOn is settled, which previously meant that many blocking disk reads back to
+  // back on the Electron main thread, one mod at a time.
   const fileByFingerprint = new Map<number, InstalledMinecraftMod>()
-  for (const mod of toCheck) {
-    const filePath = path.join(targetDir, diskFileName(mod.fileName, mod.enabled))
-    if (!fs.existsSync(filePath)) continue
-    const buffer = fs.readFileSync(filePath)
-    fileByFingerprint.set(computeCurseForgeFingerprint(buffer), mod)
+  const buffers = await Promise.all(
+    toCheck.map(async (mod) => {
+      const filePath = path.join(targetDir, diskFileName(mod.fileName, mod.enabled))
+      try {
+        return { mod, buffer: await fsPromises.readFile(filePath) }
+      } catch {
+        return null
+      }
+    })
+  )
+  for (const entry of buffers) {
+    if (!entry) continue
+    fileByFingerprint.set(computeCurseForgeFingerprint(entry.buffer), entry.mod)
   }
   if (fileByFingerprint.size === 0) return profile
 
@@ -958,7 +982,7 @@ export async function scanForInstalledMods(
   const settledFileNames = new Set(
     profile.installedMods.filter((m) => m.source !== 'unknown').map((m) => m.fileName)
   )
-  const untracked = listUntrackedModFiles(targetDir, settledFileNames)
+  const untracked = await listUntrackedModFiles(targetDir, settledFileNames)
 
   const apiKey = getSettings().curseforgeApiKey.trim()
   let workingProfile = profile
@@ -973,14 +997,18 @@ export async function scanForInstalledMods(
     return { profile: workingProfile, result: { adopted: [] } }
   }
 
-  // Read every untracked file's bytes exactly once, computing both the sha1 (for Modrinth's
-  // hash lookup) and the CurseForge fingerprint (murmur2 of the whitespace-stripped bytes -
-  // see curseforgeFingerprint.ts) from the same buffer, rather than re-reading the file for
-  // each source's own identification scheme.
+  // Read every untracked file's bytes exactly once, concurrently (fs.promises, not
+  // fs.*Sync - same reasoning as listUntrackedModFiles/preferCurseForgeForSettledModrinthMods
+  // above), computing both the sha1 (for Modrinth's hash lookup) and the CurseForge
+  // fingerprint (murmur2 of the whitespace-stripped bytes - see curseforgeFingerprint.ts) from
+  // the same buffer, rather than re-reading the file for each source's own identification
+  // scheme.
   const fileByHash = new Map<string, UntrackedModFile>()
   const fileByFingerprint = new Map<number, UntrackedModFile>()
-  for (const file of untracked) {
-    const buffer = fs.readFileSync(path.join(targetDir, file.diskName))
+  const untrackedBuffers = await Promise.all(
+    untracked.map(async (file) => ({ file, buffer: await fsPromises.readFile(path.join(targetDir, file.diskName)) }))
+  )
+  for (const { file, buffer } of untrackedBuffers) {
     const hash = crypto.createHash('sha1').update(buffer).digest('hex')
     // A hash/fingerprint collision between two different untracked files is astronomically
     // unlikely and not worth guarding - at worst one of them is skipped this scan and picked

@@ -1,4 +1,4 @@
-import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
 import type { ManagerLogEntry } from '@shared/types'
@@ -35,7 +35,56 @@ function nowAsLogDateTime(): { date: string; ts: string } {
   }
 }
 
-export function logManagerEvent(taskId: string, taskLabel: string, message: string, level: 'info' | 'error' = 'info'): void {
+/** The actual disk work, split out of logManagerEvent so that function can stay synchronous
+ *  to call (every one of its ~15 call sites across the app fires it off without awaiting, so
+ *  changing its own signature to async would mean touching every one of them) while the
+ *  actual I/O - previously fs.*Sync throughout - runs in the background instead of blocking
+ *  the entire Electron main process. A real report tied exactly this (nearly every action in
+ *  the app - start/stop/kill/update/backup/... - logs through here) to a several-second
+ *  freeze on, among other things, starting a Minecraft server, even after the other
+ *  known-synchronous calls on that same path had already been fixed. */
+async function persistManagerLogEntry(entry: ManagerLogEntry): Promise<void> {
+  try {
+    const logPath = getManagerLogPath()
+    await fsPromises.mkdir(path.dirname(logPath), { recursive: true })
+    await fsPromises.appendFile(logPath, JSON.stringify(entry) + '\n')
+
+    const { size } = await fsPromises.stat(logPath)
+    if (size > MAX_BYTES) {
+      const buffer = Buffer.alloc(MAX_BYTES)
+      const handle = await fsPromises.open(logPath, 'r')
+      try {
+        await handle.read(buffer, 0, MAX_BYTES, size - MAX_BYTES)
+      } finally {
+        await handle.close()
+      }
+      let text = buffer.toString('utf-8')
+      const firstNewline = text.indexOf('\n')
+      if (firstNewline >= 0) text = text.slice(firstNewline + 1)
+      await fsPromises.writeFile(logPath, text)
+    }
+  } catch (err) {
+    // Best-effort persistence - a disk-level failure (a full disk, a locked file, antivirus, a
+    // dropped network drive, ...) must not break the actual action this is attached to. A real
+    // report showed exactly that on Windows (a raw libuv "UNKNOWN: unknown error, write"): an
+    // unwritable manager.jsonl turned every single server action into a reported failure, even
+    // though the action itself (e.g. stopping the server) had already completed successfully
+    // before this ran.
+    console.error('Failed to persist a Manager Log entry:', (err as Error).message)
+  }
+}
+
+/** Returns the pending persist promise - every real call site fires this as a bare statement
+ *  and ignores it (fire-and-forget, same as before), but a test that wants to readManagerLog()
+ *  right afterward and reliably see this entry needs a way to wait for the write to actually
+ *  land first; returning it here is that hook without making every call site `await` it. Same
+ *  pattern as clusterLogArchive.ts's handleStatusForClusterLogArchiveNotification. */
+export function logManagerEvent(
+  taskId: string,
+  taskLabel: string,
+  message: string,
+  level: 'info' | 'error' = 'info'
+): Promise<void> {
   sequence += 1
   const entry: ManagerLogEntry = {
     id: `${Date.now()}-${sequence}`,
@@ -46,50 +95,23 @@ export function logManagerEvent(taskId: string, taskLabel: string, message: stri
     level
   }
 
-  try {
-    const logPath = getManagerLogPath()
-    fs.mkdirSync(path.dirname(logPath), { recursive: true })
-    fs.appendFileSync(logPath, JSON.stringify(entry) + '\n')
-
-    const { size } = fs.statSync(logPath)
-    if (size > MAX_BYTES) {
-      const buffer = Buffer.alloc(MAX_BYTES)
-      const fd = fs.openSync(logPath, 'r')
-      try {
-        fs.readSync(fd, buffer, 0, MAX_BYTES, size - MAX_BYTES)
-      } finally {
-        fs.closeSync(fd)
-      }
-      let text = buffer.toString('utf-8')
-      const firstNewline = text.indexOf('\n')
-      if (firstNewline >= 0) text = text.slice(firstNewline + 1)
-      fs.writeFileSync(logPath, text)
-    }
-  } catch (err) {
-    // Best-effort persistence - nearly every action in the app (start/stop/kill/update/
-    // backup/...) logs through here, so letting a disk-level failure (a full disk, a locked
-    // file, antivirus, a dropped network drive, ...) throw out of this function would break
-    // the actual action it's attached to, not just its own logging. A real report showed
-    // exactly that on Windows (a raw libuv "UNKNOWN: unknown error, write"): an unwritable
-    // manager.jsonl turned every single server action into a reported failure, even though
-    // the action itself (e.g. stopping the server) had already completed successfully before
-    // this ran.
-    console.error('Failed to persist a Manager Log entry:', (err as Error).message)
-  }
-
   managerLogEvents.emit('log', entry)
+
+  return persistManagerLogEntry(entry)
 }
 
-export function readManagerLog(): ManagerLogEntry[] {
+export async function readManagerLog(): Promise<ManagerLogEntry[]> {
   const logPath = getManagerLogPath()
-  if (!fs.existsSync(logPath)) return []
   let raw: string
   try {
-    raw = fs.readFileSync(logPath, 'utf-8')
+    raw = await fsPromises.readFile(logPath, 'utf-8')
   } catch (err) {
-    // Same reasoning as logManagerEvent's own write-side fix - a disk-level read failure
-    // must not crash whatever asked for the log (the Manager Log view's own IPC read).
-    console.error('Failed to read the Manager Log:', (err as Error).message)
+    // Covers both "file doesn't exist yet" (nothing logged so far) and a genuine disk-level
+    // read failure - same reasoning as persistManagerLogEntry's own write-side fix, a failure
+    // here must not crash whatever asked for the log (the Manager Log view's own IPC read).
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.error('Failed to read the Manager Log:', (err as Error).message)
+    }
     return []
   }
   const entries: ManagerLogEntry[] = []
