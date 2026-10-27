@@ -545,6 +545,13 @@ function writeLaunchBatchFile(profile: ServerProfile, exe: string, args: string[
  * cmd.exe's own near-zero usage. Stops on its own once handed off, or once the profile is no
  * longer running under the wrapper pid it started with.
  */
+/** Self-rescheduling (setTimeout, not setInterval) - the next poll is only scheduled once
+ *  the current one's findListeningPid call has actually settled, so there is never more than
+ *  one in flight. See minecraftProcess.ts's watchForScriptPidHandoff for the full reasoning
+ *  (same bug, same fix, same real report): findListeningPid spawns a netstat.exe process
+ *  every call, and a plain setInterval used to fire a new one every intervalMs regardless of
+ *  whether the previous spawn had finished - once a single spawn ran slow, the next interval
+ *  piled another one on top instead of waiting, compounding into a long freeze. */
 function watchForBatchPidHandoff(profileId: string, port: number, wrapperPid: number, intervalMs = 2000): () => void {
   const taskId = newTaskId('batch-pid-handoff')
   const taskLabel = 'ARK: Survival Evolved pid handoff'
@@ -556,17 +563,18 @@ function watchForBatchPidHandoff(profileId: string, port: number, wrapperPid: nu
 
   let stopped = false
   let attempts = 0
-  const interval = setInterval(() => {
-    if (stopped) return
+  let timer: NodeJS.Timeout
+
+  const poll = (): void => {
     void (async () => {
       const entry = running.get(profileId)
       if (!entry || entry.pid !== wrapperPid) {
         stopped = true
-        clearInterval(interval)
         return
       }
       attempts += 1
       const realPid = await findListeningPid(port)
+      if (stopped) return
       // Logged even when nothing/the wrapper's own pid came back - the exact value (or lack
       // of one) is the whole point of this diagnostic, added after a real report of the
       // hand-off silently never completing with no way to tell why. Capped to the first 10
@@ -594,7 +602,6 @@ function watchForBatchPidHandoff(profileId: string, port: number, wrapperPid: nu
           emitStatus(entry.status)
           logManagerEvent(taskId, taskLabel, `Found it - now tracking pid ${realPid} instead of the launch wrapper (pid ${wrapperPid}).`)
           stopped = true
-          clearInterval(interval)
           return
         }
       }
@@ -614,11 +621,13 @@ function watchForBatchPidHandoff(profileId: string, port: number, wrapperPid: nu
             'CPU/RAM monitoring stays unavailable until it does, but still retrying every 2s in the background (no timeout).'
         )
       }
+      if (!stopped) timer = setTimeout(poll, intervalMs)
     })()
-  }, intervalMs)
+  }
+  timer = setTimeout(poll, intervalMs)
   return () => {
     stopped = true
-    clearInterval(interval)
+    clearTimeout(timer)
   }
 }
 

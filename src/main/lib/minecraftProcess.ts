@@ -201,19 +201,33 @@ function buildJavaArgs(profile: MinecraftProfile): string[] {
  * target whichever pid is actually holding the server's port instead. Stops on its own once
  * handed off, or once the profile is no longer running under the wrapper pid it started
  * with (findListeningPid is Windows-only, matching the only platform this is called from).
+ *
+ * Self-rescheduling (setTimeout, not setInterval) - the next poll is only scheduled once the
+ * current one's findListeningPid call has actually settled, so there is never more than one
+ * in flight. A real report traced an escalating, near-continuous Manager freeze for the first
+ * few minutes after starting a very large modpack - exactly this function's own active
+ * window, before the real java pid is found - to a WPA trace showing electron.exe's message
+ * pump stalled in blocks matching the freeze durations almost exactly, while CPU usage stayed
+ * low throughout. findListeningPid spawns a netstat.exe process every call; a plain
+ * setInterval here used to fire a new one every intervalMs regardless of whether the previous
+ * spawn had finished - once a single spawn ran slow (antivirus scanning it, the system
+ * already busy loading hundreds of mods), the next interval fired anyway and piled another
+ * netstat spawn on top of the one still pending, compounding instead of just waiting. Same
+ * bug, same fix, as monitor.ts/minecraftMonitor.ts's own scheduleNextTick.
  */
 function watchForScriptPidHandoff(profileId: string, port: number, wrapperPid: number, intervalMs = 2000): () => void {
   let stopped = false
-  const interval = setInterval(() => {
-    if (stopped) return
+  let timer: NodeJS.Timeout
+
+  const poll = (): void => {
     void (async () => {
       const entry = running.get(profileId)
       if (!entry || entry.pid !== wrapperPid) {
         stopped = true
-        clearInterval(interval)
         return
       }
       const realPid = await findListeningPid(port)
+      if (stopped) return
       if (realPid && realPid !== wrapperPid && isPidAlive(realPid)) {
         entry.pid = realPid
         entry.pidTracked = true
@@ -224,13 +238,15 @@ function watchForScriptPidHandoff(profileId: string, port: number, wrapperPid: n
         setMinecraftRunningPid(profileId, realPid)
         emitStatus(entry.status)
         stopped = true
-        clearInterval(interval)
+        return
       }
+      if (!stopped) timer = setTimeout(poll, intervalMs)
     })()
-  }, intervalMs)
+  }
+  timer = setTimeout(poll, intervalMs)
   return () => {
     stopped = true
-    clearInterval(interval)
+    clearTimeout(timer)
   }
 }
 

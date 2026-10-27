@@ -100,6 +100,7 @@ const { mockDataDir } = vi.hoisted(() => {
 vi.mock('../src/main/lib/dataDir', () => ({ getDataDir: () => mockDataDir }))
 
 import { execFile } from 'node:child_process'
+import { findListeningPid } from '../src/main/lib/serverProcess'
 import { startServer, stopServer, killServer, getStatus, minecraftServerEvents } from '../src/main/lib/minecraftProcess'
 
 function wait(ms: number): Promise<void> {
@@ -204,4 +205,56 @@ describe('minecraftProcess - Windows launchMode "script" wrapper hangs after the
     expect(killSpy).toHaveBeenCalledWith(REAL_PID)
     expect(execFile).toHaveBeenCalledWith('taskkill', ['/PID', String(WRAPPER_PID), '/T', '/F'], expect.any(Function))
   }, 10000)
+})
+
+// Regression test for a real report: an escalating, near-continuous Manager freeze for the
+// first few minutes after starting a very large modpack - a WPA trace showed electron.exe's
+// own message pump stalled in blocks matching the freeze durations, with CPU staying low
+// throughout. Root cause: watchForScriptPidHandoff's poll used a plain setInterval, firing a
+// new findListeningPid call (which spawns a netstat.exe process) every 2s regardless of
+// whether the previous one had resolved - once a single spawn ran slow (antivirus, the system
+// already busy loading hundreds of mods), overlapping polls piled their own netstat spawns on
+// top of ones still pending. See watchForScriptPidHandoff's own comment for the fix
+// (self-rescheduling setTimeout instead) - same bug, same fix, as monitor.ts/
+// minecraftMonitor.ts's own pile-up (see monitorNoOverlappingTicks.test.ts).
+describe('minecraftProcess - the pid handoff poll never overlaps itself', () => {
+  let tmpDir: string
+  let profile: MinecraftProfile
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-process-win-handoff-test-'))
+    profile = makeProfile(`mc-handoff-test-${Math.random().toString(36).slice(2)}`, tmpDir)
+    setOnStdinWrite(() => {})
+  })
+
+  afterEach(() => {
+    minecraftServerEvents.removeAllListeners()
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('never has more than one findListeningPid call in flight at once, even when a call runs longer than the poll interval', async () => {
+    let concurrentCalls = 0
+    let maxConcurrentCalls = 0
+    let callCount = 0
+    // Never "finds" the real pid - keeps the poll going for the whole test instead of
+    // stopping itself after the first successful handoff.
+    vi.mocked(findListeningPid).mockImplementation(async () => {
+      callCount += 1
+      concurrentCalls += 1
+      maxConcurrentCalls = Math.max(maxConcurrentCalls, concurrentCalls)
+      await wait(2500) // longer than the 2s poll interval - the old setInterval would overlap here
+      concurrentCalls -= 1
+      return null
+    })
+
+    try {
+      startServer(profile)
+      await wait(9000) // covers roughly 2 poll cycles at the real 2s interval, plus doSpawn's own startup overhead
+
+      expect(maxConcurrentCalls).toBe(1)
+      expect(callCount).toBeGreaterThanOrEqual(2)
+    } finally {
+      vi.mocked(findListeningPid).mockImplementation(async () => REAL_PID)
+    }
+  }, 15000)
 })

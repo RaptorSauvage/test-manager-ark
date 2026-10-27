@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-27',
+    title: 'Found and fixed the actual cause of the long Start-time freeze on very large modpacks',
+    details: [
+      "Traced with a real Windows performance trace this time: for the first few minutes after starting a server, the Manager repeatedly checks whether the real game process has finished taking over from its own launch script, every couple of seconds. That check used to fire again on its own schedule even if the previous one hadn't finished yet - normally harmless, but if a single check ran slow (antivirus scanning it, the system already busy loading hundreds of mods), the next one piled right on top of it instead of waiting, and then the one after that, snowballing into exactly the kind of multi-minute freeze reported on a very large modpack. It now always waits for one check to finish before starting the next, so a single slow check can no longer spiral into a long freeze. Applies to both Minecraft and ARK: Survival Evolved servers."
+    ]
+  },
+  {
+    date: '2026-10-27',
     title: "Fixed the real cause of the long freeze (and blank Console tab) when starting a very modded server",
     details: [
       "Found it: starting a very large modpack (hundreds of mods) prints thousands of console lines within seconds, and the console archive was writing each one to disk separately as it arrived - even though each individual write was already non-blocking, firing that many of them at once was enough to flood the Manager's own disk activity and leave it unresponsive for minutes, which is also why the Console tab could show nothing at all during that same window (its own request for the console history was stuck waiting behind the flood). Lines are now batched into a handful of writes instead of thousands, so a chatty startup burst no longer floods anything."
