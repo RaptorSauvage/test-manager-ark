@@ -1,4 +1,4 @@
-import { ActivityType, SlashCommandBuilder } from 'discord.js'
+import { SlashCommandBuilder } from 'discord.js'
 import { refreshServerCache, arkServers, minecraftServers, findServerByName } from '../serverCache'
 import { refreshStatusMessage, refreshMinecraftStatusMessage, updateBotPresence } from '../statusRefresh'
 import {
@@ -231,8 +231,8 @@ const botMaintenanceCommand: SlashCommand = {
 
     if (etat === 'on') {
       setBotMaintenanceMode(true)
+      await updateBotPresence(client, config)
       const botName = client.user?.username ?? 'Bot'
-      client.user?.setActivity(`${botName} est en maintenance`, { type: ActivityType.Custom })
       await interaction.reply(`🔧 Le bot est maintenant marqué en maintenance (statut : « ${botName} est en maintenance »).`)
       return
     }
@@ -248,7 +248,7 @@ const botMaintenanceCommand: SlashCommand = {
     // prochain cycle de rafraîchissement automatique.
     if (config.arkCheckEnabled) {
       await refreshServerCache(config)
-      await updateBotPresence(client)
+      await updateBotPresence(client, config)
     }
   }
 }

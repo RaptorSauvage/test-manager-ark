@@ -44,7 +44,7 @@ vi.mock('node:child_process', () => ({
   fork: (scriptPath: string, args: string[], _options: unknown) => forkMock(scriptPath, args)
 }))
 
-const { startDiscordBot, stopDiscordBot, getDiscordBotStatus } = await import('../src/main/lib/discordBot')
+const { startDiscordBot, stopDiscordBot, getDiscordBotStatus, notifyGameEvent } = await import('../src/main/lib/discordBot')
 
 function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
@@ -82,6 +82,9 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     discordBotMcStatusEmbedDescription: '',
     discordBotMcStatusEmbedColor: '9B59B6',
     discordBotMcCheckEnabled: true,
+    discordBotDisplayEnabled: true,
+    discordBotPresenceEnabled: true,
+    discordBotChatBridgeEnabled: true,
     discordBotMaintenanceWhitelistIds: [],
     discordBotManagerWhitelistIds: [],
     discordBotCurseforgeModuleEnabled: true,
@@ -207,5 +210,76 @@ describe('getDiscordBotStatus', () => {
     await startDiscordBot(makeSettings())
     stopDiscordBot()
     expect(getDiscordBotStatus().running).toBe(false)
+  })
+})
+
+describe('discordBotDisplayEnabled - master switch over the bot\'s visible output', () => {
+  it('passes the ARK/Minecraft status-check and presence/chat-bridge flags through as-is when the master switch is on', async () => {
+    currentSettings = makeSettings({
+      discordBotDisplayEnabled: true,
+      discordBotArkCheckEnabled: true,
+      discordBotMcCheckEnabled: false,
+      discordBotPresenceEnabled: true,
+      discordBotChatBridgeEnabled: false
+    })
+    await startDiscordBot(currentSettings)
+    const config = readWrittenConfig()
+    expect(config.arkCheckEnabled).toBe(true)
+    expect(config.mcCheckEnabled).toBe(false)
+    expect(config.presenceEnabled).toBe(true)
+    expect(config.chatBridgeEnabled).toBe(false)
+  })
+
+  it('overrides every sub-toggle to false when the master switch is off, regardless of their own state', async () => {
+    currentSettings = makeSettings({
+      discordBotDisplayEnabled: false,
+      discordBotArkCheckEnabled: true,
+      discordBotMcCheckEnabled: true,
+      discordBotPresenceEnabled: true,
+      discordBotChatBridgeEnabled: true
+    })
+    await startDiscordBot(currentSettings)
+    const config = readWrittenConfig()
+    expect(config.arkCheckEnabled).toBe(false)
+    expect(config.mcCheckEnabled).toBe(false)
+    expect(config.presenceEnabled).toBe(false)
+    expect(config.chatBridgeEnabled).toBe(false)
+  })
+})
+
+describe('notifyGameEvent - outbound half (game -> Discord) of the chat/events relay', () => {
+  it('sends the gameEvent IPC message when both the master switch and the chat-bridge sub-toggle are on', async () => {
+    currentSettings = makeSettings({ discordBotDisplayEnabled: true, discordBotChatBridgeEnabled: true })
+    await startDiscordBot(currentSettings)
+    const child = lastFork?.child
+    child?.send.mockClear()
+
+    notifyGameEvent('channel-1', 'chat', 'Alice: hello')
+
+    expect(child?.send).toHaveBeenCalledWith({ type: 'gameEvent', channelId: 'channel-1', kind: 'chat', text: 'Alice: hello' })
+  })
+
+  it('does not send when the master switch is off', async () => {
+    await startDiscordBot(makeSettings())
+    const child = lastFork?.child
+    child?.send.mockClear()
+    // notifyGameEvent reads getSettings() fresh on every call (not whatever was passed to
+    // startDiscordBot above - the spawn already happened, this just changes what it sees next).
+    currentSettings = makeSettings({ discordBotDisplayEnabled: false, discordBotChatBridgeEnabled: true })
+
+    notifyGameEvent('channel-1', 'chat', 'Alice: hello')
+
+    expect(child?.send).not.toHaveBeenCalled()
+  })
+
+  it('does not send when just the chat-bridge sub-toggle is off', async () => {
+    await startDiscordBot(makeSettings())
+    const child = lastFork?.child
+    child?.send.mockClear()
+    currentSettings = makeSettings({ discordBotDisplayEnabled: true, discordBotChatBridgeEnabled: false })
+
+    notifyGameEvent('channel-1', 'chat', 'Alice: hello')
+
+    expect(child?.send).not.toHaveBeenCalled()
   })
 })

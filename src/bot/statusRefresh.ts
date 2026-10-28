@@ -62,8 +62,15 @@ async function reacquireStatusMessage(
 }
 
 /** Port of `update_bot_presence` - the bot's own Discord activity text, independent of
- *  whichever channel embeds are posted to. */
-export async function updateBotPresence(client: Client): Promise<void> {
+ *  whichever channel embeds are posted to. config.presenceEnabled off (AppSettings'
+ *  discordBotDisplayEnabled master switch or its own discordBotPresenceEnabled sub-toggle,
+ *  combined already by discordBot.ts's buildConfig) clears whatever's currently showing
+ *  instead of leaving a stale one in place once it's turned off mid-session. */
+export async function updateBotPresence(client: Client, config: DiscordBotConfig): Promise<void> {
+  if (!config.presenceEnabled) {
+    client.user?.setActivity()
+    return
+  }
   const servers = arkServers()
   if (isBotMaintenanceMode()) {
     const botName = client.user?.username ?? 'Bot'
@@ -105,7 +112,7 @@ export async function refreshStatusMessage(client: Client, config: DiscordBotCon
     queryAwsStatus(),
     queryCloudflareStatus()
   ])
-  await updateBotPresence(client)
+  await updateBotPresence(client, config)
   const embed = buildStatusEmbed(arkServers(servers), [eos[0], aws[0], cloudflare[0], official[0]], config)
 
   if (!statusMessage) {

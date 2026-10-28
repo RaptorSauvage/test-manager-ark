@@ -82,6 +82,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // configured with it (there can be more than one - a whole cluster sharing one channel) via
 // RCON ServerChat, the same command /adminchat already uses.
 client.on(Events.MessageCreate, (message) => {
+  if (!config.chatBridgeEnabled) return
   if (message.author.bot) return
   if (!message.content.trim()) return
   const targets = serversForChatChannel(message.channelId, getCachedServers())

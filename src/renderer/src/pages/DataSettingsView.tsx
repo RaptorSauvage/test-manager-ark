@@ -118,6 +118,9 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
     discordBotMcStatusEmbedDescription: '',
     discordBotMcStatusEmbedColor: '9B59B6',
     discordBotMcCheckEnabled: true,
+    discordBotDisplayEnabled: true,
+    discordBotPresenceEnabled: true,
+    discordBotChatBridgeEnabled: true,
     discordBotMaintenanceWhitelistIds: [],
     discordBotManagerWhitelistIds: [],
     discordBotCurseforgeModuleEnabled: true,
@@ -663,13 +666,55 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                 </section>
 
                 <section className="cluster-section">
+                  <h3>Display</h3>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.discordBotDisplayEnabled}
+                      onChange={(e) => setSettings({ ...settings, discordBotDisplayEnabled: e.target.checked })}
+                      disabled={!settings.discordBotEnabled}
+                    />
+                    Show the bot on Discord
+                  </label>
+                  <p className="empty-state">
+                    Master switch over everything the bot actually shows - the status embeds below, its own Discord
+                    presence, and the chat/events relay. Turn this off to silence all of it at once (e.g. while
+                    testing, or if a channel is getting too noisy) without losing any of the settings below - slash
+                    commands, CurseForge update checks, and player-join alerts keep working regardless.
+                  </p>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.discordBotPresenceEnabled}
+                      onChange={(e) => setSettings({ ...settings, discordBotPresenceEnabled: e.target.checked })}
+                      disabled={!settings.discordBotEnabled || !settings.discordBotDisplayEnabled}
+                    />
+                    Show bot presence (&quot;Surveille N survivants&quot;, maintenance status, ...)
+                  </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.discordBotChatBridgeEnabled}
+                      onChange={(e) => setSettings({ ...settings, discordBotChatBridgeEnabled: e.target.checked })}
+                      disabled={!settings.discordBotEnabled || !settings.discordBotDisplayEnabled}
+                    />
+                    Enable chat/events relay
+                  </label>
+                  <p className="empty-state">
+                    Each server&apos;s own chat/events channel ids (Server Settings &gt; Discord) still need to be set
+                    separately - this is just a single override to pause the whole relay at once without clearing
+                    every server&apos;s own configuration.
+                  </p>
+                </section>
+
+                <section className="cluster-section">
                   <h3>ARK cluster status</h3>
                   <label className="checkbox">
                     <input
                       type="checkbox"
                       checked={settings.discordBotArkCheckEnabled}
                       onChange={(e) => setSettings({ ...settings, discordBotArkCheckEnabled: e.target.checked })}
-                      disabled={!settings.discordBotEnabled}
+                      disabled={!settings.discordBotEnabled || !settings.discordBotDisplayEnabled}
                     />
                     Enable ARK status (/status, /statusserveur)
                   </label>
@@ -732,7 +777,7 @@ export default function DataSettingsView({ onBack }: DataSettingsViewProps): JSX
                       type="checkbox"
                       checked={settings.discordBotMcCheckEnabled}
                       onChange={(e) => setSettings({ ...settings, discordBotMcCheckEnabled: e.target.checked })}
-                      disabled={!settings.discordBotEnabled}
+                      disabled={!settings.discordBotEnabled || !settings.discordBotDisplayEnabled}
                     />
                     Enable Minecraft status (/statusmc)
                   </label>

@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-10-28',
+    title: "Added a master switch to turn off everything the Discord bot shows, plus two new sub-toggles",
+    details: [
+      'Settings > Discord Bot now has a "Display" section with a single master switch ("Show the bot on Discord") that silences the status embeds, the bot\'s own Discord presence, and the chat/events relay all at once - handy while testing, or if a channel is getting too noisy. Slash commands, CurseForge update checks, and player-join alerts keep working regardless.',
+      'Two new sub-toggles were also added under it: one for the bot\'s own presence ("Surveille N survivants", maintenance status, ...) and one for the chat/events relay. The existing ARK/Minecraft status checkboxes now also respect the new master switch. Every server\'s own chat/events channel ids still need to be set separately - the master switch and sub-toggles are just a single override to pause everything at once without losing any of that per-server configuration.'
+    ]
+  },
+  {
     date: '2026-10-27',
     title: 'Fixed the Minecraft Console tab staying permanently blank when running from source in development mode',
     details: [

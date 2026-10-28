@@ -45,6 +45,18 @@ export interface DiscordBotConfig {
   mcStatusEmbedColor: string
   mcCheckEnabled: boolean
 
+  /** AppSettings.discordBotDisplayEnabled combined with AppSettings.discordBotPresenceEnabled
+   *  already, by the main process (see discordBot.ts's buildConfig) - the bot itself only
+   *  needs this one flag, not the two separate settings it was folded from. See
+   *  statusRefresh.ts's updateBotPresence. */
+  presenceEnabled: boolean
+  /** Same combination (discordBotDisplayEnabled && discordBotChatBridgeEnabled), for the
+   *  bot's own inbound half of the chat relay (Events.MessageCreate in src/bot/index.ts) -
+   *  the outbound half (discordChatBridgeWatch.ts, in the main process) checks the same two
+   *  settings directly rather than through this config, since it doesn't go through the bot
+   *  process at all until notifyGameEvent actually sends something. */
+  chatBridgeEnabled: boolean
+
   /** Discord user ids, as decimal strings (snowflakes exceed Number's safe integer range). */
   maintenanceWhitelistIds: string[]
   managerWhitelistIds: string[]

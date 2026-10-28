@@ -89,13 +89,20 @@ async function buildConfig(settings: AppSettings): Promise<DiscordBotConfig> {
     statusEmbedTitle: settings.discordBotStatusEmbedTitle,
     statusEmbedDescription: settings.discordBotStatusEmbedDescription,
     statusEmbedColor: settings.discordBotStatusEmbedColor,
-    arkCheckEnabled: settings.discordBotArkCheckEnabled,
+    // discordBotDisplayEnabled is the master switch over every one of the bot's visible
+    // outputs - folded directly into arkCheckEnabled/mcCheckEnabled here (off overrides the
+    // sub-toggle regardless of its own state) rather than given to the bot as a separate
+    // field, since nothing on the bot's side needs to tell "master off" apart from "this one
+    // sub-toggle off" - the effect is identical either way.
+    arkCheckEnabled: settings.discordBotDisplayEnabled && settings.discordBotArkCheckEnabled,
     mcStatusChannelId: settings.discordBotMcStatusChannelId || undefined,
     mcRefreshSeconds: settings.discordBotMcRefreshSeconds,
     mcStatusEmbedTitle: settings.discordBotMcStatusEmbedTitle,
     mcStatusEmbedDescription: settings.discordBotMcStatusEmbedDescription,
     mcStatusEmbedColor: settings.discordBotMcStatusEmbedColor,
-    mcCheckEnabled: settings.discordBotMcCheckEnabled,
+    mcCheckEnabled: settings.discordBotDisplayEnabled && settings.discordBotMcCheckEnabled,
+    presenceEnabled: settings.discordBotDisplayEnabled && settings.discordBotPresenceEnabled,
+    chatBridgeEnabled: settings.discordBotDisplayEnabled && settings.discordBotChatBridgeEnabled,
     maintenanceWhitelistIds: settings.discordBotMaintenanceWhitelistIds,
     managerWhitelistIds: settings.discordBotManagerWhitelistIds,
     groupOrder: settings.groupOrder,
@@ -197,7 +204,15 @@ export function notifyPlayerJoin(serverName: string, playerName: string, uniqueN
  *  profile's own discordChatChannelId/discordEventsChannelId - the bot itself doesn't need
  *  to know which profile a game event came from, just where to put it). `kind` is one of
  *  'chat'/'tame'/'kill'/'mission', used bot-side only to decide how to format the message. */
+/** The outbound half (game -> Discord) of the chat/events relay - see
+ *  discordChatBridgeWatch.ts's own routeGameEvent, its only caller. Checked here (not in
+ *  routeGameEvent itself) so the per-profile log-tailing watch can keep running regardless -
+ *  only the final "actually send it to Discord" step is skipped when the Settings-level
+ *  toggles are off, same as discordBotDisplayEnabled && discordBotChatBridgeEnabled combine
+ *  for the bot's own inbound half (see buildConfig's chatBridgeEnabled above). */
 export function notifyGameEvent(channelId: string, kind: string, text: string): void {
+  const settings = getSettings()
+  if (!settings.discordBotDisplayEnabled || !settings.discordBotChatBridgeEnabled) return
   child?.send?.({ type: 'gameEvent', channelId, kind, text })
 }
 

@@ -387,6 +387,26 @@ export interface AppSettings {
   discordBotMcStatusEmbedDescription: string
   discordBotMcStatusEmbedColor: string
   discordBotMcCheckEnabled: boolean
+  /** Master switch over everything the bot actually *displays* (the ARK/Minecraft status
+   *  embeds, its own Discord presence/activity text, and the chat/events relay) - distinct
+   *  from discordBotEnabled above (whether the bot process runs at all): turning this off
+   *  keeps slash commands, CurseForge update checks, player-join alerts, scheduled actions
+   *  etc. all working exactly as before, it just silences the bot's own visible output. Off
+   *  overrides every one of the three sub-toggles below and discordBotArkCheckEnabled/
+   *  discordBotMcCheckEnabled regardless of their own state; on, each still applies
+   *  individually - see discordBot.ts's buildConfig for where the combination happens. */
+  discordBotDisplayEnabled: boolean
+  /** Sub-toggle for the bot's own Discord presence/activity text (e.g. "Surveille N
+   *  survivants") - see statusRefresh.ts's updateBotPresence. Off clears any activity
+   *  already showing rather than leaving a stale one in place. */
+  discordBotPresenceEnabled: boolean
+  /** Sub-toggle for the chat/events relay (per-profile discordChatChannelId/
+   *  discordEventsChannelId in both directions) - see discordChatBridgeWatch.ts
+   *  (game -> Discord, via notifyGameEvent in discordBot.ts) and the bot's own
+   *  Events.MessageCreate handler (Discord -> game). A profile's own channel ids still need
+   *  to be set independently for anything to actually relay; this is a single override to
+   *  silence all of them at once without clearing each profile's own configuration. */
+  discordBotChatBridgeEnabled: boolean
   /** Discord user ids (decimal strings - snowflakes exceed Number's safe integer range)
    *  allowed to use every admin command (/maintenance, /dinowipe, /saveworld, /adminchat,
    *  /rcon, /schedule, /check, /botmaintenance, /setchannel, /addmod, /removemod). Empty
