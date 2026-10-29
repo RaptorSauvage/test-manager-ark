@@ -1,0 +1,129 @@
+// This PoC exists to answer one question before committing to a real Tauri migration: can a
+// Rust shell spawn and talk to a persistent Node sidecar that runs the EXISTING, UNMODIFIED
+// application logic (src/main/store.ts), and get a real result back into a Tauri webview via
+// an ordinary `invoke()` call? Everything here is scoped to proving exactly that round trip -
+// window chrome, menus, the tray, and the other ~34 IPC modules are deliberately out of scope.
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use tauri::Manager;
+
+#[derive(Serialize)]
+struct RpcRequest<'a> {
+    id: i64,
+    method: &'a str,
+}
+
+#[derive(Deserialize)]
+struct RpcResponse {
+    id: i64,
+    result: Option<Value>,
+    error: Option<String>,
+}
+
+type PendingMap = Arc<Mutex<HashMap<i64, mpsc::Sender<RpcResponse>>>>;
+
+/// Owns the sidecar child's stdin plus the map a background reader thread (spawned alongside
+/// this in `spawn_sidecar`) uses to resolve each response, by id, back to the `call()` that's
+/// waiting on it - stdin writes happen on whichever thread calls a Tauri command, stdout reads
+/// happen continuously on the one reader thread, so the two need a shared, lockable map rather
+/// than a direct return value.
+struct SidecarHandle {
+    stdin: Mutex<ChildStdin>,
+    next_id: AtomicI64,
+    pending: PendingMap,
+    _child: Mutex<Child>,
+}
+
+impl SidecarHandle {
+    fn call(&self, method: &str) -> Result<Value, String> {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let (tx, rx) = mpsc::channel();
+        self.pending.lock().unwrap().insert(id, tx);
+
+        let line = serde_json::to_string(&RpcRequest { id, method }).map_err(|e| e.to_string())? + "\n";
+        {
+            let mut stdin = self.stdin.lock().unwrap();
+            stdin.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+            stdin.flush().map_err(|e| e.to_string())?;
+        }
+
+        // The sidecar is a local child process answering a single cheap store read - a
+        // genuinely hung sidecar (crashed, bad bundle, ...) should surface as an error, not
+        // hang the UI forever waiting on a response that will never come.
+        let response = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(|_| "sidecar did not respond within 5s".to_string())?;
+
+        match (response.result, response.error) {
+            (Some(result), _) => Ok(result),
+            (None, Some(err)) => Err(err),
+            (None, None) => Err("sidecar returned neither a result nor an error".to_string()),
+        }
+    }
+}
+
+#[tauri::command]
+fn profiles_list(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("profiles.list")
+}
+
+/// Spawns the Node sidecar and a background thread that owns reading its stdout for the app's
+/// whole lifetime, matching each response line back to the request waiting on it via
+/// `pending`. Resolved relative to this crate at build time rather than bundled as a Tauri
+/// resource - fine for a PoC run from a source checkout; a real migration would ship this
+/// bundle (or a compiled Node/Bun binary) as a proper Tauri sidecar resource instead.
+fn spawn_sidecar() -> SidecarHandle {
+    let sidecar_path = std::env::var("SIDECAR_PATH")
+        .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../sidecar/dist/sidecar.cjs").to_string());
+
+    let mut child = Command::new("node")
+        .arg(&sidecar_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .unwrap_or_else(|e| panic!("failed to spawn Node sidecar at {sidecar_path}: {e}"));
+
+    let stdin = child.stdin.take().expect("sidecar stdin was not piped");
+    let stdout = child.stdout.take().expect("sidecar stdout was not piped");
+
+    let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
+    let reader_pending = pending.clone();
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            let Ok(response) = serde_json::from_str::<RpcResponse>(&line) else {
+                eprintln!("sidecar: unparseable response line: {line}");
+                continue;
+            };
+            if let Some(tx) = reader_pending.lock().unwrap().remove(&response.id) {
+                let _ = tx.send(response);
+            }
+        }
+    });
+
+    SidecarHandle {
+        stdin: Mutex::new(stdin),
+        next_id: AtomicI64::new(1),
+        pending,
+        _child: Mutex::new(child),
+    }
+}
+
+fn main() {
+    tauri::Builder::default()
+        .setup(|app| {
+            app.manage(spawn_sidecar());
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![profiles_list])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
