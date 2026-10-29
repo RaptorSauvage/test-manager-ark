@@ -3,7 +3,7 @@ import type { AppSettings, SystemStaticInfo } from '@shared/types'
 import type { MinecraftProfile, MinecraftRunState, MinecraftServerStatus, MinecraftServerType } from '@shared/minecraft'
 import { createDefaultMinecraftProfile } from '../lib/minecraftProfile'
 import { confirmAction } from '../lib/confirmAction'
-import type { MinecraftTabKey } from './MinecraftServerDetail'
+import { tabsFor, type MinecraftTabKey } from './MinecraftServerDetail'
 import InstallMinecraftServerPanel from './InstallMinecraftServerPanel'
 import HardwareStatsBar from '../components/HardwareStatsBar'
 import { MINECRAFT_SERVER_TYPE_ICONS } from '../lib/minecraftServerTypeIcons'
@@ -373,8 +373,12 @@ export default function MinecraftDashboard({
         {open && (
           <div className="card-menu-dropdown open" onClick={(e) => e.stopPropagation()}>
             <div className="card-menu-group">
-              <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
-              <button onClick={() => onOpenProfile(profile.id, 'startSettings')}>Settings</button>
+              {tabsFor(profile.serverType).map((t) => (
+                <button key={t.key} onClick={() => onOpenProfile(profile.id, t.key)}>
+                  <span className="card-menu-icon">{t.icon}</span>
+                  {t.label}
+                </button>
+              ))}
             </div>
             <div className="card-menu-group">
               <button

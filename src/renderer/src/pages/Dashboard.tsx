@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AppSettings, MapDefinition, ServerProfile, ServerRunState, ServerStatus, SystemStaticInfo } from '@shared/types'
 import { getGameDefinition } from '@shared/games'
-import type { TabKey } from './ServerDetail'
+import { SERVER_DETAIL_TABS, type TabKey } from './ServerDetail'
 import HardwareStatsBar from '../components/HardwareStatsBar'
 import { GAME_ICONS } from '../lib/gameIcons'
 import { confirmAction } from '../lib/confirmAction'
@@ -395,8 +395,12 @@ export default function Dashboard({
         {open && (
           <div className="card-menu-dropdown open" onClick={(e) => e.stopPropagation()}>
             <div className="card-menu-group">
-              <button onClick={() => onOpenProfile(profile.id)}>Manage</button>
-              <button onClick={() => onOpenProfile(profile.id, 'settings')}>Settings</button>
+              {SERVER_DETAIL_TABS.map((t) => (
+                <button key={t.key} onClick={() => onOpenProfile(profile.id, t.key)}>
+                  <span className="card-menu-icon">{t.icon}</span>
+                  {t.label}
+                </button>
+              ))}
             </div>
             <div className="card-menu-group">
               <button

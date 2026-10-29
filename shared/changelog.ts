@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-29',
+    title: 'Redesigned the server Manage view with a grouped side navigation, and opened it up from the dashboard card menu',
+    details: [
+      "The server detail view (Analytics, Mods, Backups, Settings, ...) now uses the same grouped side navigation as the app's own Settings, instead of a single row of tabs across the top - more room to grow, and a consistent look across the app.",
+      'Each dashboard card\'s "..." menu now lists every one of those tabs directly (with its own icon) instead of a single generic "Manage" entry, so you can jump straight to, say, Backups or Server Management without going through Analytics first. The menu is wider to fit the longer labels comfortably.'
+    ]
+  },
+  {
+    date: '2026-10-29',
     title: "Fixed the Dashboard's Network Usage card staying stuck on \"-\" on some machines",
     details: [
       "The upload/download numbers and the interface name/speed shown underneath them used to come from two separate lookups that could disagree about which network adapter is the \"default\" one - on a machine with more than one active adapter (a VPN client, a virtual one from WSL/Docker/Hyper-V, ...) that could leave the live numbers permanently stuck on \"-\" even though the interface name displayed just fine. Both now consistently use the same resolved adapter."

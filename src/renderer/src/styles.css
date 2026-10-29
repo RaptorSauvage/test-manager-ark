@@ -1723,7 +1723,11 @@ label.checkbox {
   top: 40px;
   right: 14px;
   z-index: 20;
-  width: 200px;
+  /* Wider than half the card's own width (260-340px, see .server-grid) now that the first
+     group lists every Manage tab directly instead of just "Manage"/"Settings" - enough room
+     for the longest labels ("Server Management", "Map Management") plus their icon without
+     wrapping. */
+  width: 230px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1752,10 +1756,15 @@ label.checkbox {
   cursor: pointer;
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 8px 10px;
   border-radius: 6px;
   font-size: 0.85rem;
   color: var(--text);
+}
+
+.card-menu-icon {
+  flex-shrink: 0;
 }
 
 .card-menu-dropdown button:hover {
