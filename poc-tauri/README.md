@@ -4,24 +4,32 @@ Answers one question before committing to a real Electron → Tauri migration: c
 spawn and talk to a persistent Node sidecar running the **existing, unmodified** application
 logic, and get a real result back into a Tauri webview through an ordinary `invoke()` call?
 
-This is scoped to exactly that round trip. Window chrome, the menu bar, the tray, and the other
-~34 IPC modules in `src/main/ipc/` are deliberately out of scope - this only wires up one real
-call (`profiles.list`) to prove the architecture, not to replace anything yet.
+This is scoped to exactly that round trip, now covering three shapes rather than one: a plain
+read (`profiles.list`), a write with parameters (`profiles.save`), and an unsolicited push event
+reaching the webview without it having asked (`profiles-changed`, wrapping `store.ts`'s own
+`profileEvents` emitter) - the last one matters because most of the real app's IPC (console
+output, status changes, ...) is push-shaped, not request/response. Window chrome, the menu bar,
+the tray, and the other ~34 IPC modules in `src/main/ipc/` are still deliberately out of scope.
 
 ## What's here
 
 - `src-tauri/` - a minimal Tauri 2 app. `src/main.rs` spawns the sidecar as a child process on
-  startup, keeps a reader thread on its stdout, and exposes one Tauri command
-  (`profiles_list`) that round-trips a request/response over the sidecar's stdin/stdout.
+  startup, keeps a reader thread on its stdout that routes each line either to the pending
+  `call()` it answers (has an `"id"`) or out to the webview as a Tauri event (has an
+  `"event"` instead), and exposes two Tauri commands: `profiles_list` and `profiles_save`
+  (takes a profile object as its param).
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
-  `listProfiles` from **the real, untouched `src/main/store.ts`** - not a stub or a rewrite.
-  `sidecar/electronShim.ts` stands in for the one Electron API that import chain actually
-  needs (`app.getPath`), since `store.ts` (via `electron-store`) and `lib/dataDir.ts` both
-  assume they're running inside Electron's own process. `sidecar/build.mjs` bundles it with
+  `listProfiles`, `saveProfile`, and `profileEvents` from **the real, untouched
+  `src/main/store.ts`** - not a stub or a rewrite; `profileEvents.on('changed', ...)` is wired
+  straight to a push-event line, so every real write's side effect reaches the webview the same
+  way it would via Electron's `webContents.send`. `sidecar/electronShim.ts` stands in for the
+  one Electron API that import chain actually calls directly (`app.getPath`) - see "electron-
+  store's own fallback" below for a wrinkle this found. `sidecar/build.mjs` bundles it with
   esbuild, aliasing `electron` → the shim, into a single dependency-free `dist/sidecar.cjs`.
-- `frontend/index.html` - a bare page (not the real React UI) that calls
-  `invoke('profiles_list')` and renders whatever comes back, just to prove the webview side of
-  the round trip works too.
+- `frontend/index.html` - a bare page (not the real React UI): calls `invoke('profiles_list')`
+  on load, a button calls `invoke('profiles_save', { profile })` with a hardcoded test profile,
+  and a `listen('profiles-changed', ...)` handler re-renders the list the moment that push event
+  arrives - independent of the button, proving the live-update path.
 
 ## Running it
 
@@ -39,18 +47,64 @@ far (see "what this doesn't prove" below).
 
 ## Result
 
-The round trip works end to end: the webview calls `invoke('profiles_list')` → Rust writes a
-JSON-RPC request to the sidecar's stdin → the sidecar runs the real `listProfiles()` (full
-`electron-store` load, migrations, everything `store.ts` normally does) → the response comes
-back over stdout → Rust resolves the pending call → the webview renders it. No code in
-`src/main/store.ts` was changed for this to work - only `app.getPath('documents')` needed a
-stand-in to run outside Electron.
+**The read path** (`profiles_list`) is confirmed both by screenshot and by watching it run: the
+webview calls `invoke('profiles_list')` → Rust writes a JSON-RPC request to the sidecar's stdin
+→ the sidecar runs the real `listProfiles()` (full `electron-store` load, migrations,
+everything `store.ts` normally does) → the response comes back over stdout → Rust resolves the
+pending call → the webview renders it.
 
-Screenshot (Linux, WebKitGTK, via Xvfb - `Got 0 profile(s)` because this sandbox has no real
-profiles.json, not because anything failed):
+**The write + push path** (`profiles_save` → real `saveProfile()` → real `profileEvents`
+→ `profiles-changed` event → the webview's `listen()` handler) is confirmed too, but by the
+resulting on-disk state rather than a screenshot - see "A rendering dead end" below for why.
+Triggering the button's handler on a timer and checking `~/.config/ark-server-manager-
+nodejs/config.json` afterward showed the new profile, written with a timestamp matching that
+exact run, through `saveProfile`'s *full* migration/defaulting pipeline (`queryPort`,
+`maxPlayers`, every other field `migrateProfile` normally fills in) - not a partial or
+stubbed write. Rust's own log showed no "failed to forward" error for the push side either
+(it does log one, loudly, when `app.emit()` rejects an event name - see below), which is as
+much confirmation of that leg as this environment could give short of a working screenshot.
 
-`Tauri shell PoC - real profiles.list() through a Node sidecar` / `Got 0 profile(s) from the
-real store.ts, via the Rust shell -> Node sidecar round trip.`
+No code in `src/main/store.ts` was changed for any of this - only `app.getPath('documents')`
+needed a stand-in to run outside Electron (see `electronShim.ts`).
+
+Screenshot of the read path (Linux, WebKitGTK, via Xvfb - `Got 0 profile(s)` because this
+sandbox has no real profiles.json, not because anything failed):
+
+`Tauri shell PoC - real store.ts through a Node sidecar` / `Got 0 profile(s) from the real
+store.ts, via the Rust shell -> Node sidecar round trip.`
+
+### A rendering dead end (and why it doesn't undercut the result above)
+
+Confirming the write+push path visually turned into its own small investigation. In order:
+
+1. `xdotool click` at the button's screen coordinates did nothing - no error, no state change at
+   all, not even a focus ring.
+2. Focusing the window first and clicking by window-relative coordinates got a focus ring to
+   appear on the button, but still no click handler firing.
+3. Switched to triggering the save on a `setTimeout` instead of a real click, to isolate "is
+   input simulation the problem" from "does the write+push path work" - still nothing changed
+   on screen after waiting well past the timer.
+4. That ruled out input simulation specifically, which pointed at something more fundamental:
+   edited `frontend/index.html` **without** rebuilding the Rust binary first, assuming
+   `frontendDist` is read live from disk. It isn't - Tauri embeds it at `cargo build` time, so
+   every edit needs a rebuild before it's visible, which this PoC's own first few check-ins
+   quietly got right only by accident (the README already said `cargo build` in "Running it").
+   After rebuilding, the on-disk write started happening on schedule (see above) - the
+   architecture worked the whole time.
+5. What still never changed was the **screen**. Checked the actual file on disk (not the
+   screenshot) and found the write already there, timestamped to the right second. So the
+   webview's JS executed, `invoke`/the event listener both did their job, and the DOM almost
+   certainly updated - but WebKitGTK never repainted the X window to reflect it. Tried
+   `LIBGL_ALWAYS_SOFTWARE=1` (cleared the DRI3/EGL warnings) and forcing a relayout via
+   `xdotool windowsize` (a common repaint trigger) - neither changed the screenshot. The first
+   frame painted correctly every time; nothing after that ever did.
+
+Read together, this looks like a software-rendering compositing limit specific to WebKitGTK
+under a bare Xvfb (no window manager, no real GPU) in this particular sandbox, not a problem
+with the Tauri/sidecar architecture itself - the filesystem is a more reliable witness than a
+screenshot here, and it says the write and the push event both landed. Still, this is a real
+gap: a Windows run with WebView2 is the only way to confirm the push path *visually*, and
+should be the first thing checked there before trusting that it "just works" end to end.
 
 ### Measured, on this Linux sandbox
 
@@ -63,6 +117,25 @@ real store.ts, via the Rust shell -> Node sidecar round trip.`
   copy the way Electron does, and runs with real GPU acceleration on real hardware; both cut
   against this measurement in opposite, hard-to-predict ways. The disk-size comparison above is
   solid regardless of platform; the RAM comparison needs a real Windows run to mean anything.
+
+## Two more findings from actually running this, not from reading docs
+
+- **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
+  `only alphanumeric, '-', '/', ':', '_' permitted for event names` - caught immediately
+  because the whole call is wrapped and logged rather than ignored (see `main.rs`). Renamed to
+  `profiles-changed`. A real migration would need this as a known constraint when choosing
+  event names for every IPC channel being ported, not just this one.
+- **`electron-store`'s own "am I really in Electron" check ignores a stubbed `app.getPath`.**
+  The first write landed at `~/.config/ark-server-manager-nodejs/config.json` - not
+  `electronShim.ts`'s intended `~/.tauri-poc-bober-manager`. `electron-store` has its own
+  internal detection for whether it's genuinely running inside Electron, and outside of that it
+  falls back to resolving a data directory from the nearest `package.json`'s `name` field via
+  `env-paths`, bypassing `app.getPath('userData')` entirely regardless of what the shim returns.
+  Harmless for this PoC (the data still round-trips correctly, just not to the directory this
+  PoC expected), but worth knowing for real: controlling where a sidecar's `electron-store` data
+  lands needs either `cwd` passed explicitly to `new Store(...)` in `store.ts` itself (a tiny,
+  low-risk change, and arguably the more correct fix regardless of Tauri) or accepting
+  `electron-store`'s own fallback location when running outside Electron.
 
 ## What this doesn't prove yet
 

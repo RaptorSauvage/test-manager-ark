@@ -15,9 +15,22 @@
         font-size: 1.1rem;
         margin-top: 0;
       }
-      #status {
+      #status,
+      #push-status {
         color: #9aa0ab;
+        margin-bottom: 12px;
+      }
+      button {
+        background: #1d2027;
+        border: 1px solid #2c303a;
+        color: #e6e8ec;
+        border-radius: 6px;
+        padding: 8px 14px;
+        cursor: pointer;
         margin-bottom: 16px;
+      }
+      button:hover {
+        border-color: #4f8cff;
       }
       ul {
         list-style: none;
@@ -33,34 +46,77 @@
       .error {
         color: #e0555b;
       }
+      .live {
+        color: #3fbf6f;
+      }
     </style>
   </head>
   <body>
-    <h1>Tauri shell PoC - real profiles.list() through a Node sidecar</h1>
+    <h1>Tauri shell PoC - real store.ts through a Node sidecar</h1>
     <div id="status">Calling profiles_list via Tauri invoke()...</div>
+    <button id="save-btn">Save a test profile (profiles_save, real write)</button>
+    <div id="push-status">Waiting for a 'profiles-changed' push event (no invoke involved)...</div>
     <ul id="list"></ul>
     <script type="module">
       const { invoke } = window.__TAURI__.core
+      const { listen } = window.__TAURI__.event
 
       const statusEl = document.getElementById('status')
+      const pushStatusEl = document.getElementById('push-status')
       const listEl = document.getElementById('list')
+      const saveBtn = document.getElementById('save-btn')
 
-      invoke('profiles_list')
-        .then((profiles) => {
-          statusEl.textContent = `Got ${profiles.length} profile(s) from the real store.ts, via the Rust shell -> Node sidecar round trip.`
-          for (const p of profiles) {
-            const li = document.createElement('li')
-            li.textContent = `${p.name} (${p.game}) - ${p.installDir}`
-            listEl.appendChild(li)
-          }
-        })
-        .catch((err) => {
-          statusEl.textContent = 'Error calling profiles_list:'
+      function renderList(profiles) {
+        listEl.innerHTML = ''
+        for (const p of profiles) {
+          const li = document.createElement('li')
+          li.textContent = `${p.name} (${p.game}) - ${p.installDir}`
+          listEl.appendChild(li)
+        }
+      }
+
+      function refresh() {
+        invoke('profiles_list')
+          .then((profiles) => {
+            statusEl.textContent = `Got ${profiles.length} profile(s) from the real store.ts, via the Rust shell -> Node sidecar round trip.`
+            renderList(profiles)
+          })
+          .catch((err) => {
+            statusEl.textContent = 'Error calling profiles_list:'
+            statusEl.classList.add('error')
+            console.error(err)
+          })
+      }
+
+      // Proves the push side independently of the button: this fires from store.ts's own
+      // profileEvents EventEmitter, forwarded sidecar -> Rust -> webview, without the webview
+      // ever calling invoke() to ask for it - the same shape the real app's console/status
+      // streaming would need.
+      listen('profiles-changed', (event) => {
+        pushStatusEl.textContent = `Live update received via 'profiles-changed' push event (${event.payload.length} profile(s)) - not from a button click.`
+        pushStatusEl.classList.add('live')
+        renderList(event.payload)
+      })
+
+      function saveTestProfile() {
+        const testProfile = {
+          id: 'poc-test-' + Date.now(),
+          name: 'POC Test Server ' + new Date().toLocaleTimeString(),
+          game: 'ark-ascended',
+          installDir: '/tmp/poc-test-install',
+          backupDir: '',
+          clusterDirOverride: ''
+        }
+        invoke('profiles_save', { profile: testProfile }).catch((err) => {
+          statusEl.textContent = 'Error calling profiles_save:'
           statusEl.classList.add('error')
-          const pre = document.createElement('pre')
-          pre.textContent = String(err)
-          document.body.appendChild(pre)
+          console.error(err)
         })
+      }
+
+      saveBtn.addEventListener('click', saveTestProfile)
+
+      refresh()
     </script>
   </body>
 </html>
