@@ -53,6 +53,7 @@ import {
 import { startMinecraftMonitoring } from './lib/minecraftMonitor'
 import { applyMinecraftScheduledRestart } from './lib/minecraftScheduledActions'
 import { applyMinecraftBackupSchedule, registerMinecraftBackupScheduleWatcher } from './lib/minecraftBackupSchedule'
+import { markStartupComplete } from './lib/startupStatus'
 
 // Electron apps that only hide (not quit) when their window closes - see "close to tray"
 // below - make it very easy to end up with a second instance running invisibly in the
@@ -393,6 +394,12 @@ app.whenReady().then(async () => {
         (index + 1) * minecraftStaggerMs
       )
     })
+
+  // Lets the renderer's own loading screen cover the whole startup sequence above, not just
+  // the first profiles/settings IPC round-trip (which, now that this sequence yields between
+  // steps instead of running as one uninterrupted block, can resolve well before the rest of
+  // it is actually done) - see lib/startupStatus.ts and the renderer's appStartup.onComplete.
+  markStartupComplete()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

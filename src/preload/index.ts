@@ -255,6 +255,14 @@ const api: Api = {
       return () => ipcRenderer.removeListener(IPC.appUpdateStatusChanged, listener)
     }
   },
+  appStartup: {
+    isComplete: () => ipcRenderer.invoke(IPC.appStartupStatus),
+    onComplete: (callback: () => void) => {
+      const listener = (): void => callback()
+      ipcRenderer.on(IPC.appStartupStatusChanged, listener)
+      return () => ipcRenderer.removeListener(IPC.appStartupStatusChanged, listener)
+    }
+  },
   groupConsole: {
     subscribe: (profileIds: string[]) => ipcRenderer.invoke(IPC.groupConsoleSubscribe, profileIds),
     unsubscribe: () => ipcRenderer.invoke(IPC.groupConsoleUnsubscribe),

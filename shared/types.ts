@@ -1015,6 +1015,9 @@ export const IPC = {
   appUpdateStatus: 'app-update:status',
   appUpdateStatusChanged: 'app-update:status-changed',
 
+  appStartupStatus: 'app-startup:status',
+  appStartupStatusChanged: 'app-startup:status-changed',
+
   groupConsoleSubscribe: 'group-console:subscribe',
   groupConsoleUnsubscribe: 'group-console:unsubscribe',
   groupConsoleEvent: 'group-console:event',
@@ -1516,6 +1519,16 @@ export interface Api {
     install: () => Promise<void>
     getStatus: () => Promise<AppUpdateStatus>
     onStatusChanged: (callback: (status: AppUpdateStatus) => void) => () => void
+  }
+  /** Whether main/index.ts's own app.whenReady() startup sequence (re-attaching to
+   *  already-running servers, starting the Web Dashboard, arming the Event Scheduler, ...)
+   *  has fully finished - distinct from whether the renderer's own first profiles/settings
+   *  IPC calls have resolved, which can happen earlier now that sequence yields between
+   *  steps instead of blocking start to finish. The renderer's loading screen waits on this
+   *  too, so it covers the whole startup instead of disappearing early. */
+  appStartup: {
+    isComplete: () => Promise<boolean>
+    onComplete: (callback: () => void) => () => void
   }
   groupConsole: {
     /** Starts tailing every given profile's log and resolves with its current backlog

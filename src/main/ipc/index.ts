@@ -36,6 +36,7 @@ import { registerModEventsHandlers } from './modEvents'
 import { registerIniTemplatesHandlers } from './iniTemplates'
 import { registerPlayerActivityHandlers } from './playerActivity'
 import { registerFileBrowserHandlers } from './fileBrowser'
+import { registerStartupStatusHandlers } from './startupStatus'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerProfileHandlers(mainWindow.webContents)
@@ -75,4 +76,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerIniTemplatesHandlers()
   registerPlayerActivityHandlers()
   registerFileBrowserHandlers()
+  registerStartupStatusHandlers(mainWindow.webContents)
 }

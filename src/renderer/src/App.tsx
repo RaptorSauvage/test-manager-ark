@@ -99,6 +99,25 @@ export default function App(): JSX.Element {
   const [minecraftInitialTab, setMinecraftInitialTab] = useState<MinecraftTabKey | undefined>(undefined)
   const [minecraftLoaded, setMinecraftLoaded] = useState(false)
 
+  // Separate from loaded/minecraftLoaded above - those just reflect the first profiles list
+  // IPC calls resolving, which (now that main/index.ts's own startup sequence yields between
+  // steps instead of blocking start to finish) can happen well before the rest of startup
+  // actually finishes. Query-then-subscribe: isComplete() covers the window where it was
+  // already done by the time this mounts, onComplete covers the window where it finishes
+  // while this is already waiting.
+  const [startupComplete, setStartupComplete] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    window.api.appStartup.isComplete().then((complete) => {
+      if (!cancelled && complete) setStartupComplete(true)
+    })
+    const unsubscribe = window.api.appStartup.onComplete(() => setStartupComplete(true))
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [])
+
   // Lifted up here (rather than living inside Dashboard/MinecraftDashboard/HardwareStatsBar
   // themselves) specifically because App.tsx never unmounts, while Dashboard does: navigating
   // to a server's own detail view and back is a full unmount+remount of Dashboard (see the
@@ -313,7 +332,7 @@ export default function App(): JSX.Element {
     />
   )
 
-  if (!loaded || !minecraftLoaded) {
+  if (!loaded || !minecraftLoaded || !startupComplete) {
     return (
       <>
         {titleBar}
