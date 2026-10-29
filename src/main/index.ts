@@ -197,13 +197,16 @@ function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
-    show: false,
-    // Matches styles.css's own --bg - Electron's own window background otherwise defaults to
-    // white, and paints that in for at least the very first frame regardless of `show: false`
-    // + 'ready-to-show' below (which waits for the page to have painted *something*, not
-    // specifically for the app's own dark background to be what got painted) - a real report
-    // of a white flash on launch traced to exactly this, on top of the startup sequence timing
-    // fixed separately above (see createWindow's own call site in app.whenReady()).
+    // Not show: false + a 'ready-to-show' listener (the usual Electron pattern to avoid a
+    // white flash) - that listener can only ever run once this whole whenReady() callback
+    // below returns control to the event loop, since it's one synchronous function body with
+    // no yield points, and everything after createWindow() (re-attaching to already-running
+    // servers, starting the Web Dashboard, arming the Event Scheduler, ...) runs inside it -
+    // so with show: false the window stayed invisible for that entire stretch regardless of
+    // how early createWindow() itself was called, which is exactly the "still there" white
+    // screen a real report kept hitting even after that reordering. Showing immediately
+    // instead sidesteps the whole problem: backgroundColor below means there's nothing white
+    // to flash in the meantime anyway.
     backgroundColor: '#14161a',
     icon: iconPath,
     // No OS title bar - the renderer draws its own (src/renderer/src/components/TitleBar.tsx),
@@ -217,8 +220,6 @@ function createWindow(): void {
     }
   })
   mainWindowRef = mainWindow
-
-  mainWindow.once('ready-to-show', () => mainWindow.show())
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     void shell.openExternal(details.url)
