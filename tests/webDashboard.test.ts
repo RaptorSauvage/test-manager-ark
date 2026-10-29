@@ -514,7 +514,8 @@ describe('web dashboard HTTP server', () => {
         gameVersion: null,
         statsEnabled: undefined,
         gameIconUrl: '/game-icons/ark-ascended.png',
-        gameDisplayName: 'ARK: Survival Ascended'
+        gameDisplayName: 'ARK: Survival Ascended',
+        discordBotExcluded: undefined
       },
       {
         id: 'p2',
@@ -529,7 +530,8 @@ describe('web dashboard HTTP server', () => {
         gameVersion: '92.28',
         statsEnabled: undefined,
         gameIconUrl: '/game-icons/ark-ascended.png',
-        gameDisplayName: 'ARK: Survival Ascended'
+        gameDisplayName: 'ARK: Survival Ascended',
+        discordBotExcluded: undefined
       },
       {
         id: 'mc1',
@@ -546,9 +548,26 @@ describe('web dashboard HTTP server', () => {
         serverType: 'vanilla',
         statsEnabled: undefined,
         gameIconUrl: '/game-icons/minecraft.png',
-        gameDisplayName: 'Minecraft'
+        gameDisplayName: 'Minecraft',
+        discordBotExcluded: undefined
       }
     ])
+  })
+
+  it('surfaces discordBotExcluded as true on a server with it set, for both ARK and Minecraft', async () => {
+    const ark = mockProfiles.find((p) => p.id === 'p1')
+    const mc = mockMinecraftProfiles.find((p) => p.id === 'mc1')
+    ark.discordBotExcluded = true
+    mc.discordBotExcluded = true
+    try {
+      const res = await request('/api/servers')
+      const servers = JSON.parse(res.body) as Array<{ id: string; discordBotExcluded: boolean }>
+      expect(servers.find((s) => s.id === 'p1')?.discordBotExcluded).toBe(true)
+      expect(servers.find((s) => s.id === 'mc1')?.discordBotExcluded).toBe(true)
+    } finally {
+      delete ark.discordBotExcluded
+      delete mc.discordBotExcluded
+    }
   })
 
   describe('Minecraft servers', () => {

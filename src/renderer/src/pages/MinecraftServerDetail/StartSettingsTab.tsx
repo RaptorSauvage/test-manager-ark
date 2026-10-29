@@ -345,6 +345,20 @@ export default function StartSettingsTab({ profile, onProfileChange }: StartSett
           and detecting when the server is ready all keep working either way; only the Console tab&apos;s own feed
           (and its saved history) is skipped.
         </p>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.discordBotExcluded}
+            onChange={(e) => update('discordBotExcluded', e.target.checked)}
+          />
+          Ignored by the Discord bot
+        </label>
+        <p className="empty-state">
+          When checked, the Discord bot treats this server as if it doesn&apos;t exist at all - left out of the
+          Minecraft status embed, and out of every admin slash command&apos;s own server autocomplete. Independent of
+          the global Discord Bot switches in Settings (which turn the bot&apos;s display off for every server at
+          once).
+        </p>
       </section>
     </form>
   )

@@ -469,6 +469,20 @@ export default function SettingsTab({ profile, onProfileChange }: SettingsTabPro
           to the Events Channel - both independent of the cluster settings above and off by default. Set the same
           channel id on every server in a cluster to share one channel between them.
         </p>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.discordBotExcluded}
+            onChange={(e) => update('discordBotExcluded', e.target.checked)}
+          />
+          Ignored by the Discord bot
+        </label>
+        <p className="empty-state">
+          When checked, the Discord bot treats this server as if it doesn't exist at all - left out of the ARK
+          status embed, out of its presence player count, and out of every admin slash command's own server
+          autocomplete. Independent of the global Discord Bot switches in Settings (which turn the bot's display off
+          for every server at once).
+        </p>
       </section>
       <section className="cluster-section launch-command-section">
         <h3>Launch command</h3>

@@ -23,6 +23,7 @@ export function migrateMinecraftProfile(profile: MinecraftProfile): MinecraftPro
     backupScheduleEnabled: profile.backupScheduleEnabled ?? false,
     minecraftVersion: profile.minecraftVersion ?? '',
     installedMods: profile.installedMods ?? [],
-    consoleLoggingEnabled: profile.consoleLoggingEnabled ?? true
+    consoleLoggingEnabled: profile.consoleLoggingEnabled ?? true,
+    discordBotExcluded: profile.discordBotExcluded ?? false
   }
 }

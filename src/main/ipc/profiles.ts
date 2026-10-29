@@ -113,6 +113,7 @@ export function registerProfileHandlers(webContents: WebContents): void {
       externalIp: '',
       discordChatChannelId: '',
       discordEventsChannelId: '',
+      discordBotExcluded: false,
       cultureSettings: 'none',
       disableBattlEye: false,
       rconTribeLog: false,

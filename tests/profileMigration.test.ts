@@ -29,6 +29,7 @@ function baseProfile(overrides: Record<string, unknown>): ServerProfile {
     externalIp: '',
     discordChatChannelId: '',
     discordEventsChannelId: '',
+    discordBotExcluded: false,
     cultureSettings: 'none',
     disableBattlEye: false,
     rconTribeLog: false,
@@ -159,6 +160,11 @@ describe('migrateProfile', () => {
     expect(migrated.rconTribeLog).toBe(false)
     expect(migrated.forceRespawnDinos).toBe(false)
     expect(migrated.noSound).toBe(false)
+  })
+
+  it('backfills discordBotExcluded to false on profiles saved before it existed', () => {
+    const legacy = baseProfile({ discordBotExcluded: undefined })
+    expect(migrateProfile(legacy).discordBotExcluded).toBe(false)
   })
 
   it('backfills maxDinoLevel to an empty string on profiles saved before it existed', () => {

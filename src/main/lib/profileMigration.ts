@@ -59,6 +59,7 @@ interface LegacyProfileFields {
  * - `sessionName` was added then removed again before release - dropped from any profile
  *   that still has it on disk
  * - `autoManageMods` is new and defaults to false (ARK: Survival Evolved only)
+ * - `discordBotExcluded` is new and defaults to false (not excluded from the Discord bot)
  */
 export function migrateProfile(raw: ServerProfile & LegacyProfileFields): ServerProfile {
   const {
@@ -99,6 +100,7 @@ export function migrateProfile(raw: ServerProfile & LegacyProfileFields): Server
     externalIp: rest.externalIp ?? '',
     discordChatChannelId: rest.discordChatChannelId ?? '',
     discordEventsChannelId: rest.discordEventsChannelId ?? '',
+    discordBotExcluded: rest.discordBotExcluded ?? false,
     cultureSettings: rest.cultureSettings ?? 'none',
     disableBattlEye: rest.disableBattlEye ?? false,
     rconTribeLog: rest.rconTribeLog ?? false,

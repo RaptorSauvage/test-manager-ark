@@ -14,7 +14,12 @@ export function getCachedServers(): ManagerServerInfo[] {
 }
 
 export async function refreshServerCache(config: DiscordBotConfig): Promise<ManagerServerInfo[]> {
-  cached = await fetchManagerServers(config)
+  // Filtered here, once, rather than at each call site below - a server with
+  // discordBotExcluded set is meant to be invisible to the bot entirely (status embeds,
+  // presence, admin commands, autocomplete, the chat bridge), and every one of those reads
+  // from this same cache (directly or via arkServers/minecraftServers/findServerByName/
+  // serversForChatChannel below).
+  cached = (await fetchManagerServers(config)).filter((s) => !s.discordBotExcluded)
   return cached
 }
 

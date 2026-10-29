@@ -475,7 +475,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         gameIconUrl: `/game-icons/${game.iconFileName}`,
         gameDisplayName: game.displayName,
         discordChatChannelId: profile.discordChatChannelId || undefined,
-        discordEventsChannelId: profile.discordEventsChannelId || undefined
+        discordEventsChannelId: profile.discordEventsChannelId || undefined,
+        discordBotExcluded: profile.discordBotExcluded
       }
     })
     const minecraftCollapsedGroups = new Set(settings.minecraftCollapsedGroups)
@@ -503,7 +504,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           serverType: profile.serverType,
           statsEnabled: undefined,
           gameIconUrl: `/game-icons/${MINECRAFT_ICON_FILE_NAME}`,
-          gameDisplayName: 'Minecraft'
+          gameDisplayName: 'Minecraft',
+          discordBotExcluded: profile.discordBotExcluded
         }
       }
     )

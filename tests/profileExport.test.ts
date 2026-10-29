@@ -30,6 +30,7 @@ function makeProfile(overrides: Partial<ServerProfile> = {}): ServerProfile {
     externalIp: '',
     discordChatChannelId: '',
     discordEventsChannelId: '',
+    discordBotExcluded: false,
     cultureSettings: 'none',
     disableBattlEye: false,
     rconTribeLog: false,

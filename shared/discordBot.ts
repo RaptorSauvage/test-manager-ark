@@ -111,6 +111,12 @@ export interface ManagerServerInfo {
    *  resolves it before ever messaging the bot (see discordChatBridgeWatch.ts). */
   discordChatChannelId?: string
   discordEventsChannelId?: string
+  /** The profile's own ServerProfile.discordBotExcluded/MinecraftProfile.discordBotExcluded -
+   *  always present (set by webDashboard.ts's /api/servers route for both ARK and Minecraft
+   *  entries). serverCache.ts's refreshServerCache filters these out of its cache entirely, so
+   *  every other consumer (status embeds, presence, admin commands, autocomplete, the chat
+   *  bridge) never sees an excluded server in the first place. */
+  discordBotExcluded: boolean
 }
 
 export function isMinecraftServerInfo(server: ManagerServerInfo): boolean {

@@ -12,6 +12,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-10-29',
+    title: 'Added a per-server switch to make the Discord bot ignore a specific server entirely',
+    details: [
+      'Each server now has its own "Ignored by the Discord bot" checkbox (Settings tab for ARK, Start Settings tab for Minecraft). When checked, the bot treats that one server as if it doesn\'t exist at all - left out of the status embed, out of the presence player count, and out of every admin slash command\'s own server autocomplete (/check, /restart, /rcon, ...). Independent of the global Discord Bot Display switches added yesterday, which turn the bot\'s output off for every server at once - this is the per-server equivalent, for when just one server should stay off the bot\'s radar.'
+    ]
+  },
+  {
     date: '2026-10-28',
     title: "Added a master switch to turn off everything the Discord bot shows, plus two new sub-toggles",
     details: [

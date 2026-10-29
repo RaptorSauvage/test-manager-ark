@@ -127,6 +127,11 @@ export interface MinecraftProfile {
    *  sending commands (stdin still works regardless), and the "server ready" detection all
    *  keep working either way - only the archive write + live Console tab feed are skipped. */
   consoleLoggingEnabled: boolean
+  /** Mirrors ServerProfile.discordBotExcluded - when true, the Discord bot treats this server
+   *  as if it doesn't exist at all: left out of the Minecraft status embed, out of every admin
+   *  slash command's own server autocomplete (/checkmc, /restartmc, ...), filtered once at the
+   *  bot's own server cache (src/bot/serverCache.ts's refreshServerCache). */
+  discordBotExcluded: boolean
 }
 
 export type MinecraftRunState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error'

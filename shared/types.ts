@@ -95,6 +95,15 @@ export interface ServerProfile {
    *  of it (a server can have one, both, or neither set). Blank disables this for this
    *  profile. */
   discordEventsChannelId: string
+  /** When true, the Discord bot treats this server as if it doesn't exist at all: left out of
+   *  the ARK status embed, out of the bot's presence player count, and out of every admin
+   *  slash command's own server autocomplete (/check, /restart, /rcon, ...) - filtered once at
+   *  the bot's own server cache (src/bot/serverCache.ts's refreshServerCache) so every single
+   *  consumer sees the same exclusion automatically. Independent of discordChatChannelId/
+   *  discordEventsChannelId above (which already individually gate the chat/events relay per
+   *  server) and of AppSettings.discordBotDisplayEnabled/discordBotArkCheckEnabled (which are
+   *  global, Manager-wide switches, not per-server) - this is the per-server equivalent. */
+  discordBotExcluded: boolean
   /** Passed as -culture=<value> when not 'none' */
   cultureSettings: 'none' | 'en' | 'fr'
   /** Passed as -NoBattlEye when true */

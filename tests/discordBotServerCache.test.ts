@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DiscordBotConfig, ManagerServerInfo } from '../shared/discordBot'
-import { arkServers, findServerByName, minecraftServers, refreshServerCache, serversForChatChannel } from '../src/bot/serverCache'
+import {
+  arkServers,
+  findServerByName,
+  getCachedServers,
+  minecraftServers,
+  refreshServerCache,
+  serversForChatChannel
+} from '../src/bot/serverCache'
 
 const island: ManagerServerInfo = {
   id: 'a',
@@ -96,5 +103,21 @@ describe('serverCache', () => {
 
     expect(serversForChatChannel('chat-1').map((s) => s.name).sort()).toEqual(['Extinction', 'Island'])
     expect(serversForChatChannel('chat-3')).toEqual([])
+  })
+
+  it('leaves a server with discordBotExcluded out of the cache entirely - as if it does not exist for the bot', async () => {
+    const excludedArk = { ...island, id: 'e', name: 'Hidden Ark', discordBotExcluded: true }
+    const excludedMc = { ...survie, id: 'f', name: 'Hidden MC', discordBotExcluded: true }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ status: 200, json: async () => [island, survie, excludedArk, excludedMc] }) as unknown as Response)
+    )
+    await refreshServerCache(makeConfig())
+
+    expect(getCachedServers().map((s) => s.name).sort()).toEqual(['Island', 'Survie'])
+    expect(arkServers().map((s) => s.name)).toEqual(['Island'])
+    expect(minecraftServers().map((s) => s.name)).toEqual(['Survie'])
+    expect(findServerByName('Hidden Ark')).toBeUndefined()
+    expect(findServerByName('Hidden MC')).toBeUndefined()
   })
 })
