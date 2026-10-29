@@ -2105,6 +2105,20 @@ const DASHBOARD_HTML = `<!doctype html>
   .badge-stopped { color: var(--status-stopped); border-color: var(--status-stopped); }
   .badge-restarting { color: var(--warn); border-color: var(--warn); }
   .badge-error { color: var(--danger); border-color: var(--danger); }
+  /* Per-server "Manage" shell - the grouped side nav wrapping the console/analytics/.../
+     mc-management sections, same classes as the desktop Manager's own Settings/ServerDetail
+     left nav (src/renderer/src/styles.css's .settings-nav block). */
+  #view-server-detail.view.active { display: flex; flex-direction: column; }
+  .settings-shell { display: flex; flex: 1; min-height: 0; }
+  .settings-nav { width: 220px; flex-shrink: 0; padding: 0 10px 24px; border-right: 1px solid var(--border); overflow-y: auto; }
+  .settings-nav-group + .settings-nav-group { margin-top: 18px; }
+  .settings-nav-group-label { padding: 0 10px 6px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; color: var(--muted); }
+  .settings-nav button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: transparent; border: none; border-radius: 8px; padding: 8px 10px; color: var(--muted); font-size: 0.88rem; }
+  .settings-nav button:hover { background: var(--bg); color: var(--text); }
+  .settings-nav button.active { background: rgba(79, 140, 255, 0.15); color: var(--text); font-weight: 600; }
+  .settings-nav-icon { flex-shrink: 0; }
+  .settings-content { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
+  .settings-content .view { flex: 1; min-height: 0; }
   .action-sheet { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px; z-index: 1000; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); min-width: 170px; }
   .action-sheet button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 9px 12px; border-radius: 6px; font-size: 0.9rem; }
   .action-sheet button:hover:not(:disabled) { background: var(--bg); }
@@ -2386,30 +2400,18 @@ const DASHBOARD_HTML = `<!doctype html>
       <img src="/game-icons/minecraft.png" alt="Minecraft" />
     </button>
   </div>
+  <!-- Just the top-level pages now - same shape as the desktop Manager's own app-sidebar
+       (Dashboard/Cluster Dashboard, or Minecraft Servers). Every per-server tab (Console,
+       Analytics, Settings, ...) used to live here permanently too; they're now reached via
+       the new #view-server-detail shell's own grouped nav instead (renderServerDetailNav),
+       the same way the desktop Manager replaced its own flat per-server tab row with
+       ServerDetail's grouped side nav. -->
   <div id="nav-group-ark" class="nav-group">
     <button id="nav-dashboard" class="nav-btn" type="button">Dashboard</button>
     <button id="nav-cluster" class="nav-btn" type="button">Cluster Dashboard</button>
-    <hr class="nav-sep" />
-    <button id="nav-console" class="nav-btn" type="button">Console</button>
-    <button id="nav-analytics" class="nav-btn" type="button">Analytics</button>
-    <button id="nav-settings" class="nav-btn" type="button">Settings</button>
-    <button id="nav-mods" class="nav-btn" type="button">Mods</button>
-    <button id="nav-backup" class="nav-btn" type="button">Backup</button>
-    <button id="nav-mapmanagement" class="nav-btn" type="button">Map Management</button>
-    <button id="nav-files" class="nav-btn" type="button">Files</button>
-    <button id="nav-servermanagement" class="nav-btn" type="button">Server Management</button>
-    <button id="nav-updatelog" class="nav-btn" type="button">Update Log</button>
   </div>
   <div id="nav-group-minecraft" class="nav-group">
     <button id="nav-mcdashboard" class="nav-btn" type="button">Minecraft Servers</button>
-    <hr class="nav-sep" />
-    <button id="nav-mc-console" class="nav-btn" type="button">Console</button>
-    <button id="nav-mc-startsettings" class="nav-btn" type="button">MC Start Settings</button>
-    <button id="nav-mc-serversettings" class="nav-btn" type="button">MC Server Settings</button>
-    <button id="nav-mc-mods" class="nav-btn" type="button">MC Mods</button>
-    <button id="nav-mc-plugins" class="nav-btn" type="button">MC Plugins</button>
-    <button id="nav-mc-backup" class="nav-btn" type="button">MC Backup</button>
-    <button id="nav-mc-management" class="nav-btn" type="button">MC Server Management</button>
   </div>
 </nav>
 <div id="main-area">
@@ -2463,6 +2465,28 @@ const DASHBOARD_HTML = `<!doctype html>
       </div>
     </div>
   </section>
+  <section id="view-mcdashboard" class="view">
+    <header>
+      <h1>Minecraft Servers</h1>
+    </header>
+    <main>
+      <div id="mcdashboard-cards"></div>
+    </main>
+  </section>
+  <!-- Per-server "Manage" shell - wraps every per-server view below (console through
+       mc-management, unmoved/unchanged - NOT view-mcdashboard, which is Minecraft's own
+       overview tab, kept outside the shell as a sibling same as view-dashboard/view-cluster)
+       in the same grouped side nav + Back header as the desktop Manager's own ServerDetail/
+       MinecraftServerDetail, replacing their old permanent flat sidebar buttons (see
+       renderServerDetailNav/applyActiveView in the script below). -->
+  <section id="view-server-detail" class="view">
+    <header>
+      <button id="btn-server-detail-back" type="button">&larr; Back</button>
+      <h1 id="server-detail-title"></h1>
+    </header>
+    <div class="settings-shell">
+      <nav id="server-detail-nav" class="settings-nav"></nav>
+      <div class="settings-content">
   <section id="view-console" class="view">
     <header>
       <h1>Bober Server Manager</h1>
@@ -2931,14 +2955,6 @@ const DASHBOARD_HTML = `<!doctype html>
       </div>
     </main>
   </section>
-  <section id="view-mcdashboard" class="view">
-    <header>
-      <h1>Minecraft Servers</h1>
-    </header>
-    <main>
-      <div id="mcdashboard-cards"></div>
-    </main>
-  </section>
   <section id="view-mc-startsettings" class="view">
     <header>
       <h1>MC Start Settings</h1>
@@ -3211,6 +3227,9 @@ const DASHBOARD_HTML = `<!doctype html>
         <p id="mc-management-error" class="error-message" style="display: none"></p>
       </form>
     </main>
+  </section>
+      </div>
+    </div>
   </section>
 </div>
 <script>
@@ -3512,28 +3531,15 @@ function initDashboard(resolvedRole) {
 
   var navDashboardBtn = document.getElementById('nav-dashboard');
   var navClusterBtn = document.getElementById('nav-cluster');
-  var navConsoleBtn = document.getElementById('nav-console');
-  var navAnalyticsBtn = document.getElementById('nav-analytics');
-  var navBackupBtn = document.getElementById('nav-backup');
-  var navSettingsBtn = document.getElementById('nav-settings');
-  var navModsBtn = document.getElementById('nav-mods');
-  var navMapManagementBtn = document.getElementById('nav-mapmanagement');
-  var navFilesBtn = document.getElementById('nav-files');
-  var navServerManagementBtn = document.getElementById('nav-servermanagement');
-  var navUpdateLogBtn = document.getElementById('nav-updatelog');
   var navMcDashboardBtn = document.getElementById('nav-mcdashboard');
-  // Reuses the exact same shared Console view (SSE stream/RCON/player list) ARK's own
-  // "Console" button already points at - rather than a second implementation, since it
-  // already dispatches correctly by game server-side (see findAnyServer). Only its own nav
-  // button lives in the Minecraft group, so it stays reachable while gameMode hides the ARK
-  // one.
-  var navMcConsoleBtn = document.getElementById('nav-mc-console');
-  var navMcStartSettingsBtn = document.getElementById('nav-mc-startsettings');
-  var navMcServerSettingsBtn = document.getElementById('nav-mc-serversettings');
-  var navMcModsBtn = document.getElementById('nav-mc-mods');
-  var navMcPluginsBtn = document.getElementById('nav-mc-plugins');
-  var navMcBackupBtn = document.getElementById('nav-mc-backup');
-  var navMcManagementBtn = document.getElementById('nav-mc-management');
+  // Per-server "Manage" shell - replaces the old permanent flat nav buttons (Console,
+  // Analytics, Settings, ...) with a grouped side nav built fresh on every navigation
+  // (renderServerDetailNav below), same as the desktop Manager's own ServerDetail/
+  // MinecraftServerDetail.
+  var serverDetailShellEl = document.getElementById('view-server-detail');
+  var serverDetailNavEl = document.getElementById('server-detail-nav');
+  var serverDetailBackBtn = document.getElementById('btn-server-detail-back');
+  var serverDetailTitleEl = document.getElementById('server-detail-title');
   var viewMcDashboardEl = document.getElementById('view-mcdashboard');
   var mcdashboardCardsEl = document.getElementById('mcdashboard-cards');
   var viewMcStartSettingsEl = document.getElementById('view-mc-startsettings');
@@ -3608,54 +3614,22 @@ function initDashboard(resolvedRole) {
   });
 
   // The Dashboard tab (card grid, admin-only) is always visible like Cluster Dashboard - not
-  // tied to a specific server the way the per-server tabs below are.
+  // tied to a specific server the way the per-server "Manage" shell below is.
   if (role && !canAdmin) navDashboardBtn.style.display = 'none';
-  // Settings/Mods/Map Management/Update Log stay admin+ only. Server Management is its own,
-  // wider tier (moderator+) since moderators are meant to see it per the role's definition.
-  var adminNavBtns = [navSettingsBtn, navModsBtn, navMapManagementBtn, navUpdateLogBtn, navFilesBtn];
-  var moderatorNavBtns = [navServerManagementBtn];
 
-  // Minecraft section - separate from ARK's own servers/tabs entirely (its own nav group, its
-  // own server pickers further down), mirroring the desktop Manager's completely separate
-  // "Minecraft Servers" page rather than mixing Minecraft profiles into ARK's Dashboard/
-  // Cluster Dashboard or its per-server tab dropdown. Role tiers: MC Start Settings and MC
-  // Mods are admin+ (same tier as ARK's Settings/Mods); MC Server Settings/MC Backup/MC
-  // Server Management are moderator+ (per the role's own definition) - "Minecraft Servers"
-  // and Console (shared with ARK's own Console button - see navMcConsoleBtn) have no tier,
-  // same as Cluster Dashboard. Role gating itself happens in
-  // updateServerScopedNavVisibility() below, alongside the same per-server-view visibility
-  // ARK's own tabs get - a one-time hide here would never un-hide for a sufficient role once
-  // a view change later recomputed things.
-  var mcAdminNavBtns = [navMcStartSettingsBtn, navMcModsBtn, navMcPluginsBtn];
-  var mcModeratorNavBtns = [navMcServerSettingsBtn, navMcBackupBtn, navMcManagementBtn];
-
-  // The eight per-server tabs (Console/Analytics/Backup/the admin-only/moderator+ ones) only
-  // belong in the sidebar while you're actually looking at one of them - on Dashboard or
-  // Cluster Dashboard they'd just be dead weight for a server that isn't even on screen
-  // anymore. Recomputed on every view change (see applyActiveView below) against
-  // SERVER_SCOPED_VIEWS, rather than a one-time reveal that used to stick around for the
-  // rest of the page's session even after navigating back to an overview tab.
+  // The per-server "Manage" shell (grouped side nav, built fresh by renderServerDetailNav
+  // further down - see ARK_MANAGE_TABS/mcManageTabsFor/tabAllowedForRole - once a server tab
+  // is actually picked) only belongs on screen while a server-scoped view is active - on
+  // Dashboard/Cluster Dashboard/Minecraft Servers it would just be an empty shell for a
+  // server that isn't even on screen anymore. Recomputed on every view change (see
+  // applyActiveView below) against these two lists, rather than a one-time reveal that used
+  // to stick around for the rest of the page's session even after navigating back to an
+  // overview tab.
   var SERVER_SCOPED_VIEWS = ['console', 'analytics', 'backup', 'settings', 'mods', 'mapmanagement', 'files', 'servermanagement', 'updatelog'];
-  // Minecraft's own per-server tabs - same "only while looking at one of them" treatment as
-  // SERVER_SCOPED_VIEWS above (added after a user report that the whole Minecraft nav group
-  // showed these even from the "Minecraft Servers" overview, with no server selected at all -
-  // unlike every ARK per-server tab, which already hid itself the same way). 'console' isn't
-  // repeated here since it's shared with ARK's own entry in SERVER_SCOPED_VIEWS; navMcConsoleBtn
-  // just mirrors navConsoleBtn's own visibility below instead of needing a separate check.
+  // Minecraft's own per-server views - 'console' isn't repeated here since it's shared with
+  // ARK's own entry in SERVER_SCOPED_VIEWS above; the shell-visibility check in
+  // applyActiveView ORs both lists together so either game's per-server view opens it.
   var MC_SERVER_SCOPED_VIEWS = ['mc-startsettings', 'mc-serversettings', 'mc-mods', 'mc-plugins', 'mc-backup', 'mc-management'];
-  function updateServerScopedNavVisibility() {
-    var show = SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1;
-    navConsoleBtn.style.display = show ? '' : 'none';
-    navAnalyticsBtn.style.display = show ? '' : 'none';
-    navBackupBtn.style.display = show && role !== 'readonly' ? '' : 'none';
-    adminNavBtns.forEach(function (btn) { btn.style.display = show && (!role || canAdmin) ? '' : 'none'; });
-    moderatorNavBtns.forEach(function (btn) { btn.style.display = show && (!role || canOperate) ? '' : 'none'; });
-
-    var showMc = activeView === 'console' || MC_SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1;
-    navMcConsoleBtn.style.display = showMc ? '' : 'none';
-    mcAdminNavBtns.forEach(function (btn) { btn.style.display = showMc && (!role || canAdmin) ? '' : 'none'; });
-    mcModeratorNavBtns.forEach(function (btn) { btn.style.display = showMc && (!role || canOperate) ? '' : 'none'; });
-  }
   if (role && !canOperate) {
     startBtn.style.display = 'none';
     stopBtn.style.display = 'none';
@@ -3684,26 +3658,12 @@ function initDashboard(resolvedRole) {
   var activeView = 'cluster';
 
   function applyActiveView() {
-    updateServerScopedNavVisibility();
+    var serverScoped = SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1 || MC_SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1;
+    serverDetailShellEl.classList.toggle('active', serverScoped);
+    if (serverScoped) renderServerDetailNav();
     navDashboardBtn.classList.toggle('active', activeView === 'dashboard');
     navClusterBtn.classList.toggle('active', activeView === 'cluster');
-    navConsoleBtn.classList.toggle('active', activeView === 'console');
-    navAnalyticsBtn.classList.toggle('active', activeView === 'analytics');
-    navBackupBtn.classList.toggle('active', activeView === 'backup');
-    navSettingsBtn.classList.toggle('active', activeView === 'settings');
-    navModsBtn.classList.toggle('active', activeView === 'mods');
-    navMapManagementBtn.classList.toggle('active', activeView === 'mapmanagement');
-    navFilesBtn.classList.toggle('active', activeView === 'files');
-    navServerManagementBtn.classList.toggle('active', activeView === 'servermanagement');
-    navUpdateLogBtn.classList.toggle('active', activeView === 'updatelog');
     navMcDashboardBtn.classList.toggle('active', activeView === 'mcdashboard');
-    navMcConsoleBtn.classList.toggle('active', activeView === 'console');
-    navMcStartSettingsBtn.classList.toggle('active', activeView === 'mc-startsettings');
-    navMcServerSettingsBtn.classList.toggle('active', activeView === 'mc-serversettings');
-    navMcModsBtn.classList.toggle('active', activeView === 'mc-mods');
-    navMcPluginsBtn.classList.toggle('active', activeView === 'mc-plugins');
-    navMcBackupBtn.classList.toggle('active', activeView === 'mc-backup');
-    navMcManagementBtn.classList.toggle('active', activeView === 'mc-management');
     viewMcDashboardEl.classList.toggle('active', activeView === 'mcdashboard');
     viewMcStartSettingsEl.classList.toggle('active', activeView === 'mc-startsettings');
     viewMcServerSettingsEl.classList.toggle('active', activeView === 'mc-serversettings');
@@ -3746,23 +3706,8 @@ function initDashboard(resolvedRole) {
   }
   navDashboardBtn.addEventListener('click', function () { selectView('dashboard'); });
   navClusterBtn.addEventListener('click', function () { selectView('cluster'); });
-  navConsoleBtn.addEventListener('click', function () { selectView('console'); });
-  navAnalyticsBtn.addEventListener('click', function () { selectView('analytics'); });
-  navBackupBtn.addEventListener('click', function () { selectView('backup'); });
-  navSettingsBtn.addEventListener('click', function () { selectView('settings'); });
-  navModsBtn.addEventListener('click', function () { selectView('mods'); });
-  navMapManagementBtn.addEventListener('click', function () { selectView('mapmanagement'); });
-  navFilesBtn.addEventListener('click', function () { selectView('files'); });
-  navServerManagementBtn.addEventListener('click', function () { selectView('servermanagement'); });
-  navUpdateLogBtn.addEventListener('click', function () { selectView('updatelog'); });
   navMcDashboardBtn.addEventListener('click', function () { selectView('mcdashboard'); });
-  navMcConsoleBtn.addEventListener('click', function () { selectView('console'); });
-  navMcStartSettingsBtn.addEventListener('click', function () { selectView('mc-startsettings'); });
-  navMcServerSettingsBtn.addEventListener('click', function () { selectView('mc-serversettings'); });
-  navMcModsBtn.addEventListener('click', function () { selectView('mc-mods'); });
-  navMcPluginsBtn.addEventListener('click', function () { selectView('mc-plugins'); });
-  navMcBackupBtn.addEventListener('click', function () { selectView('mc-backup'); });
-  navMcManagementBtn.addEventListener('click', function () { selectView('mc-management'); });
+  serverDetailBackBtn.addEventListener('click', function () { selectView(gameMode === 'minecraft' ? 'mcdashboard' : 'cluster'); });
 
   // ---- Cluster stats chart (desktop only) ----------------------------------------------
   // Same 1m/5m/15m/1h/6h/12h/24h/All time scales and persistent, server-downsampled history
@@ -4341,8 +4286,8 @@ function initDashboard(resolvedRole) {
   // Every ARK per-server tab the card's "..." menu can jump straight to - same key/label/
   // icon/group as the desktop Manager's own SERVER_DETAIL_TABS (src/renderer/src/pages/
   // ServerDetail/index.tsx), and the same tier gate already used to show/hide each one's
-  // permanent sidebar button in updateServerScopedNavVisibility (tier null = always visible,
-  // 'readonly' = hidden only for the readonly role, 'moderator'/'admin' = canOperate/canAdmin).
+  // permanent sidebar button in renderServerDetailNav/tabAllowedForRole (tier null = always
+  // visible, 'readonly' = hidden only for the readonly role, 'moderator'/'admin' = canOperate/canAdmin).
   var ARK_MANAGE_TABS = [
     { view: 'console', label: 'Console', icon: '🖥️', group: 'Overview', tier: null },
     { view: 'analytics', label: 'Analytics', icon: '📊', group: 'Overview', tier: null },
@@ -4383,6 +4328,46 @@ function initDashboard(resolvedRole) {
     if (tier === 'readonly') return role !== 'readonly';
     if (tier === 'moderator') return !role || canOperate;
     return !role || canAdmin;
+  }
+
+  /** Builds the grouped side nav inside the "Manage" shell for whichever server is currently
+   *  selected (currentId) - same grouped-sidebar pattern as the desktop Manager's own
+   *  ServerDetail/MinecraftServerDetail (settings-nav/settings-nav-group), rebuilt from
+   *  scratch on every call rather than patched in place since it's cheap and the active tab/
+   *  available tabs (role, server type) can both change between calls. Called from
+   *  applyActiveView on every navigation into the shell, and from selectServer so switching
+   *  server via a per-view server picker refreshes both the title and which tabs show. */
+  function renderServerDetailNav() {
+    var found = latestServers.find(function (s) { return s.id === currentId; });
+    serverDetailTitleEl.textContent = found ? found.name : '';
+    serverDetailNavEl.innerHTML = '';
+    if (!found) return;
+    var tabs = isMcServerEntry(found) ? mcManageTabsFor(found.serverType) : ARK_MANAGE_TABS;
+    var openGroup = null;
+    var openGroupEl = null;
+    tabs.forEach(function (tab) {
+      if (!tabAllowedForRole(tab.tier)) return;
+      if (tab.group !== openGroup) {
+        openGroup = tab.group;
+        openGroupEl = document.createElement('div');
+        openGroupEl.className = 'settings-nav-group';
+        var groupLabel = document.createElement('div');
+        groupLabel.className = 'settings-nav-group-label';
+        groupLabel.textContent = tab.group;
+        openGroupEl.appendChild(groupLabel);
+        serverDetailNavEl.appendChild(openGroupEl);
+      }
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.classList.toggle('active', activeView === tab.view);
+      var iconEl = document.createElement('span');
+      iconEl.className = 'settings-nav-icon';
+      iconEl.textContent = tab.icon;
+      btn.appendChild(iconEl);
+      btn.appendChild(document.createTextNode(tab.label));
+      btn.addEventListener('click', function () { selectView(tab.view); });
+      openGroupEl.appendChild(btn);
+    });
   }
 
   function buildCardMenuDropdown(server, tabs) {
@@ -8165,6 +8150,7 @@ function initDashboard(resolvedRole) {
     if (id === currentId) return;
     currentId = id;
     syncServerPickers();
+    if (SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1 || MC_SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1) renderServerDetailNav();
     backupShowAll = false;
     filesCurrentPath = '';
     filesOpenTabs = [];
@@ -8213,8 +8199,8 @@ function initDashboard(resolvedRole) {
       // filtered out by Hidden) - treat that the same as never having selected one. This
       // never auto-picks a replacement: Dashboard/Backup/the admin tabs only ever get a
       // server through an explicit click, never a silent default - so losing the selection
-      // just falls back to Cluster Dashboard (which also hides the per-server nav buttons
-      // again, via updateServerScopedNavVisibility inside applyActiveView).
+      // just falls back to Cluster Dashboard (which also hides the "Manage" shell again, via
+      // applyActiveView's own serverScoped check).
       if (currentId && !servers.some(function (s) { return s.id === currentId; })) {
         currentId = null;
         if (SERVER_SCOPED_VIEWS.indexOf(activeView) !== -1) selectView('cluster');

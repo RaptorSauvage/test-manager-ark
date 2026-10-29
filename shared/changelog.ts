@@ -13,10 +13,11 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-29',
-    title: 'Web Dashboard: redesigned the Dashboard and Minecraft Servers cards to match the desktop Manager',
+    title: 'Web Dashboard: redesigned to match the desktop Manager (cards + per-server navigation)',
     details: [
       'Each server\'s card now looks and works like the desktop Manager\'s own Dashboard card: icon action buttons (Start/Stop/Restart/Update/Kill - Kill is new here, it was desktop-only before), a status badge, and a stat tile grid, instead of the old "⋮" popup menu.',
-      'The "⋮" menu is replaced by a "..." dropdown that lists every one of that server\'s tabs directly (Console, Analytics, Settings, Mods, Backups, Map Management, Files, Update Log, Server Management for ARK; the matching set for Minecraft, only showing Mods or Plugins when that server type actually has one) - pick one to jump straight there instead of landing on Console first.'
+      'The "⋮" menu is replaced by a "..." dropdown that lists every one of that server\'s tabs directly (Console, Analytics, Settings, Mods, Backups, Map Management, Files, Update Log, Server Management for ARK; the matching set for Minecraft, only showing Mods or Plugins when that server type actually has one) - pick one to jump straight there instead of landing on Console first.',
+      'Opening a server from a card now lands on a dedicated "Manage" page with a grouped side navigation (Overview/Configuration/Maintenance/Files) and a Back button, the same layout as the desktop Manager\'s own server detail page, instead of the old permanent flat row of tabs always sitting in the main sidebar.'
     ]
   },
   {
