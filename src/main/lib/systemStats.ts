@@ -27,6 +27,13 @@ export function combineCpuModel(manufacturer: string, brand: string): string {
  *  extra to poll), and only asks this module for the one-time static info below. */
 let staticInfoCache: SystemStaticInfo | null = null
 
+/** The raw `iface` identifier (not the display-friendly `networkInterfaceLabel` above) of the
+ *  interface getSystemStaticInfo() resolved - cached alongside it so getNetworkUsage() below
+ *  can explicitly pass the same one to si.networkStats() instead of letting it re-derive its
+ *  own default internally (see that function's own doc comment for why that matters). Stays
+ *  null if resolution found nothing at all, same as networkInterfaceLabel in that case. */
+let primaryNetworkIfaceCache: string | null = null
+
 export async function getSystemStaticInfo(): Promise<SystemStaticInfo> {
   if (staticInfoCache) return staticInfoCache
 
@@ -43,6 +50,8 @@ export async function getSystemStaticInfo(): Promise<SystemStaticInfo> {
   const ifaceList = Array.isArray(netIfaces) ? netIfaces : []
   const primaryIface =
     ifaceList.find((n) => n.iface === defaultIface) ?? ifaceList.find((n) => !n.internal && n.operstate === 'up')
+
+  primaryNetworkIfaceCache = primaryIface?.iface || null
 
   staticInfoCache = {
     cpuModel: combineCpuModel(cpu.manufacturer ?? '', cpu.brand ?? ''),
@@ -62,9 +71,27 @@ export async function getSystemStaticInfo(): Promise<SystemStaticInfo> {
  *  warns about (on Windows, `systeminformation` shells out to read the interface's
  *  counters), so the Dashboard polls this on a noticeably slower interval than the old
  *  (removed) 3s one that got flagged, trading off freshness for fewer spawned processes.
- *  `rx_sec`/`tx_sec` are null until a second sample can be compared against the first. */
+ *  `rx_sec`/`tx_sec` are null until a second sample can be compared against the first.
+ *
+ *  Explicitly passes the interface getSystemStaticInfo() already resolved (with its fallback
+ *  to any non-internal "up" interface when the OS-reported default doesn't match a known
+ *  one) rather than calling si.networkStats() with no argument, which re-derives its own
+ *  default internally and has no such fallback. On a machine with more than one active
+ *  network adapter (a VPN client, a virtual adapter from WSL/Docker/Hyper-V, ...) that
+ *  internal detection can land on a different interface than the one actually resolved -
+ *  one with nothing real to report - which left this permanently returning null (shown as
+ *  "-" on the Dashboard) even though the static info above displayed a sensible interface
+ *  name. getSystemStaticInfo() is cheap to call again here (cached after its first run), and
+ *  best-effort if it fails for an unrelated reason (e.g. si.cpu() throwing) - this still
+ *  falls back to si.networkStats()'s own default-interface detection rather than failing
+ *  network usage entirely over an unrelated field. */
 export async function getNetworkUsage(): Promise<NetworkUsage> {
-  const [sample] = await si.networkStats()
+  try {
+    await getSystemStaticInfo()
+  } catch {
+    // best-effort, see doc comment above
+  }
+  const [sample] = primaryNetworkIfaceCache ? await si.networkStats(primaryNetworkIfaceCache) : await si.networkStats()
   return {
     rxBytesPerSec: sample?.rx_sec ?? null,
     txBytesPerSec: sample?.tx_sec ?? null

@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-29',
+    title: "Fixed the Dashboard's Network Usage card staying stuck on \"-\" on some machines",
+    details: [
+      "The upload/download numbers and the interface name/speed shown underneath them used to come from two separate lookups that could disagree about which network adapter is the \"default\" one - on a machine with more than one active adapter (a VPN client, a virtual one from WSL/Docker/Hyper-V, ...) that could leave the live numbers permanently stuck on \"-\" even though the interface name displayed just fine. Both now consistently use the same resolved adapter."
+    ]
+  },
+  {
+    date: '2026-10-29',
     title: 'Added a per-server switch to make the Discord bot ignore a specific server entirely',
     details: [
       'Each server now has its own "Ignored by the Discord bot" checkbox (Settings tab for ARK, Start Settings tab for Minecraft). When checked, the bot treats that one server as if it doesn\'t exist at all - left out of the status embed, out of the presence player count, and out of every admin slash command\'s own server autocomplete (/check, /restart, /rcon, ...). Independent of the global Discord Bot Display switches added yesterday, which turn the bot\'s output off for every server at once - this is the per-server equivalent, for when just one server should stay off the bot\'s radar.'
