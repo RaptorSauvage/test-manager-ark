@@ -41,9 +41,16 @@ cd src-tauri && cargo build   # or: cargo tauri dev, if the Tauri CLI is install
 
 Linux build needs `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libsoup-3.0-dev`,
 `libjavascriptcoregtk-4.1-dev`, `libxdo-dev`, `libssl-dev`, `libayatana-appindicator3-dev`, and
-the usual `build-essential`. Windows needs the Tauri prerequisites (MSVC build tools, WebView2
-- present by default on Windows 10 21H2+/11) instead; this PoC has only been run on Linux so
-far (see "what this doesn't prove" below).
+the usual `build-essential`. Windows needs Rust (via rustup), the "Desktop development with
+C++" workload from the Visual Studio Build Tools (the MSVC linker - plain VS Code is not
+enough, confirmed by actually hitting `error: linker 'link.exe' not found` without it), and
+WebView2 (present by default on Windows 10 21H2+/11).
+
+`icons/icon.ico` has to exist alongside `icons/icon.png` - found by actually building on
+Windows, where `tauri-build` needs it (by that exact conventional path) to generate the
+`.exe`'s Windows Resource file; the Linux build never asked for it because WebKitGTK has no
+equivalent step. Regenerated here with `convert icon.png -define
+icon:auto-resize=256,128,64,48,32,16 icon.ico` (ImageMagick).
 
 ## Result
 
