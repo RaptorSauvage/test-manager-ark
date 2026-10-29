@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-29',
+    title: 'Fixed an automatic restart sometimes not actually restarting the server (e.g. an Event Scheduler mod activation)',
+    details: [
+      "When a graceful shutdown couldn't confirm the server had actually exited in time and had to force it instead, the Manager used to move on to starting the new process immediately - before the old one was actually confirmed gone - which could make that \"start\" silently do nothing, leaving the old process running untouched. This is why an Event Scheduler event with \"Shutdown when event starts\" could add a mod to the server and report it as restarted, while the running server never actually picked up the new mod. Now waits for the forced shutdown to actually finish before starting the new process. Affects every automatic stop-then-start in the Manager (Event Scheduler, the Restart button, scheduled restarts), not just mod events."
+    ]
+  },
+  {
+    date: '2026-10-29',
     title: 'Redesigned the server Manage view with a grouped side navigation, and opened it up from the dashboard card menu',
     details: [
       "The server detail view (Analytics, Mods, Backups, Settings, ...) now uses the same grouped side navigation as the app's own Settings, instead of a single row of tabs across the top - more room to grow, and a consistent look across the app.",

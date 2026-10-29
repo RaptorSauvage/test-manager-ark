@@ -10,11 +10,23 @@ class FakeChildProcess extends EventEmitter {
   })
 }
 
+/** kill() here does nothing at all - no 'exit' ever fires - standing in for the real-world
+ *  gap between a kill signal being sent and the OS/Node actually confirming the process is
+ *  gone (FakeChildProcess's synchronous emit above glosses over that entirely). Exercises
+ *  waitForExitOrKill's isPidAlive poll fallback, the only thing that still notices this pid
+ *  (never a real OS process in this test environment, so isPidAlive reports it gone
+ *  immediately either way) is actually gone. */
+class FakeChildProcessNeverExits extends EventEmitter {
+  pid = 4242
+  unref = vi.fn()
+  kill = vi.fn()
+}
+
 const { getFakeChild, setFakeChild } = vi.hoisted(() => {
-  let current: FakeChildProcess | undefined
+  let current: FakeChildProcess | FakeChildProcessNeverExits | undefined
   return {
     getFakeChild: () => current,
-    setFakeChild: (child: FakeChildProcess) => {
+    setFakeChild: (child: FakeChildProcess | FakeChildProcessNeverExits) => {
       current = child
     }
   }
@@ -25,6 +37,7 @@ vi.mock('node:child_process', () => ({ spawn: vi.fn(() => getFakeChild()), exec:
 
 import { startServer, stopServerPhased, __resetServerSpawnQueueForTests } from '../src/main/lib/serverProcess'
 import { sendRconCommand as mockSendRconCommand } from '../src/main/lib/rcon'
+import { spawn as mockSpawn } from 'node:child_process'
 
 function makeProfile(id: string): ServerProfile {
   return {
@@ -122,5 +135,34 @@ describe('stopServerPhased', () => {
     expect(await saved).toBe(false)
     await finished
     expect(mockSendRconCommand).not.toHaveBeenCalledWith(profile, 'DoExit')
+  })
+
+  it('actually clears the running entry after a forced kill, so a chained startServer() spawns a fresh process instead of silently no-oping', async () => {
+    // Regression test for a real report: a scheduled Event Scheduler mod-activation event
+    // (shutdownOnStart) added a mod to the profile and "restarted" the server per the
+    // Manager, but the mod was never actually loaded - traced to waitForExitOrKill firing a
+    // force-kill and returning immediately, before the process was actually confirmed gone,
+    // so the chained startServer() call right after found `running` still holding the old
+    // entry and no-op'd instead of spawning a new process with the updated mod list. Uses
+    // FakeChildProcessNeverExits (kill() that never emits 'exit') to exercise the worst case -
+    // only the isPidAlive poll fallback notices this pid is actually gone.
+    vi.mocked(mockSendRconCommand).mockResolvedValue({ ok: false, error: 'RCON unreachable' })
+    const neverExits = new FakeChildProcessNeverExits()
+    setFakeChild(neverExits)
+    const profile = makeProfile('stop-force-kill-restart')
+    startServer(profile)
+    const spawnsAfterFirstStart = vi.mocked(mockSpawn).mock.calls.length
+
+    const { finished } = stopServerPhased(profile, 50, 'stopping', 50)
+    await finished
+    expect(neverExits.kill).toHaveBeenCalled()
+
+    setFakeChild(new FakeChildProcess())
+    // Unrelated to the bug under test - reset so the spawn-stagger queue (reserveSpawnSlot,
+    // see its own doc comment) doesn't queue this second start for later just because it
+    // follows the first one in quick succession within this one test.
+    __resetServerSpawnQueueForTests()
+    startServer(profile)
+    expect(vi.mocked(mockSpawn).mock.calls.length).toBe(spawnsAfterFirstStart + 1)
   })
 })

@@ -27,6 +27,11 @@ const STARTUP_COMPLETE_MARKER = 'Server has completed startup and is now adverti
 /** Safety net in case that log line's wording ever changes and the marker stops matching. */
 const STARTUP_FALLBACK_MS = 5 * 60 * 1000
 
+/** Extra time waitForExitOrKill gives a force-kill signal to actually take effect, on top of
+ *  the graceMs it already waited for a graceful exit - see that function's own doc comment
+ *  for why this matters. */
+const FORCE_KILL_CONFIRM_MS = 10_000
+
 export function getLogFilePath(installDir: string): string {
   return path.join(installDir, 'ShooterGame', 'Saved', 'Logs', 'ShooterGame.log')
 }
@@ -789,7 +794,24 @@ function doSpawn(profile: ServerProfile, startedAt: number): ServerStatus {
   return status
 }
 
-/** Waits for the process to exit on its own, or force-kills it after `graceMs`. */
+/** Waits for the process to exit on its own, or force-kills it after `graceMs` - and, for a
+ *  forced kill, actually waits for it to take effect before returning (up to
+ *  FORCE_KILL_CONFIRM_MS more) rather than firing the kill signal and returning immediately.
+ *
+ *  That immediate-return used to be the whole story for a live (non-adopted) process, which
+ *  looked harmless - the real cleanup (running.delete, via finalizeStopped) happens from the
+ *  'exit' listener doSpawn registered back when the process was spawned, not from here. But
+ *  `kill()` only *sends* the signal; the OS tears the process down and Node delivers 'exit'
+ *  asynchronously, often a noticeable moment later for a large server process - so a caller
+ *  that immediately chains startServer() after stopServer() resolves (restartServer, and the
+ *  Event Scheduler's own shutdown-then-restart cycle in modEvents.ts) could find `running`
+ *  still holding the old entry and have startServer() no-op (its own `if (running.has(...))
+ *  return` guard), silently leaving the pre-change process running instead of replacing it -
+ *  exactly what a real report traced a scheduled mod-activation event to (mod added to the
+ *  profile and the server "restarted" per the Manager, but the new mod was never actually
+ *  loaded, because no new process had actually been spawned). Now waits for confirmation
+ *  (the 'exit' event, or the pid simply no longer existing - whichever comes first) before
+ *  returning, so a chained startServer() is guaranteed a clear `running` entry to work with. */
 async function waitForExitOrKill(entry: RunningServer, profileId: string, graceMs: number): Promise<void> {
   const exited = await new Promise<boolean>((resolve) => {
     if (entry.process) {
@@ -813,9 +835,29 @@ async function waitForExitOrKill(entry: RunningServer, profileId: string, graceM
   })
 
   if (entry.process) {
-    if (!exited && running.has(profileId)) {
-      entry.process.kill()
-    }
+    if (exited || !running.has(profileId)) return
+    const child = entry.process
+    const pid = entry.pid
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const finish = (): void => {
+        if (settled) return
+        settled = true
+        clearInterval(poll)
+        clearTimeout(giveUp)
+        resolve()
+      }
+      const poll = setInterval(() => {
+        if (!isPidAlive(pid)) finish()
+      }, 500)
+      const giveUp = setTimeout(finish, FORCE_KILL_CONFIRM_MS)
+      child.once('exit', finish)
+      child.kill()
+    })
+    // Covers the poll/timeout paths above resolving before doSpawn's own 'exit' listener (the
+    // normal cleanup path, registered earlier, so it usually wins the race) gets a chance to -
+    // finalizeStopped/running.delete are idempotent, so this is a no-op when it already ran.
+    finalizeStopped(profileId)
     return
   }
 
