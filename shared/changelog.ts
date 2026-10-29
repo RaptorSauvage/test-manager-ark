@@ -13,6 +13,13 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-29',
+    title: 'Fixed a white screen for a few seconds on every launch',
+    details: [
+      "The Manager's window used to stay empty until every startup task had finished (re-attaching to already-running servers, checking for updates, starting the Web Dashboard, arming the Event Scheduler, ...), which could add up to a real, visible delay with nothing on screen. The window now opens right away and shows its normal loading state while the rest of startup keeps running in the background."
+    ]
+  },
+  {
+    date: '2026-10-29',
     title: 'Web Dashboard: redesigned to match the desktop Manager (cards + per-server navigation)',
     details: [
       'Each server\'s card now looks and works like the desktop Manager\'s own Dashboard card: icon action buttons (Start/Stop/Restart/Update/Kill - Kill is new here, it was desktop-only before), a status badge, and a stat tile grid, instead of the old "⋮" popup menu.',

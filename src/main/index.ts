@@ -261,6 +261,18 @@ app.whenReady().then(() => {
   // startup sequence itself, not just later during normal use.
   startMainThreadWatchdog()
 
+  // Also as early as possible - used to run at the very end of this whole startup sequence,
+  // after every registerXWatch/adoptPersistedProcesses/applyWebDashboardSettings/... call
+  // below, which could altogether take a few real seconds (a self-signed cert regenerating
+  // in applyWebDashboardSettings is the single slowest one found chasing down a real "white
+  // screen for a few seconds on every launch" report, but nothing here is instant). None of
+  // that needs the window to exist first - the renderer process paints independently of the
+  // main process's own event loop, so creating it now means the user sees the window (and
+  // whatever loading state the renderer shows before its first IPC calls resolve) right
+  // away, while the rest of this function keeps running in the background, instead of
+  // nothing at all appearing until all of it finishes.
+  createWindow()
+
   const profiles = listProfiles()
 
   // Registered before adoption below, so it catches the running-status broadcast that
@@ -348,8 +360,6 @@ app.whenReady().then(() => {
         (index + 1) * minecraftStaggerMs
       )
     })
-
-  createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
