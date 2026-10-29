@@ -9,6 +9,9 @@
 // forwarded here to the webview as an ordinary Tauri event via `app.emit`). profiles_save
 // below proves the write path (request carries params, not just a method name) and the push
 // path (store.ts's real `profileEvents` 'changed' emitter reaching the webview live) together.
+// log_record proves a second, independent push source (lib/managerLog.ts's own
+// `managerLogEvents`) multiplexes over the exact same stdout pipe/app.emit forwarding, by
+// event name alone - the shape every one of the real app's several live-update channels needs.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -30,7 +33,9 @@ struct RpcRequest<'a> {
 #[derive(Deserialize)]
 struct RpcResponse {
     id: i64,
+    #[serde(default)]
     result: Option<Value>,
+    #[serde(default)]
     error: Option<String>,
 }
 
@@ -90,6 +95,11 @@ fn profiles_list(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> 
 #[tauri::command]
 fn profiles_save(profile: Value, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
     sidecar.call("profiles.save", Some(profile))
+}
+
+#[tauri::command]
+fn log_record(message: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("log.record", Some(Value::String(message)))
 }
 
 /// Spawns the Node sidecar and a background thread that owns reading its stdout for the app's
@@ -158,7 +168,7 @@ fn main() {
             app.manage(handle);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![profiles_list, profiles_save])
+        .invoke_handler(tauri::generate_handler![profiles_list, profiles_save, log_record])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

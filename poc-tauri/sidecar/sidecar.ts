@@ -9,12 +9,20 @@
  * Two message shapes travel over stdout: a response (has "id", answers one specific request)
  * and a push event (has "event" instead, unsolicited - the Rust side forwards these to the
  * webview as ordinary Tauri events). profiles.list/profiles.save below are real calls into
- * store.ts; the 'profiles.changed' push wraps store.ts's own `profileEvents` EventEmitter,
+ * store.ts; the 'profiles-changed' push wraps store.ts's own `profileEvents` EventEmitter,
  * unmodified - proving a live update (the kind every console/status view in the real app
  * needs) can reach the webview without the webview having asked for it first.
+ *
+ * log.record/'manager-log-entry' below proves the same push mechanism carries a SECOND,
+ * independent event source too (lib/managerLog.ts's own `managerLogEvents`, a different real
+ * subsystem backed by a JSONL file rather than electron-store) - multiplexed over the exact
+ * same stdout pipe by event name, which is the shape a real migration needs for every one of
+ * the real app's several independent live-update channels (console output, server status,
+ * manager log, ...), not just one.
  */
 import readline from 'node:readline'
 import { listProfiles, saveProfile, profileEvents } from '../../src/main/store'
+import { logManagerEvent, newTaskId, managerLogEvents } from '../../src/main/lib/managerLog'
 import type { ServerProfile } from '../../shared/types'
 
 interface RpcRequest {
@@ -36,16 +44,29 @@ const methods: Record<string, (params: unknown) => unknown> = {
   // compile-time only), and this PoC is about proving the write path reaches the real
   // function and its real side effects (persisting to disk, emitting profileEvents), not
   // about adding input validation a real migration would still need to design properly.
-  'profiles.save': (params) => saveProfile(params as ServerProfile)
+  'profiles.save': (params) => saveProfile(params as ServerProfile),
+  // Real write into lib/managerLog.ts's own JSONL file, through the real logManagerEvent -
+  // proves a second, differently-shaped real subsystem (file-backed, async persistence)
+  // behaves the same way through this sidecar as the in-memory-then-electron-store one above.
+  'log.record': async (params) => {
+    const message = typeof params === 'string' ? params : 'Test entry from the Tauri PoC sidecar'
+    // logManagerEvent resolves void - the RPC response still needs a concrete result value
+    // (not undefined, which JSON.stringify would drop, leaving neither "result" nor "error"
+    // in the line Rust reads) so { ok: true } stands in for "the write finished".
+    await logManagerEvent(newTaskId('poc'), 'Tauri PoC', message, 'info')
+    return { ok: true }
+  }
 }
 
 // Tauri's own event names only accept alphanumerics, '-', '/', ':', '_' - found by actually
 // running this against a real Tauri app.emit() call, not from reading the docs - 'profiles-
-// changed' here, not 'profiles.changed' matching the RPC method naming below.
+// changed' here, not 'profiles.changed' matching the RPC method naming below. Same for
+// 'manager-log-entry' vs. the real app's own 'log' event name on managerLogEvents.
 profileEvents.on('changed', (profiles) => send({ event: 'profiles-changed', data: profiles }))
+managerLogEvents.on('log', (entry) => send({ event: 'manager-log-entry', data: entry }))
 
 const rl = readline.createInterface({ input: process.stdin })
-rl.on('line', (line) => {
+rl.on('line', async (line) => {
   let request: RpcRequest
   try {
     request = JSON.parse(line)
@@ -59,7 +80,8 @@ rl.on('line', (line) => {
     return
   }
   try {
-    send({ id: request.id, result: handler(request.params) })
+    const result = await handler(request.params)
+    send({ id: request.id, result })
   } catch (err) {
     send({ id: request.id, error: (err as Error).message })
   }

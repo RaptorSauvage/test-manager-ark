@@ -4,32 +4,39 @@ Answers one question before committing to a real Electron → Tauri migration: c
 spawn and talk to a persistent Node sidecar running the **existing, unmodified** application
 logic, and get a real result back into a Tauri webview through an ordinary `invoke()` call?
 
-This is scoped to exactly that round trip, now covering three shapes rather than one: a plain
-read (`profiles.list`), a write with parameters (`profiles.save`), and an unsolicited push event
+This is scoped to exactly that round trip, now covering four shapes rather than one: a plain
+read (`profiles.list`), a write with parameters (`profiles.save`), an unsolicited push event
 reaching the webview without it having asked (`profiles-changed`, wrapping `store.ts`'s own
-`profileEvents` emitter) - the last one matters because most of the real app's IPC (console
-output, status changes, ...) is push-shaped, not request/response. Window chrome, the menu bar,
-the tray, and the other ~34 IPC modules in `src/main/ipc/` are still deliberately out of scope.
+`profileEvents` emitter), and - new - a *second, independent* push source (`manager-log-entry`,
+wrapping `lib/managerLog.ts`'s own `managerLogEvents`) multiplexed over the exact same
+stdout pipe by event name alone, proving the mechanism generalizes rather than being special-
+cased for profiles. Most of the real app's IPC (console output, status changes, the Manager
+Log itself, ...) is push-shaped, not request/response - this is the part that had to actually
+generalize. Window chrome, the menu bar, the tray, and the other ~34 IPC modules in
+`src/main/ipc/` are still deliberately out of scope.
 
 ## What's here
 
 - `src-tauri/` - a minimal Tauri 2 app. `src/main.rs` spawns the sidecar as a child process on
   startup, keeps a reader thread on its stdout that routes each line either to the pending
   `call()` it answers (has an `"id"`) or out to the webview as a Tauri event (has an
-  `"event"` instead), and exposes two Tauri commands: `profiles_list` and `profiles_save`
-  (takes a profile object as its param).
+  `"event"` instead), and exposes three Tauri commands: `profiles_list`, `profiles_save`
+  (takes a profile object as its param), and `log_record` (takes a message string).
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`, `saveProfile`, and `profileEvents` from **the real, untouched
-  `src/main/store.ts`** - not a stub or a rewrite; `profileEvents.on('changed', ...)` is wired
-  straight to a push-event line, so every real write's side effect reaches the webview the same
-  way it would via Electron's `webContents.send`. `sidecar/electronShim.ts` stands in for the
-  one Electron API that import chain actually calls directly (`app.getPath`) - see "electron-
-  store's own fallback" below for a wrinkle this found. `sidecar/build.mjs` bundles it with
-  esbuild, aliasing `electron` → the shim, into a single dependency-free `dist/sidecar.cjs`.
+  `src/main/store.ts`**, plus `logManagerEvent`/`managerLogEvents` from **the real, untouched
+  `src/main/lib/managerLog.ts`** - not stubs or rewrites; both emitters are wired straight to a
+  push-event line each (`profiles-changed`, `manager-log-entry`), so every real write's side
+  effect reaches the webview the same way it would via Electron's `webContents.send`.
+  `sidecar/electronShim.ts` stands in for the Electron APIs that import chain actually calls
+  directly (`app.getPath`) - see "electron-store's own fallback" below for a wrinkle this
+  found. `sidecar/build.mjs` bundles it with esbuild, aliasing `electron` → the shim, into a
+  single dependency-free `dist/sidecar.cjs`.
 - `frontend/index.html` - a bare page (not the real React UI): calls `invoke('profiles_list')`
-  on load, a button calls `invoke('profiles_save', { profile })` with a hardcoded test profile,
-  and a `listen('profiles-changed', ...)` handler re-renders the list the moment that push event
-  arrives - independent of the button, proving the live-update path.
+  on load, a button calls `invoke('profiles_save', { profile })` with a hardcoded test profile
+  and a second calls `invoke('log_record', { message })`, and `listen('profiles-changed', ...)`/
+  `listen('manager-log-entry', ...)` handlers update their own section the moment each push
+  event arrives - independent of either button, proving the live-update path for both.
 
 ## Running it
 
@@ -133,7 +140,7 @@ sandbox's rendering, not the architecture.
   against this measurement in opposite, hard-to-predict ways. The disk-size comparison above is
   solid regardless of platform; the RAM comparison needs a real Windows run to mean anything.
 
-## Two more findings from actually running this, not from reading docs
+## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
   `only alphanumeric, '-', '/', ':', '_' permitted for event names` - caught immediately
@@ -150,7 +157,20 @@ sandbox's rendering, not the architecture.
   PoC expected), but worth knowing for real: controlling where a sidecar's `electron-store` data
   lands needs either `cwd` passed explicitly to `new Store(...)` in `store.ts` itself (a tiny,
   low-risk change, and arguably the more correct fix regardless of Tauri) or accepting
-  `electron-store`'s own fallback location when running outside Electron.
+  `electron-store`'s own fallback location when running outside Electron. Worth contrasting
+  with `lib/managerLog.ts`'s own `getDataDir()` → `app.getPath('documents')` call, which *does*
+  go through the shim correctly (confirmed: a real `log.record` call landed at
+  `~/Documents/ARK Server Manager/logs/manager.jsonl`, exactly where `electronShim.ts` says it
+  should) - the quirk above is specific to `electron-store`'s own detection logic, not a general
+  problem with stubbing `app.getPath`.
+- **A JSON-RPC response needs a concrete, non-`undefined` result.** `log.record`'s handler
+  originally returned whatever `logManagerEvent(...)` resolves to, which is `void` -
+  `JSON.stringify({ id, result: undefined })` silently drops the `result` key entirely, leaving
+  a response line with neither `result` nor `error`, which Rust's `RpcResponse` (at the time,
+  no `#[serde(default)]` on either field) would fail to deserialize. Fixed two ways: the
+  handler now returns `{ ok: true }` instead of the bare promise result, and `RpcResponse`'s
+  fields got `#[serde(default)]` as a second line of defense for any future handler that makes
+  the same mistake.
 
 ## What this doesn't prove yet
 

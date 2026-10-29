@@ -57,6 +57,10 @@
     <button id="save-btn">Save a test profile (profiles_save, real write)</button>
     <div id="push-status">Waiting for a 'profiles-changed' push event (no invoke involved)...</div>
     <ul id="list"></ul>
+    <hr style="border-color: #2c303a; margin: 24px 0" />
+    <button id="log-btn">Record a Manager Log entry (log_record, second real subsystem)</button>
+    <div id="log-status">Waiting for a 'manager-log-entry' push event...</div>
+    <ul id="log-list"></ul>
     <script type="module">
       const { invoke } = window.__TAURI__.core
       const { listen } = window.__TAURI__.event
@@ -115,6 +119,30 @@
       }
 
       saveBtn.addEventListener('click', saveTestProfile)
+
+      const logBtn = document.getElementById('log-btn')
+      const logStatusEl = document.getElementById('log-status')
+      const logListEl = document.getElementById('log-list')
+
+      // Second independent push source, proving the same mechanism (Rust reader thread ->
+      // app.emit -> listen()) multiplexes by event name alone - this one wraps
+      // lib/managerLog.ts's own `managerLogEvents`, a file-backed subsystem unrelated to
+      // store.ts/electron-store.
+      listen('manager-log-entry', (event) => {
+        logStatusEl.textContent = `Live update received via 'manager-log-entry' push event - not from a button click.`
+        logStatusEl.classList.add('live')
+        const li = document.createElement('li')
+        li.textContent = `[${event.payload.ts}] ${event.payload.taskLabel}: ${event.payload.message}`
+        logListEl.prepend(li)
+      })
+
+      logBtn.addEventListener('click', () => {
+        invoke('log_record', { message: 'Manual test entry at ' + new Date().toLocaleTimeString() }).catch((err) => {
+          logStatusEl.textContent = 'Error calling log_record:'
+          logStatusEl.classList.add('error')
+          console.error(err)
+        })
+      })
 
       refresh()
     </script>
