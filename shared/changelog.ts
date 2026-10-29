@@ -13,6 +13,14 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-10-29',
+    title: 'Web Dashboard: redesigned the Dashboard and Minecraft Servers cards to match the desktop Manager',
+    details: [
+      'Each server\'s card now looks and works like the desktop Manager\'s own Dashboard card: icon action buttons (Start/Stop/Restart/Update/Kill - Kill is new here, it was desktop-only before), a status badge, and a stat tile grid, instead of the old "⋮" popup menu.',
+      'The "⋮" menu is replaced by a "..." dropdown that lists every one of that server\'s tabs directly (Console, Analytics, Settings, Mods, Backups, Map Management, Files, Update Log, Server Management for ARK; the matching set for Minecraft, only showing Mods or Plugins when that server type actually has one) - pick one to jump straight there instead of landing on Console first.'
+    ]
+  },
+  {
+    date: '2026-10-29',
     title: 'Fixed an automatic restart sometimes not actually restarting the server (e.g. an Event Scheduler mod activation)',
     details: [
       "When a graceful shutdown couldn't confirm the server had actually exited in time and had to force it instead, the Manager used to move on to starting the new process immediately - before the old one was actually confirmed gone - which could make that \"start\" silently do nothing, leaving the old process running untouched. This is why an Event Scheduler event with \"Shutdown when event starts\" could add a mod to the server and report it as restarted, while the running server never actually picked up the new mod. Now waits for the forced shutdown to actually finish before starting the new process. Affects every automatic stop-then-start in the Manager (Event Scheduler, the Restart button, scheduled restarts), not just mod events."

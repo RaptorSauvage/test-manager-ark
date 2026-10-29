@@ -178,7 +178,8 @@ vi.mock('../src/main/lib/serverActions', () => ({
   doRestartServer: vi.fn(async (profile: { id: string }) => ({ profileId: profile.id, state: 'starting' })),
   doRestartServerConfirmSave: vi.fn(async (_profile: { id: string }) => ({ saved: true })),
   doUpdateServer: vi.fn(async () => {}),
-  doStopUpdateRestart: vi.fn(async () => {})
+  doStopUpdateRestart: vi.fn(async () => {}),
+  doKillServer: vi.fn((id: string) => ({ profileId: id, state: 'stopped' }))
 }))
 let mockSendMinecraftStdinCommand = (_id: string, _command: string): boolean => true
 vi.mock('../src/main/lib/minecraftProcess', async (importOriginal) => {
@@ -192,7 +193,8 @@ vi.mock('../src/main/lib/minecraftProcess', async (importOriginal) => {
 })
 vi.mock('../src/main/lib/minecraftActions', () => ({
   doStartMinecraftServer: vi.fn((profile: { id: string }) => ({ profileId: profile.id, state: 'starting' })),
-  doStopMinecraftServer: vi.fn(async (profile: { id: string }) => ({ profileId: profile.id, state: 'stopped' }))
+  doStopMinecraftServer: vi.fn(async (profile: { id: string }) => ({ profileId: profile.id, state: 'stopped' })),
+  doKillMinecraftServer: vi.fn((profile: { id: string }) => ({ profileId: profile.id, state: 'stopped' }))
 }))
 vi.mock('../src/main/lib/minecraftRcon', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/main/lib/minecraftRcon')>()
@@ -622,6 +624,13 @@ describe('web dashboard HTTP server', () => {
       expect(minecraftActions.doStopMinecraftServer).toHaveBeenCalledWith(expect.objectContaining({ id: 'mc1' }))
     })
 
+    it('force-kills a Minecraft server', async () => {
+      const res = await request('/api/servers/mc1/kill', { method: 'POST' })
+      expect(res.status).toBe(200)
+      expect(JSON.parse(res.body)).toEqual({ ok: true })
+      expect(minecraftActions.doKillMinecraftServer).toHaveBeenCalledWith(expect.objectContaining({ id: 'mc1' }))
+    })
+
     it('rejects restart for a Minecraft server with a clear 400, rather than a 404 or silently no-op', async () => {
       const res = await request('/api/servers/mc1/restart', { method: 'POST' })
       expect(res.status).toBe(400)
@@ -795,6 +804,18 @@ describe('web dashboard HTTP server', () => {
     expect(res.status).toBe(200)
     expect(JSON.parse(res.body)).toEqual({ ok: true, saved: true })
     expect(serverActions.doRestartServerConfirmSave).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }))
+  })
+
+  it('force-kills a server', async () => {
+    const res = await request('/api/servers/p1/kill', { method: 'POST' })
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ ok: true })
+    expect(serverActions.doKillServer).toHaveBeenCalledWith('p1')
+  })
+
+  it('404s a kill for an unknown server', async () => {
+    const res = await request('/api/servers/unknown/kill', { method: 'POST' })
+    expect(res.status).toBe(404)
   })
 
   it('kicks off a standalone update', async () => {

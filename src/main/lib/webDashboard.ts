@@ -30,7 +30,8 @@ import {
   doStopServerConfirmSave,
   doRestartServerConfirmSave,
   doUpdateServer,
-  doStopUpdateRestart
+  doStopUpdateRestart,
+  doKillServer
 } from './serverActions'
 import { createBackup, listBackups, deleteBackup, restoreBackup, getBackupLog } from './backup'
 import {
@@ -69,7 +70,7 @@ import {
   getConsoleBacklog as getMinecraftConsoleBacklog,
   sendStdinCommand as sendMinecraftStdinCommand
 } from './minecraftProcess'
-import { doStartMinecraftServer, doStopMinecraftServer } from './minecraftActions'
+import { doStartMinecraftServer, doStopMinecraftServer, doKillMinecraftServer } from './minecraftActions'
 import { sendMinecraftRconCommand, parseMinecraftPlayerList } from './minecraftRcon'
 import {
   readServerProperties as readMinecraftServerProperties,
@@ -764,6 +765,25 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     } catch (err) {
       sendJson(res, 400, { ok: false, error: (err as Error).message })
     }
+    return
+  }
+
+  // Force-kill, no save - same tier (moderator+) and the same "respond immediately, the
+  // actual process teardown happens in the background" shape as stop/restart above, since
+  // killServer/the Minecraft equivalent are themselves fire-and-forget (see their own doc
+  // comments in serverProcess.ts/minecraftProcess.ts).
+  const killMatch = path.match(/^\/api\/servers\/([^/]+)\/kill$/)
+  if (req.method === 'POST' && killMatch) {
+    const auth = await requireRole(req, res, 'moderator')
+    if (!auth) return
+    const found = findAnyServer(decodeURIComponent(killMatch[1]))
+    if (!found || !hasProfileAccess(auth, found.profile.id)) {
+      sendJson(res, 404, { ok: false, error: 'Unknown server' })
+      return
+    }
+    if (found.kind === 'minecraft') doKillMinecraftServer(found.profile)
+    else doKillServer(found.profile.id)
+    sendJson(res, 200, { ok: true })
     return
   }
 
@@ -1920,7 +1940,7 @@ const DASHBOARD_HTML = `<!doctype html>
   :root {
     color-scheme: dark;
     --bg: #14161a; --panel: #1d2027; --border: #2c303a; --text: #e6e8ec; --muted: #9aa0ab;
-    --accent: #4f8cff; --danger: #e0555b; --ok: #3fbf6f; --warn: #e0a63f; --cyan: #22d3ee;
+    --accent: #4f8cff; --danger: #e0555b; --danger-dark: #8f2c30; --ok: #3fbf6f; --warn: #e0a63f; --cyan: #22d3ee;
     --purple: #a78bfa; --pink: #f472b6;
     --status-running: #1f8a4c; --status-starting: #7ee6a0; --status-updating: #6fa8ff;
     --status-stopping: #f2878b; --status-stopped: #a83239; --status-restarting: #e0a63f;
@@ -2035,8 +2055,56 @@ const DASHBOARD_HTML = `<!doctype html>
   .server-card-mobile-stats strong { color: var(--text); font-weight: 600; }
   #dashboard-cards { display: flex; flex-direction: column; gap: 20px; }
   .dashboard-group-label { margin: 0 0 8px; font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-  .dashboard-group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .dashboard-group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 340px)); gap: 16px; }
   .dashboard-group-grid .server-card-mobile { cursor: pointer; }
+  /* Card-v2 - same markup/classes as the desktop Manager's own Dashboard.tsx card
+     (src/renderer/src/styles.css), used for the Dashboard and Minecraft Servers card grids
+     (not Cluster Dashboard, which mirrors its own desktop reference, ClusterDataView.tsx's
+     row-list-with-inline-chart layout instead, nor the Cluster Console sidebar, which mirrors
+     GroupConsoleView.tsx's own compact summary card - so .server-card-mobile above stays as
+     it is for those two). */
+  .server-card-v2 { position: relative; background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--status-stopped); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; }
+  .server-card-v2.status-running { border-left-color: var(--status-running); }
+  .server-card-v2.status-starting { border-left-color: var(--status-starting); }
+  .server-card-v2.status-updating { border-left-color: var(--status-updating); }
+  .server-card-v2.status-stopping { border-left-color: var(--status-stopping); }
+  .server-card-v2.status-restarting { border-left-color: var(--warn); }
+  .server-card-v2.status-error { border-left-color: var(--danger); }
+  .server-card-v2-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+  .server-card-v2-title { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; }
+  .server-card-v2-title h3 { margin: 0; font-size: 1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-card-game-icon { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; flex-shrink: 0; }
+  .server-version { font-size: 0.7rem; font-weight: 400; color: var(--muted); flex-shrink: 0; }
+  .header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .card-menu-btn { padding: 2px 7px; font-size: 1rem; line-height: 1; }
+  .card-menu-dropdown { position: absolute; top: 40px; right: 14px; z-index: 20; width: 230px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 6px; display: none; flex-direction: column; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45); }
+  .card-menu-dropdown.open { display: flex; }
+  .card-menu-group { display: flex; flex-direction: column; padding: 4px 0; }
+  .card-menu-group + .card-menu-group { border-top: 1px solid var(--border); }
+  .card-menu-dropdown button { all: unset; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; font-size: 0.85rem; color: var(--text); }
+  .card-menu-icon { flex-shrink: 0; }
+  .card-menu-dropdown button:hover { background: var(--bg); }
+  .card-menu-dropdown button.danger { color: var(--danger); }
+  .stat-tile-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .stat-tile { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 6px 7px; }
+  .stat-tile-label { font-size: 0.65rem; color: var(--muted); }
+  .stat-tile-value { font-size: 0.82rem; font-weight: 600; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .action-row { display: flex; gap: 5px; }
+  .action-row button { flex: 1; padding: 6px 0; font-size: 0.95rem; line-height: 1; }
+  .action-row button.start { color: var(--ok); border-color: var(--ok); }
+  .action-row button.stop { color: var(--danger); border-color: var(--danger); }
+  .action-row button.restart { color: var(--warn); border-color: var(--warn); }
+  .action-row button.update { color: var(--accent); border-color: var(--accent); }
+  .action-row button.kill { color: var(--danger-dark); border-color: var(--danger-dark); }
+  .icon-mask { display: inline-block; width: 13px; height: 13px; background-color: currentColor; -webkit-mask-size: contain; -webkit-mask-repeat: no-repeat; -webkit-mask-position: center; mask-size: contain; mask-repeat: no-repeat; mask-position: center; }
+  .badge { padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; text-transform: uppercase; border: 1px solid var(--border); flex-shrink: 0; }
+  .badge-running { color: var(--status-running); border-color: var(--status-running); }
+  .badge-starting { color: var(--status-starting); border-color: var(--status-starting); }
+  .badge-updating { color: var(--status-updating); border-color: var(--status-updating); }
+  .badge-stopping { color: var(--status-stopping); border-color: var(--status-stopping); }
+  .badge-stopped { color: var(--status-stopped); border-color: var(--status-stopped); }
+  .badge-restarting { color: var(--warn); border-color: var(--warn); }
+  .badge-error { color: var(--danger); border-color: var(--danger); }
   .action-sheet { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px; z-index: 1000; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); min-width: 170px; }
   .action-sheet button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 9px 12px; border-radius: 6px; font-size: 0.9rem; }
   .action-sheet button:hover:not(:disabled) { background: var(--bg); }
@@ -4253,6 +4321,218 @@ function initDashboard(resolvedRole) {
     menu.style.visibility = '';
   }
 
+  // Card-v2's own "..." dropdown - a sibling, separate floating-menu singleton from
+  // contextMenuEl/closeContextMenu above (right-click player menu, action sheet): this one
+  // lives INSIDE the card itself (position: absolute, see .card-menu-dropdown's own CSS),
+  // toggled via a .open class, rather than appended to document.body - matching the desktop
+  // Manager's own card menu (Dashboard.tsx's renderCardMenu) exactly, dropdown markup and
+  // all, down to the shared .card-menu-dropdown/.card-menu-group/.card-menu-icon classes.
+  var openCardMenuEl = null;
+  function closeCardMenu() {
+    if (openCardMenuEl) { openCardMenuEl.classList.remove('open'); openCardMenuEl = null; }
+  }
+  document.addEventListener('click', function (e) {
+    if (openCardMenuEl && !openCardMenuEl.contains(e.target) && !(e.target.closest && e.target.closest('.card-menu-btn'))) {
+      closeCardMenu();
+    }
+  });
+  document.addEventListener('scroll', closeCardMenu, true);
+
+  // Every ARK per-server tab the card's "..." menu can jump straight to - same key/label/
+  // icon/group as the desktop Manager's own SERVER_DETAIL_TABS (src/renderer/src/pages/
+  // ServerDetail/index.tsx), and the same tier gate already used to show/hide each one's
+  // permanent sidebar button in updateServerScopedNavVisibility (tier null = always visible,
+  // 'readonly' = hidden only for the readonly role, 'moderator'/'admin' = canOperate/canAdmin).
+  var ARK_MANAGE_TABS = [
+    { view: 'console', label: 'Console', icon: '🖥️', group: 'Overview', tier: null },
+    { view: 'analytics', label: 'Analytics', icon: '📊', group: 'Overview', tier: null },
+    { view: 'settings', label: 'Settings', icon: '⚙️', group: 'Configuration', tier: 'admin' },
+    { view: 'mods', label: 'Mods', icon: '🧩', group: 'Configuration', tier: 'admin' },
+    { view: 'mapmanagement', label: 'Map Management', icon: '🗺️', group: 'Configuration', tier: 'admin' },
+    { view: 'backup', label: 'Backups', icon: '💾', group: 'Maintenance', tier: 'readonly' },
+    { view: 'updatelog', label: 'Update Log', icon: '📜', group: 'Maintenance', tier: 'admin' },
+    { view: 'servermanagement', label: 'Server Management', icon: '🛠️', group: 'Maintenance', tier: 'moderator' },
+    { view: 'files', label: 'Files', icon: '📁', group: 'Files', tier: 'admin' }
+  ];
+
+  // Same idea for Minecraft - mirrors MinecraftServerDetail/index.tsx's own tabsFor, Mods/
+  // Plugins conditionally included per serverType the same way minecraftServerSupportsEcosystem
+  // decides on desktop (replicated inline here since the web dashboard's client script has no
+  // access to that shared TS module - see MC_MODS_ECOSYSTEM/MC_PLUGINS_ECOSYSTEM below).
+  var MC_MODS_SERVER_TYPES = ['forge', 'neoforge', 'fabric', 'spongeforge'];
+  var MC_PLUGINS_SERVER_TYPES = ['paper', 'spigot', 'spongevanilla', 'spongeforge'];
+  function mcManageTabsFor(serverType) {
+    var tabs = [
+      { view: 'console', label: 'Console', icon: '🖥️', group: 'Overview', tier: null },
+      { view: 'mc-startsettings', label: 'Start Settings', icon: '🚀', group: 'Configuration', tier: 'admin' },
+      { view: 'mc-serversettings', label: 'Server Settings', icon: '📝', group: 'Configuration', tier: 'moderator' }
+    ];
+    if (MC_MODS_SERVER_TYPES.indexOf(serverType) !== -1) {
+      tabs.push({ view: 'mc-mods', label: 'Mods', icon: '🧩', group: 'Configuration', tier: 'admin' });
+    }
+    if (MC_PLUGINS_SERVER_TYPES.indexOf(serverType) !== -1) {
+      tabs.push({ view: 'mc-plugins', label: 'Plugins', icon: '🔌', group: 'Configuration', tier: 'admin' });
+    }
+    tabs.push({ view: 'mc-backup', label: 'Backup', icon: '💾', group: 'Maintenance', tier: 'moderator' });
+    tabs.push({ view: 'mc-management', label: 'Server Management', icon: '🛠️', group: 'Maintenance', tier: 'moderator' });
+    return tabs;
+  }
+
+  function tabAllowedForRole(tier) {
+    if (!tier) return true;
+    if (tier === 'readonly') return role !== 'readonly';
+    if (tier === 'moderator') return !role || canOperate;
+    return !role || canAdmin;
+  }
+
+  function buildCardMenuDropdown(server, tabs) {
+    var dropdown = document.createElement('div');
+    dropdown.className = 'card-menu-dropdown';
+    var openGroup = null;
+    var openGroupEl = null;
+    tabs.forEach(function (tab) {
+      if (!tabAllowedForRole(tab.tier)) return;
+      if (tab.group !== openGroup) {
+        openGroup = tab.group;
+        openGroupEl = document.createElement('div');
+        openGroupEl.className = 'card-menu-group';
+        dropdown.appendChild(openGroupEl);
+      }
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      var iconEl = document.createElement('span');
+      iconEl.className = 'card-menu-icon';
+      iconEl.textContent = tab.icon;
+      btn.appendChild(iconEl);
+      btn.appendChild(document.createTextNode(tab.label));
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        closeCardMenu();
+        selectServer(server.id);
+        selectView(tab.view);
+      });
+      openGroupEl.appendChild(btn);
+    });
+    return dropdown;
+  }
+
+  /** Card-v2 - same markup as the desktop Manager's own Dashboard.tsx/MinecraftDashboard.tsx
+   *  card (renderCard): status-colored left border, game icon + name + version in the header,
+   *  a "..." dropdown (built above) replacing the old single "Manage" entry point, a 3x2 grid
+   *  of stat tiles, and an icon-only action row - Start/Stop/Kill for every game, plus
+   *  Restart/Update (ARK only, same as desktop's own renderActionButtons). */
+  function buildServerCardV2(server) {
+    var isMc = isMcServerEntry(server);
+    var state = server.state;
+    var card = document.createElement('div');
+    card.className = 'server-card-v2 status-' + state;
+
+    var header = document.createElement('div');
+    header.className = 'server-card-v2-header';
+    var title = document.createElement('div');
+    title.className = 'server-card-v2-title';
+    var gameIcon = document.createElement('img');
+    gameIcon.className = 'server-card-game-icon';
+    gameIcon.src = server.gameIconUrl;
+    gameIcon.alt = '';
+    gameIcon.title = server.gameDisplayName;
+    var name = document.createElement('h3');
+    name.textContent = server.name;
+    var version = document.createElement('span');
+    version.className = 'server-version';
+    version.textContent = 'v' + (server.gameVersion || '-');
+    title.appendChild(gameIcon);
+    title.appendChild(name);
+    title.appendChild(version);
+    header.appendChild(title);
+
+    var headerRight = document.createElement('div');
+    headerRight.className = 'header-right';
+    var badge = document.createElement('span');
+    badge.className = 'badge badge-' + state;
+    badge.textContent = state;
+    headerRight.appendChild(badge);
+    var menuBtn = document.createElement('button');
+    menuBtn.type = 'button';
+    menuBtn.className = 'card-menu-btn';
+    menuBtn.textContent = '⋯';
+    var dropdown = buildCardMenuDropdown(server, isMc ? mcManageTabsFor(server.serverType) : ARK_MANAGE_TABS);
+    menuBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (openCardMenuEl === dropdown) { closeCardMenu(); return; }
+      closeCardMenu();
+      dropdown.classList.add('open');
+      openCardMenuEl = dropdown;
+    });
+    headerRight.appendChild(menuBtn);
+    header.appendChild(headerRight);
+    card.appendChild(header);
+    card.appendChild(dropdown);
+
+    var statGrid = document.createElement('div');
+    statGrid.className = 'stat-tile-grid';
+    var playerCount = server.players ? server.players.length : 0;
+    var tiles = [
+      ['Players', playerCount + '/' + server.maxPlayers],
+      ['CPU', server.cpu != null ? server.cpu + '%' : '-'],
+      ['Memory', server.memoryMB != null ? server.memoryMB + ' MB' : '-']
+    ];
+    tiles.forEach(function (pair) {
+      var tile = document.createElement('div');
+      tile.className = 'stat-tile';
+      var label = document.createElement('div');
+      label.className = 'stat-tile-label';
+      label.textContent = pair[0];
+      var value = document.createElement('div');
+      value.className = 'stat-tile-value';
+      value.textContent = pair[1];
+      tile.appendChild(label);
+      tile.appendChild(value);
+      statGrid.appendChild(tile);
+    });
+    card.appendChild(statGrid);
+
+    if (!role || canOperate) {
+      var actions = document.createElement('div');
+      actions.className = 'action-row';
+      function addAction(cls, title, content, disabled, onClick) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = cls;
+        btn.title = title;
+        btn.disabled = disabled;
+        if (typeof content === 'string') btn.textContent = content;
+        else btn.appendChild(content);
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          onClick();
+        });
+        actions.appendChild(btn);
+      }
+      addAction('start', 'Start', '▶', state !== 'stopped', function () { clusterServerAction(server.id, 'start'); });
+      addAction('stop', 'Stop', '■', state !== 'running', function () { clusterServerAction(server.id, 'stop'); });
+      if (!isMc) {
+        addAction('restart', 'Restart', '↻', state !== 'running', function () { clusterServerAction(server.id, 'restart'); });
+        // Desktop's own Update button uses a small shield PNG (update.png) via icon-mask -
+        // not servable here (that file isn't one of the allowlisted /game-icons/ names, which
+        // are genuine per-game logos, not generic UI icons), so this uses a plain glyph
+        // instead for the same "Update" action in the same button position/color.
+        addAction('update', 'Update', '⬆', state !== 'stopped', function () { clusterServerAction(server.id, 'update'); });
+      }
+      addAction('kill', 'Kill (force, no save)', '✕', state === 'stopped' || state === 'updating', function () {
+        if (!confirm('Force-kill this server? Any unsaved progress since the last save is lost.')) return;
+        clusterServerAction(server.id, 'kill');
+      });
+      card.appendChild(actions);
+    }
+
+    card.addEventListener('click', function () {
+      selectServer(server.id);
+      selectView('console');
+    });
+    return card;
+  }
+
   function buildServerCardMobile(server) {
     var card = document.createElement('div');
     card.className = 'server-card-mobile';
@@ -4313,10 +4593,9 @@ function initDashboard(resolvedRole) {
   }
 
   // Admin-only Dashboard tab: the same per-server card as the mobile Cluster Dashboard
-  // fallback above (click a card to select that profile and jump to its Console, same "⋮"
-  // action menu, no separate Manage button), just laid out as a full grid instead of a single
-  // mobile column, and grouped like the Settings map dropdown/server pickers - a run of
-  // consecutive same-group servers (servers already arrive pre-sorted ungrouped-first-then-
+  // Card-v2 grid (buildServerCardV2 above) - same card the desktop Manager's own Dashboard/
+  // Minecraft Servers pages use, grouped like the Settings map dropdown/server pickers: a run
+  // of consecutive same-group servers (servers already arrive pre-sorted ungrouped-first-then-
   // alphabetical-by-group) becomes one labeled grid section.
   function renderServerCardsGrid(containerEl, allServers, emptyText) {
     // Same minimized-group exclusion as renderClusterCards above.
@@ -4348,7 +4627,7 @@ function initDashboard(resolvedRole) {
         section.appendChild(openGroupGrid);
         containerEl.appendChild(section);
       }
-      openGroupGrid.appendChild(buildServerCardMobile(server));
+      openGroupGrid.appendChild(buildServerCardV2(server));
     });
   }
 
