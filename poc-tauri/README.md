@@ -54,6 +54,14 @@ icon:auto-resize=256,128,64,48,32,16 icon.ico` (ImageMagick).
 
 ## Result
 
+**Confirmed on real Windows (WebView2), not just this Linux sandbox:** the window opens clean
+(dark background, correct icon, no white flash), the read path shows "Got 0 profile(s)..." on
+load, and clicking "Save a test profile" **visually** updates the push-status line to the live
+'profiles-changed' confirmation with the new entry in the list - the one thing the Linux/Xvfb
+run below couldn't show directly. That closes the last open question from this PoC: the full
+read + write + push round trip works end to end, through a real OS-provided webview, not just
+through on-disk evidence.
+
 **The read path** (`profiles_list`) is confirmed both by screenshot and by watching it run: the
 webview calls `invoke('profiles_list')` → Rust writes a JSON-RPC request to the sidecar's stdin
 → the sidecar runs the real `listProfiles()` (full `electron-store` load, migrations,
@@ -61,15 +69,14 @@ everything `store.ts` normally does) → the response comes back over stdout →
 pending call → the webview renders it.
 
 **The write + push path** (`profiles_save` → real `saveProfile()` → real `profileEvents`
-→ `profiles-changed` event → the webview's `listen()` handler) is confirmed too, but by the
-resulting on-disk state rather than a screenshot - see "A rendering dead end" below for why.
+→ `profiles-changed` event → the webview's `listen()` handler) was first confirmed on this
+Linux sandbox by the resulting on-disk state rather than a screenshot (see "A rendering dead
+end" below for why), then confirmed visually for real on Windows/WebView2 as noted above.
 Triggering the button's handler on a timer and checking `~/.config/ark-server-manager-
 nodejs/config.json` afterward showed the new profile, written with a timestamp matching that
 exact run, through `saveProfile`'s *full* migration/defaulting pipeline (`queryPort`,
 `maxPlayers`, every other field `migrateProfile` normally fills in) - not a partial or
-stubbed write. Rust's own log showed no "failed to forward" error for the push side either
-(it does log one, loudly, when `app.emit()` rejects an event name - see below), which is as
-much confirmation of that leg as this environment could give short of a working screenshot.
+stubbed write.
 
 No code in `src/main/store.ts` was changed for any of this - only `app.getPath('documents')`
 needed a stand-in to run outside Electron (see `electronShim.ts`).
@@ -108,10 +115,11 @@ Confirming the write+push path visually turned into its own small investigation.
 
 Read together, this looks like a software-rendering compositing limit specific to WebKitGTK
 under a bare Xvfb (no window manager, no real GPU) in this particular sandbox, not a problem
-with the Tauri/sidecar architecture itself - the filesystem is a more reliable witness than a
-screenshot here, and it says the write and the push event both landed. Still, this is a real
-gap: a Windows run with WebView2 is the only way to confirm the push path *visually*, and
-should be the first thing checked there before trusting that it "just works" end to end.
+with the Tauri/sidecar architecture itself - the filesystem was a more reliable witness than a
+screenshot here, and it said the write and the push event both landed. **Confirmed**: a real
+Windows/WebView2 run showed the push-status line update live on screen after clicking the
+button, exactly as expected - the gap this section describes was specific to this Linux
+sandbox's rendering, not the architecture.
 
 ### Measured, on this Linux sandbox
 
@@ -146,11 +154,12 @@ should be the first thing checked there before trusting that it "just works" end
 
 ## What this doesn't prove yet
 
-- **Nothing about Windows specifically.** Built and run on Linux only, in this sandbox, because
-  that's what's available here. Tauri's Windows target uses WebView2 instead of WebKitGTK -
-  architecturally equivalent (an OS-provided webview instead of a bundled Chromium), but not
-  verified firsthand. The next real step is building this same PoC on a Windows machine before
-  trusting the RAM numbers at all, and before deciding anything about MSVC/WebView2 edge cases.
+- **~~Nothing about Windows specifically~~ - now built and run on real Windows too.** Confirmed
+  working end to end (read, write, push event, all visually) via WebView2, after fixing two
+  Windows-only build issues this surfaced: the MSVC linker (`error: linker 'link.exe' not
+  found` without the "Desktop development with C++" Build Tools workload) and a missing
+  `icons/icon.ico` (see "Running it"). The RAM numbers below are still Linux-only, though -
+  that specific measurement still needs a real run on the Windows machine to mean anything.
 - **Nothing about the other ~34 IPC modules.** `profiles.list` is a simple synchronous read.
   Several existing IPC handlers stream events to the renderer continuously (console output,
   group console, stats history, Discord bot status, ...) rather than request/respond once -
