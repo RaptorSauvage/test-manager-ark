@@ -18,7 +18,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       "The window now shows immediately instead of waiting to be fully ready - it used to stay hidden until the page had painted *and* every startup task had finished (re-attaching to already-running servers, checking for updates, starting the Web Dashboard, arming the Event Scheduler, ...), which could add up to several real seconds with nothing on screen.",
       "The window's very first frame could also default to plain white before the Manager's own dark background painted over it, regardless of the above - it's now set from the start to match the app's usual dark background.",
       "The window could also feel stuck/unresponsive for a moment right after opening while that same startup work ran - it now yields back to Windows periodically during startup so the window stays responsive throughout, and its \"Loading...\" screen now gets the Manager's own icon and a spinner so it's clearer something's actually happening rather than the app looking frozen.",
-      "The loading screen itself used to disappear onto the Dashboard before startup had actually finished (it was only waiting on the very first bit of data, not the rest of the work above) - it now stays up for the whole thing."
+      "The loading screen itself used to disappear onto the Dashboard before startup had actually finished (it was only waiting on the very first bit of data, not the rest of the work above) - it now stays up for the whole thing.",
+      "The Minecraft and Settings icons were needlessly huge source images (over 2000px on a side, for icons shown at 20px) and could take a visible moment to decode the first time they appeared on screen - shrunk down to the same size as every other icon in the app."
     ]
   },
   {
