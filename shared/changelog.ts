@@ -16,7 +16,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: 'Fixed a white screen for a few seconds on every launch',
     details: [
       "The window now shows immediately instead of waiting to be fully ready - it used to stay hidden until the page had painted *and* every startup task had finished (re-attaching to already-running servers, checking for updates, starting the Web Dashboard, arming the Event Scheduler, ...), which could add up to several real seconds with nothing on screen.",
-      "The window's very first frame could also default to plain white before the Manager's own dark background painted over it, regardless of the above - it's now set from the start to match the app's usual dark background."
+      "The window's very first frame could also default to plain white before the Manager's own dark background painted over it, regardless of the above - it's now set from the start to match the app's usual dark background.",
+      "The window could also feel stuck/unresponsive for a moment right after opening while that same startup work ran - it now yields back to Windows periodically during startup so the window stays responsive throughout, and its \"Loading...\" screen now gets a spinner so it's clearer something's actually happening rather than the app looking frozen."
     ]
   },
   {

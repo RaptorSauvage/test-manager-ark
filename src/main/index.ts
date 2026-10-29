@@ -264,7 +264,19 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+/** Hands control back to the event loop for one tick - including Electron's own native
+ *  window message pump on Windows, which shares it with Node's - so the window stays
+ *  responsive (draggable, repainting, not flagged "Not Responding" by the OS) across a long
+ *  stretch of synchronous startup work, instead of needing to run uninterrupted from one end
+ *  to the other. Doesn't make any of that work itself faster - sprinkled between the
+ *  heaviest-looking groups below only to keep the window from visibly seizing up while
+ *  they run, now that it's shown immediately (see createWindow's own call site below) rather
+ *  than hidden until startup finishes. */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
+app.whenReady().then(async () => {
   // As early as possible, so it also catches a freeze that happens during the rest of this
   // startup sequence itself, not just later during normal use.
   startMainThreadWatchdog()
@@ -280,6 +292,7 @@ app.whenReady().then(() => {
   // away, while the rest of this function keeps running in the background, instead of
   // nothing at all appearing until all of it finishes.
   createWindow()
+  await yieldToEventLoop()
 
   const profiles = listProfiles()
 
@@ -292,6 +305,7 @@ app.whenReady().then(() => {
   registerCrashWatch(doStartServer)
   registerZombieDetection(doKillServer, doStartServer)
   registerClusterLogArchiveWatch(getProfile)
+  await yieldToEventLoop()
 
   // Re-attach to servers still running from a previous session (they survive
   // this app crashing/closing by design - see serverProcess.startServer).
@@ -307,15 +321,23 @@ app.whenReady().then(() => {
   // If the feature is currently disabled, also unlock anything still running right now -
   // covers the setting having been turned off since the Manager last ran.
   applyIniLockSetting(getSettings().iniLockEnabled, profiles)
+  await yieldToEventLoop()
 
   registerPlayerBackupWatch()
   registerPlayerJoinAlertWatch()
   registerPlayerActivityWatch()
   registerDiscordChatBridgeWatch()
+  // The single slowest step found chasing down a real startup-lag report - can synchronously
+  // regenerate a self-signed TLS cert (pure-JS RSA keygen, no native crypto acceleration) -
+  // see applyWebDashboardSettings/startWebDashboard/getOrCreateCert. Yielding around it like
+  // every other group here still can't make the window responsive *during* that one call
+  // (nothing can, short of moving the keygen itself off the main thread), only before and
+  // after it.
   applyWebDashboardSettings(getSettings())
   void applyDiscordBotSettings(getSettings())
   applyLaunchOnStartup(getSettings())
   startUpdateCheckPolling()
+  await yieldToEventLoop()
 
   for (const profile of profiles) {
     applyBackupSchedule(profile)
@@ -332,6 +354,7 @@ app.whenReady().then(() => {
       startDiscordChatBridgeWatch(profile)
     }
   }
+  await yieldToEventLoop()
 
   // Event Scheduler - cluster-wide, not per-profile, so armed once rather than inside the
   // loop above. Also reconciles each event's mods right now (see armModEvent's own doc
@@ -340,6 +363,7 @@ app.whenReady().then(() => {
   armAllModEvents()
 
   runAutoStart(profiles, getSettings().serverAutoStartStaggerSeconds, isRunning, doStartServer)
+  await yieldToEventLoop()
 
   const minecraftProfiles = listMinecraftProfiles()
 
@@ -352,6 +376,7 @@ app.whenReady().then(() => {
     applyMinecraftBackupSchedule(profile)
     if (isMinecraftRunning(profile.id)) startMinecraftMonitoring(profile)
   }
+  await yieldToEventLoop()
 
   const minecraftStaggerMs = Math.max(0, getSettings().serverAutoStartStaggerSeconds) * 1000
   minecraftProfiles

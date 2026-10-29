@@ -316,7 +316,10 @@ export default function App(): JSX.Element {
     return (
       <>
         {titleBar}
-        <div className="loading">Loading...</div>
+        <div className="loading">
+          <div className="loading-spinner" />
+          <div>Loading...</div>
+        </div>
       </>
     )
   }
