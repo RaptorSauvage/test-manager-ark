@@ -198,6 +198,13 @@ function createWindow(): void {
     width: 1280,
     height: 820,
     show: false,
+    // Matches styles.css's own --bg - Electron's own window background otherwise defaults to
+    // white, and paints that in for at least the very first frame regardless of `show: false`
+    // + 'ready-to-show' below (which waits for the page to have painted *something*, not
+    // specifically for the app's own dark background to be what got painted) - a real report
+    // of a white flash on launch traced to exactly this, on top of the startup sequence timing
+    // fixed separately above (see createWindow's own call site in app.whenReady()).
+    backgroundColor: '#14161a',
     icon: iconPath,
     // No OS title bar - the renderer draws its own (src/renderer/src/components/TitleBar.tsx),
     // styled like the rest of the app instead of whatever the OS theme looks like. Its
