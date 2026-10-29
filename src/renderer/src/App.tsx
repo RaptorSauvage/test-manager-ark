@@ -29,6 +29,7 @@ import clusterIcon from './assets/icons/cluster.png'
 import playersIcon from './assets/icons/players.png'
 import settingsIcon from './assets/icons/settings.png'
 import logIcon from './assets/icons/log.png'
+import appLogo from './assets/icons/app-logo.png'
 
 type MainPage = 'dashboard' | 'clusterData' | 'players' | 'managerLog'
 type GameMode = 'ark' | 'minecraft'
@@ -317,6 +318,7 @@ export default function App(): JSX.Element {
       <>
         {titleBar}
         <div className="loading">
+          <img src={appLogo} alt="" className="loading-logo" />
           <div className="loading-spinner" />
           <div>Loading...</div>
         </div>

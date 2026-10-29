@@ -331,6 +331,11 @@ label.checkbox {
   color: var(--muted);
 }
 
+.loading-logo {
+  width: 72px;
+  height: 72px;
+}
+
 .loading-spinner {
   width: 32px;
   height: 32px;
