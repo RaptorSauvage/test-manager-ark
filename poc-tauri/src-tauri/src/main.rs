@@ -15,6 +15,13 @@
 // console_backlog/console_watch/console_append_test_line are the actual headline case: the
 // real per-server live console feed, via the exact unmodified watchLogFile/parseLogChunkWithDate
 // functions the desktop Manager's own Console tab uses - see sidecar.ts's own doc comment.
+//
+// Everything above is one direction: Rust calls the sidecar. folders_open_profiles proves the
+// other direction too - the sidecar calling BACK into Rust for a real native action (opening a
+// path in the system file manager, via tauri-plugin-opener) and getting a real result back,
+// which real lib files that call Electron's `shell.*` (systemFolders.ts, backup.ts, ...) need.
+// It reuses the exact same stdio pipe: a "shell-request" push event going out one way, an
+// ordinary `{id, result}`/`{id, error}` line coming back the other - see rpcToRust.ts.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -22,6 +29,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use tauri::{Emitter, Manager};
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
@@ -48,18 +56,40 @@ struct PushEvent {
     data: Value,
 }
 
+/// The nested payload of a `{event: "shell-request", data: {...}}` push line - the sidecar
+/// asking Rust to perform a real native action and report back. See rpcToRust.ts.
+#[derive(Deserialize)]
+struct ShellRequest {
+    id: i64,
+    method: String,
+    params: Value,
+}
+
 type PendingMap = Arc<Mutex<HashMap<i64, mpsc::Sender<RpcResponse>>>>;
+/// Shared with the background reader task so it can write shell-request responses back onto
+/// the sidecar's stdin itself, from inside the same task that's reading its stdout.
+type SharedChild = Arc<Mutex<CommandChild>>;
 
 /// Owns the sidecar child (via tauri-plugin-shell's `CommandChild`, not a raw `std::process`
 /// handle - see "Sidecar packaging" in README.md) plus the map a background async task
 /// (spawned alongside this in `spawn_sidecar`) uses to resolve each response, by id, back to
 /// the `call()` that's waiting on it - stdin writes happen on whichever thread calls a Tauri
 /// command, stdout reads happen continuously on the one task, so the two need a shared,
-/// lockable map rather than a direct return value.
+/// lockable map rather than a direct return value. `child` is an `Arc` (not a bare `Mutex`)
+/// because the reader task needs its own handle to write shell-request responses back onto the
+/// same stdin this struct's own `call()` writes to.
 struct SidecarHandle {
-    child: Mutex<CommandChild>,
+    child: SharedChild,
     next_id: AtomicI64,
     pending: PendingMap,
+}
+
+/// Writes one JSON-RPC-shaped line to the sidecar's stdin - shared by `SidecarHandle::call`
+/// (Rust calling the sidecar) and the reader task's shell-request handling (answering the
+/// sidecar calling Rust), since both are just "serialize this, write it, done."
+fn write_line(child: &SharedChild, value: &impl Serialize) -> Result<(), String> {
+    let line = serde_json::to_string(value).map_err(|e| e.to_string())? + "\n";
+    child.lock().unwrap().write(line.as_bytes()).map_err(|e| e.to_string())
 }
 
 impl SidecarHandle {
@@ -68,12 +98,7 @@ impl SidecarHandle {
         let (tx, rx) = mpsc::channel();
         self.pending.lock().unwrap().insert(id, tx);
 
-        let line = serde_json::to_string(&RpcRequest { id, method, params }).map_err(|e| e.to_string())? + "\n";
-        self.child
-            .lock()
-            .unwrap()
-            .write(line.as_bytes())
-            .map_err(|e| e.to_string())?;
+        write_line(&self.child, &RpcRequest { id, method, params })?;
 
         // The sidecar is a local child process answering a cheap store read/write - a
         // genuinely hung sidecar (crashed, bad bundle, ...) should surface as an error, not
@@ -127,6 +152,15 @@ fn console_append_test_line(
     )
 }
 
+/// Calls the real, unmodified `openProfilesFolder()` from lib/systemFolders.ts - which itself
+/// calls `shell.openPath` (via electronShim.ts/rpcToRust.ts), round-tripping back into this
+/// same process to actually perform the native "open in the file manager" call this one
+/// Rust-side command can't do on the sidecar's behalf any other way.
+#[tauri::command]
+fn folders_open_profiles(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("folders.openProfiles", None)
+}
+
 /// Spawns the sidecar through tauri-plugin-shell's real sidecar mechanism and a background
 /// async task that owns reading its stdout for the app's whole lifetime: a line with an "id"
 /// resolves the matching `call()` via `pending`, a line with an "event" instead gets forwarded
@@ -155,9 +189,11 @@ fn spawn_sidecar(app: &tauri::App) -> SidecarHandle {
     let (mut rx, child) = sidecar_command
         .spawn()
         .unwrap_or_else(|e| panic!("failed to spawn sidecar: {e}"));
+    let child: SharedChild = Arc::new(Mutex::new(child));
 
     let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
     let reader_pending = pending.clone();
+    let reader_child = child.clone();
     let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
@@ -181,7 +217,21 @@ fn spawn_sidecar(app: &tauri::App) -> SidecarHandle {
                             eprintln!("sidecar: malformed push-event line: {line}");
                             continue;
                         };
-                        if let Err(e) = app_handle.emit(&push.event, push.data) {
+                        if push.event == "shell-request" {
+                            let Ok(request) = serde_json::from_value::<ShellRequest>(push.data) else {
+                                eprintln!("sidecar: malformed shell-request data: {line}");
+                                continue;
+                            };
+                            let response = handle_shell_request(&app_handle, &request.method, &request.params);
+                            eprintln!("sidecar shell-request '{}' -> {:?}", request.method, response);
+                            let payload = match response {
+                                Ok(result) => serde_json::json!({ "id": request.id, "result": result }),
+                                Err(error) => serde_json::json!({ "id": request.id, "error": error }),
+                            };
+                            if let Err(e) = write_line(&reader_child, &payload) {
+                                eprintln!("failed to write shell-request response to sidecar stdin: {e}");
+                            }
+                        } else if let Err(e) = app_handle.emit(&push.event, push.data) {
                             eprintln!("failed to forward sidecar event '{}' to the webview: {e}", push.event);
                         }
                     }
@@ -200,15 +250,37 @@ fn spawn_sidecar(app: &tauri::App) -> SidecarHandle {
     });
 
     SidecarHandle {
-        child: Mutex::new(child),
+        child,
         next_id: AtomicI64::new(1),
         pending,
+    }
+}
+
+/// Performs the real native action a sidecar's `shell-request` push event asked for, and
+/// returns what to send back on its stdin. Only "openPath" exists so far, since that's the
+/// only `shell.*` method any real lib file actually calls (confirmed by grepping - see
+/// README.md's "Where the real Electron coupling lives").
+fn handle_shell_request(app_handle: &tauri::AppHandle, method: &str, params: &Value) -> Result<Value, String> {
+    match method {
+        "openPath" => {
+            let path = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "shell-request 'openPath': missing or non-string 'path' param".to_string())?;
+            app_handle
+                .opener()
+                .open_path(path, None::<&str>)
+                .map(|_| Value::Bool(true))
+                .map_err(|e| e.to_string())
+        }
+        other => Err(format!("unknown shell-request method '{other}'")),
     }
 }
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = spawn_sidecar(app);
             app.manage(handle);
@@ -220,7 +292,8 @@ fn main() {
             log_record,
             console_backlog,
             console_watch,
-            console_append_test_line
+            console_append_test_line,
+            folders_open_profiles
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

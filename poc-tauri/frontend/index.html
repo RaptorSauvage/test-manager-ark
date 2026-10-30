@@ -72,6 +72,16 @@
     <button id="console-append-btn">Simulate a server writing a line (console_append_test_line)</button>
     <div id="console-status">Click "Start watching" first.</div>
     <ul id="console-list"></ul>
+    <hr style="border-color: #2c303a; margin: 24px 0" />
+    <h2 style="font-size: 1.1rem">Open profiles folder (the reverse direction)</h2>
+    <p style="color: #9aa0ab; margin-top: 0">
+      Calls the real, unmodified <code>openProfilesFolder()</code> from
+      <code>lib/systemFolders.ts</code>, which calls Electron's <code>shell.openPath</code>
+      itself - a native call only Rust can make, so the sidecar asks Rust to do it and waits for
+      a real answer, round-tripping the other way for the first time in this PoC.
+    </p>
+    <button id="open-folder-btn">Open profiles folder (folders_open_profiles)</button>
+    <div id="open-folder-status">Not tried yet.</div>
     <script type="module">
       const { invoke } = window.__TAURI__.core
       const { listen } = window.__TAURI__.event
@@ -211,6 +221,24 @@
       })
 
       refresh()
+
+      const openFolderBtn = document.getElementById('open-folder-btn')
+      const openFolderStatusEl = document.getElementById('open-folder-status')
+      openFolderBtn.addEventListener('click', () => {
+        openFolderStatusEl.textContent = 'Calling folders_open_profiles...'
+        openFolderStatusEl.classList.remove('error')
+        invoke('folders_open_profiles')
+          .then(() => {
+            openFolderStatusEl.textContent = 'openProfilesFolder() succeeded - Rust actually opened it.'
+          })
+          .catch((err) => {
+            // Expected in a headless sandbox with no file manager/xdg-open - the point being
+            // proven is that this error came back from a REAL attempt (see README), not that
+            // the folder visibly opened.
+            openFolderStatusEl.textContent = `openProfilesFolder() failed (expected on a headless box with no file manager): ${err}`
+            openFolderStatusEl.classList.add('error')
+          })
+      })
     </script>
   </body>
 </html>

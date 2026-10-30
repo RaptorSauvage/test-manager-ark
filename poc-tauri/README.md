@@ -11,33 +11,41 @@ independent push sources proving the mechanism generalizes (`profiles-changed` w
 `managerLogEvents`) - and now the real per-server **live console feed** itself
 (`console.backlog`/`console.watch`, via `serverProcess.ts`'s real `watchLogFile` and
 `lib/logEvents.ts`'s real `parseLogChunkWithDate`, both unmodified), which is what all of the
-above was standing in for. Window chrome, the menu bar, the tray, and the other ~34 IPC modules in
-`src/main/ipc/` are still deliberately out of scope.
+above was standing in for. All of that is Rust calling the sidecar; `folders_open_profiles`
+proves the **other direction** too - the sidecar calling back into Rust for a real native action
+(`lib/systemFolders.ts`'s real `openProfilesFolder()`, via Electron's `shell.openPath`) and
+getting a real result back, over the same stdio pipe - see "The reverse direction" below. Window
+chrome, the menu bar, the tray, and the other ~34 IPC modules in `src/main/ipc/` are still
+deliberately out of scope.
 
 ## What's here
 
 - `src-tauri/` - a minimal Tauri 2 app, using `tauri-plugin-shell`'s real sidecar mechanism (not
   a hand-rolled `std::process::Command`) to spawn the sidecar on startup - see "Sidecar
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
-  that routes each line either to the pending `call()` it answers (has an `"id"`) or out to the
-  webview as a Tauri event (has an `"event"` instead), and exposes six Tauri commands:
-  `profiles_list`, `profiles_save` (takes a profile object), `log_record` (takes a message
-  string), `console_backlog`/`console_watch` (both take an `installDir`), and
-  `console_append_test_line` (test-only - see below).
+  that routes each line either to the pending `call()` it answers (has an `"id"`), a
+  `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes seven Tauri
+  commands: `profiles_list`, `profiles_save` (takes a profile object), `log_record` (takes a
+  message string), `console_backlog`/`console_watch` (both take an `installDir`),
+  `console_append_test_line` (test-only - see below), and `folders_open_profiles`.
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
-  `src/main/lib/managerLog.ts`**, and `watchLogFile`/`getLogFilePath` (from
+  `src/main/lib/managerLog.ts`**, `watchLogFile`/`getLogFilePath` (from
   **`src/main/lib/serverProcess.ts`**) plus `readLogBacklog`/`parseLogChunkWithDate`/
-  `createLogEventCaches` (from **`src/main/lib/logEvents.ts`**) - none of it stubs or rewrites;
-  every emitter is wired straight to a push-event line (`profiles-changed`,
-  `manager-log-entry`, `console-line`), so every real write's/parsed log line's side effect
-  reaches the webview the same way it would via Electron's `webContents.send`.
-  `sidecar/electronShim.ts` stands in for the Electron APIs that import chain actually calls
-  directly (`app.getPath`, plus a minimal `ipcMain` stub `electron-store` itself needs - see
-  "Findings" below) - see "electron-store's own fallback" below for a wrinkle this found and a
-  real crash it caused once genuinely installed. `sidecar/build.mjs` bundles it with esbuild, aliasing `electron` → the shim and
-  pointing esbuild at the project's own `tsconfig.node.json` (see "Findings" below for why),
+  `createLogEventCaches` (from **`src/main/lib/logEvents.ts`**), and `openProfilesFolder` (from
+  **`src/main/lib/systemFolders.ts`**) - none of it stubs or rewrites; every emitter is wired
+  straight to a push-event line (`profiles-changed`, `manager-log-entry`, `console-line`), so
+  every real write's/parsed log line's side effect reaches the webview the same way it would via
+  Electron's `webContents.send`. `sidecar/electronShim.ts` stands in for the Electron APIs that
+  import chain actually calls directly (`app.getPath`, a minimal `ipcMain` stub `electron-store`
+  itself needs, and `shell.openPath` - see "Findings" below and "The reverse direction" below) -
+  see "electron-store's own fallback" below for a wrinkle this found and a real crash it caused
+  once genuinely installed. `sidecar/rpcToRust.ts` holds the small bit of plumbing
+  `shell.openPath` needs to call back into Rust over the same stdio pipe (see "The reverse
+  direction"). `sidecar/build.mjs` bundles it all with esbuild, aliasing `electron` → the shim
+  and pointing esbuild at the project's own `tsconfig.node.json` (see "Findings" below for why),
   into a single dependency-free `dist/sidecar.cjs`. `sidecar/sea-config.json` +
   `sidecar/build-sea.mjs` turn that bundle into `dist/sidecar-bin` - a standalone executable
   with Node itself embedded, via Node's own SEA (Single Executable Applications) feature - so
@@ -45,8 +53,8 @@ above was standing in for. Window chrome, the menu bar, the tray, and the other 
   packaging" below).
 - `frontend/index.html` - a bare page (not the real React UI): calls `invoke('profiles_list')`
   on load; buttons call `invoke('profiles_save', { profile })`, `invoke('log_record', {
-  message })`, `invoke('console_watch', { installDir })`, and
-  `invoke('console_append_test_line', { installDir, message })`; `listen('profiles-changed',
+  message })`, `invoke('console_watch', { installDir })`, `invoke('console_append_test_line',
+  { installDir, message })`, and `invoke('folders_open_profiles')`; `listen('profiles-changed',
   ...)`/`listen('manager-log-entry', ...)`/`listen('console-line', ...)` handlers update their
   own section the moment each push event arrives - independent of any button, proving the
   live-update path for all three.
@@ -147,6 +155,66 @@ sandbox has no real profiles.json, not because anything failed):
 
 `Tauri shell PoC - real store.ts through a Node sidecar` / `Got 0 profile(s) from the real
 store.ts, via the Rust shell -> Node sidecar round trip.`
+
+### The reverse direction (sidecar calling Rust)
+
+Everything above is one direction: Rust calls the sidecar, the sidecar answers or pushes
+events. Real lib files that call Electron's `shell.*` (`systemFolders.ts`, `backup.ts`,
+`mapManagement.ts`, ...) need the opposite direction too - `shell.openPath` is a native "open
+this in the system file manager" call only the Rust shell can actually make, so the sidecar has
+to ask Rust to do it and wait for a real answer, not fire-and-forget. Grepping every real call
+site (`grep -rn "shell\.\(openPath\|showItemInFolder\)" src/main/lib/`) turned up only
+`shell.openPath`, always in the same `await`-and-check-the-error-string shape, across 7 call
+sites in 6 files - `showItemInFolder` isn't used anywhere, so that's the one method this needed
+to prove.
+
+**Architecture**: reuses the exact same bidirectional stdio pipe instead of opening a second
+channel. `electronShim.ts`'s `shell.openPath(path)` calls `rpcToRust.ts`'s `callRust()`, which
+sends a push-event-shaped line out on stdout (`{event: "shell-request", data: {id, method,
+params}}` - using the event-name slot, not the RPC-method slot, since the sidecar is the one
+initiating this time) and returns a `Promise` that resolves when a matching response arrives
+back on stdin. `main.rs`'s reader task now recognizes `event === "shell-request"` specially:
+instead of forwarding it to the webview like any other push event, it calls the real
+`tauri-plugin-opener` crate (`app_handle.opener().open_path(path, None)`) and writes a plain
+`{id, result}`/`{id, error}` line back onto the sidecar's own stdin - indistinguishable on the
+wire from a response to an RPC call *Rust* itself made, except it's a separate id
+counter/pending map going the other way, and `sidecar.ts`'s own line handler tells the two
+apart by one rule: a line with a `"method"` field is a command from Rust, a line without one is
+a response to one of the sidecar's own outgoing requests.
+
+This needed `SidecarHandle.child` to become an `Arc<Mutex<CommandChild>>` shared between the
+code that writes outgoing RPC requests and the reader task that now also writes shell-request
+responses, both onto the same stdin.
+
+**Proven real, not a mocked test, by porting an actual real file**: `folders_open_profiles`
+calls `sidecar.ts`'s `folders.openProfiles` RPC method, which calls the real, unmodified
+`openProfilesFolder()` from `lib/systemFolders.ts` - not a synthetic test method standing in
+for the mechanism. That function itself calls `shell.openPath` internally; this PoC's code
+never calls `shell.openPath` directly.
+
+**Confirmed three ways**, each isolating a different layer:
+1. A standalone Node script spawning `dist/sidecar.cjs` directly and acting as a fake Rust
+   peer (reading the outgoing `shell-request` line, writing back a synthetic `{id, result:
+   true}` response) confirmed the TypeScript side's id-correlation and promise resolution, for
+   both the success and error-propagation paths, with no Rust involved at all.
+2. Running the actual compiled Tauri app under Xvfb and clicking (via a temporary `setTimeout`
+   trigger, reverted before committing) confirmed the real round trip end to end: Rust's stderr
+   logged `sidecar shell-request 'openPath' -> Err("Launcher \"gio\" \"open\"
+   \"/root/.tauri-poc-bober-manager\" failed with ExitStatus(unix_wait_status(512))")` - a real
+   attempt by the real `tauri-plugin-opener` crate to run `gio open` against the real path
+   `electronShim.ts`'s `app.getPath('userData')` resolves to, failing only because this headless
+   sandbox has no GUI session/file manager registered to handle it (the same category of
+   sandbox-specific gap as the WebKitGTK rendering limitation below, not an architecture bug).
+3. The error correctly reached all the way back down through `write_line` → the sidecar's
+   stdin → `resolveRustResponse` → the rejected `callRust()` promise → `shell.openPath`
+   returning that message as a string (matching real Electron's own `shell.openPath` contract)
+   → `openProfilesFolder()` throwing it → the RPC response's `error` field → the webview's
+   `.catch()` handler, which is the complete real error-propagation path a real migration needs,
+   not just the happy path.
+
+This Rust-side `eprintln!` logging of every shell-request's outcome was kept in `main.rs`
+(not reverted) - genuinely useful visibility into a native call that has no other feedback
+path from inside this architecture.
 
 ### A rendering dead end (and why it doesn't undercut the result above)
 
@@ -389,6 +457,12 @@ binary, not the dev build.
   and auto-update, and the equivalent bundling step on Windows (`.msi`/`.exe` via WiX/NSIS) and
   macOS (`.app`/`.dmg`) - only the Linux `.deb` target has been tried. `SIDECAR_PATH` is still a
   dev-time escape hatch for iterating without rebuilding the SEA binary each time.
+- **~~Nothing about `shell.*` calls~~ - proven for `shell.openPath`, the only one any real file
+  uses.** See "The reverse direction" above: the sidecar can call back into Rust for a real
+  native action and get a real result (success or a real error string) back, through the same
+  stdio pipe, with no change to the real file that calls it (`lib/systemFolders.ts`'s
+  `openProfilesFolder()`, unmodified). This actually overturns this PoC's own earlier
+  speculation in the table below - see the note under it.
 - **Nothing about the bot/webdashboard sidecars** mentioned in the original size estimate - this
   PoC only touches the "main process logic" sidecar.
 
@@ -406,10 +480,15 @@ is realistic beyond this one PoC's slice:
 | What it imports | Files | Sidecar-portable? |
 | --- | --- | --- |
 | `app` (`getPath`/`isPackaged`) | `dataDir.ts`, `appUpdater.ts`, `discordBot.ts`, `launchOnStartup.ts`, `webDashboard.ts`, `systemFolders.ts` | Yes - same `electronShim.ts` pattern as this PoC already proves |
-| `shell` (`openPath`/`showItemInFolder`) | `backup.ts`, `mapManagement.ts`, `minecraftBackup.ts`, `minecraftMods.ts`, `playerBackup.ts`, `systemFolders.ts` | Needs a real native call, not a stub - Tauri has an equivalent (`opener` plugin) but it lives in the Rust shell, not the sidecar, so these particular calls would need to move to a Tauri command instead of staying in these files as-is |
+| `shell` (`openPath` - `showItemInFolder` isn't actually called anywhere) | `backup.ts`, `mapManagement.ts`, `minecraftBackup.ts`, `minecraftMods.ts`, `playerBackup.ts`, `systemFolders.ts` | ~~Needs a real native call, not a stub - these particular calls would need to move to a Tauri command instead of staying in these files as-is~~ **Proven wrong by building it: sidecar-portable too, with zero changes to these files** - see "The reverse direction" above |
 | `BrowserWindow` (type only) | `windowFocus.ts` | N/A - window-focus logic belongs in the shell anyway, not a sidecar concern |
 
 So the actual finding is better than "two files": every `app.*` use across the whole `lib/`
-directory is the same shape this PoC already handles, and every `shell.*` use is a small,
-identifiable list of call sites (not business logic itself) that a real migration would route
-to a Tauri command instead of stubbing - a bounded, scoped follow-up, not an open-ended one.
+directory is the same shape this PoC already handles, and every `shell.*` use turns out to be
+the same shape too, once there's a real bidirectional channel - this table's own first guess
+(struck through above rather than deleted) assumed `shell.*` call sites would need to move out
+of these files and into a Tauri command, because "only the Rust shell can make the native
+call." Building it showed that's not actually required: `electronShim.ts`'s `shell.openPath`
+round-trips to Rust transparently, so `backup.ts`/`mapManagement.ts`/etc. would port completely
+unmodified, exactly like every `app.*`-shaped file above - worth keeping the wrong guess
+visible, not just the corrected answer.

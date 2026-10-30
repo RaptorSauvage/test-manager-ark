@@ -9,6 +9,7 @@
  */
 import os from 'node:os'
 import path from 'node:path'
+import { callRust } from './rpcToRust'
 
 const POC_USER_DATA = path.join(os.homedir(), '.tauri-poc-bober-manager')
 
@@ -39,4 +40,23 @@ export const app = {
  */
 export const ipcMain = {
   on(_channel: string, _listener: (...args: unknown[]) => void): void {}
+}
+
+/**
+ * Real lib files (systemFolders.ts, backup.ts, ...) call `shell.openPath(path)` directly - a
+ * native "open in the system file manager" call only the Rust shell can actually make (see
+ * rpcToRust.ts for the bidirectional plumbing this round-trips through). Matches real
+ * Electron's own `shell.openPath` return shape exactly, since every real call site checks it
+ * that way: an empty string means success, a non-empty string is the error message - none of
+ * them `catch` a thrown error.
+ */
+export const shell = {
+  async openPath(targetPath: string): Promise<string> {
+    try {
+      await callRust('openPath', { path: targetPath })
+      return ''
+    } catch (err) {
+      return (err as Error).message
+    }
+  }
 }

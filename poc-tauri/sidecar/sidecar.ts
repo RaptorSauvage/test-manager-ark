@@ -36,19 +36,14 @@ import { listProfiles, saveProfile, profileEvents } from '../../src/main/store'
 import { logManagerEvent, newTaskId, managerLogEvents } from '../../src/main/lib/managerLog'
 import { watchLogFile, getLogFilePath } from '../../src/main/lib/serverProcess'
 import { readLogBacklog, parseLogChunkWithDate, createLogEventCaches } from '../../src/main/lib/logEvents'
+import { openProfilesFolder } from '../../src/main/lib/systemFolders'
+import { send, resolveRustResponse } from './rpcToRust'
 import type { ServerProfile } from '../../shared/types'
 
 interface RpcRequest {
   id: number
   method: string
   params?: unknown
-}
-
-type RpcResponse = { id: number; result: unknown } | { id: number; error: string }
-type PushEvent = { event: string; data: unknown }
-
-function send(message: RpcResponse | PushEvent): void {
-  process.stdout.write(JSON.stringify(message) + '\n')
 }
 
 const methods: Record<string, (params: unknown) => unknown> = {
@@ -107,6 +102,15 @@ const methods: Record<string, (params: unknown) => unknown> = {
     const stamp = `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}-${pad(now.getHours())}.${pad(now.getMinutes())}.${pad(now.getSeconds())}:${pad(now.getMilliseconds(), 3)}`
     fs.appendFileSync(logPath, `[${stamp}][  0]${message}\n`)
     return { ok: true }
+  },
+  // Real, unmodified lib/systemFolders.ts function - the whole point of the `shell.openPath`
+  // round trip this proves (see electronShim.ts/rpcToRust.ts), not a synthetic test method.
+  // Every real call site in the app follows this exact shape: call a systemFolders.ts
+  // function, let it call `shell.openPath` itself, surface whatever it throws as the RPC
+  // error - same as every other real function this sidecar calls into.
+  'folders.openProfiles': async () => {
+    await openProfilesFolder()
+    return { ok: true }
   }
 }
 
@@ -121,13 +125,23 @@ managerLogEvents.on('log', (entry) => send({ event: 'manager-log-entry', data: e
 
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', async (line) => {
-  let request: RpcRequest
+  let parsed: Record<string, unknown>
   try {
-    request = JSON.parse(line)
+    parsed = JSON.parse(line)
   } catch (err) {
-    console.error('sidecar: failed to parse request line:', line, err)
+    console.error('sidecar: failed to parse incoming line:', line, err)
     return
   }
+  // A line with no "method" field is a response to one of THIS sidecar's own outgoing
+  // shell-request calls (see rpcToRust.ts), not a command from Rust - every command line
+  // always carries one. Checked first since both shapes otherwise look alike (both just
+  // {id, ...}).
+  if (parsed.method === undefined) {
+    const handled = resolveRustResponse(parsed.id as number, parsed.result, parsed.error as string | undefined)
+    if (!handled) console.error('sidecar: response for unknown/already-resolved request id:', line)
+    return
+  }
+  const request = parsed as unknown as RpcRequest
   const handler = methods[request.method]
   if (!handler) {
     send({ id: request.id, error: `Unknown method "${request.method}"` })
