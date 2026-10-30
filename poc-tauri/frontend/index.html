@@ -84,12 +84,16 @@
       the real, unmodified <code>getExecutablePath(profile)</code>'s resolved path - no real
       ARK/Minecraft dedicated server binary exists in this sandbox, so "Install fake executable"
       writes a tiny long-running stand-in script there first (test-only, same role as
-      "Simulate a server writing a line" above, for the process side instead of the log side).
-      It exits cleanly on SIGTERM, same as a real game server. Stop calls the real
-      <code>stopServer()</code> shutdown sequence unmodified: RCON <code>SaveWorld</code> fails
-      immediately (no <code>ServerAdminPassword</code> set on this fake profile, so it never
-      even opens a socket), so it skips straight to the grace-period wait, sends SIGTERM once
-      the grace period elapses with no exit, and confirms the real process actually died.
+      "Simulate a server writing a line" above, for the process side instead of the log side). A
+      few seconds after launch it also writes the real startup-complete log line a real ARK
+      server would, so the real <code>watchLogFileForMarker()</code> picks it up and status
+      really advances from "starting" to "running" (watch for a second <code>server-status</code>
+      push event, pid unchanged, a few seconds after Start). It exits cleanly on SIGTERM, same as
+      a real game server. Stop calls the real <code>stopServer()</code> shutdown sequence
+      unmodified: RCON <code>SaveWorld</code> fails immediately (no <code>ServerAdminPassword</code>
+      set on this fake profile, so it never even opens a socket), so it skips straight to the
+      grace-period wait, sends SIGTERM once the grace period elapses with no exit, and confirms
+      the real process actually died.
     </p>
     <button id="server-install-btn">1. Install fake executable (test-only, server_install_test_executable)</button><br />
     <button id="server-start-btn">2. Start (server_start)</button>
@@ -318,7 +322,7 @@
       })
 
       serverInstallBtn.addEventListener('click', () => {
-        invoke('server_install_test_executable', { profileId: SERVER_TEST_PROFILE_ID })
+        invoke('server_install_test_executable', { profileId: SERVER_TEST_PROFILE_ID, withStartupMarker: true })
           .then((result) => {
             serverStatusEl.textContent = `Fake executable installed at ${result.exePath} - click Start.`
             serverStatusEl.classList.remove('error')

@@ -665,16 +665,14 @@ rendering dead end," here checking the real OS process list instead of the files
 SIGTERM) - end to end through the real webview → `invoke()` → Rust → sidecar → `startServer()`/
 `stopServer()` round trip, not just the standalone sidecar test above.
 
-**What this doesn't prove yet, beyond "no real game server binary":**
-`watchLogFileForMarker`'s "fully started" detection (the fake script never writes a matching log
-line, so status never advances past `starting` to `running` - a real finding, not a bug: without
-a real server actually logging its own startup, there's no honest way to simulate that
-transition), the Windows-only `.bat`-launch path for ARK: Survival Evolved (`launchViaBatch`,
-untested - this sandbox is Linux and the test profile used `ark-ascended`, which never takes that
-branch), and no UI page calls any of this yet (`Dashboard.tsx`, 758 lines, is where the real
-Start/Stop/Restart buttons live - out of scope for this round, which proved the RPC layer first,
-the same order bot/web-dashboard were proven in before any UI). `adoptPersistedProcesses` and the
-staggered spawn queue - both initially on this list too - are now proven; see directly below.
+**What this doesn't prove yet, beyond "no real game server binary":** the Windows-only
+`.bat`-launch path for ARK: Survival Evolved (`launchViaBatch`, untested - this sandbox is Linux
+and the test profile used `ark-ascended`, which never takes that branch), and no UI page calls
+any of this yet (`Dashboard.tsx`, 758 lines, is where the real Start/Stop/Restart buttons live -
+out of scope for this round, which proved the RPC layer first, the same order bot/web-dashboard
+were proven in before any UI). `adoptPersistedProcesses`, the staggered spawn queue, and
+`watchLogFileForMarker`'s "fully started" detection - all initially on this list too - are now
+proven; see directly below and "A server that actually finishes starting" further down.
 
 **The staggered multi-server spawn queue (`reserveSpawnSlot`), confirmed with two separate
 profiles and zero code changes - this is existing, already-wired behavior, not a new port.**
@@ -746,6 +744,56 @@ webview → `invoke('server_status')`/`invoke('server_stop')` → Rust → the b
 genuinely separate app processes sharing only the same on-disk store - not two RPC calls against
 one long-lived sidecar, which is what every other proof in this PoC so far has actually been
 testing.
+
+### A server that actually finishes starting
+
+Every server-lifecycle proof so far left status stuck at `starting` forever, by design: the fake
+stand-in executable never wrote anything resembling a real ARK engine log, so
+`watchLogFileForMarker()` - the real function that watches for the exact line
+(`"Server has completed startup and is now advertising for join"`) a real server writes once it's
+actually done loading, and flips status to `running` - never had anything to find. That was
+flagged honestly each time as a real gap, not quietly accepted as permanent: a real server
+*does* write that line, so there was an honest way to simulate it after all, the same way
+`console.appendTestLine` already simulates realistic log output elsewhere in this PoC.
+
+**`server.installTestExecutable` gained an opt-in `withStartupMarker` flag** (plumbed through the
+matching `server_install_test_executable` Tauri command too). When set, the generated stand-in
+script does two additional things a real ARK server's own launch already does: creates its log
+file immediately on startup (empty), then - a few seconds later, from a backgrounded subshell -
+appends the real startup-complete line to it. `watchLogFileForMarker()`/`markReady()` themselves
+are untouched; only the test fixture that feeds them changed.
+
+**A real ordering bug was found and fixed in the test fixture itself, not in the port.** The
+first version appended the marker line to the log file without creating it first.
+`watchLogFile()`'s own polling logic treats its *first* successful read of a file as nothing more
+than a size baseline (see its own comment on this) - never calling back with "new" content on
+that first tick, by design, so a Manager restart doesn't treat a server's entire pre-existing log
+as a flood of brand-new lines. That meant a marker line present the very first time the file was
+ever seen got silently absorbed into that baseline and never reported as a chunk at all. A real
+ARK server could never trigger this - its log exists and is already growing well before the
+startup-complete line appears in it - so this was purely an artifact of the fake script creating
+the file and writing the marker in the same instant. Fixed by having the script create the
+(empty) log file immediately and append the marker only after a delay, matching a real server's
+actual shape and giving `watchLogFile` an earlier, uneventful baseline tick to work from first.
+
+**Confirmed standalone: the real `starting` → `running` transition, driven by the real marker
+detection, not a timeout.** Seeded a profile, installed the fixture with the marker flag set, and
+called `server.start`: the usual two `server-status` push events arrived immediately (`starting`,
+then `starting` with a real pid), then a **third**, unprompted, about four seconds later -
+`state: "running"`, same pid - `watchLogFileForMarker()` detecting the real log line
+`watchLogFile`'s own 2-second poll tick picked up and calling the real `markReady()`. Confirmed
+independently by reading the fake server's own log file afterward: it contained exactly the one
+real startup-complete line the script wrote. `STARTUP_FALLBACK_MS` (`serverProcess.ts`'s own
+safety net for a server that never logs a recognizable startup line - 5 minutes) was not
+separately re-timed - 300 real seconds of idle waiting to confirm a plain `setTimeout` fires on
+schedule wouldn't have told this PoC anything a close reading of the unmodified constant doesn't
+already say with the same confidence.
+
+**Confirmed through the real compiled app too**, using the same temporary-trigger-under-Xvfb
+technique as every other server-lifecycle proof: `server_install_test_executable` was called with
+the marker flag through the real webview → `invoke()` → Rust → sidecar chain, and the real fake
+server's log file was confirmed, a few seconds after Start, to contain the real startup-complete
+line - end to end through the actual compiled app, not just the standalone sidecar test above.
 
 ### Measured, on this Linux sandbox
 
@@ -1013,12 +1061,10 @@ binary, not the dev build.
   disappearing, not a screenshot). Found one real property of the unmodified shutdown code along
   the way: `stopServer()`'s "force kill" is a single SIGTERM with a 10-second give-up, not an
   escalation to SIGKILL - a process that ignored SIGTERM would be reported `stopped` without
-  actually being dead. Still unconfirmed: the `watchLogFileForMarker`-based "fully started"
-  detection (never reachable without a real server actually logging its own startup), the
-  Windows-only ARK: Survival Evolved `.bat`-launch path, and no UI page calls any of this yet -
-  `Dashboard.tsx` (758 lines, the real Start/Stop/Restart buttons) is out of scope for this
-  round, which proved the RPC layer first, same order bot/web-dashboard were proven in before
-  any UI touched them.
+  actually being dead. Still unconfirmed: the Windows-only ARK: Survival Evolved `.bat`-launch
+  path, and no UI page calls any of this yet - `Dashboard.tsx` (758 lines, the real
+  Start/Stop/Restart buttons) is out of scope for this round, which proved the RPC layer first,
+  same order bot/web-dashboard were proven in before any UI touched them.
 - **~~Nothing about surviving a Manager crash~~ - proven, with a genuine two-separate-app-process
   test, not a simulation of one.** See "Surviving a crash" above: `adoptPersistedProcesses()` is
   now wired into `sidecar.ts` at the same point the real `index.ts` calls it, and confirmed to
@@ -1035,6 +1081,18 @@ binary, not the dev build.
   real default 10-second stagger window had elapsed, confirmed against both the push-event timing
   and the real OS process list's own start timestamps (10 seconds apart, driven by the *first*
   server's `startedAt`, matching the function's own "global, not per-profile" queue design).
+- **~~Nothing about a server actually finishing startup~~ - proven, standalone and through the
+  real compiled app.** See "A server that actually finishes starting" above:
+  `watchLogFileForMarker()`'s real `starting` → `running` transition, driven by the real
+  startup-complete log line a real ARK server writes, not a timeout - the fake stand-in script
+  gained an opt-in flag to write that same real line a few seconds after launch, the same kind
+  of honest simulation `console.appendTestLine` already does elsewhere in this PoC. Found and
+  fixed a real ordering bug in the test fixture itself along the way (not the port): writing the
+  marker into a log file `watchLogFile` had never successfully polled even once got silently
+  absorbed into its own first "establish a size baseline" tick and never reported - fixed by
+  having the fixture create the log file immediately and append the marker only after a delay,
+  matching a real server's own shape (log already exists and is growing before that line
+  appears).
 
 ## Where the real Electron coupling lives
 

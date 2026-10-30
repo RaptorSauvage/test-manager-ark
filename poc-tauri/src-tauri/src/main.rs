@@ -211,11 +211,12 @@ fn server_status(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Re
 #[tauri::command]
 fn server_install_test_executable(
     profile_id: String,
+    with_startup_marker: Option<bool>,
     sidecar: tauri::State<SidecarHandle>,
 ) -> Result<Value, String> {
     sidecar.call(
         "server.installTestExecutable",
-        Some(serde_json::json!({ "profileId": profile_id })),
+        Some(serde_json::json!({ "profileId": profile_id, "withStartupMarker": with_startup_marker })),
     )
 }
 

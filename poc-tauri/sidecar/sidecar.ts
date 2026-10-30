@@ -149,14 +149,32 @@ const methods: Record<string, (params: unknown) => unknown> = {
   // server binary, since this sandbox has none (same role as console.appendTestLine above, for
   // the process-spawn side rather than the log-output side). Exits on SIGTERM, same as a real
   // game server - see README for what this found about stopServer()'s shutdown sequence when a
-  // first version of this script ignored it instead.
+  // first version of this script ignored it instead. `withStartupMarker` additionally has the
+  // script write the real STARTUP_COMPLETE_MARKER string (copied here - serverProcess.ts keeps
+  // it as a private const, not worth exporting just for this test fixture) to the real,
+  // unmodified getLogFilePath(installDir) a few seconds after launch, the same way a real ARK
+  // server's own engine log announces it has actually finished loading - proving
+  // watchLogFileForMarker()'s real 'starting' -> 'running' transition, not just the untested
+  // code path every earlier round's silent fake script left unreachable.
   'server.installTestExecutable': (params) => {
-    const { profileId } = params as { profileId: string }
+    const { profileId, withStartupMarker } = params as { profileId: string; withStartupMarker?: boolean }
     const profile = listProfiles().find((p) => p.id === profileId)
     if (!profile) throw new Error(`Unknown profile: ${profileId}`)
     const exePath = getExecutablePath(profile)
     fs.mkdirSync(path.dirname(exePath), { recursive: true })
-    fs.writeFileSync(exePath, "#!/bin/sh\ntrap 'exit 0' TERM\nwhile true; do sleep 1; done\n")
+    const markerLine = 'Server has completed startup and is now advertising for join'
+    const logPath = getLogFilePath(profile.installDir)
+    // Creates the (empty) log file immediately, before watchLogFile's first poll tick, then
+    // appends the marker several seconds later on a separate tick - matching a real ARK
+    // server's own shape (the log exists and is growing well before the startup-complete line
+    // shows up in it). Appending the marker to a log file watchLogFile hasn't polled even once
+    // yet would instead get silently absorbed into its first "establish a size baseline" tick
+    // (see watchLogFile's own comment on that) and never reported as a chunk at all - a real
+    // ordering requirement found by hitting exactly that race first.
+    const markerWrite = withStartupMarker
+      ? `\nmkdir -p "$(dirname "${logPath}")"\n: > "${logPath}"\n(sleep 3; printf '%s\\n' "[STAGING][  0]${markerLine}" >> "${logPath}") &\n`
+      : ''
+    fs.writeFileSync(exePath, `#!/bin/sh\ntrap 'exit 0' TERM${markerWrite}\nwhile true; do sleep 1; done\n`)
     fs.chmodSync(exePath, 0o755)
     return { ok: true, exePath }
   },
