@@ -382,6 +382,55 @@ fn system_open_server_save_games_folder(profile_id: String, sidecar: tauri::Stat
     sidecar.call("system.openServerSaveGamesFolder", Some(serde_json::json!({ "profileId": profile_id })))
 }
 
+/// Backs BackupsTab.tsx/PlayerBackupsSection.tsx/BackupLogPanel.tsx - a seventh real page.
+/// See sidecar.ts's own comment on `backup.create`/`playerBackup.listFolders` for what's
+/// genuinely new here (a real RCON SaveWorld + 40s settle + real zip, and a real unzip-over-
+/// SavedArks restore) versus every earlier round's reads.
+#[tauri::command]
+fn backup_create(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("backup.create", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn backup_list(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("backup.list", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn backup_delete(file_path: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("backup.delete", Some(serde_json::json!({ "filePath": file_path })))
+}
+
+#[tauri::command]
+fn backup_restore(profile_id: String, file_path: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("backup.restore", Some(serde_json::json!({ "profileId": profile_id, "filePath": file_path })))
+}
+
+#[tauri::command]
+fn backup_open_folder(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("backup.openFolder", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn backup_get_log(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("backup.getLog", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn player_backup_list_folders(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("playerBackup.listFolders", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn player_backup_list(profile_id: String, folder_key: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("playerBackup.list", Some(serde_json::json!({ "profileId": profile_id, "folderKey": folder_key })))
+}
+
+#[tauri::command]
+fn player_backup_open_folder(profile_id: String, folder_key: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("playerBackup.openFolder", Some(serde_json::json!({ "profileId": profile_id, "folderKey": folder_key })))
+}
+
 /// Test-only - see sidecar.ts's `server.installTestExecutable` comment.
 #[tauri::command]
 fn server_install_test_executable(
@@ -657,7 +706,16 @@ fn main() {
             bot_status,
             dashboard_start,
             dashboard_stop,
-            dashboard_status
+            dashboard_status,
+            backup_create,
+            backup_list,
+            backup_delete,
+            backup_restore,
+            backup_open_folder,
+            backup_get_log,
+            player_backup_list_folders,
+            player_backup_list,
+            player_backup_open_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

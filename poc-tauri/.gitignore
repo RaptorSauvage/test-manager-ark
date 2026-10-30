@@ -9,3 +9,4 @@ frontend/player-roster.js
 frontend/player-whitelist.js
 frontend/dashboard.js
 frontend/analytics.js
+frontend/backups.js

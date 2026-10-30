@@ -36,7 +36,7 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes forty-five
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes fifty-three
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
@@ -59,7 +59,10 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   sixth (see below) added `stats_history_get`, `backup_get_schedule_status`,
   `server_get_installed_build_id`/`server_get_game_version`, `steamcmd_get_latest_build_id`, and
   `system_open_server_config_folder`/`system_open_server_saved_arks_folder`/
-  `system_open_server_save_games_folder`.
+  `system_open_server_save_games_folder`. The seventh (see "A seventh real page" below) added
+  `backup_create`/`backup_list`/`backup_delete`/`backup_restore`/`backup_open_folder`/
+  `backup_get_log` and `player_backup_list_folders`/`player_backup_list`/
+  `player_backup_open_folder`.
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -1316,6 +1319,70 @@ unmodified component puts it. A real migration would make this same fix once, at
 layer `invoke` is imported from, rather than touching every individual `catch` block in the real
 renderer - which is exactly what this fix does.
 
+### A seventh real page: world/player backups, the heaviest write path yet
+
+`BackupsTab.tsx` (`src/renderer/src/pages/ServerDetail/`, 342 lines) was picked because it's the
+heaviest real write path this PoC has ported: `createBackup()` really sends an RCON `SaveWorld`
+when the server is running, waits a real 40-second settle, then zips real files off disk with
+`archiver`; `restoreBackup()` really extracts a real zip straight over `SavedArks` with
+`adm-zip`. It also mounts two more real, unmodified child components itself -
+`PlayerBackupsSection.tsx` and `BackupLogPanel.tsx` - neither needed its own entry file, both
+just call the same `window.api.backup`/`window.api.playerBackup` methods `BackupsTab` already
+calls. Nine new sidecar RPC methods (`backup.create`/`.list`/`.delete`/`.restore`/`.openFolder`/
+`.getLog`, `playerBackup.listFolders`/`.list`/`.openFolder`) each mirror their real
+`ipc/backup.ts`/`ipc/playerBackup.ts` handler's body exactly - same real `lib/backup.ts`/
+`lib/playerBackup.ts` functions, same `requireProfile`-then-call shape - plus two more push
+events (`backup-created`/`backup-log-entry`, wrapping `lib/backup.ts`'s own `backupEvents`
+`EventEmitter`, the same module-level-subscription shape as `profileEvents`/`managerLogEvents`/
+`serverEvents` - no explicit "arm" call needed here, unlike `lib/schedule.ts`'s own subscription).
+
+**Confirmed standalone first, a full real write cycle - not a single call in isolation.** Piped
+JSON-RPC straight into the SEA binary against a seeded profile pointed at a real `SavedArks`
+fixture (server stopped, so no RCON needed): `backup.create` produced a real `.zip`, with real
+`backup-created`/`backup-log-entry` push events and a real `lib/managerLog.ts` entry alongside it
+- all from the real, unmodified `createBackup()`, not a stand-in. `backup.list` read it back.
+Deleted the save file from disk, called `backup.restore` with the just-created backup's path, and
+the real file was back - a genuine round trip, confirmed by checking the filesystem directly, not
+just trusting the RPC said "ok". `playerBackup.listFolders`/`.list`/`.openFolder` were confirmed
+the same way against a fabricated player-backup folder (no real RCON player-connect event exists
+in this sandbox to drive `backupPlayerProfile()` itself - same category of gap as every other
+RCON-gated path in this PoC).
+
+**Found and fixed a response-shape bug identical in kind to `log.record`'s own, found by actually
+driving the RPC round trip rather than reading the handler's source.** `backup.delete`/
+`backup.restore`'s sidecar methods originally just called `deleteBackup()`/`restoreBackup()`
+directly and returned whatever they resolved to - `void`, same as the real functions. A real
+`backup.restore` call genuinely put the deleted file back on disk (confirmed on the filesystem),
+but the RPC response line itself read `{"id":6}` - no `result`, no `error` - which
+`SidecarHandle::call` on the Rust side treats as `Err("sidecar returned neither a result nor an
+error")` unconditionally, regardless of whether the real operation actually succeeded. Fixed the
+same way `log.record` already was: both methods now return `{ ok: true }` explicitly after
+calling the real (still unmodified) function.
+
+**Confirmed through the real compiled app, including the full click-through cycle, not just a
+read.** Seeded a profile with a real backup already on disk (so the initial screenshot shows real
+data, not an empty state), pointed the main window at a new `backups.html`
+(`?profile=poc-test-server`, same temporary-`tauri.conf.json`-`url` technique as every other
+page) and screenshotted under Xvfb: the real, unmodified form rendered the real backup settings
+(backup directory, max backups, the cron schedule from "A sixth real page"), the real world-backup
+table (one real `.zip`, real size, real creation time), the real Player Profile Backups section
+(a real player folder picked from a dropdown, a real per-player backup listed), and the real
+Backup Process Log panel correctly showing "No backup activity yet" (an honest result, not a bug -
+`getBackupLog`'s in-memory log is per-sidecar-process, as the panel's own real copy says, and this
+was a fresh process from an earlier standalone run that wrote the on-disk data). A real click on
+"Create backup now" then produced, live on screen: a new row at the top of the world-backup table
+(the real `backup-created` push event driving `BackupsTab`'s own `onCreated` reload, not a manual
+refresh) and a real log line in the Backup Process Log panel (the real `backup-log-entry` push
+event reaching `BackupLogPanel`'s own `onLogChanged` handler) - both push-driven UI updates firing
+correctly in the real running app, not just confirmed standalone. A further real click sequence -
+select the new row's checkbox, click "Delete selected backup" - removed it from both the real
+table on screen and the real file on disk, the table correctly settling back to showing just the
+original backup. Not separately exercised through the real UI: the `canRestore` gate's disabled
+state while a server is running (the underlying `restoreBackup()` guard - `isRunning(profile.id)`
+throwing "Stop the server before restoring a backup." - is the same real code path `stopServer()`
+itself already relies on elsewhere in this PoC, not new, untested logic), and the native "Browse…"
+folder picker (same category of gap as "A second real page"'s own dialog happy path).
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1383,6 +1450,14 @@ renderer - which is exactly what this fix does.
   every page this PoC has mounted, not just the one that happened to surface it. Fixed once,
   centrally, with `frontend/lib/tauriInvoke.ts`'s `wrapInvoke()`, applied to all six entry
   files' `invoke` bindings. See "A sixth real page" above for the full investigation.
+- **A second instance of "a JSON-RPC response needs a concrete, non-`undefined` result"
+  (above), caught only by actually driving the call end to end.** `backup.delete`/
+  `backup.restore` mirror `deleteBackup()`/`restoreBackup()`'s own real `void` return - a real
+  restore genuinely put a deleted file back on disk, but the response line itself carried
+  neither `result` nor `error`, which the Rust side reads as a failure unconditionally. The
+  real file being right there on disk is exactly why a type signature alone (`void`, same as
+  `log.record`'s own handler originally had) doesn't surface this - only calling the RPC method
+  and checking the actual response line does. See "A seventh real page" above.
 
 ## What this doesn't prove yet
 
@@ -1559,6 +1634,17 @@ renderer - which is exactly what this fix does.
   sandbox: `UpdateCheckPanel`'s actual "update available" state, since nothing here ever arms
   the real background SteamCMD poller that would populate it - same category of gap as
   `doUpdateServer`'s own SteamCMD-not-installed error, not a new kind of limitation.
+- **~~Nothing about world/player backups~~ - proven, a seventh real page, the heaviest write path
+  in this PoC, and a response-shape bug fixed along the way.** See "A seventh real page" below:
+  `BackupsTab.tsx` (plus the two real child components it mounts itself,
+  `PlayerBackupsSection.tsx`/`BackupLogPanel.tsx`) confirmed a real create → real zip →
+  real-event-driven list refresh → real select → real delete cycle, and a real restore that put a
+  deleted file back on disk, all through the actual compiled app, not just standalone. Found and
+  fixed a second instance of the exact class of bug "A JSON-RPC response needs a concrete,
+  non-`undefined` result" already names: `backup.delete`/`backup.restore` mirror `deleteBackup()`/
+  `restoreBackup()`'s own real `void` return, which always read on the Rust side as "neither a
+  result nor an error" - an error, even on a genuine success - until both methods were given a
+  concrete `{ ok: true }` return, the same fix `log.record` already needed.
 
 ## Where the real Electron coupling lives
 

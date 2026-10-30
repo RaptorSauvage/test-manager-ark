@@ -67,6 +67,16 @@ import { getBackupScheduleStatus, applyBackupSchedule, registerBackupScheduleWat
 import { getInstalledBuildId } from '../../src/main/lib/steamcmd'
 import { getGameVersion, getCachedGameVersion, setCachedGameVersion } from '../../src/main/lib/serverVersion'
 import { getLatestBuildIdCache } from '../../src/main/lib/updateCheck'
+import {
+  createBackup,
+  listBackups,
+  deleteBackup,
+  restoreBackup,
+  openBackupFolder,
+  backupEvents,
+  getBackupLog
+} from '../../src/main/lib/backup'
+import { listPlayerBackupFolders, listPlayerBackups, openPlayerBackupFolder } from '../../src/main/lib/playerBackup'
 import { getSettings, saveSettings } from '../../src/main/store'
 import { send, resolveRustResponse } from './rpcToRust'
 import type { GameId } from '../../shared/games'
@@ -459,6 +469,72 @@ const methods: Record<string, (params: unknown) => unknown> = {
     if (!profile) throw new Error(`Unknown profile: ${profileId}`)
     await openServerSaveGamesFolder(profile)
     return { ok: true }
+  },
+  // A seventh real page: BackupsTab.tsx (plus the two child components it mounts itself,
+  // PlayerBackupsSection.tsx and BackupLogPanel.tsx - neither has its own RPC method, they
+  // call window.api.backup.*/playerBackup.* same as BackupsTab does). Real, unmodified
+  // lib/backup.ts/lib/playerBackup.ts - a write path heavier than anything this PoC has
+  // proven yet: createBackup actually sends a real RCON SaveWorld (when the server is
+  // running), waits a real 40s settle, then zips real files off disk with `archiver`;
+  // restoreBackup extracts a real zip with `adm-zip` straight over SavedArks. Mirrors the
+  // real ipc/backup.ts/ipc/playerBackup.ts handlers' exact bodies (requireProfile-then-call
+  // shape), not a shortcut that skips the profile lookup.
+  'backup.create': (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    return createBackup(profile)
+  },
+  'backup.list': (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    return listBackups(profile)
+  },
+  // deleteBackup/restoreBackup both resolve void, same gap log.record's own comment already
+  // flags: a response line with neither "result" nor "error" (JSON.stringify drops an
+  // undefined result entirely) reads on the Rust side as "sidecar returned neither a result
+  // nor an error" - an error, even though the call actually succeeded. Found by actually
+  // driving this RPC method end to end (a real restore really did put the deleted file back
+  // on disk) and only then noticing the response line itself was malformed - { ok: true }
+  // closes the same gap every other void-returning method here already closes.
+  'backup.delete': (params) => {
+    deleteBackup((params as { filePath: string }).filePath)
+    return { ok: true }
+  },
+  'backup.restore': (params) => {
+    const { profileId, filePath } = params as { profileId: string; filePath: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    restoreBackup(profile, filePath)
+    return { ok: true }
+  },
+  'backup.openFolder': async (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    await openBackupFolder(profile)
+    return { ok: true }
+  },
+  'backup.getLog': (params) => getBackupLog((params as { profileId: string }).profileId),
+  'playerBackup.listFolders': (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    return listPlayerBackupFolders(profile)
+  },
+  'playerBackup.list': (params) => {
+    const { profileId, folderKey } = params as { profileId: string; folderKey: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    return listPlayerBackups(profile, folderKey)
+  },
+  'playerBackup.openFolder': async (params) => {
+    const { profileId, folderKey } = params as { profileId: string; folderKey: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    await openPlayerBackupFolder(profile, folderKey)
+    return { ok: true }
   }
 }
 
@@ -475,6 +551,14 @@ managerLogEvents.on('log', (entry) => send({ event: 'manager-log-entry', data: e
 // ('starting'/'running'/'stopping'/'stopped'/'error'), not just what a one-off status poll
 // would show.
 serverEvents.on('status', (status) => send({ event: 'server-status', data: status }))
+// A fourth and fifth: lib/backup.ts's own `backupEvents` - 'created' backs BackupsTab.tsx's
+// window.api.backup.onCreated (reload the file list without polling), 'log' backs
+// BackupLogPanel.tsx's window.api.backup.onLogChanged (append one line live instead of
+// re-fetching the whole log). Both are plain EventEmitter.on subscriptions at module level,
+// same shape as profileEvents/managerLogEvents/serverEvents above - no explicit "arm" call
+// needed here, unlike lib/schedule.ts's own serverEvents subscription.
+backupEvents.on('created', (profileId: string) => send({ event: 'backup-created', data: profileId }))
+backupEvents.on('log', (profileId: string, entry) => send({ event: 'backup-log-entry', data: { profileId, entry } }))
 
 // Real, unmodified adoptPersistedProcesses() - the real app's own answer to "what happens to a
 // running server if the Manager itself crashes or restarts": startServer() launches it detached
