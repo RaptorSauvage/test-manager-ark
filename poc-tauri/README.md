@@ -36,7 +36,7 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes fifty-three
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes fifty-five
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
@@ -62,7 +62,8 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `system_open_server_save_games_folder`. The seventh (see "A seventh real page" below) added
   `backup_create`/`backup_list`/`backup_delete`/`backup_restore`/`backup_open_folder`/
   `backup_get_log` and `player_backup_list_folders`/`player_backup_list`/
-  `player_backup_open_folder`.
+  `player_backup_open_folder`. The eighth (see "An eighth real page" below) added
+  `steamcmd_get_update_log` and `steamcmd_append_test_update_log_line` (test-only).
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -1383,6 +1384,63 @@ throwing "Stop the server before restoring a backup." - is the same real code pa
 itself already relies on elsewhere in this PoC, not new, untested logic), and the native "Browse…"
 folder picker (same category of gap as "A second real page"'s own dialog happy path).
 
+### An eighth real page, and a PoC-wide bug in how a legitimate `null` crosses the Tauri bridge
+
+`UpdateLogTab.tsx` (`src/renderer/src/pages/ServerDetail/`, 52 lines) is the smallest page this
+PoC has ported, and was picked specifically because its real contract includes a legitimate
+`null`: `readUpdateLog(profileId): string | null` from `lib/steamcmd.ts` - real, unmodified,
+backing `window.api.steamcmd.getUpdateLog`/`.onUpdateLogChanged` - returns `null` for any
+profile that's never been updated, which `updateServer()` (already called by this PoC's
+`server.update`) can never leave this sandbox in any other state, since it fails fast with "Set
+the SteamCMD path in Settings before updating." before ever writing a log file (no real SteamCMD
+install here). Wired one new RPC method (`steamcmd.getUpdateLog`) and one more independent push
+source (`lib/steamcmd.ts`'s own `steamcmdUpdateEvents`, same module-level-subscription shape as
+every push source except `lib/schedule.ts`'s), plus a test-only `steamcmd.appendTestUpdateLogLine`
+(writes straight to the real log path and emits the real event) standing in for a real update run,
+the same honest-simulation role `console.appendTestLine`/`server.installTestExecutable` already
+play elsewhere in this PoC.
+
+**The actual headline finding of this round: a legitimate JSON `null` result is indistinguishable,
+on the Rust side, from the sidecar having sent no result at all.** `RpcResponse`'s
+`#[serde(default)] result: Option<Value>` field - written for the bug class "A JSON-RPC response
+needs a concrete, non-`undefined` result" already names (see `log.record`'s and
+`backup.delete`/`backup.restore`'s own fixes) - turns out to have the opposite gap too: serde's
+derived `Option<T>` deserializer treats a JSON `null` value the **same as the field being
+absent**, both collapsing to `None`. Confirmed directly, not assumed from docs: deserializing
+`{"id":1,"result":null}` and `{"id":2}` through the exact same derived struct produced identical
+`result: None, error: None` output for both. `SidecarHandle::call`'s own match arm -
+`(None, None) => Err("sidecar returned neither a result nor an error")` - then treats a real,
+honest `readUpdateLog` → `null` exactly like a sidecar bug, rejecting the `invoke()` promise with
+an opaque error instead of resolving it with `null`. Since `UpdateLogTab.tsx`'s own
+`.then((log) => setLogContent(log ?? '...'))` chain has no `.catch()` (same as every other real
+component in this PoC, none of which were written expecting a rejection on a normal, successful
+read), the real effect would have been silent: the log panel stuck at its initial empty string,
+on every single profile that's never been updated - the common case, not an edge case.
+
+**Fixed with a custom `Deserialize` impl for `RpcResponse`, not a sidecar-side workaround.**
+Wrapping every legitimately-`null`-returning sidecar method's result (the way `backup.delete`
+wraps `void` in `{ ok: true }`) would work too, but only for methods whose authors remember to -
+exactly the kind of per-call-site discipline this PoC's own fixes have otherwise tried to avoid
+needing. The real fix belongs at the transport layer: `RpcResponse` now deserializes the whole
+line into a `serde_json::Map` first and reads `result`/`error` via `.get()`, which (confirmed by
+the same direct test) correctly returns `Some(&Value::Null)` for a present-but-null key and `None`
+only when the key is genuinely absent - the distinction the derived `Option<Value>` field could
+never make. `SidecarHandle::call`'s own match logic needed no change at all once that distinction
+reached it correctly.
+
+**Confirmed through the real compiled app, both the fix and the honest `null` case itself.**
+Pointed the main window at a profile that has never been updated (`update-log.html?profile=...`,
+same temporary-`tauri.conf.json`-`url` technique as every other page) and screenshotted under
+Xvfb: the real, unmodified component correctly rendered "No update log yet - run Update at least
+once." - not stuck empty, not an unhandled-rejection console error - confirming the fix handles
+the honest `null` path, not just the already-has-data path. Re-pointed at `poc-test-server` (which
+already had two real lines on disk from an earlier standalone round) and the real content rendered
+too. A temporary trigger button (revert-before-commit, as always) calling
+`steamcmd_append_test_update_log_line` twice, clicked through the real running app, produced two
+real new lines appearing live on screen between clicks - the real `steamcmd-update-log-changed`
+push event reaching the real, unmodified `onUpdateLogChanged` handler, confirmed the same way
+every other live-push page in this PoC has been.
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1458,6 +1516,16 @@ folder picker (same category of gap as "A second real page"'s own dialog happy p
   real file being right there on disk is exactly why a type signature alone (`void`, same as
   `log.record`'s own handler originally had) doesn't surface this - only calling the RPC method
   and checking the actual response line does. See "A seventh real page" above.
+- **The opposite direction of the same class of bug: a legitimate JSON `null` result is
+  indistinguishable from no result at all, confirmed by deserializing both shapes side by side
+  and comparing.** `#[serde(default)] result: Option<Value>` collapses `{"result": null}` and a
+  response with no `"result"` key at all to the identical `None` - so `readUpdateLog()`'s real,
+  honest `null` (a profile that's never been updated, the common case, not an edge case) read on
+  the Rust side exactly like a sidecar bug. Fixed at the transport layer (a custom `Deserialize`
+  reading the raw `Map` via `.get()`, which does preserve the distinction), not by wrapping every
+  legitimately-nullable method's result - the same kind of per-call-site fix the two bullets
+  above needed, which this one deliberately avoided needing again. See "An eighth real page"
+  above.
 
 ## What this doesn't prove yet
 
@@ -1645,6 +1713,16 @@ folder picker (same category of gap as "A second real page"'s own dialog happy p
   `restoreBackup()`'s own real `void` return, which always read on the Rust side as "neither a
   result nor an error" - an error, even on a genuine success - until both methods were given a
   concrete `{ ok: true }` return, the same fix `log.record` already needed.
+- **~~Nothing about the SteamCMD update log~~ - proven, an eighth real page, and the opposite
+  flavor of the same response-shape bug class.** See "An eighth real page" above:
+  `UpdateLogTab.tsx` confirmed `readUpdateLog()`'s real, honest `null` result (every profile in
+  this sandbox, since `updateServer()` never gets far enough to write a log without a real
+  SteamCMD install) reaches the webview correctly as `null`, not a synthesized Rust-side error -
+  found and fixed only because `Option<Value>`'s derived deserializer collapses a present JSON
+  `null` the same as an absent field, confirmed by deserializing both shapes side by side. Also
+  confirmed the live push path (`steamcmdUpdateEvents`/`onUpdateLogChanged`) through the real
+  running app with a temporary test trigger, since no real SteamCMD run exists in this sandbox to
+  drive it honestly.
 
 ## Where the real Electron coupling lives
 
