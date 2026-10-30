@@ -101,6 +101,21 @@
     <button id="bot-status-btn">Refresh status (bot_status)</button>
     <button id="bot-stop-btn">Stop bot (bot_stop)</button>
     <div id="bot-status">Not started yet.</div>
+    <hr style="border-color: #2c303a; margin: 24px 0" />
+    <h2 style="font-size: 1.1rem">Web dashboard subsystem</h2>
+    <p style="color: #9aa0ab; margin-top: 0">
+      Calls the real, unmodified <code>applyWebDashboardSettings()</code>/
+      <code>getWebDashboardStatus()</code> from <code>lib/webDashboard.ts</code> - an
+      in-process <code>http.Server</code> in the real app too, not a separate forked process
+      like the bot, so no SEA/<code>fork()</code> interaction here. Confirmed standalone with a
+      real HTTP client: starting it serves the real embedded dashboard page and a real
+      <code>/api/servers</code> JSON response on <code>http://127.0.0.1:18090</code> - try it
+      yourself in another terminal/browser tab after clicking Start.
+    </p>
+    <button id="dashboard-start-btn">Start dashboard on :18090 (dashboard_start)</button>
+    <button id="dashboard-status-btn">Refresh status (dashboard_status)</button>
+    <button id="dashboard-stop-btn">Stop dashboard (dashboard_stop)</button>
+    <div id="dashboard-status">Not started yet.</div>
     <script type="module">
       const { invoke } = window.__TAURI__.core
       const { listen } = window.__TAURI__.event
@@ -285,6 +300,35 @@
       botStatusBtn.addEventListener('click', () => {
         invoke('bot_status').then(renderBotStatus).catch((err) => {
           botStatusEl.textContent = `Error calling bot_status: ${err}`
+        })
+      })
+
+      const dashboardStartBtn = document.getElementById('dashboard-start-btn')
+      const dashboardStopBtn = document.getElementById('dashboard-stop-btn')
+      const dashboardStatusBtn = document.getElementById('dashboard-status-btn')
+      const dashboardStatusEl = document.getElementById('dashboard-status')
+
+      function renderDashboardStatus(status) {
+        dashboardStatusEl.textContent = `running: ${status.running}, host: ${status.host ?? 'none'}, error: ${status.error ?? 'none'}`
+      }
+
+      dashboardStartBtn.addEventListener('click', () => {
+        dashboardStatusEl.textContent = 'Calling dashboard_start...'
+        invoke('dashboard_start', { port: 18090 }).then(renderDashboardStatus).catch((err) => {
+          dashboardStatusEl.textContent = `Error calling dashboard_start: ${err}`
+        })
+      })
+      dashboardStopBtn.addEventListener('click', () => {
+        invoke('dashboard_stop')
+          .then(() => invoke('dashboard_status'))
+          .then(renderDashboardStatus)
+          .catch((err) => {
+            dashboardStatusEl.textContent = `Error calling dashboard_stop: ${err}`
+          })
+      })
+      dashboardStatusBtn.addEventListener('click', () => {
+        invoke('dashboard_status').then(renderDashboardStatus).catch((err) => {
+          dashboardStatusEl.textContent = `Error calling dashboard_status: ${err}`
         })
       })
     </script>

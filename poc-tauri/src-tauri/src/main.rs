@@ -180,6 +180,25 @@ fn bot_status(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
     sidecar.call("bot.status", None)
 }
 
+/// Calls the real, unmodified `applyWebDashboardSettings()`/`getWebDashboardStatus()` from
+/// lib/webDashboard.ts - the third real subsystem from the original size estimate. Unlike the
+/// bot, this one is an in-process http.Server/https.Server in the real app too, not a forked
+/// child - so no fork()/SEA interaction to worry about, just the ordinary RPC round trip.
+#[tauri::command]
+fn dashboard_start(port: i64, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("dashboard.start", Some(serde_json::json!({ "port": port })))
+}
+
+#[tauri::command]
+fn dashboard_stop(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("dashboard.stop", None)
+}
+
+#[tauri::command]
+fn dashboard_status(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("dashboard.status", None)
+}
+
 /// Spawns the sidecar through tauri-plugin-shell's real sidecar mechanism and a background
 /// async task that owns reading its stdout for the app's whole lifetime: a line with an "id"
 /// resolves the matching `call()` via `pending`, a line with an "event" instead gets forwarded
@@ -315,7 +334,10 @@ fn main() {
             folders_open_profiles,
             bot_start,
             bot_stop,
-            bot_status
+            bot_status,
+            dashboard_start,
+            dashboard_stop,
+            dashboard_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

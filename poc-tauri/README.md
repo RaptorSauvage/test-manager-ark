@@ -18,8 +18,12 @@ getting a real result back, over the same stdio pipe - see "The reverse directio
 `bot_start`/`bot_stop`/`bot_status` go beyond the main-process logic entirely: the real,
 unmodified Discord bot subsystem (`lib/discordBot.ts` + `src/bot/`), which turned out to need no
 porting work at all - and surfaced a genuinely significant SEA-packaging limitation along the
-way, see "The Discord bot subsystem" below. Window chrome, the menu bar, the tray, and the other
-~34 IPC modules in `src/main/ipc/` are still deliberately out of scope.
+way, see "The Discord bot subsystem" below. `dashboard_start`/`dashboard_stop`/
+`dashboard_status` prove the third and last subsystem from the original size estimate - the web
+dashboard (`lib/webDashboard.ts`) - confirmed with a real HTTP client against the real embedded
+dashboard page and the real `/api/servers` endpoint, see "The web dashboard subsystem" below.
+Window chrome, the menu bar, the tray, and the other ~34 IPC modules in `src/main/ipc/` are
+still deliberately out of scope.
 
 ## What's here
 
@@ -28,20 +32,24 @@ way, see "The Discord bot subsystem" below. Window chrome, the menu bar, the tra
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes ten Tauri
-  commands: `profiles_list`, `profiles_save` (takes a profile object), `log_record` (takes a
-  message string), `console_backlog`/`console_watch` (both take an `installDir`),
-  `console_append_test_line` (test-only - see below), `folders_open_profiles`, and
-  `bot_start`/`bot_stop`/`bot_status` (see "The Discord bot subsystem" below).
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes thirteen
+  Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `log_record` (takes
+  a message string), `console_backlog`/`console_watch` (both take an `installDir`),
+  `console_append_test_line` (test-only - see below), `folders_open_profiles`,
+  `bot_start`/`bot_stop`/`bot_status` (see "The Discord bot subsystem" below), and
+  `dashboard_start`/`dashboard_stop`/`dashboard_status` (see "The web dashboard subsystem"
+  below).
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
   `src/main/lib/managerLog.ts`**, `watchLogFile`/`getLogFilePath` (from
   **`src/main/lib/serverProcess.ts`**) plus `readLogBacklog`/`parseLogChunkWithDate`/
   `createLogEventCaches` (from **`src/main/lib/logEvents.ts`**), `openProfilesFolder` (from
-  **`src/main/lib/systemFolders.ts`**), and `startDiscordBot`/`stopDiscordBot`/
+  **`src/main/lib/systemFolders.ts`**), `startDiscordBot`/`stopDiscordBot`/
   `getDiscordBotStatus` (from **`src/main/lib/discordBot.ts`**, see "The Discord bot subsystem"
-  below) - none of it stubs or rewrites; every emitter is wired
+  below), and `applyWebDashboardSettings`/`stopWebDashboard`/`getWebDashboardStatus` (from
+  **`src/main/lib/webDashboard.ts`**, 8200+ lines, see "The web dashboard subsystem" below) -
+  none of it stubs or rewrites; every emitter is wired
   straight to a push-event line (`profiles-changed`, `manager-log-entry`, `console-line`), so
   every real write's/parsed log line's side effect reaches the webview the same way it would via
   Electron's `webContents.send`. `sidecar/electronShim.ts` stands in for the Electron APIs that
@@ -59,12 +67,14 @@ way, see "The Discord bot subsystem" below. Window chrome, the menu bar, the tra
   packaging" below). `sidecar/build-bot.mjs` separately bundles the real, unmodified
   `src/bot/index.ts` (mirroring the real repo's own `scripts/build-bot.mjs`) into
   `sidecar/bot/index.js`, the exact relative path `lib/discordBot.ts`'s own `botScriptPath()`
-  expects.
+  expects. The web dashboard needed no separate build step at all - `webDashboard.ts` is just
+  another file `sidecar/build.mjs`'s existing esbuild bundle already pulls in.
 - `frontend/index.html` - a bare page (not the real React UI): calls `invoke('profiles_list')`
   on load; buttons call `invoke('profiles_save', { profile })`, `invoke('log_record', {
   message })`, `invoke('console_watch', { installDir })`, `invoke('console_append_test_line',
-  { installDir, message })`, `invoke('folders_open_profiles')`, and `invoke('bot_start')`/
-  `invoke('bot_stop')`/`invoke('bot_status')`; `listen('profiles-changed',
+  { installDir, message })`, `invoke('folders_open_profiles')`, `invoke('bot_start')`/
+  `invoke('bot_stop')`/`invoke('bot_status')`, and `invoke('dashboard_start')`/
+  `invoke('dashboard_stop')`/`invoke('dashboard_status')`; `listen('profiles-changed',
   ...)`/`listen('manager-log-entry', ...)`/`listen('console-line', ...)` handlers update their
   own section the moment each push event arrives - independent of any button, proving the
   live-update path for all three.
@@ -297,6 +307,52 @@ separate SEA binary and spawning that specific path with `child_process.spawn` i
 `discordBot.ts`, which would mean modifying a file this whole PoC otherwise proves can stay
 untouched.
 
+### The web dashboard subsystem
+
+The third and last subsystem from the original size estimate. `lib/webDashboard.ts` is big
+(8200+ lines) and pulls in a large slice of `src/main/lib/` transitively (`serverActions.ts`,
+`backup.ts`, `rcon.ts`, `groupConsole.ts`, `statsHistory.ts`, `fileBrowser.ts`, ...) - it's the
+real app's entire Web Dashboard HTTP API and embedded frontend in one file, not a small
+single-purpose module like the others this PoC has ported so far.
+
+**Architecturally different from the bot in one important way, confirmed by just reading it
+rather than assuming**: unlike the bot, the web dashboard was never a separate OS process even
+in the real app - `startWebDashboard()`/`stopWebDashboard()` just create a plain
+`http.Server`/`https.Server` (Node's own built-in modules) **in the same process** as
+everything else, listening on a port directly. There's no `fork()` anywhere in this file, so
+none of "The Discord bot subsystem"'s SEA-packaging problem applies here at all - this is just
+more functions this sidecar can call, the same shape as `systemFolders.ts`.
+
+**Added to `sidecar.ts` and it bundled clean on the first try** - no missing-module errors, no
+new Electron-shim gaps (the existing `app.getPath` coverage was already enough), despite the
+large transitive import graph. `dashboard.start`/`dashboard.stop`/`dashboard.status` call the
+real, unmodified `applyWebDashboardSettings()`/`stopWebDashboard()`/`getWebDashboardStatus()`
+directly, through the same real `saveSettings()`/`getSettings()` round trip as every other real
+subsystem this PoC touches.
+
+**Confirmed the most thoroughly of anything in this PoC, because it's the one subsystem a real
+HTTP client can check without any webview/Xvfb involvement at all.** Standalone (a fake-Rust-peer
+script, same technique as "The reverse direction"): `dashboard.start` → a real `http.Server`
+actually listening on `127.0.0.1:18090` → a real `GET /api/servers` returns `200` with a real
+`[]` (correctly empty, no profiles exist) → a real `GET /` returns the real embedded dashboard
+page (`<title>Bober Server Manager - Web Console</title>`, not a stand-in) → `dashboard.stop` →
+a follow-up request gets a real `ECONNREFUSED`, proving the server genuinely stopped, not just
+that the RPC call returned. Then reproduced through the **actual compiled Tauri app**, started
+for real (`./target/debug/tauri_poc_shell`, default sidecar - the SEA binary, not
+`SIDECAR_PATH`), triggered via `invoke('dashboard_start')`, and checked with a plain `curl` from
+a completely separate terminal, entirely outside the app: `curl http://127.0.0.1:18090/`
+returned the real dashboard HTML, `curl http://127.0.0.1:18090/api/servers` returned the real
+`[]`. This sidesteps "A rendering dead end" below entirely - no screenshot, no on-disk-state
+proxy, no WebKitGTK repaint question at all, just an ordinary HTTP response from a real server
+running inside the real app.
+
+Unlike the Discord bot, **nothing broke here** - worth stating plainly rather than only ever
+reporting bugs: a 8200-line file with a large transitive dependency graph, including several
+subsystems this PoC hasn't touched directly yet (`serverActions.ts`, `backup.ts`, `rcon.ts`, the
+group console, stats history, the file browser), bundled and ran correctly the first time it was
+tried, serving real HTTP responses through every layer of this PoC's architecture (Rust shell →
+sidecar → real app code → real HTTP server → real HTTP client) with zero new workarounds needed.
+
 ### A rendering dead end (and why it doesn't undercut the result above)
 
 Confirming the write+push path visually turned into its own small investigation. In order:
@@ -370,10 +426,12 @@ other approach (a bundled portable Node runtime next to a plain `.cjs` would cos
 ~120 MB, just as two files instead of one). Combined with the 11 MB shell, that's **~130 MB**
 total for this one sidecar - still well under Electron's 266 MB, but nowhere near the "11 MB
 shell + 392 KB sidecar" numbers above might imply on their own if read without this section.
-Three sidecars (main process logic, bot, webdashboard - see "What this doesn't prove yet") built
-this way, each embedding its own full Node copy, would start to erode the size advantage this
-whole migration is supposed to deliver - worth weighing against a single shared sidecar process
-serving all three roles instead of one SEA binary per role.
+Two sidecars built this way (main process logic, bot - see "The Discord bot subsystem" below),
+each embedding its own full Node copy, would start to erode the size advantage this whole
+migration is supposed to deliver - worth weighing against a single shared sidecar process
+serving both roles instead of one SEA binary per role. The web dashboard turned out not to add
+a third: see "The web dashboard subsystem" below - it's an in-process `http.Server`, not a
+separate process, so it rides along in the main sidecar's own SEA binary for free.
 
 ### Wired into Tauri's real `externalBin` mechanism, not just spawned by path
 
@@ -549,8 +607,16 @@ binary, not the dev build.
   all and ported completely unmodified - but this also found a real, serious bug: `fork()`
   silently can't spawn a different script from a Node SEA binary (it just relaunches the SEA
   binary's own embedded entry point instead), which a real migration shipping the main sidecar
-  as a SEA binary would need to solve before the bot subsystem could ship the same way. **Still
-  nothing about the webdashboard sidecar** - not yet touched.
+  as a SEA binary would need to solve before the bot subsystem could ship the same way.
+- **~~Nothing about the webdashboard sidecar~~ - proven, and it isn't actually a separate
+  sidecar at all.** See "The web dashboard subsystem" above: `lib/webDashboard.ts` (8200+
+  lines) is an in-process `http.Server`/`https.Server` even in the real app, not a forked
+  process like the bot, so none of the SEA/`fork()` problem applies. Confirmed with a real HTTP
+  client against the real embedded dashboard page and a real `/api/servers` response, both
+  standalone and through the actual compiled app via plain `curl` - and unlike the bot, nothing
+  broke; it bundled and ran correctly on the first try despite pulling in a large slice of
+  `src/main/lib/` transitively. All three subsystems from the original size estimate (main
+  process logic, bot, web dashboard) are now proven.
 
 ## Where the real Electron coupling lives
 

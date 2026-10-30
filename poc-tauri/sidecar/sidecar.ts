@@ -38,6 +38,7 @@ import { watchLogFile, getLogFilePath } from '../../src/main/lib/serverProcess'
 import { readLogBacklog, parseLogChunkWithDate, createLogEventCaches } from '../../src/main/lib/logEvents'
 import { openProfilesFolder } from '../../src/main/lib/systemFolders'
 import { startDiscordBot, stopDiscordBot, getDiscordBotStatus } from '../../src/main/lib/discordBot'
+import { applyWebDashboardSettings, stopWebDashboard, getWebDashboardStatus } from '../../src/main/lib/webDashboard'
 import { getSettings, saveSettings } from '../../src/main/store'
 import { send, resolveRustResponse } from './rpcToRust'
 import type { ServerProfile } from '../../shared/types'
@@ -136,7 +137,30 @@ const methods: Record<string, (params: unknown) => unknown> = {
     stopDiscordBot()
     return { ok: true }
   },
-  'bot.status': () => getDiscordBotStatus()
+  'bot.status': () => getDiscordBotStatus(),
+  // Real, unmodified lib/webDashboard.ts - the third real subsystem from the original size
+  // estimate. Unlike the bot, this one was never a separate process even in the real app - it's
+  // an in-process http.Server/https.Server started directly by the main process - so there's no
+  // fork()/SEA interaction to worry about here (see "The Discord bot subsystem" for why that
+  // mattered there). applyWebDashboardSettings/getWebDashboardStatus called exactly as the real
+  // Settings UI would, through the same real saveSettings()/getSettings() round trip.
+  'dashboard.start': async (params) => {
+    const { port } = params as { port: number }
+    const settings = saveSettings({
+      ...getSettings(),
+      webDashboardEnabled: true,
+      webDashboardPort: port,
+      webDashboardHost: '127.0.0.1',
+      webDashboardAuthEnabled: false
+    })
+    applyWebDashboardSettings(settings)
+    return getWebDashboardStatus()
+  },
+  'dashboard.stop': () => {
+    stopWebDashboard()
+    return { ok: true }
+  },
+  'dashboard.status': () => getWebDashboardStatus()
 }
 
 let stopConsoleWatch: (() => void) | null = null
