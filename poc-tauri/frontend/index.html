@@ -82,6 +82,25 @@
     </p>
     <button id="open-folder-btn">Open profiles folder (folders_open_profiles)</button>
     <div id="open-folder-status">Not tried yet.</div>
+    <hr style="border-color: #2c303a; margin: 24px 0" />
+    <h2 style="font-size: 1.1rem">Discord bot subsystem</h2>
+    <p style="color: #9aa0ab; margin-top: 0">
+      Calls the real, unmodified <code>startDiscordBot()</code>/<code>stopDiscordBot()</code>/
+      <code>getDiscordBotStatus()</code> from <code>lib/discordBot.ts</code>, which `fork()`s
+      the real <code>src/bot/index.ts</code> (bundled unmodified, zero Electron imports) as its
+      own OS process - a different real subsystem, not just the main-process logic above.
+      <strong>Known PoC-sandbox caveat (see README's "Sidecar packaging"):</strong> when the
+      sidecar runs as the compiled SEA binary (the default), Node's single-executable
+      packaging makes <code>fork()</code> relaunch the sidecar's own embedded entry point
+      instead of the bot script - it won't actually reach Discord either way (no outbound
+      network to discord.com in this sandbox, and a fake token regardless), but under
+      <code>SIDECAR_PATH</code> dev mode it does reach a real connection attempt and exit
+      cleanly, which is the more informative run to try first.
+    </p>
+    <button id="bot-start-btn">Start bot (bot_start)</button>
+    <button id="bot-status-btn">Refresh status (bot_status)</button>
+    <button id="bot-stop-btn">Stop bot (bot_stop)</button>
+    <div id="bot-status">Not started yet.</div>
     <script type="module">
       const { invoke } = window.__TAURI__.core
       const { listen } = window.__TAURI__.event
@@ -238,6 +257,35 @@
             openFolderStatusEl.textContent = `openProfilesFolder() failed (expected on a headless box with no file manager): ${err}`
             openFolderStatusEl.classList.add('error')
           })
+      })
+
+      const botStartBtn = document.getElementById('bot-start-btn')
+      const botStopBtn = document.getElementById('bot-stop-btn')
+      const botStatusBtn = document.getElementById('bot-status-btn')
+      const botStatusEl = document.getElementById('bot-status')
+
+      function renderBotStatus(status) {
+        botStatusEl.textContent = `running: ${status.running}, error: ${status.error ?? 'none'}`
+      }
+
+      botStartBtn.addEventListener('click', () => {
+        botStatusEl.textContent = 'Calling bot_start...'
+        invoke('bot_start').then(renderBotStatus).catch((err) => {
+          botStatusEl.textContent = `Error calling bot_start: ${err}`
+        })
+      })
+      botStopBtn.addEventListener('click', () => {
+        invoke('bot_stop')
+          .then(() => invoke('bot_status'))
+          .then(renderBotStatus)
+          .catch((err) => {
+            botStatusEl.textContent = `Error calling bot_stop: ${err}`
+          })
+      })
+      botStatusBtn.addEventListener('click', () => {
+        invoke('bot_status').then(renderBotStatus).catch((err) => {
+          botStatusEl.textContent = `Error calling bot_status: ${err}`
+        })
       })
     </script>
   </body>

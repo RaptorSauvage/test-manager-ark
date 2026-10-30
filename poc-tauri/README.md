@@ -14,9 +14,12 @@ independent push sources proving the mechanism generalizes (`profiles-changed` w
 above was standing in for. All of that is Rust calling the sidecar; `folders_open_profiles`
 proves the **other direction** too - the sidecar calling back into Rust for a real native action
 (`lib/systemFolders.ts`'s real `openProfilesFolder()`, via Electron's `shell.openPath`) and
-getting a real result back, over the same stdio pipe - see "The reverse direction" below. Window
-chrome, the menu bar, the tray, and the other ~34 IPC modules in `src/main/ipc/` are still
-deliberately out of scope.
+getting a real result back, over the same stdio pipe - see "The reverse direction" below.
+`bot_start`/`bot_stop`/`bot_status` go beyond the main-process logic entirely: the real,
+unmodified Discord bot subsystem (`lib/discordBot.ts` + `src/bot/`), which turned out to need no
+porting work at all - and surfaced a genuinely significant SEA-packaging limitation along the
+way, see "The Discord bot subsystem" below. Window chrome, the menu bar, the tray, and the other
+~34 IPC modules in `src/main/ipc/` are still deliberately out of scope.
 
 ## What's here
 
@@ -25,17 +28,20 @@ deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes seven Tauri
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes ten Tauri
   commands: `profiles_list`, `profiles_save` (takes a profile object), `log_record` (takes a
   message string), `console_backlog`/`console_watch` (both take an `installDir`),
-  `console_append_test_line` (test-only - see below), and `folders_open_profiles`.
+  `console_append_test_line` (test-only - see below), `folders_open_profiles`, and
+  `bot_start`/`bot_stop`/`bot_status` (see "The Discord bot subsystem" below).
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
   `src/main/lib/managerLog.ts`**, `watchLogFile`/`getLogFilePath` (from
   **`src/main/lib/serverProcess.ts`**) plus `readLogBacklog`/`parseLogChunkWithDate`/
-  `createLogEventCaches` (from **`src/main/lib/logEvents.ts`**), and `openProfilesFolder` (from
-  **`src/main/lib/systemFolders.ts`**) - none of it stubs or rewrites; every emitter is wired
+  `createLogEventCaches` (from **`src/main/lib/logEvents.ts`**), `openProfilesFolder` (from
+  **`src/main/lib/systemFolders.ts`**), and `startDiscordBot`/`stopDiscordBot`/
+  `getDiscordBotStatus` (from **`src/main/lib/discordBot.ts`**, see "The Discord bot subsystem"
+  below) - none of it stubs or rewrites; every emitter is wired
   straight to a push-event line (`profiles-changed`, `manager-log-entry`, `console-line`), so
   every real write's/parsed log line's side effect reaches the webview the same way it would via
   Electron's `webContents.send`. `sidecar/electronShim.ts` stands in for the Electron APIs that
@@ -50,11 +56,15 @@ deliberately out of scope.
   `sidecar/build-sea.mjs` turn that bundle into `dist/sidecar-bin` - a standalone executable
   with Node itself embedded, via Node's own SEA (Single Executable Applications) feature - so
   `main.rs` can spawn it directly with no `node` on the target machine at all (see "Sidecar
-  packaging" below).
+  packaging" below). `sidecar/build-bot.mjs` separately bundles the real, unmodified
+  `src/bot/index.ts` (mirroring the real repo's own `scripts/build-bot.mjs`) into
+  `sidecar/bot/index.js`, the exact relative path `lib/discordBot.ts`'s own `botScriptPath()`
+  expects.
 - `frontend/index.html` - a bare page (not the real React UI): calls `invoke('profiles_list')`
   on load; buttons call `invoke('profiles_save', { profile })`, `invoke('log_record', {
   message })`, `invoke('console_watch', { installDir })`, `invoke('console_append_test_line',
-  { installDir, message })`, and `invoke('folders_open_profiles')`; `listen('profiles-changed',
+  { installDir, message })`, `invoke('folders_open_profiles')`, and `invoke('bot_start')`/
+  `invoke('bot_stop')`/`invoke('bot_status')`; `listen('profiles-changed',
   ...)`/`listen('manager-log-entry', ...)`/`listen('console-line', ...)` handlers update their
   own section the moment each push event arrives - independent of any button, proving the
   live-update path for all three.
@@ -62,6 +72,7 @@ deliberately out of scope.
 ## Running it
 
 ```sh
+node sidecar/build-bot.mjs    # bundles sidecar/bot/index.js (needed before the first bot_start call)
 node sidecar/build.mjs        # bundles sidecar/dist/sidecar.cjs
 node sidecar/build-sea.mjs    # builds dist/sidecar-bin AND copies it into src-tauri/binaries/
 cd src-tauri && cargo build   # or: cargo tauri dev, if the Tauri CLI is installed
@@ -215,6 +226,76 @@ never calls `shell.openPath` directly.
 This Rust-side `eprintln!` logging of every shell-request's outcome was kept in `main.rs`
 (not reverted) - genuinely useful visibility into a native call that has no other feedback
 path from inside this architecture.
+
+### The Discord bot subsystem (and a real packaging bug it found)
+
+Everything above is the "main process logic" sidecar. The original size/migration estimate also
+counted two more real subsystems - the Discord bot and the web dashboard - as separate sidecars,
+listed in "What this doesn't prove yet" as completely untouched. This proves the bot one, and
+the result was better *and* worse than expected: better, because it needed **zero porting work**
+at all; worse, because it surfaced a real, consequential bug in this PoC's own SEA packaging
+that the main-process sidecar's own tests never would have caught.
+
+**Better than expected - already decoupled.** `grep -rl "from 'electron'" src/bot/` returns
+nothing: the bot (`src/bot/`, ~3000 lines, `discord.js`) has zero Electron imports. It already
+runs as its own OS process today, `fork()`ed by `lib/discordBot.ts` with `ELECTRON_RUN_AS_NODE=1`
+specifically so it can't take the Manager down if it crashes, talking to the Manager purely over
+the existing Web Dashboard HTTP API - not Electron IPC at all. `sidecar/build-bot.mjs` bundles
+`src/bot/index.ts` completely unmodified (same esbuild config as the real repo's own
+`scripts/build-bot.mjs`) into `sidecar/bot/index.js`, and `sidecar.ts`'s `bot.start`/`bot.stop`/
+`bot.status` RPC methods call the real, unmodified `startDiscordBot()`/`stopDiscordBot()`/
+`getDiscordBotStatus()` from `lib/discordBot.ts` directly - no shim, no stub, no new glue beyond
+the three one-line RPC methods themselves. `startDiscordBot()` round-trips through the real
+`saveSettings()`/`getSettings()` (flipping `discordBotEnabled`/`discordBotToken` on, the same
+shape the real Settings UI would send) and reuses the exact same `manager-log-entry` push event
+already proven for `log.record` - `discordBot.ts`'s own `logManagerEvent` calls on start/exit
+reached the webview with no new wiring at all.
+
+**Confirmed under `SIDECAR_PATH` dev mode** (plain `node`, not the SEA binary): a standalone
+script acting as a fake Rust peer showed the complete real lifecycle - `bot.start` → real
+`fork()` → the real bundled bot process actually starts, reads its config, attempts
+`client.login()` against Discord's real gateway, and (no outbound DNS to discord.com in this
+sandbox) fails with `getaddrinfo ENOTFOUND discord.com`, exiting cleanly with code 1. That
+exit is caught by `discordBot.ts`'s own real `proc.on('exit', ...)` handler, which pushes a
+second real `manager-log-entry` event and updates `lastError` - all unmodified code, reproduced
+through the real compiled Tauri app running under Xvfb (checked via the real
+`~/Documents/.../logs/manager.jsonl` file, not a screenshot, for the same reason as "A rendering
+dead end" below): `"Démarrage du bot Discord..."` then `"Le bot Discord s'est arrêté (code 1)."`,
+exactly matching the standalone result.
+
+**Worse than expected - a real bug, found by running the actually-installed thing, not the dev
+build** (same lesson as "Actually bundled and installed with `cargo tauri build`" above, this
+time without even needing `cargo tauri build` - the plain dev binary already showed it once
+pointed at the default SEA sidecar instead of `SIDECAR_PATH`): calling `bot.start` against the
+**default** sidecar (the compiled SEA binary, not `SIDECAR_PATH` dev mode) spawns a process that
+prints `sidecar: ready` - the *main sidecar's own* startup banner, not anything from
+`sidecar/bot/index.js` - and then just sits there, alive, doing nothing, forever. Confirmed with
+a minimal, decisive test: running `./sidecar-bin /path/to/bot/index.js /path/to/config.json`
+directly (extra positional args most Node programs would treat as `process.argv`) behaves
+identically to running `./sidecar-bin` with no arguments at all. **Node's SEA packaging bakes in
+one fixed entry point and ignores any script-path argument entirely** - there is no way to tell
+a SEA binary "run this other file instead." `fork()`'s whole mechanism is built on the opposite
+assumption (re-execute `process.execPath` with a *different* module path as the first argument),
+so `lib/discordBot.ts`'s `fork(botScriptPath(), [configPath], ...)` - completely correct, and
+exactly how every other Node program spawns a worker script - silently does the wrong thing the
+moment `process.execPath` is a SEA binary instead of a real `node`: it leaks a second, idle copy
+of the *main* sidecar process instead of running the bot, with no error anywhere (not even in
+`discordBot.ts`'s own `proc.on('error', ...)` handler - `fork()` itself reports success, because
+from the OS's perspective a process genuinely did start).
+
+This is a materially different kind of finding than everything above: not a config quirk or
+a sandbox limitation, but a real architectural incompatibility between two pieces of this PoC
+that each work fine on their own - Node SEA packaging (proven solid for the main sidecar) and
+`fork()`-based worker spawning (proven solid as *application code*, unmodified, under `node`).
+A real migration shipping the main-process sidecar as a SEA binary would need to address this
+specifically before the bot subsystem could ship the same way - options include giving
+`lib/discordBot.ts`'s launch mechanism a pluggable target (an env var or config value naming an
+explicit bot binary/script path, the same escape-hatch shape `SIDECAR_PATH` already is for this
+PoC) rather than always re-executing `process.execPath`, or shipping the bot as its own
+separate SEA binary and spawning that specific path with `child_process.spawn` instead of
+`fork()`. Neither is attempted here - this PoC's job was finding the problem, not fixing
+`discordBot.ts`, which would mean modifying a file this whole PoC otherwise proves can stay
+untouched.
 
 ### A rendering dead end (and why it doesn't undercut the result above)
 
@@ -463,8 +544,13 @@ binary, not the dev build.
   stdio pipe, with no change to the real file that calls it (`lib/systemFolders.ts`'s
   `openProfilesFolder()`, unmodified). This actually overturns this PoC's own earlier
   speculation in the table below - see the note under it.
-- **Nothing about the bot/webdashboard sidecars** mentioned in the original size estimate - this
-  PoC only touches the "main process logic" sidecar.
+- **~~Nothing about the bot sidecar~~ - proven, and it needed zero porting work.** See "The
+  Discord bot subsystem" above: `lib/discordBot.ts` + `src/bot/` have no Electron coupling at
+  all and ported completely unmodified - but this also found a real, serious bug: `fork()`
+  silently can't spawn a different script from a Node SEA binary (it just relaunches the SEA
+  binary's own embedded entry point instead), which a real migration shipping the main sidecar
+  as a SEA binary would need to solve before the bot subsystem could ship the same way. **Still
+  nothing about the webdashboard sidecar** - not yet touched.
 
 ## Where the real Electron coupling lives
 

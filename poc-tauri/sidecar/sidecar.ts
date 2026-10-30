@@ -37,6 +37,8 @@ import { logManagerEvent, newTaskId, managerLogEvents } from '../../src/main/lib
 import { watchLogFile, getLogFilePath } from '../../src/main/lib/serverProcess'
 import { readLogBacklog, parseLogChunkWithDate, createLogEventCaches } from '../../src/main/lib/logEvents'
 import { openProfilesFolder } from '../../src/main/lib/systemFolders'
+import { startDiscordBot, stopDiscordBot, getDiscordBotStatus } from '../../src/main/lib/discordBot'
+import { getSettings, saveSettings } from '../../src/main/store'
 import { send, resolveRustResponse } from './rpcToRust'
 import type { ServerProfile } from '../../shared/types'
 
@@ -111,7 +113,30 @@ const methods: Record<string, (params: unknown) => unknown> = {
   'folders.openProfiles': async () => {
     await openProfilesFolder()
     return { ok: true }
-  }
+  },
+  // Real, unmodified lib/discordBot.ts - proving the bot subsystem, not just the main-process
+  // logic this PoC has otherwise covered. startDiscordBot() itself calls Node's `fork()` with
+  // ELECTRON_RUN_AS_NODE=1 (meaningless, harmless outside Electron - fork() already runs
+  // process.execPath, i.e. this sidecar's own plain Node/SEA binary, with or without that
+  // var) to spawn sidecar/bot/index.js, the real src/bot/index.ts bundled unmodified by
+  // build-bot.mjs - no Electron coupling in src/bot/ at all (confirmed by grepping for "from
+  // 'electron'": zero hits). Flips discordBotEnabled/discordBotToken on through the real
+  // saveSettings()/getSettings() round trip first, exactly the shape the real Settings UI
+  // would send, rather than constructing a fake settings object by hand.
+  'bot.start': async () => {
+    const settings = saveSettings({
+      ...getSettings(),
+      discordBotEnabled: true,
+      discordBotToken: 'poc.fake.token.not.real'
+    })
+    await startDiscordBot(settings)
+    return getDiscordBotStatus()
+  },
+  'bot.stop': () => {
+    stopDiscordBot()
+    return { ok: true }
+  },
+  'bot.status': () => getDiscordBotStatus()
 }
 
 let stopConsoleWatch: (() => void) | null = null

@@ -161,6 +161,25 @@ fn folders_open_profiles(sidecar: tauri::State<SidecarHandle>) -> Result<Value, 
     sidecar.call("folders.openProfiles", None)
 }
 
+/// Calls the real, unmodified `startDiscordBot()` from lib/discordBot.ts - proving the Discord
+/// bot subsystem, not just the main-process logic the rest of this PoC covers. No Rust-side
+/// involvement beyond the ordinary RPC round trip: discordBot.ts's own `fork()` call spawns the
+/// bot as a grandchild of this sidecar entirely on the Node side (see sidecar.ts's own comment).
+#[tauri::command]
+fn bot_start(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("bot.start", None)
+}
+
+#[tauri::command]
+fn bot_stop(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("bot.stop", None)
+}
+
+#[tauri::command]
+fn bot_status(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("bot.status", None)
+}
+
 /// Spawns the sidecar through tauri-plugin-shell's real sidecar mechanism and a background
 /// async task that owns reading its stdout for the app's whole lifetime: a line with an "id"
 /// resolves the matching `call()` via `pending`, a line with an "event" instead gets forwarded
@@ -293,7 +312,10 @@ fn main() {
             console_backlog,
             console_watch,
             console_append_test_line,
-            folders_open_profiles
+            folders_open_profiles,
+            bot_start,
+            bot_stop,
+            bot_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
