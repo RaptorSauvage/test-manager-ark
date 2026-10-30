@@ -37,6 +37,7 @@ import { logManagerEvent, newTaskId, managerLogEvents, readManagerLog } from '..
 import { watchLogFile, getLogFilePath } from '../../src/main/lib/serverProcess'
 import { readLogBacklog, parseLogChunkWithDate, createLogEventCaches } from '../../src/main/lib/logEvents'
 import { openProfilesFolder } from '../../src/main/lib/systemFolders'
+import { copyProfile, moveProfile } from '../../src/main/lib/profileCopyMove'
 import { startDiscordBot, stopDiscordBot, getDiscordBotStatus } from '../../src/main/lib/discordBot'
 import { applyWebDashboardSettings, stopWebDashboard, getWebDashboardStatus } from '../../src/main/lib/webDashboard'
 import { getSettings, saveSettings } from '../../src/main/store'
@@ -56,6 +57,40 @@ const methods: Record<string, (params: unknown) => unknown> = {
   // function and its real side effects (persisting to disk, emitting profileEvents), not
   // about adding input validation a real migration would still need to design properly.
   'profiles.save': (params) => saveProfile(params as ServerProfile),
+  // Real, unmodified copyProfile()/moveProfile() from lib/profileCopyMove.ts - a write path
+  // with a native dialog on the renderer side (ProfileManagementView.tsx's "Browse..." button,
+  // see main.rs's dialog_select_directory) in front of it, unlike every read/write above. The
+  // real ipc/profiles.ts handler also re-runs applyBackupSchedule/syncPlayerBackupWatch/
+  // applyScheduledRestart/applyScheduledDinoWipe/applyScheduledRconCommands/
+  // applyScheduledMaintenance on the result - deliberately left out here: those re-arm file
+  // watchers and cron-like timers against the *new* install path, which this PoC has no way to
+  // observe (no real server process, no real backup content) and isn't part of what this
+  // increment is testing (whether copy/move + a native folder picker can round-trip through the
+  // sidecar at all). A real migration still has to port that wiring.
+  'profiles.copy': async (params) => {
+    const { profileId, destInstallDir, newName } = params as {
+      profileId: string
+      destInstallDir: string
+      newName: string
+    }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    const copied = await copyProfile(profile, destInstallDir, newName)
+    const profiles = saveProfile(copied)
+    return { profile: copied, profiles }
+  },
+  'profiles.move': async (params) => {
+    const { profileId, destInstallDir, newName } = params as {
+      profileId: string
+      destInstallDir: string
+      newName: string
+    }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    const moved = await moveProfile(profile, destInstallDir, newName)
+    const profiles = saveProfile(moved)
+    return { profile: moved, profiles }
+  },
   // Real write into lib/managerLog.ts's own JSONL file, through the real logManagerEvent -
   // proves a second, differently-shaped real subsystem (file-backed, async persistence)
   // behaves the same way through this sidecar as the in-memory-then-electron-store one above.

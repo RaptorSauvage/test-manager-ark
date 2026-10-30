@@ -29,6 +29,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use tauri::{Emitter, Manager};
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
@@ -123,6 +124,48 @@ fn profiles_list(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> 
 #[tauri::command]
 fn profiles_save(profile: Value, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
     sidecar.call("profiles.save", Some(profile))
+}
+
+#[tauri::command]
+fn profiles_copy(
+    profile_id: String,
+    dest_install_dir: String,
+    new_name: String,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call(
+        "profiles.copy",
+        Some(serde_json::json!({ "profileId": profile_id, "destInstallDir": dest_install_dir, "newName": new_name })),
+    )
+}
+
+#[tauri::command]
+fn profiles_move(
+    profile_id: String,
+    dest_install_dir: String,
+    new_name: String,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call(
+        "profiles.move",
+        Some(serde_json::json!({ "profileId": profile_id, "destInstallDir": dest_install_dir, "newName": new_name })),
+    )
+}
+
+/// Backs the real, unmodified ProfileManagementView.tsx's window.api.dialog.selectDirectory() -
+/// the first command in this PoC with NO sidecar involvement at all. The real dialog.ts
+/// (src/main/ipc/dialog.ts) is a main-process/window-level concern in Electron too (it calls
+/// Electron's own `dialog.showOpenDialog` directly against a `BrowserWindow` handle, not
+/// through any lib/*.ts business-logic file) - so the natural Tauri port is a native dialog
+/// plugin invoked straight from Rust, same shape as the real app's architecture, not a sidecar
+/// RPC call standing in for something it never was.
+#[tauri::command]
+fn dialog_select_directory(app_handle: tauri::AppHandle) -> Option<String> {
+    app_handle
+        .dialog()
+        .file()
+        .blocking_pick_folder()
+        .map(|p| p.to_string())
 }
 
 #[tauri::command]
@@ -348,6 +391,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = spawn_sidecar(app);
             app.manage(handle);
@@ -356,6 +400,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             profiles_list,
             profiles_save,
+            profiles_copy,
+            profiles_move,
+            dialog_select_directory,
             log_record,
             manager_log_get_all,
             console_backlog,

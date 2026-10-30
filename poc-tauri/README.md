@@ -36,13 +36,16 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes fourteen
-  Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `log_record` (takes
-  a message string), `manager_log_get_all` (see "A real React page" below),
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes seventeen
+  Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
+  `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
+  `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
   `console_backlog`/`console_watch` (both take an `installDir`), `console_append_test_line`
   (test-only - see below), `folders_open_profiles`, `bot_start`/`bot_stop`/`bot_status` (see
-  "The Discord bot subsystem" below), and `dashboard_start`/`dashboard_stop`/`dashboard_status`
-  (see "The web dashboard subsystem" below).
+  "The Discord bot subsystem" below), `dashboard_start`/`dashboard_stop`/`dashboard_status`
+  (see "The web dashboard subsystem" below), and `dialog_select_directory` - the first command
+  with no sidecar involvement at all, calling `tauri-plugin-dialog` straight from Rust (see
+  "A second real page" below).
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -87,8 +90,10 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `frontend/manager-log-entry.tsx` are different: not hand-written for this PoC at all, beyond a
   tiny `window.api` shim - they mount the real, unmodified
   `src/renderer/src/pages/ManagerLogView.tsx` - see "A real React page" below.
-  `frontend/build-react.mjs` bundles that entry with esbuild (JSX support, the same `@shared/*`
-  alias handling as the other build scripts).
+  `frontend/profile-management.html` + `frontend/profile-management-entry.tsx` do the same for
+  the real, unmodified `src/renderer/src/pages/ProfileManagementView.tsx` - see "A second real
+  page" below. `frontend/build-react.mjs` bundles both entries with esbuild (JSX support, the
+  same `@shared/*` alias handling as the other build scripts).
 
 ## Running it
 
@@ -492,6 +497,91 @@ Windows/WebView2 run showed the push-status line update live on screen after cli
 button, exactly as expected - the gap this section describes was specific to this Linux
 sandbox's rendering, not the architecture.
 
+### A second real page: write paths and a native dialog
+
+`ManagerLogView.tsx` above was deliberately the easy case: read-only, one subsystem already
+proven at the RPC layer, no native OS interaction. `ProfileManagementView.tsx`
+(`src/renderer/src/pages/`, 165 lines) was picked next specifically because it isn't that - it's
+a write path (copy/move an entire server install) with a native folder-picker dialog in front of
+it, which is architecturally new territory for this PoC in two ways at once.
+
+**The write side is the same shape as everything else.** `window.api.profiles.copy`/`.move` call
+the real, unmodified `copyProfile()`/`moveProfile()` from `lib/profileCopyMove.ts` - a file with
+zero Electron coupling already (confirmed earlier by reading it in full) - through two new
+sidecar RPC methods (`profiles.copy`/`profiles.move`) and two matching `main.rs` commands
+(`profiles_copy`/`profiles_move`), exactly the same `invoke → Rust → sidecar → real function`
+shape `profiles_list`/`profiles_save` already proved. One deliberate scoping cut: the real
+`ipc/profiles.ts` handler also re-runs `applyBackupSchedule`/`syncPlayerBackupWatch`/
+`applyScheduledRestart`/`applyScheduledDinoWipe`/`applyScheduledRconCommands`/
+`applyScheduledMaintenance` on the result, re-arming file watchers and cron-like timers against
+the profile's new path - left out here since there's no real server process or backup content in
+this sandbox to observe it against, and it isn't what this increment tests. A real migration
+still has to port that wiring; it's the same kind of real file-copy/move operation as any other,
+not a new question about the architecture.
+
+**Confirmed against real files, not a mocked response.** Standalone, piping JSON-RPC lines
+directly into the SEA sidecar binary (same technique as seeding `manager.jsonl` earlier): seeded
+a profile pointing at `/tmp/poc-profile-src` (two real files in it), called `profiles.copy` with
+a new destination, and confirmed on disk - not just in the RPC response - that
+`/tmp/poc-profile-dest-copy` now contains byte-identical copies of both files and the source is
+untouched. Then called `profiles.move`: the destination got the files, `newName` was reflected in
+the result, and critically `/tmp/poc-profile-src` **no longer exists** - `fs.promises.rename`'s
+real behavior, not a copy pretending to be a move. `config.json` (the real electron-store-backed
+file) gained the new/renamed profile entries both times, through the exact same `saveProfile()`
+this PoC's very first round already proved.
+
+**The native dialog is the actually new architectural shape.** Every prior proof in this PoC -
+`profiles.*`, `log.*`, `console.*`, the bot, the web dashboard - is a sidecar RPC call with Rust
+as a thin passthrough. `window.api.dialog.selectDirectory()` isn't: the real `dialog.ts`
+(`src/main/ipc/dialog.ts`, read in full earlier) calls Electron's `dialog.showOpenDialog`
+directly against a `BrowserWindow` handle - it's a main-process/window-level concern in the real
+app too, with zero business-logic file in between. So `dialog_select_directory` in `main.rs` is
+the first command in this PoC with **no sidecar involvement at all**: a plain `#[tauri::command]`
+calling `tauri-plugin-dialog`'s `app_handle.dialog().file().blocking_pick_folder()` straight from
+Rust - matching the real app's own architecture rather than inventing a sidecar round trip for
+something that was never routed through one.
+
+**Confirmed: real data renders through both commands together.** Pointed the main window at a
+new `profile-management.html` (same temporary-`tauri.conf.json`-`url`, reverted-after technique
+as `manager-log.html`) and screenshotted under Xvfb. First attempt showed the dropdown populated
+with the real seeded profile name but nothing below it - traced to a wrapper-only bug (not in the
+real component): the real `App.tsx` only ever mounts `ProfileManagementView` after its own
+app-wide `profiles` state is already loaded, but this PoC's thin `ProfileManagementPage` wrapper
+was mounting it immediately with an empty array and filling `profiles` in after
+`invoke('profiles_list')` resolved - and `ProfileManagementView`'s own `selectedId` state is
+seeded from `profiles[0]` only once, at mount, so it never picked up the real data once it
+arrived. Fixed by gating the mount on the fetch resolving first (`profile-management-entry.tsx`),
+matching the real app's own mount order instead of working around the component. After the fix,
+the re-screenshot shows the complete real form: the real dropdown, "Current install folder:
+/tmp/poc-profile-dest-move" (the exact path the standalone `profiles.move` test above produced),
+the copy/move radio buttons, and the destination/name fields - the real, unmodified component
+rendering real data through both the sidecar RPC path and (indirectly, via the same `profiles`
+state) the architecture the native-dialog command will feed into.
+
+**The native dialog itself does not complete in this sandbox - and fails differently than
+`shell.openPath` did.** Called `dialog_select_directory` directly (a minimal temporary test page,
+same `tauri.conf.json`-`url` technique, invoking it on load and recording the result in the
+window title) and waited 10+ seconds: the window title never changed - no result, no error.
+Screenshotting mid-wait showed the main window's content had gone blank white (not just
+unrepainted, as in "A rendering dead end" above - genuinely blank), and `xdotool search` found
+two new, unnamed X windows appear alongside the main one that weren't there before the call. Read
+together, this looks like `blocking_pick_folder()` genuinely attempting to create a native dialog
+surface - unlike `shell.openPath`'s `gio open`, which failed fast and cleanly with no GUI session
+at all - and then blocking indefinitely waiting for a human click that can never come
+unattended, rather than erroring out. This is a sandbox-only gap, not a sign the plugin is wired
+wrong (the call compiles, the command registers, and something real happens on calling it,
+which is more than "nothing happens"); it just means this one piece - unlike every other native
+call this PoC has made - needs a real desktop session with a human at the keyboard to confirm the
+happy path, something to flag honestly rather than paper over with a synthetic "it returned
+`null`" result this sandbox didn't actually produce.
+
+This round's overall shape: a write path through the sidecar ports exactly like a read path did,
+with one real scoping cut (schedule re-arming) worth remembering for a real migration; a
+main-process-only concern (the native dialog) ports as a main-process-only Rust command, not a
+sidecar call, because that's what the real app's own architecture already says to do; and a
+wrapper-only ordering bug was caught and fixed specifically *because* this PoC insists on
+screenshotting real data through the real component, rather than trusting it compiles correctly.
+
 ### Measured, on this Linux sandbox
 
 - Release binary (`src-tauri/target/release/tauri_poc_shell`): **11 MB**, vs. `node_modules/electron`'s 266 MB.
@@ -724,15 +814,27 @@ binary, not the dev build.
   broke; it bundled and ran correctly on the first try despite pulling in a large slice of
   `src/main/lib/` transitively. All three subsystems from the original size estimate (main
   process logic, bot, web dashboard) are now proven.
-- **~~Nothing about the real renderer~~ - proven for one real, unmodified page.** See "A real
-  React page" above: `src/renderer/src/pages/ManagerLogView.tsx`, completely unmodified, renders
-  correctly against a `window.api` shim built to the same surface the real preload already
-  exposes, backed by Tauri's `invoke`/`listen` instead of Electron's `contextBridge`. Confirmed
-  with real seeded data through the real compiled app, screenshotted. Still nothing about the
-  rest of the real renderer - `App.tsx`'s routing/layout, Context providers, or any of the other
-  ~30 pages, each touching a different (and in several cases much larger) slice of `window.api`
-  than this one read-mostly page does - one page proves the *shape* of the port, not that every
-  page ports this cheaply.
+- **~~Nothing about the real renderer~~ - proven for two real, unmodified pages, one read-only and
+  one a write path.** See "A real React page" and "A second real page" above:
+  `ManagerLogView.tsx` (read-only) and `ProfileManagementView.tsx` (copy/move + a native dialog),
+  both completely unmodified, render correctly against a `window.api` shim built to the same
+  surface the real preload already exposes, backed by Tauri's `invoke`/`listen` instead of
+  Electron's `contextBridge`. Confirmed with real seeded/moved data through the real compiled
+  app, screenshotted (including catching and fixing a wrapper-only mount-order bug the second
+  page's screenshot surfaced - see "A second real page"). Still nothing about the rest of the
+  real renderer - `App.tsx`'s routing/layout, Context providers, or any of the other ~28 pages,
+  each touching a different (and in several cases much larger) slice of `window.api` than these
+  two do - two pages confirm the *shape* of the port generalizes past the easiest case, not that
+  every page ports this cheaply.
+- **~~Nothing about native OS dialogs~~ - proven architecturally, not proven end-to-end in this
+  sandbox.** See "A second real page" above: `dialog_select_directory` is wired correctly (the
+  command registers, compiles, and calling it visibly does something - a real dialog attempt, not
+  a no-op), and it's the right architectural shape (a Rust-only command, matching the real
+  `dialog.ts`'s own main-process-only design, no sidecar involved). What's unconfirmed is the
+  happy path itself: `tauri-plugin-dialog`'s `blocking_pick_folder()` blocks indefinitely in this
+  headless Xvfb sandbox waiting for a human click that can't happen unattended, unlike
+  `shell.openPath`'s clean, fast failure. Needs a real desktop session (the same way the Windows
+  numbers above needed a real machine) to confirm a folder actually gets picked and returned.
 
 ## Where the real Electron coupling lives
 

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Profile Management - real ProfileManagementView.tsx through Tauri</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #14161a;
+        color: #e6e8ec;
+      }
+      .server-detail {
+        padding: 24px;
+        max-width: 560px;
+      }
+      .server-detail-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .settings-tab {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      label.checkbox {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+      }
+      input[type='text'],
+      input:not([type]) {
+        background: #1a1d24;
+        color: #e6e8ec;
+        border: 1px solid #2c303a;
+        border-radius: 4px;
+        padding: 6px 8px;
+      }
+      .path-input-row {
+        display: flex;
+        gap: 8px;
+      }
+      .path-input-row input {
+        flex: 1;
+        background: #1a1d24;
+        color: #e6e8ec;
+        border: 1px solid #2c303a;
+        border-radius: 4px;
+        padding: 6px 8px;
+      }
+      button {
+        background: #2c303a;
+        color: #e6e8ec;
+        border: 1px solid #3a3f4b;
+        border-radius: 4px;
+        padding: 6px 12px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #3a3f4b;
+      }
+      select {
+        background: #1a1d24;
+        color: #e6e8ec;
+        border: 1px solid #2c303a;
+        border-radius: 4px;
+        padding: 6px 8px;
+      }
+      .form-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .status-message {
+        color: #7fe3a0;
+      }
+      .error-message {
+        color: #ff8080;
+      }
+      .empty-state {
+        color: #9aa0ab;
+      }
+      code {
+        color: #c9cdd6;
+      }
+      a {
+        color: #8ab4ff;
+      }
+    </style>
+  </head>
+  <body>
+    <p style="padding: 12px 24px 0"><a href="index.html">&larr; back to the main PoC page</a></p>
+    <div id="root"></div>
+    <script type="module" src="profile-management.js"></script>
+  </body>
+</html>
