@@ -35,7 +35,11 @@ above was standing in for. Window chrome, the menu bar, the tray, and the other 
   directly (`app.getPath`) - see "electron-store's own fallback" below for a wrinkle this
   found. `sidecar/build.mjs` bundles it with esbuild, aliasing `electron` → the shim and
   pointing esbuild at the project's own `tsconfig.node.json` (see "Findings" below for why),
-  into a single dependency-free `dist/sidecar.cjs`.
+  into a single dependency-free `dist/sidecar.cjs`. `sidecar/sea-config.json` +
+  `sidecar/build-sea.mjs` turn that bundle into `dist/sidecar-bin` - a standalone executable
+  with Node itself embedded, via Node's own SEA (Single Executable Applications) feature - so
+  `main.rs` can spawn it directly with no `node` on the target machine at all (see "Sidecar
+  packaging" below).
 - `frontend/index.html` - a bare page (not the real React UI): calls `invoke('profiles_list')`
   on load; buttons call `invoke('profiles_save', { profile })`, `invoke('log_record', {
   message })`, `invoke('console_watch', { installDir })`, and
@@ -48,9 +52,17 @@ above was standing in for. Window chrome, the menu bar, the tray, and the other 
 
 ```sh
 node sidecar/build.mjs        # bundles sidecar/dist/sidecar.cjs
+node sidecar/build-sea.mjs    # optional: also builds dist/sidecar-bin (see "Sidecar packaging")
 cd src-tauri && cargo build   # or: cargo tauri dev, if the Tauri CLI is installed
 ./target/debug/tauri_poc_shell
 ```
+
+`main.rs` spawns `sidecar/dist/sidecar-bin` by default (the SEA binary, no `node` needed on the
+machine running it) - that file has to exist first, so run `build-sea.mjs` before `cargo build`
+the first time, or whenever `sidecar.ts` changes. Set `SIDECAR_PATH` to point at `dist/
+sidecar.cjs` instead to skip the SEA build and run it straight through a locally-installed
+`node` during iteration (no rebuild of the Rust shell needed either way - it reads the env var
+at startup, not compile time).
 
 Linux build needs `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libsoup-3.0-dev`,
 `libjavascriptcoregtk-4.1-dev`, `libxdo-dev`, `libssl-dev`, `libayatana-appindicator3-dev`, and
@@ -161,6 +173,45 @@ sandbox's rendering, not the architecture.
   against this measurement in opposite, hard-to-predict ways. The disk-size comparison above is
   solid regardless of platform; the RAM comparison needs a real Windows run to mean anything.
 
+### Sidecar packaging (Node SEA)
+
+The dev setup above (`SIDECAR_PATH` pointing at `dist/sidecar.cjs`, run via `node`) was always
+flagged in this README as "not how a shipped build would locate it" - this is that gap closed,
+at least on Linux. Node's own SEA (Single Executable Applications) feature, stable since Node
+20 and confirmed present here on Node 22.22.0, bundles the Node runtime itself plus
+`dist/sidecar.cjs` into one standalone executable:
+
+```sh
+node --experimental-sea-config sea-config.json   # writes dist/sea-prep.blob
+cp "$(command -v node)" dist/sidecar-bin
+npx postject dist/sidecar-bin NODE_SEA_BLOB dist/sea-prep.blob \
+  --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+```
+(scripted as `build-sea.mjs`, run after `build.mjs`).
+
+**Confirmed working, not just built:** piping a raw JSON-RPC line into the resulting
+`dist/sidecar-bin` directly (no `node` invocation) returned a correct `profiles.list` response.
+More importantly, after pointing `main.rs`'s default spawn path at it and rebuilding the shell,
+a real run under Xvfb showed `sidecar-bin` as a **direct child process of `tauri_poc_shell`** in
+the process tree (`pstree`), printing `sidecar: ready` on its inherited stderr - with no `node`
+process anywhere in the tree. The Rust shell never shells out to a system `node`; the "sidecar"
+is genuinely just another native-looking executable it spawns, which is exactly the shape
+`tauri.conf.json`'s `bundle.externalBin` wants for a real sidecar resource (not wired up to
+`externalBin` itself yet - see below).
+
+**The honest tradeoff this surfaces:** `dist/sidecar-bin` is **~119 MB**, because it embeds a
+full copy of the Node runtime (the `node` binary on this machine is ~123 MB; the SEA blob adds
+~400 KB on top of that for the actual application code). That's not a packaging inefficiency to
+fix later - it's the actual cost of "no `node` needed on the target machine," here or with any
+other approach (a bundled portable Node runtime next to a plain `.cjs` would cost the same
+~120 MB, just as two files instead of one). Combined with the 11 MB shell, that's **~130 MB**
+total for this one sidecar - still well under Electron's 266 MB, but nowhere near the "11 MB
+shell + 392 KB sidecar" numbers above might imply on their own if read without this section.
+Three sidecars (main process logic, bot, webdashboard - see "What this doesn't prove yet") built
+this way, each embedding its own full Node copy, would start to erode the size advantage this
+whole migration is supposed to deliver - worth weighing against a single shared sidecar process
+serving all three roles instead of one SEA binary per role.
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -216,9 +267,13 @@ sandbox's rendering, not the architecture.
   "entity changed" event. Still nothing about the other ~33 IPC modules specifically (group
   console, stats history, Discord bot status, ...), though they're the same two shapes
   (request/response or push) this PoC has now exercised at least once each.
-- **Nothing about packaging/bundling the sidecar as a real Tauri resource**, code-signing, or
-  auto-update - `SIDECAR_PATH` here is a dev-time escape hatch pointing at a source-tree path,
-  not how a shipped build would locate it.
+- **~~Nothing about packaging/bundling the sidecar~~ - Node SEA now proves the standalone-binary
+  half of this**, see "Sidecar packaging" above: the sidecar runs as one self-contained
+  executable with no system `node` dependency, spawned directly by the Rust shell. Still
+  outstanding: actually wiring that binary into Tauri's `bundle.externalBin` (so `tauri build`
+  produces and signs it as part of the app bundle, rather than it being built by a separate
+  script and found via a hardcoded relative path), code-signing, and auto-update. `SIDECAR_PATH`
+  is still a dev-time escape hatch for iterating without rebuilding the SEA binary each time.
 - **Nothing about the bot/webdashboard sidecars** mentioned in the original size estimate - this
   PoC only touches the "main process logic" sidecar.
 

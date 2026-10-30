@@ -134,16 +134,30 @@ fn console_append_test_line(
 /// PoC run from a source checkout; a real migration would ship this bundle (or a compiled
 /// Node/Bun binary) as a proper Tauri sidecar resource instead.
 fn spawn_sidecar(app_handle: tauri::AppHandle) -> SidecarHandle {
+    // Default now points at the compiled Node SEA binary (dist/sidecar-bin), built by
+    // `node --experimental-sea-config` + postject from the exact same dist/sidecar.cjs bundle
+    // esbuild already produced - see sidecar/README-sea.md. It is spawned directly, with no
+    // "node" in front and no separate runtime next to it: this is what makes it viable as a
+    // real Tauri `externalBin` resource later. SIDECAR_PATH still overrides for dev iteration;
+    // when it points at a .cjs/.js file we fall back to invoking it through `node` as before.
     let sidecar_path = std::env::var("SIDECAR_PATH")
-        .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../sidecar/dist/sidecar.cjs").to_string());
+        .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../sidecar/dist/sidecar-bin").to_string());
+    let needs_node_runtime = sidecar_path.ends_with(".cjs") || sidecar_path.ends_with(".js");
 
-    let mut child = Command::new("node")
-        .arg(&sidecar_path)
+    let mut command = if needs_node_runtime {
+        let mut cmd = Command::new("node");
+        cmd.arg(&sidecar_path);
+        cmd
+    } else {
+        Command::new(&sidecar_path)
+    };
+
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .unwrap_or_else(|e| panic!("failed to spawn Node sidecar at {sidecar_path}: {e}"));
+        .unwrap_or_else(|e| panic!("failed to spawn sidecar at {sidecar_path}: {e}"));
 
     let stdin = child.stdin.take().expect("sidecar stdin was not piped");
     let stdout = child.stdout.take().expect("sidecar stdout was not piped");
