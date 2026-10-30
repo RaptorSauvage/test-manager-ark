@@ -12,6 +12,9 @@
 // log_record proves a second, independent push source (lib/managerLog.ts's own
 // `managerLogEvents`) multiplexes over the exact same stdout pipe/app.emit forwarding, by
 // event name alone - the shape every one of the real app's several live-update channels needs.
+// console_backlog/console_watch/console_append_test_line are the actual headline case: the
+// real per-server live console feed, via the exact unmodified watchLogFile/parseLogChunkWithDate
+// functions the desktop Manager's own Console tab uses - see sidecar.ts's own doc comment.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -102,6 +105,28 @@ fn log_record(message: String, sidecar: tauri::State<SidecarHandle>) -> Result<V
     sidecar.call("log.record", Some(Value::String(message)))
 }
 
+#[tauri::command]
+fn console_backlog(install_dir: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("console.backlog", Some(serde_json::json!({ "installDir": install_dir })))
+}
+
+#[tauri::command]
+fn console_watch(install_dir: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("console.watch", Some(serde_json::json!({ "installDir": install_dir })))
+}
+
+#[tauri::command]
+fn console_append_test_line(
+    install_dir: String,
+    message: String,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call(
+        "console.appendTestLine",
+        Some(serde_json::json!({ "installDir": install_dir, "message": message })),
+    )
+}
+
 /// Spawns the Node sidecar and a background thread that owns reading its stdout for the app's
 /// whole lifetime: a line with an "id" resolves the matching `call()` via `pending`, a line
 /// with an "event" instead gets forwarded to the webview as a same-named Tauri event. Resolved
@@ -168,7 +193,14 @@ fn main() {
             app.manage(handle);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![profiles_list, profiles_save, log_record])
+        .invoke_handler(tauri::generate_handler![
+            profiles_list,
+            profiles_save,
+            log_record,
+            console_backlog,
+            console_watch,
+            console_append_test_line
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

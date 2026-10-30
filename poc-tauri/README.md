@@ -4,15 +4,14 @@ Answers one question before committing to a real Electron → Tauri migration: c
 spawn and talk to a persistent Node sidecar running the **existing, unmodified** application
 logic, and get a real result back into a Tauri webview through an ordinary `invoke()` call?
 
-This is scoped to exactly that round trip, now covering four shapes rather than one: a plain
-read (`profiles.list`), a write with parameters (`profiles.save`), an unsolicited push event
-reaching the webview without it having asked (`profiles-changed`, wrapping `store.ts`'s own
-`profileEvents` emitter), and - new - a *second, independent* push source (`manager-log-entry`,
-wrapping `lib/managerLog.ts`'s own `managerLogEvents`) multiplexed over the exact same
-stdout pipe by event name alone, proving the mechanism generalizes rather than being special-
-cased for profiles. Most of the real app's IPC (console output, status changes, the Manager
-Log itself, ...) is push-shaped, not request/response - this is the part that had to actually
-generalize. Window chrome, the menu bar, the tray, and the other ~34 IPC modules in
+This is scoped to exactly that round trip, now covering the actual headline case as well as the
+supporting ones: a plain read (`profiles.list`), a write with parameters (`profiles.save`), two
+independent push sources proving the mechanism generalizes (`profiles-changed` wrapping
+`store.ts`'s own `profileEvents`, `manager-log-entry` wrapping `lib/managerLog.ts`'s own
+`managerLogEvents`) - and now the real per-server **live console feed** itself
+(`console.backlog`/`console.watch`, via `serverProcess.ts`'s real `watchLogFile` and
+`lib/logEvents.ts`'s real `parseLogChunkWithDate`, both unmodified), which is what all of the
+above was standing in for. Window chrome, the menu bar, the tray, and the other ~34 IPC modules in
 `src/main/ipc/` are still deliberately out of scope.
 
 ## What's here
@@ -20,23 +19,30 @@ generalize. Window chrome, the menu bar, the tray, and the other ~34 IPC modules
 - `src-tauri/` - a minimal Tauri 2 app. `src/main.rs` spawns the sidecar as a child process on
   startup, keeps a reader thread on its stdout that routes each line either to the pending
   `call()` it answers (has an `"id"`) or out to the webview as a Tauri event (has an
-  `"event"` instead), and exposes three Tauri commands: `profiles_list`, `profiles_save`
-  (takes a profile object as its param), and `log_record` (takes a message string).
+  `"event"` instead), and exposes six Tauri commands: `profiles_list`, `profiles_save` (takes a
+  profile object), `log_record` (takes a message string), `console_backlog`/`console_watch`
+  (both take an `installDir`), and `console_append_test_line` (test-only - see below).
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
-  `listProfiles`, `saveProfile`, and `profileEvents` from **the real, untouched
-  `src/main/store.ts`**, plus `logManagerEvent`/`managerLogEvents` from **the real, untouched
-  `src/main/lib/managerLog.ts`** - not stubs or rewrites; both emitters are wired straight to a
-  push-event line each (`profiles-changed`, `manager-log-entry`), so every real write's side
-  effect reaches the webview the same way it would via Electron's `webContents.send`.
+  `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
+  `logManagerEvent`/`managerLogEvents` from **the real, untouched
+  `src/main/lib/managerLog.ts`**, and `watchLogFile`/`getLogFilePath` (from
+  **`src/main/lib/serverProcess.ts`**) plus `readLogBacklog`/`parseLogChunkWithDate`/
+  `createLogEventCaches` (from **`src/main/lib/logEvents.ts`**) - none of it stubs or rewrites;
+  every emitter is wired straight to a push-event line (`profiles-changed`,
+  `manager-log-entry`, `console-line`), so every real write's/parsed log line's side effect
+  reaches the webview the same way it would via Electron's `webContents.send`.
   `sidecar/electronShim.ts` stands in for the Electron APIs that import chain actually calls
   directly (`app.getPath`) - see "electron-store's own fallback" below for a wrinkle this
-  found. `sidecar/build.mjs` bundles it with esbuild, aliasing `electron` → the shim, into a
-  single dependency-free `dist/sidecar.cjs`.
+  found. `sidecar/build.mjs` bundles it with esbuild, aliasing `electron` → the shim and
+  pointing esbuild at the project's own `tsconfig.node.json` (see "Findings" below for why),
+  into a single dependency-free `dist/sidecar.cjs`.
 - `frontend/index.html` - a bare page (not the real React UI): calls `invoke('profiles_list')`
-  on load, a button calls `invoke('profiles_save', { profile })` with a hardcoded test profile
-  and a second calls `invoke('log_record', { message })`, and `listen('profiles-changed', ...)`/
-  `listen('manager-log-entry', ...)` handlers update their own section the moment each push
-  event arrives - independent of either button, proving the live-update path for both.
+  on load; buttons call `invoke('profiles_save', { profile })`, `invoke('log_record', {
+  message })`, `invoke('console_watch', { installDir })`, and
+  `invoke('console_append_test_line', { installDir, message })`; `listen('profiles-changed',
+  ...)`/`listen('manager-log-entry', ...)`/`listen('console-line', ...)` handlers update their
+  own section the moment each push event arrives - independent of any button, proving the
+  live-update path for all three.
 
 ## Running it
 
@@ -87,6 +93,21 @@ stubbed write.
 
 No code in `src/main/store.ts` was changed for any of this - only `app.getPath('documents')`
 needed a stand-in to run outside Electron (see `electronShim.ts`).
+
+**The live console feed** - the actual headline case, not a stand-in for it - is confirmed the
+same way: a synthetic ShooterGame.log-shaped file (no real ARK server in this sandbox) run
+through the real `readLogBacklog` for the backlog, then the real `watchLogFile` polling + real
+`parseLogChunkWithDate` parsing for the live feed. A scripted standalone test (spawn the
+sidecar, send `console.watch`, wait past one real poll tick, send
+`console.appendTestLine`, wait past the next tick) produced exactly one `console-line` push
+event, correctly parsed as a `CHAT` entry with the right player name and timestamp - the real
+regex-based parser (the same one the desktop Console tab and Web Dashboard both already use),
+not a simplified one written for this PoC. The Tauri command wiring (`console_backlog`/
+`console_watch`/`console_append_test_line`) compiles and the app starts cleanly with it, but -
+unlike `profiles_save` - wasn't separately re-verified through a live button click on Windows,
+since it's structurally identical to that already-Windows-confirmed command (same `call()`
+path, same param-passing shape); the sidecar-level logic underneath it is what's actually new,
+and that's what got the scripted test.
 
 Screenshot of the read path (Linux, WebKitGTK, via Xvfb - `Got 0 profile(s)` because this
 sandbox has no real profiles.json, not because anything failed):
@@ -171,6 +192,15 @@ sandbox's rendering, not the architecture.
   handler now returns `{ ok: true }` instead of the bare promise result, and `RpcResponse`'s
   fields got `#[serde(default)]` as a second line of defense for any future handler that makes
   the same mistake.
+- **esbuild doesn't resolve the project's own `@shared/*` tsconfig path alias on its own.**
+  Bundling `serverProcess.ts`/`logEvents.ts` (needed for the console feed) failed outright -
+  `Could not resolve "@shared/types"`/`"@shared/games"` - the instant they were imported,
+  because esbuild has no built-in tsconfig-paths support; it needs to be told explicitly. Fixed
+  by pointing esbuild's own `tsconfig` option at the project's real `tsconfig.node.json`
+  (reusing the existing mapping as the source of truth) rather than hand-declaring
+  `@shared/*` → `shared/*` a second time in `build.mjs`, which could drift from the real one. A
+  real migration bundling more of `src/main/lib/` would hit this on the first file that uses
+  the alias, not something specific to these two files.
 
 ## What this doesn't prove yet
 
@@ -180,11 +210,12 @@ sandbox's rendering, not the architecture.
   found` without the "Desktop development with C++" Build Tools workload) and a missing
   `icons/icon.ico` (see "Running it"). The RAM numbers below are still Linux-only, though -
   that specific measurement still needs a real run on the Windows machine to mean anything.
-- **Nothing about the other ~34 IPC modules.** `profiles.list` is a simple synchronous read.
-  Several existing IPC handlers stream events to the renderer continuously (console output,
-  group console, stats history, Discord bot status, ...) rather than request/respond once -
-  the stdin/stdout JSON-RPC shape here would need a server-push side (or a persistent
-  WebSocket/local-TCP channel instead of stdio) to carry those, which this PoC doesn't attempt.
+- **~~Nothing about streaming~~ - the live console feed itself is now covered**, via the real
+  `watchLogFile`/`parseLogChunkWithDate` (see "Result" above) - the stdin/stdout JSON-RPC shape
+  does carry a continuous stream of small push events correctly, not just a single
+  "entity changed" event. Still nothing about the other ~33 IPC modules specifically (group
+  console, stats history, Discord bot status, ...), though they're the same two shapes
+  (request/response or push) this PoC has now exercised at least once each.
 - **Nothing about packaging/bundling the sidecar as a real Tauri resource**, code-signing, or
   auto-update - `SIDECAR_PATH` here is a dev-time escape hatch pointing at a source-tree path,
   not how a shipped build would locate it.

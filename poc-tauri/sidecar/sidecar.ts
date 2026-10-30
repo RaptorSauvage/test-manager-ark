@@ -19,10 +19,23 @@
  * same stdout pipe by event name, which is the shape a real migration needs for every one of
  * the real app's several independent live-update channels (console output, server status,
  * manager log, ...), not just one.
+ *
+ * console.* below is the actual headline case all of the above was standing in for: the real
+ * per-server live console feed. watchLogFile (serverProcess.ts) and
+ * parseLogChunkWithDate/createLogEventCaches/readLogBacklog (lib/logEvents.ts) are the exact,
+ * unmodified functions the desktop Manager/Web Dashboard's own console tabs already use -
+ * nothing here is a stand-in parser. The only genuinely new code is the small amount of glue
+ * wiring watchLogFile's onChunk callback to a push-event line, plus a test-only method
+ * (console.appendTestLine) to simulate a game server writing new output, since there's no real
+ * ARK/Minecraft server process available to generate one in this sandbox.
  */
+import fs from 'node:fs'
+import path from 'node:path'
 import readline from 'node:readline'
 import { listProfiles, saveProfile, profileEvents } from '../../src/main/store'
 import { logManagerEvent, newTaskId, managerLogEvents } from '../../src/main/lib/managerLog'
+import { watchLogFile, getLogFilePath } from '../../src/main/lib/serverProcess'
+import { readLogBacklog, parseLogChunkWithDate, createLogEventCaches } from '../../src/main/lib/logEvents'
 import type { ServerProfile } from '../../shared/types'
 
 interface RpcRequest {
@@ -55,8 +68,49 @@ const methods: Record<string, (params: unknown) => unknown> = {
     // in the line Rust reads) so { ok: true } stands in for "the write finished".
     await logManagerEvent(newTaskId('poc'), 'Tauri PoC', message, 'info')
     return { ok: true }
+  },
+  // Real backlog read straight off a ShooterGame.log-shaped file - same function the desktop
+  // Console tab and Web Dashboard both call on open/reconnect.
+  'console.backlog': (params) => readLogBacklog((params as { installDir: string }).installDir),
+  // Starts (or restarts) the real watchLogFile poller against installDir's log file, parsing
+  // each newly-written chunk with the real parser and pushing one 'console-line' event per
+  // parsed line - this is the actual live-console-feed shape, not a simplified stand-in.
+  'console.watch': (params) => {
+    const { installDir } = params as { installDir: string }
+    const logPath = getLogFilePath(installDir)
+    // watchLogFile's first poll tick only ever establishes a size baseline, never reports
+    // anything (by design - it must not treat a server's pre-existing log as "new" on every
+    // Manager restart). If the file doesn't exist yet, that baseline tick is deferred until it
+    // does, so touching it into existence here (as 0 bytes, if missing) means the very next
+    // append is the first thing actually reported, rather than silently eaten by whichever
+    // tick happens to be the first one to see the file at all.
+    fs.mkdirSync(path.dirname(logPath), { recursive: true })
+    if (!fs.existsSync(logPath)) fs.writeFileSync(logPath, '')
+    stopConsoleWatch?.()
+    const caches = createLogEventCaches()
+    stopConsoleWatch = watchLogFile(installDir, (chunk) => {
+      for (const event of parseLogChunkWithDate(chunk, caches)) {
+        send({ event: 'console-line', data: event })
+      }
+    })
+    return { ok: true, watching: logPath }
+  },
+  // Test-only: simulates a game server appending output to its own log file, since this
+  // sandbox has no real ARK/Minecraft process to generate one. Formats a line exactly as
+  // parseLogLine's own LOG_LINE_RE expects so the real parser (not a stand-in) accepts it.
+  'console.appendTestLine': (params) => {
+    const { installDir, message } = params as { installDir: string; message: string }
+    const logPath = getLogFilePath(installDir)
+    fs.mkdirSync(path.dirname(logPath), { recursive: true })
+    const now = new Date()
+    const pad = (n: number, len = 2): string => String(n).padStart(len, '0')
+    const stamp = `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}-${pad(now.getHours())}.${pad(now.getMinutes())}.${pad(now.getSeconds())}:${pad(now.getMilliseconds(), 3)}`
+    fs.appendFileSync(logPath, `[${stamp}][  0]${message}\n`)
+    return { ok: true }
   }
 }
+
+let stopConsoleWatch: (() => void) | null = null
 
 // Tauri's own event names only accept alphanumerics, '-', '/', ':', '_' - found by actually
 // running this against a real Tauri app.emit() call, not from reading the docs - 'profiles-

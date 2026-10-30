@@ -61,6 +61,17 @@
     <button id="log-btn">Record a Manager Log entry (log_record, second real subsystem)</button>
     <div id="log-status">Waiting for a 'manager-log-entry' push event...</div>
     <ul id="log-list"></ul>
+    <hr style="border-color: #2c303a; margin: 24px 0" />
+    <h2 style="font-size: 1.1rem">Live console feed (the real headline case)</h2>
+    <p style="color: #9aa0ab; margin-top: 0">
+      Uses the real <code>watchLogFile</code>/<code>parseLogChunkWithDate</code> from
+      serverProcess.ts/logEvents.ts, unmodified, against a synthetic ShooterGame.log-shaped
+      file (no real ARK server in this environment).
+    </p>
+    <button id="console-watch-btn">Start watching the test log (console_watch)</button>
+    <button id="console-append-btn">Simulate a server writing a line (console_append_test_line)</button>
+    <div id="console-status">Click "Start watching" first.</div>
+    <ul id="console-list"></ul>
     <script type="module">
       const { invoke } = window.__TAURI__.core
       const { listen } = window.__TAURI__.event
@@ -140,6 +151,61 @@
         invoke('log_record', { message: 'Manual test entry at ' + new Date().toLocaleTimeString() }).catch((err) => {
           logStatusEl.textContent = 'Error calling log_record:'
           logStatusEl.classList.add('error')
+          console.error(err)
+        })
+      })
+
+      // Fixed sandbox path, not configurable in this PoC's UI - a real migration would pass
+      // the selected server's own installDir here, same as the desktop Manager does today.
+      const CONSOLE_TEST_INSTALL_DIR = '/tmp/poc-fake-ark-server'
+      const consoleWatchBtn = document.getElementById('console-watch-btn')
+      const consoleAppendBtn = document.getElementById('console-append-btn')
+      const consoleStatusEl = document.getElementById('console-status')
+      const consoleListEl = document.getElementById('console-list')
+
+      // Live feed: real watchLogFile polls the log file (every 2s, same as the desktop
+      // Manager/Web Dashboard) and the real parseLogChunkWithDate turns new bytes into
+      // LogEvents, pushed here one 'console-line' event per parsed line - no invoke() involved
+      // for any of them, same live-update shape as 'profiles-changed'/'manager-log-entry'.
+      listen('console-line', (event) => {
+        consoleStatusEl.textContent = `Live line received via 'console-line' push event.`
+        consoleStatusEl.classList.add('live')
+        const li = document.createElement('li')
+        li.textContent = `[${event.payload.ts}] ${event.payload.label}: ${event.payload.text}`
+        consoleListEl.prepend(li)
+      })
+
+      consoleWatchBtn.addEventListener('click', () => {
+        invoke('console_watch', { installDir: CONSOLE_TEST_INSTALL_DIR })
+          .then(() => {
+            consoleStatusEl.textContent = 'Watching the test log - click "Simulate a server writing a line" (polls every 2s, same as the real app).'
+          })
+          .catch((err) => {
+            consoleStatusEl.textContent = 'Error calling console_watch:'
+            consoleStatusEl.classList.add('error')
+            console.error(err)
+          })
+        invoke('console_backlog', { installDir: CONSOLE_TEST_INSTALL_DIR })
+          .then((events) => {
+            consoleListEl.innerHTML = ''
+            for (const e of events.slice().reverse()) {
+              const li = document.createElement('li')
+              li.textContent = `[${e.ts}] ${e.label}: ${e.text}`
+              consoleListEl.appendChild(li)
+            }
+          })
+          .catch((err) => console.error(err))
+      })
+
+      let testLineCount = 0
+      consoleAppendBtn.addEventListener('click', () => {
+        testLineCount += 1
+        invoke('console_append_test_line', {
+          installDir: CONSOLE_TEST_INSTALL_DIR,
+          message: `TestPlayer${testLineCount} (7656119000000000${testLineCount}): line ${testLineCount} from the "Simulate" button`
+        }).catch((err) => {
+          consoleStatusEl.textContent = 'Error calling console_append_test_line:'
+          consoleStatusEl.classList.add('error')
           console.error(err)
         })
       })
