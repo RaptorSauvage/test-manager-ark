@@ -64,7 +64,7 @@ import { applyWebDashboardSettings, stopWebDashboard, getWebDashboardStatus } fr
 import { getSystemStaticInfo, getNetworkUsage } from '../../src/main/lib/systemStats'
 import { readStatsHistory } from '../../src/main/lib/statsHistory'
 import { getBackupScheduleStatus, applyBackupSchedule, registerBackupScheduleWatcher } from '../../src/main/lib/schedule'
-import { getInstalledBuildId } from '../../src/main/lib/steamcmd'
+import { getInstalledBuildId, readUpdateLog, getUpdateLogPath, steamcmdUpdateEvents } from '../../src/main/lib/steamcmd'
 import { getGameVersion, getCachedGameVersion, setCachedGameVersion } from '../../src/main/lib/serverVersion'
 import { getLatestBuildIdCache } from '../../src/main/lib/updateCheck'
 import {
@@ -535,6 +535,29 @@ const methods: Record<string, (params: unknown) => unknown> = {
     if (!profile) throw new Error(`Unknown profile: ${profileId}`)
     await openPlayerBackupFolder(profile, folderKey)
     return { ok: true }
+  },
+  // An eighth real page: UpdateLogTab.tsx. Real, unmodified readUpdateLog() - the read side of
+  // lib/steamcmd.ts's own update-run log file, written by the real updateServer() this PoC's
+  // server.update already calls (doUpdateServer -> serverActions.ts -> updateServer), which
+  // fails fast with "Set the SteamCMD path in Settings before updating." before ever creating
+  // that log file, since no real SteamCMD is installed in this sandbox - same honestly-gated
+  // category as UpdateCheckPanel's own permanently-"Checking..." state. readUpdateLog correctly
+  // returns null in that case, same as the real app would on a profile that's never been
+  // updated.
+  'steamcmd.getUpdateLog': (params) => readUpdateLog((params as { profileId: string }).profileId),
+  // Test-only: writes directly to the real getUpdateLogPath(profileId) file and emits the real
+  // steamcmdUpdateEvents 'log' event - standing in for a real updateServer() run (which this
+  // sandbox can't produce without a real SteamCMD install), the same honest-simulation role
+  // console.appendTestLine/server.installTestExecutable already play elsewhere in this PoC.
+  // Proves the live-refresh push path (UpdateLogTab's own onUpdateLogChanged subscription)
+  // without needing a real SteamCMD run to drive it.
+  'steamcmd.appendTestUpdateLogLine': (params) => {
+    const { profileId, line } = params as { profileId: string; line: string }
+    const logPath = getUpdateLogPath(profileId)
+    fs.mkdirSync(path.dirname(logPath), { recursive: true })
+    fs.appendFileSync(logPath, `${line}\n`)
+    steamcmdUpdateEvents.emit('log', profileId)
+    return { ok: true }
   }
 }
 
@@ -559,6 +582,11 @@ serverEvents.on('status', (status) => send({ event: 'server-status', data: statu
 // needed here, unlike lib/schedule.ts's own serverEvents subscription.
 backupEvents.on('created', (profileId: string) => send({ event: 'backup-created', data: profileId }))
 backupEvents.on('log', (profileId: string, entry) => send({ event: 'backup-log-entry', data: { profileId, entry } }))
+// A sixth: lib/steamcmd.ts's own `steamcmdUpdateEvents` - backs UpdateLogTab.tsx's
+// window.api.steamcmd.onUpdateLogChanged, the same "module-level EventEmitter.on
+// subscription, no explicit arm call needed" shape as every push source above except
+// lib/schedule.ts's own (see registerBackupScheduleWatcher below).
+steamcmdUpdateEvents.on('log', (profileId: string) => send({ event: 'steamcmd-update-log-changed', data: profileId }))
 
 // Real, unmodified adoptPersistedProcesses() - the real app's own answer to "what happens to a
 // running server if the Manager itself crashes or restarts": startServer() launches it detached

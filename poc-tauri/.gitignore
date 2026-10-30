@@ -10,3 +10,4 @@ frontend/player-whitelist.js
 frontend/dashboard.js
 frontend/analytics.js
 frontend/backups.js
+frontend/update-log.js

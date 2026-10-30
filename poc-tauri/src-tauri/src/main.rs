@@ -42,13 +42,38 @@ struct RpcRequest<'a> {
     params: Option<Value>,
 }
 
-#[derive(Deserialize)]
 struct RpcResponse {
     id: i64,
-    #[serde(default)]
     result: Option<Value>,
-    #[serde(default)]
     error: Option<String>,
+}
+
+/// A derived `#[serde(default)] result: Option<Value>` can't tell "the sidecar sent
+/// `{"result": null}`" (a real, legitimate value - e.g. `steamcmd.getUpdateLog` honestly
+/// returning `null` for a profile that's never been updated) apart from "the sidecar sent no
+/// `result` key at all" (a real bug - see sidecar.ts's own comment on the identical
+/// `backup.delete`/`backup.restore` mistake this PoC already hit once): serde's `Option<T>`
+/// deserializer treats a JSON `null` the same as the field being absent, collapsing both to
+/// `None` - confirmed by actually deserializing both shapes and comparing, not assumed from
+/// serde's docs. Deserializing into a `Map` first and reading `.get("result")` keeps that
+/// distinction (`Some(&Value::Null)` vs `None`), which a derived `Option<Value>` field cannot.
+impl<'de> Deserialize<'de> for RpcResponse {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error as _;
+        let map = serde_json::Map::deserialize(deserializer)?;
+        let id = map
+            .get("id")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| D::Error::custom("RpcResponse missing integer \"id\" field"))?;
+        Ok(RpcResponse {
+            id,
+            result: map.get("result").cloned(),
+            error: map.get("error").and_then(Value::as_str).map(String::from)
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -431,6 +456,20 @@ fn player_backup_open_folder(profile_id: String, folder_key: String, sidecar: ta
     sidecar.call("playerBackup.openFolder", Some(serde_json::json!({ "profileId": profile_id, "folderKey": folder_key })))
 }
 
+/// Backs UpdateLogTab.tsx - an eighth real page. See sidecar.ts's own comment on
+/// `steamcmd.getUpdateLog` for why this honestly returns null in this sandbox (no real
+/// SteamCMD install, so `updateServer()` never gets far enough to write a log).
+#[tauri::command]
+fn steamcmd_get_update_log(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("steamcmd.getUpdateLog", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+/// Test-only - see sidecar.ts's `steamcmd.appendTestUpdateLogLine` comment.
+#[tauri::command]
+fn steamcmd_append_test_update_log_line(profile_id: String, line: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("steamcmd.appendTestUpdateLogLine", Some(serde_json::json!({ "profileId": profile_id, "line": line })))
+}
+
 /// Test-only - see sidecar.ts's `server.installTestExecutable` comment.
 #[tauri::command]
 fn server_install_test_executable(
@@ -715,7 +754,9 @@ fn main() {
             backup_get_log,
             player_backup_list_folders,
             player_backup_list,
-            player_backup_open_folder
+            player_backup_open_folder,
+            steamcmd_get_update_log,
+            steamcmd_append_test_update_log_line
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
