@@ -228,17 +228,22 @@ fn spawn_sidecar(app: &tauri::App) -> SidecarHandle {
     // fork() silently can't launch a different script from inside this sidecar once it's a SEA
     // binary. BOT_LAUNCH_COMMAND (a small, opt-in override added to the real discordBot.ts -
     // zero behavior change when unset) tells it to spawn this specific binary by path instead.
-    // Resolved the simple way here (not through the plugin's own externalBin resolution, which
-    // this PoC doesn't attempt a second time for a second binary) - baked in at compile time,
-    // same dev-only convention main.rs itself used for sidecar-bin before migrating to the real
-    // externalBin mechanism. Only set when sidecar/bot/bot-bin actually exists (run
-    // sidecar/build-bot-sea.mjs first) so a plain `cargo build` without it still works exactly
-    // as before - bot_start then falls back to discordBot.ts's normal fork() behavior.
-    let bot_bin_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../sidecar/bot/bot-bin");
-    let sidecar_command = if std::path::Path::new(bot_bin_path).exists() {
-        sidecar_command.env("BOT_LAUNCH_COMMAND", bot_bin_path)
-    } else {
-        sidecar_command
+    //
+    // Resolved through the real `bundle.externalBin` mechanism this time (tauri.conf.json now
+    // lists "binaries/bot-bin" alongside "binaries/sidecar-bin") - not the dev-only
+    // CARGO_MANIFEST_DIR shortcut an earlier version of this function used, which would have
+    // resolved to a source-tree path that doesn't exist once genuinely installed. Tauri's own
+    // build script copies `binaries/bot-bin-<target-triple>` to a plain `bot-bin` next to the
+    // compiled executable - in `target/debug/` during `cargo build` and in `usr/bin/` (Linux) of
+    // a real `cargo tauri build` bundle alike - which is exactly the convention
+    // tauri-plugin-shell's own (private) sidecar-path resolution uses internally, replicated
+    // here by hand since there's no public API to ask it for a resolved path without spawning.
+    let bot_bin_path = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(if cfg!(windows) { "bot-bin.exe" } else { "bot-bin" })));
+    let sidecar_command = match bot_bin_path {
+        Some(path) if path.exists() => sidecar_command.env("BOT_LAUNCH_COMMAND", path),
+        _ => sidecar_command,
     };
 
     let (mut rx, child) = sidecar_command

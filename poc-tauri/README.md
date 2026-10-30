@@ -321,21 +321,34 @@ before being trusted.
 
 `sidecar/build-bot-sea.mjs` packages the bot (`sidecar/bot/index.js`) as its own separate SEA
 binary (`sidecar/bot/bot-bin`), the same `--experimental-sea-config`/`postject` steps as
-`build-sea.mjs` uses for the main sidecar. `main.rs`'s `spawn_sidecar` resolves
-`sidecar/bot/bot-bin`'s path at compile time (the same simple `CARGO_MANIFEST_DIR`-relative
-convention the main sidecar itself used before migrating to real `externalBin` resolution - not
-attempted a second time here) and passes it to the sidecar's own process as `BOT_LAUNCH_COMMAND`
-via the plugin's `Command::env()`, but only when that file actually exists, so a plain
-`cargo build` without ever running `build-bot-sea.mjs` still works exactly as before (confirmed:
-removed `bot-bin`, rebuilt, ran clean).
+`build-sea.mjs` uses for the main sidecar, and copies it to
+`src-tauri/binaries/bot-bin-<target-triple>`. `tauri.conf.json`'s `bundle.externalBin` now lists
+`"binaries/bot-bin"` alongside `"binaries/sidecar-bin"` - the real mechanism this time, not the
+dev-only `CARGO_MANIFEST_DIR` shortcut an earlier version of this fix used (which would have
+resolved to a source-tree path that doesn't exist once genuinely installed, quietly leaving
+`bot_start` broken again the moment anyone actually shipped a bundle). `main.rs`'s
+`spawn_sidecar` now resolves `bot-bin`'s real location the same way `tauri-plugin-shell`'s own
+(private) sidecar-path resolution does internally - `std::env::current_exe()?.parent()?.join(...)`
+- replicated by hand since there's no public API to ask for a resolved path without spawning, and
+confirmed by reading the plugin's own source rather than guessing. Only passed as
+`BOT_LAUNCH_COMMAND` when that file actually exists, so a plain `cargo build` without ever
+running `build-bot-sea.mjs` still works exactly as before (confirmed: removed `bot-bin`,
+rebuilt, ran clean).
 
-**Confirmed fixed through the real, compiled app, not just standalone**: with `BOT_LAUNCH_COMMAND`
-wired in and no manual env vars set, `bot_start` against the **default SEA sidecar** now shows
-the real bot's own distinctive log line (`"Connexion à Discord impossible : getaddrinfo ENOTFOUND
-discord.com"`, timestamped, not `"sidecar: ready"`) in `manager.jsonl`, followed by a clean exit
-- the same correct behavior `SIDECAR_PATH` dev mode always had, now also working under the
-packaging mode that actually ships. No leaked duplicate sidecar process this time either - the
-real bot process exits on its own, same as it always should.
+**Confirmed fixed through the real, compiled app, both in dev mode and as a genuinely installed
+package - not just standalone.** Dev mode: `cargo build` copies `binaries/bot-bin-<triple>` to a
+plain `bot-bin` right next to `target/debug/tauri_poc_shell`, confirmed on disk before even
+running anything; then, with no manual env vars set, `bot_start` against the **default SEA
+sidecar** showed the real bot's own distinctive log line (`"Connexion à Discord impossible :
+getaddrinfo ENOTFOUND discord.com"`, timestamped, not `"sidecar: ready"`) in `manager.jsonl`,
+followed by a clean exit and no leaked process - the same correct behavior `SIDECAR_PATH` dev
+mode always had, now also working under the packaging mode that actually ships. Then
+`cargo tauri build --bundles deb` (87 MiB now, two embedded Node runtimes): `dpkg --contents`
+confirmed `usr/bin/bot-bin` genuinely inside the package next to `usr/bin/sidecar-bin`, and after
+a real `dpkg -i` install, running `/usr/bin/bot-bin` directly (standalone, the exact binary the
+installed app would resolve to) reproduced the identical real failure - the same evidence
+`Command::env()` receives the right path either way, dev or installed, from the same
+`current_exe()`-relative logic.
 
 ### The web dashboard subsystem
 

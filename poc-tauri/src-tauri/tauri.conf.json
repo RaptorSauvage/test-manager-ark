@@ -21,7 +21,7 @@
   },
   "bundle": {
     "active": true,
-    "externalBin": ["binaries/sidecar-bin"],
+    "externalBin": ["binaries/sidecar-bin", "binaries/bot-bin"],
     "targets": ["deb"],
     "icon": ["icons/icon.png"]
   }
