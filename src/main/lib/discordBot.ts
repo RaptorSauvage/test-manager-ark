@@ -1,4 +1,4 @@
-import { fork, type ChildProcess } from 'node:child_process'
+import { fork, spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
@@ -143,9 +143,25 @@ export async function startDiscordBot(settings: AppSettings): Promise<void> {
     fs.writeFileSync(configPath, JSON.stringify(config), 'utf-8')
 
     logManagerEvent(taskId, 'Bot Discord', 'Démarrage du bot Discord...')
-    const proc = fork(botScriptPath(), [configPath], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
-    })
+    // fork() re-executes process.execPath with a different module path as its first argument -
+    // correct when process.execPath is a real `node` binary (or Electron's own, which this
+    // relies on via ELECTRON_RUN_AS_NODE), but it silently does the wrong thing if
+    // process.execPath is ever a Node single-executable-application (SEA) build instead: a SEA
+    // binary ignores any script-path argument and always re-runs its own embedded entry point,
+    // so fork() would just launch a second copy of the current process, not the bot. This one
+    // override (unset in every normal build - Electron's own executable is never a SEA binary)
+    // is the escape hatch for that case: an explicit command to spawn instead of re-executing
+    // process.execPath. It still needs the 'ipc' stdio slot so child.send()/getDiscordBotStatus
+    // keep working the same way fork() already provides it.
+    const launchCommand = process.env.BOT_LAUNCH_COMMAND
+    const proc = launchCommand
+      ? spawn(launchCommand, [configPath], {
+          stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+        })
+      : fork(botScriptPath(), [configPath], {
+          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+        })
     child = proc
 
     proc.stdout?.on('data', (chunk: Buffer) => {

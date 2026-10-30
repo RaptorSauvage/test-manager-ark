@@ -67,7 +67,9 @@ still deliberately out of scope.
   packaging" below). `sidecar/build-bot.mjs` separately bundles the real, unmodified
   `src/bot/index.ts` (mirroring the real repo's own `scripts/build-bot.mjs`) into
   `sidecar/bot/index.js`, the exact relative path `lib/discordBot.ts`'s own `botScriptPath()`
-  expects. The web dashboard needed no separate build step at all - `webDashboard.ts` is just
+  expects; `sidecar/build-bot-sea.mjs` packages that into its own separate SEA binary,
+  `sidecar/bot/bot-bin` - see "The Discord bot subsystem" below for why. The web dashboard
+  needed no separate build step at all - `webDashboard.ts` is just
   another file `sidecar/build.mjs`'s existing esbuild bundle already pulls in.
 - `frontend/index.html` - a bare page (not the real React UI): calls `invoke('profiles_list')`
   on load; buttons call `invoke('profiles_save', { profile })`, `invoke('log_record', {
@@ -82,12 +84,18 @@ still deliberately out of scope.
 ## Running it
 
 ```sh
-node sidecar/build-bot.mjs    # bundles sidecar/bot/index.js (needed before the first bot_start call)
-node sidecar/build.mjs        # bundles sidecar/dist/sidecar.cjs
-node sidecar/build-sea.mjs    # builds dist/sidecar-bin AND copies it into src-tauri/binaries/
-cd src-tauri && cargo build   # or: cargo tauri dev, if the Tauri CLI is installed
+node sidecar/build-bot.mjs      # bundles sidecar/bot/index.js (needed before the first bot_start call)
+node sidecar/build-bot-sea.mjs  # optional: packages that as sidecar/bot/bot-bin (fixes SEA + fork(), see below)
+node sidecar/build.mjs          # bundles sidecar/dist/sidecar.cjs
+node sidecar/build-sea.mjs      # builds dist/sidecar-bin AND copies it into src-tauri/binaries/
+cd src-tauri && cargo build     # or: cargo tauri dev, if the Tauri CLI is installed
 ./target/debug/tauri_poc_shell
 ```
+
+`build-bot-sea.mjs` is optional - skip it and `bot_start` falls back to `discordBot.ts`'s normal
+`fork()` behavior, which leaks a duplicate idle sidecar process instead of running the bot (see
+"The Discord bot subsystem"); run it, and `main.rs` picks up `sidecar/bot/bot-bin` automatically
+if it exists at build time, no extra flag needed.
 
 `build-sea.mjs` is **not optional** before the first `cargo build`: `tauri.conf.json` declares
 `bundle.externalBin: ["binaries/sidecar-bin"]`, and Tauri's own build script checks that
@@ -237,7 +245,7 @@ This Rust-side `eprintln!` logging of every shell-request's outcome was kept in 
 (not reverted) - genuinely useful visibility into a native call that has no other feedback
 path from inside this architecture.
 
-### The Discord bot subsystem (and a real packaging bug it found)
+### The Discord bot subsystem (a real packaging bug, found and fixed)
 
 Everything above is the "main process logic" sidecar. The original size/migration estimate also
 counted two more real subsystems - the Discord bot and the web dashboard - as separate sidecars,
@@ -297,15 +305,37 @@ This is a materially different kind of finding than everything above: not a conf
 a sandbox limitation, but a real architectural incompatibility between two pieces of this PoC
 that each work fine on their own - Node SEA packaging (proven solid for the main sidecar) and
 `fork()`-based worker spawning (proven solid as *application code*, unmodified, under `node`).
-A real migration shipping the main-process sidecar as a SEA binary would need to address this
-specifically before the bot subsystem could ship the same way - options include giving
-`lib/discordBot.ts`'s launch mechanism a pluggable target (an env var or config value naming an
-explicit bot binary/script path, the same escape-hatch shape `SIDECAR_PATH` already is for this
-PoC) rather than always re-executing `process.execPath`, or shipping the bot as its own
-separate SEA binary and spawning that specific path with `child_process.spawn` instead of
-`fork()`. Neither is attempted here - this PoC's job was finding the problem, not fixing
-`discordBot.ts`, which would mean modifying a file this whole PoC otherwise proves can stay
-untouched.
+
+**Fixed and validated, not just diagnosed** - this is the one place in the whole PoC where a
+real `src/main/lib/` file needed an actual code change, not just a shim or new RPC glue, so it's
+worth being explicit about exactly what changed and why. `lib/discordBot.ts`'s `fork()` call now
+checks an optional `BOT_LAUNCH_COMMAND` environment variable first: unset (every normal build,
+including every real Electron build - Electron's own executable is never a SEA binary), nothing
+changes at all, same `fork(botScriptPath(), ...)` as before; set, it calls
+`spawn(launchCommand, [configPath], { stdio: [..., 'ipc'], env: {...} })` instead - an explicit
+path to spawn rather than an implicit re-exec of `process.execPath`, with the `'ipc'` stdio slot
+so `child.send()`/the exit/stdout/stderr handling all keep working exactly as `fork()` already
+provided them. Fifteen lines, reviewed against the existing test suite (`npx vitest run
+tests/discordBot.test.ts`: 16/16 still pass) and `npx tsc --noEmit -p tsconfig.node.json` (clean)
+before being trusted.
+
+`sidecar/build-bot-sea.mjs` packages the bot (`sidecar/bot/index.js`) as its own separate SEA
+binary (`sidecar/bot/bot-bin`), the same `--experimental-sea-config`/`postject` steps as
+`build-sea.mjs` uses for the main sidecar. `main.rs`'s `spawn_sidecar` resolves
+`sidecar/bot/bot-bin`'s path at compile time (the same simple `CARGO_MANIFEST_DIR`-relative
+convention the main sidecar itself used before migrating to real `externalBin` resolution - not
+attempted a second time here) and passes it to the sidecar's own process as `BOT_LAUNCH_COMMAND`
+via the plugin's `Command::env()`, but only when that file actually exists, so a plain
+`cargo build` without ever running `build-bot-sea.mjs` still works exactly as before (confirmed:
+removed `bot-bin`, rebuilt, ran clean).
+
+**Confirmed fixed through the real, compiled app, not just standalone**: with `BOT_LAUNCH_COMMAND`
+wired in and no manual env vars set, `bot_start` against the **default SEA sidecar** now shows
+the real bot's own distinctive log line (`"Connexion à Discord impossible : getaddrinfo ENOTFOUND
+discord.com"`, timestamped, not `"sidecar: ready"`) in `manager.jsonl`, followed by a clean exit
+- the same correct behavior `SIDECAR_PATH` dev mode always had, now also working under the
+packaging mode that actually ships. No leaked duplicate sidecar process this time either - the
+real bot process exits on its own, same as it always should.
 
 ### The web dashboard subsystem
 
@@ -602,12 +632,14 @@ binary, not the dev build.
   stdio pipe, with no change to the real file that calls it (`lib/systemFolders.ts`'s
   `openProfilesFolder()`, unmodified). This actually overturns this PoC's own earlier
   speculation in the table below - see the note under it.
-- **~~Nothing about the bot sidecar~~ - proven, and it needed zero porting work.** See "The
-  Discord bot subsystem" above: `lib/discordBot.ts` + `src/bot/` have no Electron coupling at
-  all and ported completely unmodified - but this also found a real, serious bug: `fork()`
-  silently can't spawn a different script from a Node SEA binary (it just relaunches the SEA
-  binary's own embedded entry point instead), which a real migration shipping the main sidecar
-  as a SEA binary would need to solve before the bot subsystem could ship the same way.
+- **~~Nothing about the bot sidecar~~ - proven, including a real bug and a validated fix.** See
+  "The Discord bot subsystem" above: `lib/discordBot.ts` + `src/bot/` have no Electron coupling
+  at all - but `fork()` silently can't spawn a different script from a Node SEA binary (it just
+  relaunches the SEA binary's own embedded entry point instead), which would have broken the bot
+  subsystem the moment the main sidecar ships as a SEA binary. Fixed with a small, tested,
+  opt-in change to the real `discordBot.ts` (15 lines, zero behavior change when unset, existing
+  test suite still green) - the *one* real file this whole PoC needed to actually modify, not
+  just call unmodified.
 - **~~Nothing about the webdashboard sidecar~~ - proven, and it isn't actually a separate
   sidecar at all.** See "The web dashboard subsystem" above: `lib/webDashboard.ts` (8200+
   lines) is an in-process `http.Server`/`https.Server` even in the real app, not a forked

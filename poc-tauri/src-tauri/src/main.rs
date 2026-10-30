@@ -224,6 +224,23 @@ fn spawn_sidecar(app: &tauri::App) -> SidecarHandle {
             .expect("failed to resolve the 'sidecar-bin' sidecar - check tauri.conf.json's bundle.externalBin and run sidecar/build-sea.mjs first"),
     };
 
+    // Fixes the real bug documented in README.md's "The Discord bot subsystem": discordBot.ts's
+    // fork() silently can't launch a different script from inside this sidecar once it's a SEA
+    // binary. BOT_LAUNCH_COMMAND (a small, opt-in override added to the real discordBot.ts -
+    // zero behavior change when unset) tells it to spawn this specific binary by path instead.
+    // Resolved the simple way here (not through the plugin's own externalBin resolution, which
+    // this PoC doesn't attempt a second time for a second binary) - baked in at compile time,
+    // same dev-only convention main.rs itself used for sidecar-bin before migrating to the real
+    // externalBin mechanism. Only set when sidecar/bot/bot-bin actually exists (run
+    // sidecar/build-bot-sea.mjs first) so a plain `cargo build` without it still works exactly
+    // as before - bot_start then falls back to discordBot.ts's normal fork() behavior.
+    let bot_bin_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../sidecar/bot/bot-bin");
+    let sidecar_command = if std::path::Path::new(bot_bin_path).exists() {
+        sidecar_command.env("BOT_LAUNCH_COMMAND", bot_bin_path)
+    } else {
+        sidecar_command
+    };
+
     let (mut rx, child) = sidecar_command
         .spawn()
         .unwrap_or_else(|e| panic!("failed to spawn sidecar: {e}"));
