@@ -1224,6 +1224,21 @@ practical lesson from building the test script itself: `document.querySelector('
 picks whichever profile happens to render first, not a chosen one - worth remembering for any
 later round that scripts a click against "the" card rather than a specifically identified one.
 
+**A third follow-up, in the same later session: drag-to-reorder.** Seeded a second ungrouped test
+profile (the existing two were down to one ungrouped card each, after the group-assignment
+follow-up above, and reordering a one-item list proves nothing) and dispatched real
+`DragEvent('dragstart')`/`DragEvent('dragover')`/`DragEvent('drop')` directly on the two card DOM
+nodes - a `DataTransfer` object is required to even construct a `DragEvent`, but
+`Dashboard.tsx`'s own handlers never read it, only a `dragId` kept in component state via
+`onDragStart`, so this needed no special handling. The real `onDrop` → `handleDrop` →
+`window.api.profiles.reorder` → `invoke('profiles_reorder')` → the real `setProfileOrder()`/
+`reorderProfiles()` chain fired correctly: the two cards visibly swapped on screen, and -
+checked independently, not just trusted from the screenshot - `config.json` on disk shows the
+same swapped order afterward. This was the last piece of `Dashboard.tsx`'s own UI flagged as
+unattempted; see the updated "What this doesn't prove yet" entry above for what's left in this
+PoC overall (two items now, both needing a real desktop session/Windows machine this sandbox
+can't provide, not further sandboxed testing).
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1432,10 +1447,16 @@ later round that scripts a click against "the" card rather than a specifically i
   that group's own bulk Start/Stop buttons (`startAll`/`stopAll`, the same `window.api.server.*`
   calls the single-card buttons use, just mapped over every profile in the group) correctly
   spawned and killed the real OS process, confirmed the same way as the single-card round - `ps
-  aux` and the real status badge agreeing. Still unconfirmed: the Windows-only `.bat` launch path
-  (same gap as above), drag-to-reorder (needs a real `DataTransfer`-backed drag simulation this
-  round didn't attempt), and the "+ Add Profile" wizard (native dialogs, same gap as "A second
-  real page").
+  aux` and the real status badge agreeing. ~~Drag-to-reorder never attempted~~ - also closed: real
+  `DragEvent`s (`dragstart`/`dragover`/`drop`, a `DataTransfer` object required to construct them
+  but never read by the handlers, which only track a `dragId` in component state) dispatched
+  directly on two real card DOM nodes fired the real `onDragStart`/`onDrop` handlers, and the real
+  `profiles.reorder` → `setProfileOrder()`/`reorderProfiles()` write landed - confirmed not just
+  by the cards visibly swapping on screen but by the actual persisted profile order in
+  `config.json` on disk afterward. Still unconfirmed: the Windows-only `.bat` launch path (same
+  gap as above), and the "+ Add Profile" wizard (native dialogs, same gap as "A second real
+  page") - the only two gaps left in this PoC that are architectural (need a real desktop
+  session/Windows machine), not just "not yet clicked."
 
 ## Where the real Electron coupling lives
 
