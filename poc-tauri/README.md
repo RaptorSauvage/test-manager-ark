@@ -34,8 +34,9 @@ above was standing in for. Window chrome, the menu bar, the tray, and the other 
   `manager-log-entry`, `console-line`), so every real write's/parsed log line's side effect
   reaches the webview the same way it would via Electron's `webContents.send`.
   `sidecar/electronShim.ts` stands in for the Electron APIs that import chain actually calls
-  directly (`app.getPath`) - see "electron-store's own fallback" below for a wrinkle this
-  found. `sidecar/build.mjs` bundles it with esbuild, aliasing `electron` → the shim and
+  directly (`app.getPath`, plus a minimal `ipcMain` stub `electron-store` itself needs - see
+  "Findings" below) - see "electron-store's own fallback" below for a wrinkle this found and a
+  real crash it caused once genuinely installed. `sidecar/build.mjs` bundles it with esbuild, aliasing `electron` → the shim and
   pointing esbuild at the project's own `tsconfig.node.json` (see "Findings" below for why),
   into a single dependency-free `dist/sidecar.cjs`. `sidecar/sea-config.json` +
   `sidecar/build-sea.mjs` turn that bundle into `dist/sidecar-bin` - a standalone executable
@@ -85,6 +86,17 @@ Windows, where `tauri-build` needs it (by that exact conventional path) to gener
 `.exe`'s Windows Resource file; the Linux build never asked for it because WebKitGTK has no
 equivalent step. Regenerated here with `convert icon.png -define
 icon:auto-resize=256,128,64,48,32,16 icon.ico` (ImageMagick).
+
+To build and install a real package instead of just running the dev binary (`cargo install
+tauri-cli --version "^2.0.0"` once, then):
+
+```sh
+cd src-tauri && cargo tauri build --bundles deb   # needs build-sea.mjs run first, same as above
+sudo dpkg -i target/release/bundle/deb/tauri-poc-shell_0.1.0_amd64.deb
+```
+
+See "Actually bundled and installed with `cargo tauri build`" below before trusting a `cargo
+build` dev run alone - it hid a real crash-on-install bug that only the actual bundle surfaced.
 
 ## Result
 
@@ -245,10 +257,72 @@ correctly through this new transport, with no errors in the sidecar's inherited 
 **Still open:** `SIDECAR_PATH` dev iteration now goes through `app.shell().command("node")`
 instead of a raw `Command::new("node")` - same idea, different API, not separately
 stress-tested beyond compiling and being structurally identical to the `sidecar()` path above.
-Nothing about `tauri build`'s actual bundling step (producing an installer/app bundle with the
-sidecar inside it, vs. `cargo build`'s dev-mode copy-from-`binaries/`) has been tried - this PoC
-still only runs via `cargo build` + the raw binary, never `cargo tauri build`. Code-signing and
-auto-update remain completely untouched.
+Code-signing and auto-update remain completely untouched. The actual bundling step
+(`cargo tauri build`) is covered next - it found a real bug `cargo build` never could.
+
+### Actually bundled and installed with `cargo tauri build` - and a real bug it found
+
+Everything above was still `cargo build` + running the raw binary from `target/debug/` - never
+the real packaging command, and never a real install. That gap is closed too: installed the
+`tauri-cli` (`cargo install tauri-cli --version "^2.0.0"`), set `bundle.active: true` and
+`bundle.targets: ["deb"]` in `tauri.conf.json` (plus `bundle.icon`, which Tauri's bundler
+requires explicitly - the dev-mode `cargo build` path never asked for it), and ran
+`cargo tauri build --bundles deb`.
+
+**It worked, genuinely**: a 44.5 MiB `.deb` came out, and `dpkg --contents` confirms the sidecar
+binary is really inside it as an ordinary installed file, not just referenced:
+
+```
+usr/bin/tauri_poc_shell      14.9 MB
+usr/bin/sidecar-bin         123.9 MB   <- the SEA binary, renamed from sidecar-bin-<triple>
+usr/share/applications/tauri-poc-shell.desktop
+usr/share/icons/hicolor/256x256/apps/tauri_poc_shell.png
+```
+
+Installed it for real with `dpkg -i` (not just unpacked - a real `apt`/`dpkg` install,
+registered in the package database) and ran `/usr/bin/tauri_poc_shell` directly, from `/tmp`,
+with none of this PoC's source tree on the path anywhere.
+
+**It crashed on first launch.** Not a cosmetic issue - the sidecar died immediately:
+
+```
+Error: Project name could not be inferred. Please specify the `projectName` option.
+    at new Conf (dist/sidecar.cjs:10010:19)
+    at new ElectronStore (dist/sidecar.cjs:10437:9)
+```
+
+This is exactly the kind of thing this whole PoC methodology exists to catch: every earlier
+check in this README ran the sidecar from inside the source checkout, where `conf` (the package
+behind `electron-store`) could silently find *some* `package.json` nearby and infer a project
+name from it when its own Electron-detection failed over to that fallback - the "harmless for
+this PoC" wrinkle already documented under "Findings" below. Once genuinely installed to
+`/usr/bin`, with no `package.json` anywhere nearby, that fallback has nothing to find and
+throws instead of silently working. The gap between "runs from a checkout" and "runs once
+installed" was real, and only running the actual installed binary surfaced it.
+
+**Root cause, traced into `electron-store`'s own source** (`node_modules/electron-store/index.js`):
+its constructor only uses `app.getPath('userData')` as the data directory when **both**
+`ipcMain` and `app` are truthy (`else if (ipcMain && app) { defaultCwd = app.getPath('userData') }`) -
+otherwise `cwd` is left `undefined` and `conf` falls through to its own broken inference.
+`electronShim.ts` only ever exported `app`, never `ipcMain`, so that branch was always being
+skipped - the shim's `getPath('userData')` value was being computed correctly and then never
+used, every single time, including in every earlier check in this README that happened to still
+work.
+
+**Fixed entirely inside `electronShim.ts` - no change to the real `store.ts` needed**: added a
+minimal `ipcMain` stub (just a no-op `.on()`, enough to satisfy `electron-store`'s own internal
+`ipcMain.on('electron-store-get-data', ...)` registration) and an `app.getVersion()` stub
+(also called in that same code path). That's the one-line condition electron-store actually
+checks - once `ipcMain` exists, it takes the `app.getPath('userData')` branch as intended, and
+the separately-documented "electron-store's own fallback" wrinkle is now also fully resolved as
+a side effect, not just "harmless."
+
+**Confirmed, not just patched**: rebuilt, reinstalled the `.deb` (`dpkg -i` over the broken one),
+and reran `/usr/bin/tauri_poc_shell` from `/tmp` again. Clean `sidecar: ready`, no errors. Both
+the read path (screenshot, `Got 0 profile(s)...`) and the write + full migration pipeline
+(temporary `setTimeout` trigger, reverted before committing, checked against
+`~/.tauri-poc-bober-manager/config.json`) were re-verified against the actually-installed
+binary, not the dev build.
 
 ## Findings from actually running this, not from reading docs
 
@@ -257,22 +331,22 @@ auto-update remain completely untouched.
   because the whole call is wrapped and logged rather than ignored (see `main.rs`). Renamed to
   `profiles-changed`. A real migration would need this as a known constraint when choosing
   event names for every IPC channel being ported, not just this one.
-- **`electron-store`'s own "am I really in Electron" check ignores a stubbed `app.getPath`.**
-  The first write landed at `~/.config/ark-server-manager-nodejs/config.json` - not
-  `electronShim.ts`'s intended `~/.tauri-poc-bober-manager`. `electron-store` has its own
-  internal detection for whether it's genuinely running inside Electron, and outside of that it
-  falls back to resolving a data directory from the nearest `package.json`'s `name` field via
-  `env-paths`, bypassing `app.getPath('userData')` entirely regardless of what the shim returns.
-  Harmless for this PoC (the data still round-trips correctly, just not to the directory this
-  PoC expected), but worth knowing for real: controlling where a sidecar's `electron-store` data
-  lands needs either `cwd` passed explicitly to `new Store(...)` in `store.ts` itself (a tiny,
-  low-risk change, and arguably the more correct fix regardless of Tauri) or accepting
-  `electron-store`'s own fallback location when running outside Electron. Worth contrasting
-  with `lib/managerLog.ts`'s own `getDataDir()` → `app.getPath('documents')` call, which *does*
-  go through the shim correctly (confirmed: a real `log.record` call landed at
-  `~/Documents/ARK Server Manager/logs/manager.jsonl`, exactly where `electronShim.ts` says it
-  should) - the quirk above is specific to `electron-store`'s own detection logic, not a general
-  problem with stubbing `app.getPath`.
+- **~~`electron-store`'s own "am I really in Electron" check ignores a stubbed `app.getPath`~~ -
+  root-caused and fixed, not just worked around.** The first write landed at
+  `~/.config/ark-server-manager-nodejs/config.json` - not `electronShim.ts`'s intended
+  `~/.tauri-poc-bober-manager`. Originally documented as "harmless for this PoC" (the data still
+  round-tripped, just to the wrong directory) - that assessment didn't survive contact with a
+  real install: see "Actually bundled and installed with `cargo tauri build`" above, where the
+  exact same root cause crashed the sidecar outright once there was no `package.json` nearby for
+  `conf`'s fallback to find. Traced into `electron-store`'s actual source
+  (`node_modules/electron-store/index.js`): it only uses `app.getPath('userData')` when
+  **both** `ipcMain` and `app` are truthy, and `electronShim.ts` only ever exported `app`.
+  Fixed with a minimal `ipcMain` stub in the shim itself - zero changes to the real `store.ts`.
+  Worth contrasting with `lib/managerLog.ts`'s own `getDataDir()` → `app.getPath('documents')`
+  call, which *did* go through the shim correctly from the start (confirmed: a real `log.record`
+  call landed at `~/Documents/ARK Server Manager/logs/manager.jsonl`, exactly where
+  `electronShim.ts` says it should) - this quirk was specific to `electron-store`'s own
+  Electron-detection logic, not a general problem with stubbing `app.getPath`.
 - **A JSON-RPC response needs a concrete, non-`undefined` result.** `log.record`'s handler
   originally returned whatever `logManagerEvent(...)` resolves to, which is `void` -
   `JSON.stringify({ id, result: undefined })` silently drops the `result` key entirely, leaving
@@ -305,14 +379,16 @@ auto-update remain completely untouched.
   "entity changed" event. Still nothing about the other ~33 IPC modules specifically (group
   console, stats history, Discord bot status, ...), though they're the same two shapes
   (request/response or push) this PoC has now exercised at least once each.
-- **~~Nothing about packaging/bundling the sidecar~~ - both halves now proven**: the sidecar
-  runs as one self-contained executable with no system `node` dependency (Node SEA), *and* it's
+- **~~Nothing about packaging/bundling the sidecar~~ - all three parts now proven**: the sidecar
+  runs as one self-contained executable with no system `node` dependency (Node SEA); it's
   spawned through Tauri's real `bundle.externalBin`/`tauri-plugin-shell` sidecar mechanism, not
-  a hardcoded path - see "Sidecar packaging" above, specifically "Wired into Tauri's real
-  `externalBin` mechanism". Still outstanding: `tauri build`'s actual bundling/installer step
-  (this PoC only runs via `cargo build` + the raw dev binary, never `cargo tauri build`),
-  code-signing, and auto-update. `SIDECAR_PATH` is still a dev-time escape hatch for iterating
-  without rebuilding the SEA binary each time.
+  a hardcoded path; and `cargo tauri build --bundles deb` genuinely bundles it into an
+  installable `.deb` that runs correctly once `dpkg -i`'d for real - see "Sidecar packaging"
+  above, specifically "Actually bundled and installed with `cargo tauri build`", which is also
+  where a real crash-on-fresh-install bug got found and fixed. Still outstanding: code-signing
+  and auto-update, and the equivalent bundling step on Windows (`.msi`/`.exe` via WiX/NSIS) and
+  macOS (`.app`/`.dmg`) - only the Linux `.deb` target has been tried. `SIDECAR_PATH` is still a
+  dev-time escape hatch for iterating without rebuilding the SEA binary each time.
 - **Nothing about the bot/webdashboard sidecars** mentioned in the original size estimate - this
   PoC only touches the "main process logic" sidecar.
 

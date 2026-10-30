@@ -18,5 +18,25 @@ export const app = {
     if (name === 'documents') return path.join(os.homedir(), 'Documents')
     throw new Error(`electronShim.app.getPath: unhandled path name "${name}" - add it if the sidecar needs it`)
   },
+  getVersion(): string {
+    return '0.0.0-poc'
+  },
   isPackaged: false
+}
+
+/**
+ * electron-store's own constructor (node_modules/electron-store/index.js) only uses this
+ * shim's `app.getPath('userData')` as its data directory when `ipcMain && app` is truthy -
+ * found by actually hitting the failure this avoids, not by reading electron-store's source
+ * first: running the packaged SEA binary standalone (no `node_modules`/`package.json` nearby,
+ * unlike running from this source tree where `conf`'s own fallback happens to find one) threw
+ * "Project name could not be inferred" from deep inside `conf`, because with `ipcMain`
+ * undefined the real electron-store skips straight past `app.getPath('userData')` to that
+ * fallback regardless of what this shim's `app` returns. A one-method `ipcMain` stub (just
+ * enough to satisfy electron-store's own internal `ipcMain.on('electron-store-get-data', ...)`
+ * registration, never actually invoked since there's no separate renderer process here) is
+ * enough to make it take the `app.getPath('userData')` path instead.
+ */
+export const ipcMain = {
+  on(_channel: string, _listener: (...args: unknown[]) => void): void {}
 }

@@ -20,7 +20,9 @@
     }
   },
   "bundle": {
-    "active": false,
-    "externalBin": ["binaries/sidecar-bin"]
+    "active": true,
+    "externalBin": ["binaries/sidecar-bin"],
+    "targets": ["deb"],
+    "icon": ["icons/icon.png"]
   }
 }
