@@ -23,6 +23,7 @@ import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import Dashboard from '../../src/renderer/src/pages/Dashboard'
 import { useServerStatuses } from '../../src/renderer/src/lib/useServerStatuses'
+import { wrapInvoke } from './lib/tauriInvoke'
 import type { AppSettings, MapDefinition, ServerProfile, ServerStatus, SystemStaticInfo, NetworkUsage } from '../../shared/types'
 
 declare global {
@@ -59,7 +60,7 @@ declare global {
   }
 }
 
-const { invoke } = window.__TAURI__.core
+const invoke = wrapInvoke(window.__TAURI__.core.invoke)
 const { listen } = window.__TAURI__.event
 
 // Every method here is a thin passthrough to a Tauri command this PoC round added - the same

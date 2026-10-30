@@ -36,7 +36,7 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes thirty-seven
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes forty-five
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
@@ -55,7 +55,11 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   the second command with no
   sidecar involvement, backing `confirmAction()`'s real window-focus-loss workaround. The fifth
   real page (see below) added `settings_get`/`settings_save`, `profiles_delete`/
-  `profiles_reorder`, and `system_stats_get_static_info`/`system_stats_get_network_usage`.
+  `profiles_reorder`, and `system_stats_get_static_info`/`system_stats_get_network_usage`. The
+  sixth (see below) added `stats_history_get`, `backup_get_schedule_status`,
+  `server_get_installed_build_id`/`server_get_game_version`, `steamcmd_get_latest_build_id`, and
+  `system_open_server_config_folder`/`system_open_server_saved_arks_folder`/
+  `system_open_server_save_games_folder`.
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -1239,6 +1243,79 @@ unattempted; see the updated "What this doesn't prove yet" entry above for what'
 PoC overall (two items now, both needing a real desktop session/Windows machine this sandbox
 can't provide, not further sandboxed testing).
 
+### A sixth real page, and a PoC-wide bug in how errors cross the Tauri bridge
+
+`AnalyticsTab.tsx` (`src/renderer/src/pages/ServerDetail/`, 321 lines) was picked specifically
+because it pulls together five real subsystems in one page, none of them touched by this PoC
+before: `lib/statsHistory.ts` (the **read** side of the CPU/RAM/player history `monitor.ts`'s
+`recordStatSample` already writes - see "A fifth real page" above - proving the write-then-read
+round trip, not just the write), `lib/schedule.ts`'s `getBackupScheduleStatus` (the Backup
+Status panel), `lib/steamcmd.ts`'s `getInstalledBuildId` and `lib/serverVersion.ts`'s
+`getGameVersion` (mirroring the real `ipc/serverProcess.ts` handlers' own cache-then-live-read
+order exactly), `lib/updateCheck.ts`'s `getLatestBuildIdCache` (a pure cache read backing the
+nested `UpdateCheckPanel` component), and three more `lib/systemFolders.ts` functions (the same
+`shell.openPath` round trip `openProfilesFolder` already proved, three more real call sites of
+it). None of them are Electron-coupled.
+
+**Confirmed standalone first, including a genuine write-then-read round trip.** Piped JSON-RPC
+into the SEA binary: enabled `statsEnabled` on a seeded profile, started the real stand-in
+executable, and after the monitor's own 5-second tick, `statsHistory.get` returned the exact
+real samples `recordStatSample` had just written - `cpu`/`memoryMB`/`players`, real timestamps,
+nothing synthesized for the read side.
+
+**Found and fixed a real wiring gap doing the same for `backup.getScheduleStatus`: it reported
+`{ active: false }` even with a running server and a real cron schedule saved.** Unlike every
+other push source in this PoC, `lib/schedule.ts`'s own `serverEvents.on('status', ...)`
+subscription is **not** a module-load side effect - it only happens once
+`registerBackupScheduleWatcher()` is actually called, the same real `index.ts` startup-order
+requirement `adoptPersistedProcesses()` already has. Importing `getBackupScheduleStatus` alone
+left nothing ever subscribed to real status transitions. Fixed by calling
+`registerBackupScheduleWatcher()` once at sidecar startup (same place as
+`adoptPersistedProcesses()`), and by adding `applyBackupSchedule(profile)` to `sidecar.ts`'s
+`profiles.save` - the real `ipc/profiles.ts` handler calls it too, and this PoC's own
+`profiles.save` had never needed it before now. Re-confirmed standalone: with both fixes,
+`backup.getScheduleStatus` correctly reports `{ active: true, nextRunAt: <real cron next-fire
+time> }` once the server transitions to `running`.
+
+**Confirmed through the real compiled app**, pointing the main window at a new `analytics.html`
+(same temporary-`tauri.conf.json`-`url` technique as every other page): the real form rendered
+with real data throughout - the real CPU model/RAM figures carried over from `systemStats.ts`,
+the real two recorded stats samples, "Enable stats" genuinely checked (the real
+`profile.statsEnabled`), and `UpdateCheckPanel`'s own honest `"Checking..."` state (correctly
+stuck there forever in this sandbox, since nothing here ever arms the real background SteamCMD
+poller that would populate `getLatestBuildIdCache` - the same category of honestly-unconfirmable
+gap as the native dialog's happy path, not a bug).
+
+**The actual headline finding of this round: Tauri's `invoke()` does not reject with an
+`Error`.** Clicking the real "INI Config" file-shortcut button (no real config folder exists for
+this test profile) correctly reached the real, unmodified `openServerConfigFolder()` and
+correctly rejected with its real message - confirmed directly against
+`window.__TAURI__.core.invoke()`, bypassing React entirely, specifically to rule out a repaint
+question first (see "A rendering dead end"/"A fifth real page" above for why that was the first
+suspect). But the real component's own `{configFolderError && <p className="error-message">
+{configFolderError}</p>}` display never appeared on screen. Traced to the exact type: Tauri's
+`invoke()` rejects a Rust `Err(String)` with the **bare string itself**, not an `Error` instance
+- confirmed with `typeof err === 'string'`, `err instanceof Error === false`,
+`err.message === undefined`. Every real component in this app was written against Electron's
+`ipcRenderer.invoke()` convention instead, where a rejection **is** a real `Error` - the
+universal `catch (err) { setX((err as Error).message) }` pattern used across the whole real
+renderer (this exact page's `configFolderError`, `Dashboard.tsx`'s `actionErrors`,
+`ProfileManagementView`'s import error, ...) silently reads `undefined` on a Tauri rejection
+instead of throwing or warning. No earlier round had actually clicked a real button through to a
+real failure and checked the screen for the error text - every earlier error path was either
+confirmed at the raw RPC/`invoke()` level only, or happened to be a success path on screen.
+
+**Fixed once, centrally, not by touching the real components.** Added
+`frontend/lib/tauriInvoke.ts`, a five-line `wrapInvoke()` that catches a non-`Error` rejection
+and re-throws a real `Error` with the same message - applied to **every** entry file in this
+PoC (`const invoke = wrapInvoke(window.__TAURI__.core.invoke)` in place of the old
+`const { invoke } = window.__TAURI__.core`), not just this round's new one, since the gap was
+always there in all five earlier pages' shims, just never exercised. Re-confirmed through the
+real app: the same "INI Config" click now shows the real error text, in red, exactly where the
+unmodified component puts it. A real migration would make this same fix once, at the transport
+layer `invoke` is imported from, rather than touching every individual `catch` block in the real
+renderer - which is exactly what this fix does.
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1293,6 +1370,19 @@ can't provide, not further sandboxed testing).
   one `capabilities/default.json` file granting `core:default`/`core:event:default`/
   `core:window:default` to the main window. See "A fifth real page" above for the full
   investigation and the retroactive re-confirmation against the original failing scenario.
+- **Unlike `lib/*.ts`'s other `serverEvents.on(...)` subscribers, `lib/schedule.ts`'s is gated
+  behind a function call, not a module-load side effect - importing just the status-reading
+  function left it silently never subscribed.** `registerBackupScheduleWatcher()` has to be
+  called once, same as `adoptPersistedProcesses()`. See "A sixth real page" above.
+- **Tauri's `invoke()` rejects a failed command with the bare value the Rust side returned (a
+  plain string here), not an `Error` instance - unlike Electron's `ipcRenderer.invoke()`, which
+  every real component in this app was written against.** The universal
+  `catch (err) { setX((err as Error).message) }` pattern used across the whole real renderer
+  silently reads `undefined` on a Tauri rejection, with no thrown error and no console warning -
+  just a UI that never shows the real failure text. Affects every error-display call site in
+  every page this PoC has mounted, not just the one that happened to surface it. Fixed once,
+  centrally, with `frontend/lib/tauriInvoke.ts`'s `wrapInvoke()`, applied to all six entry
+  files' `invoke` bindings. See "A sixth real page" above for the full investigation.
 
 ## What this doesn't prove yet
 
@@ -1457,6 +1547,18 @@ can't provide, not further sandboxed testing).
   gap as above), and the "+ Add Profile" wizard (native dialogs, same gap as "A second real
   page") - the only two gaps left in this PoC that are architectural (need a real desktop
   session/Windows machine), not just "not yet clicked."
+- **~~Nothing about stats history, backup scheduling, or build/version info~~ - proven, a sixth
+  real page, with a PoC-wide bug fixed along the way.** See "A sixth real page" above:
+  `AnalyticsTab.tsx` confirmed a genuine write-then-read round trip through `lib/statsHistory.ts`
+  (real samples `monitor.ts` wrote, read back through the real chart's own data path), and found
+  a second real-code wiring gap (`registerBackupScheduleWatcher()` never called) alongside the
+  capabilities one from the previous round. The bigger finding: Tauri's `invoke()` rejects with
+  a bare value, not an `Error`, breaking the `(err as Error).message` pattern every real
+  component's error-display code uses - affecting every earlier page's own error UI too, not
+  just this one, fixed once centrally rather than per-page. Still honestly unconfirmed in this
+  sandbox: `UpdateCheckPanel`'s actual "update available" state, since nothing here ever arms
+  the real background SteamCMD poller that would populate it - same category of gap as
+  `doUpdateServer`'s own SteamCMD-not-installed error, not a new kind of limitation.
 
 ## Where the real Electron coupling lives
 

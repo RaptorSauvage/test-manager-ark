@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import ProfileManagementView from '../../src/renderer/src/pages/ProfileManagementView'
+import { wrapInvoke } from './lib/tauriInvoke'
 import type { ServerProfile } from '../../shared/types'
 
 declare global {
@@ -40,7 +41,7 @@ declare global {
   }
 }
 
-const { invoke } = window.__TAURI__.core
+const invoke = wrapInvoke(window.__TAURI__.core.invoke)
 
 // Same shape as every other real call in this PoC: a thin invoke() wrapper, no logic of its
 // own. dialog.selectDirectory resolves straight to Rust (no "method" to a sidecar at all);

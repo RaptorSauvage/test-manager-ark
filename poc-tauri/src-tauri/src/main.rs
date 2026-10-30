@@ -330,6 +330,58 @@ fn system_stats_get_network_usage(sidecar: tauri::State<SidecarHandle>) -> Resul
     sidecar.call("systemStats.getNetworkUsage", None)
 }
 
+#[tauri::command]
+fn stats_history_get(
+    profile_id: String,
+    since_ms: Option<i64>,
+    max_points: Option<i64>,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call(
+        "statsHistory.get",
+        Some(serde_json::json!({ "profileId": profile_id, "sinceMs": since_ms, "maxPoints": max_points })),
+    )
+}
+
+#[tauri::command]
+fn backup_get_schedule_status(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("backup.getScheduleStatus", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn server_get_installed_build_id(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("server.getInstalledBuildId", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn server_get_game_version(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("server.getGameVersion", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn steamcmd_get_latest_build_id(
+    game: String,
+    branch: Option<String>,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call("steamcmd.getLatestBuildId", Some(serde_json::json!({ "game": game, "branch": branch })))
+}
+
+#[tauri::command]
+fn system_open_server_config_folder(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("system.openServerConfigFolder", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn system_open_server_saved_arks_folder(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("system.openServerSavedArksFolder", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn system_open_server_save_games_folder(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("system.openServerSaveGamesFolder", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
 /// Test-only - see sidecar.ts's `server.installTestExecutable` comment.
 #[tauri::command]
 fn server_install_test_executable(
@@ -588,6 +640,14 @@ fn main() {
             profiles_reorder,
             system_stats_get_static_info,
             system_stats_get_network_usage,
+            stats_history_get,
+            backup_get_schedule_status,
+            server_get_installed_build_id,
+            server_get_game_version,
+            steamcmd_get_latest_build_id,
+            system_open_server_config_folder,
+            system_open_server_saved_arks_folder,
+            system_open_server_save_games_folder,
             console_backlog,
             console_watch,
             console_append_test_line,

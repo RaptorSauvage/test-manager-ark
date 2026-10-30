@@ -9,6 +9,7 @@
  */
 import { createRoot } from 'react-dom/client'
 import ManagerLogView from '../../src/renderer/src/pages/ManagerLogView'
+import { wrapInvoke } from './lib/tauriInvoke'
 import type { ManagerLogEntry } from '../../shared/types'
 
 declare global {
@@ -31,7 +32,7 @@ declare global {
   }
 }
 
-const { invoke } = window.__TAURI__.core
+const invoke = wrapInvoke(window.__TAURI__.core.invoke)
 const { listen } = window.__TAURI__.event
 
 // This is the entire "port" - the real component's two window.api calls, pointed at the same

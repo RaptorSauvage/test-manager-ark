@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import PlayerRosterPanel from '../../src/renderer/src/pages/PlayerRosterPanel'
+import { wrapInvoke } from './lib/tauriInvoke'
 import type { ServerProfile, PlayerRosterEntry, BannedPlayer, WhitelistedPlayer } from '../../shared/types'
 
 declare global {
@@ -41,7 +42,7 @@ declare global {
   }
 }
 
-const { invoke } = window.__TAURI__.core
+const invoke = wrapInvoke(window.__TAURI__.core.invoke)
 
 window.api = {
   system: {
