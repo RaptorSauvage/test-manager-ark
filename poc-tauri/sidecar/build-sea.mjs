@@ -12,14 +12,25 @@
 // - macOS: needs extra codesigning steps (`--macho-segment-name NODE_SEA` + re-signing) that
 //   this script does not attempt.
 // - Windows: should work (Node's docs describe it), not yet tried for real from this sandbox.
+//
+// Also copies the result into src-tauri/binaries/sidecar-bin-<target-triple>, the exact name
+// and location Tauri's `bundle.externalBin` (see tauri.conf.json) requires to treat it as a
+// real sidecar resource instead of a path main.rs has to know about by convention.
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, chmodSync } from 'node:fs'
+import { copyFileSync, chmodSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const nodeBin = process.execPath
 const outBin = path.join(here, 'dist', 'sidecar-bin')
+
+const rustcHost = execFileSync('rustc', ['-vV'], { encoding: 'utf8' })
+  .split('\n')
+  .find((line) => line.startsWith('host:'))
+  ?.split(':')[1]
+  ?.trim()
+if (!rustcHost) throw new Error("could not determine the Rust target triple from `rustc -vV`'s `host:` line")
 
 execFileSync(process.execPath, ['--experimental-sea-config', path.join(here, 'sea-config.json')], {
   cwd: here,
@@ -43,4 +54,12 @@ execFileSync(
   { cwd: here, stdio: 'inherit' }
 )
 
+const binariesDir = path.join(here, '..', 'src-tauri', 'binaries')
+const windows = rustcHost.includes('windows')
+const externalBinPath = path.join(binariesDir, `sidecar-bin-${rustcHost}${windows ? '.exe' : ''}`)
+mkdirSync(binariesDir, { recursive: true })
+copyFileSync(outBin, externalBinPath)
+chmodSync(externalBinPath, 0o755)
+
 console.log(`sidecar SEA binary -> ${outBin}`)
+console.log(`                  -> ${externalBinPath} (Tauri externalBin)`)

@@ -19,11 +19,11 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use tauri::{Emitter, Manager};
+use tauri_plugin_shell::ShellExt;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
 #[derive(Serialize)]
 struct RpcRequest<'a> {
@@ -50,16 +50,16 @@ struct PushEvent {
 
 type PendingMap = Arc<Mutex<HashMap<i64, mpsc::Sender<RpcResponse>>>>;
 
-/// Owns the sidecar child's stdin plus the map a background reader thread (spawned alongside
-/// this in `spawn_sidecar`) uses to resolve each response, by id, back to the `call()` that's
-/// waiting on it - stdin writes happen on whichever thread calls a Tauri command, stdout reads
-/// happen continuously on the one reader thread, so the two need a shared, lockable map rather
-/// than a direct return value.
+/// Owns the sidecar child (via tauri-plugin-shell's `CommandChild`, not a raw `std::process`
+/// handle - see "Sidecar packaging" in README.md) plus the map a background async task
+/// (spawned alongside this in `spawn_sidecar`) uses to resolve each response, by id, back to
+/// the `call()` that's waiting on it - stdin writes happen on whichever thread calls a Tauri
+/// command, stdout reads happen continuously on the one task, so the two need a shared,
+/// lockable map rather than a direct return value.
 struct SidecarHandle {
-    stdin: Mutex<ChildStdin>,
+    child: Mutex<CommandChild>,
     next_id: AtomicI64,
     pending: PendingMap,
-    _child: Mutex<Child>,
 }
 
 impl SidecarHandle {
@@ -69,11 +69,11 @@ impl SidecarHandle {
         self.pending.lock().unwrap().insert(id, tx);
 
         let line = serde_json::to_string(&RpcRequest { id, method, params }).map_err(|e| e.to_string())? + "\n";
-        {
-            let mut stdin = self.stdin.lock().unwrap();
-            stdin.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
-            stdin.flush().map_err(|e| e.to_string())?;
-        }
+        self.child
+            .lock()
+            .unwrap()
+            .write(line.as_bytes())
+            .map_err(|e| e.to_string())?;
 
         // The sidecar is a local child process answering a cheap store read/write - a
         // genuinely hung sidecar (crashed, bad bundle, ...) should surface as an error, not
@@ -127,83 +127,90 @@ fn console_append_test_line(
     )
 }
 
-/// Spawns the Node sidecar and a background thread that owns reading its stdout for the app's
-/// whole lifetime: a line with an "id" resolves the matching `call()` via `pending`, a line
-/// with an "event" instead gets forwarded to the webview as a same-named Tauri event. Resolved
-/// relative to this crate at build time rather than bundled as a Tauri resource - fine for a
-/// PoC run from a source checkout; a real migration would ship this bundle (or a compiled
-/// Node/Bun binary) as a proper Tauri sidecar resource instead.
-fn spawn_sidecar(app_handle: tauri::AppHandle) -> SidecarHandle {
-    // Default now points at the compiled Node SEA binary (dist/sidecar-bin), built by
-    // `node --experimental-sea-config` + postject from the exact same dist/sidecar.cjs bundle
-    // esbuild already produced - see sidecar/README-sea.md. It is spawned directly, with no
-    // "node" in front and no separate runtime next to it: this is what makes it viable as a
-    // real Tauri `externalBin` resource later. SIDECAR_PATH still overrides for dev iteration;
-    // when it points at a .cjs/.js file we fall back to invoking it through `node` as before.
-    let sidecar_path = std::env::var("SIDECAR_PATH")
-        .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../sidecar/dist/sidecar-bin").to_string());
-    let needs_node_runtime = sidecar_path.ends_with(".cjs") || sidecar_path.ends_with(".js");
-
-    let mut command = if needs_node_runtime {
-        let mut cmd = Command::new("node");
-        cmd.arg(&sidecar_path);
-        cmd
-    } else {
-        Command::new(&sidecar_path)
+/// Spawns the sidecar through tauri-plugin-shell's real sidecar mechanism and a background
+/// async task that owns reading its stdout for the app's whole lifetime: a line with an "id"
+/// resolves the matching `call()` via `pending`, a line with an "event" instead gets forwarded
+/// to the webview as a same-named Tauri event.
+///
+/// Default path: `app.shell().sidecar("sidecar-bin")`, which resolves to
+/// `binaries/sidecar-bin-<target-triple>` per `tauri.conf.json`'s `bundle.externalBin` - the
+/// real mechanism a shipped build uses (see "Sidecar packaging" in README.md), not a
+/// source-tree path main.rs has to know about by convention. That file has to exist before
+/// `cargo build` even starts (Tauri checks for it at build time, not just at runtime) - run
+/// `sidecar/build-sea.mjs` first.
+///
+/// `SIDECAR_PATH` still overrides for dev iteration without rebuilding the SEA binary each
+/// time `sidecar.ts` changes: when set, it's spawned as a plain `node <path>` command instead,
+/// through the plugin's generic `app.shell().command(...)` (same `Command`/`CommandEvent` API,
+/// so the rest of this function doesn't need to know which mode it's in).
+fn spawn_sidecar(app: &tauri::App) -> SidecarHandle {
+    let sidecar_command = match std::env::var("SIDECAR_PATH") {
+        Ok(path) => app.shell().command("node").arg(path),
+        Err(_) => app
+            .shell()
+            .sidecar("sidecar-bin")
+            .expect("failed to resolve the 'sidecar-bin' sidecar - check tauri.conf.json's bundle.externalBin and run sidecar/build-sea.mjs first"),
     };
 
-    let mut child = command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+    let (mut rx, child) = sidecar_command
         .spawn()
-        .unwrap_or_else(|e| panic!("failed to spawn sidecar at {sidecar_path}: {e}"));
-
-    let stdin = child.stdin.take().expect("sidecar stdin was not piped");
-    let stdout = child.stdout.take().expect("sidecar stdout was not piped");
+        .unwrap_or_else(|e| panic!("failed to spawn sidecar: {e}"));
 
     let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
     let reader_pending = pending.clone();
-    std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            let Ok(line) = line else { break };
-            let Ok(raw) = serde_json::from_str::<Value>(&line) else {
-                eprintln!("sidecar: unparseable line: {line}");
-                continue;
-            };
-            if raw.get("id").is_some() {
-                let Ok(response) = serde_json::from_value::<RpcResponse>(raw) else {
-                    eprintln!("sidecar: malformed response line: {line}");
-                    continue;
-                };
-                if let Some(tx) = reader_pending.lock().unwrap().remove(&response.id) {
-                    let _ = tx.send(response);
+    let app_handle = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes);
+                    let Ok(raw) = serde_json::from_str::<Value>(&line) else {
+                        eprintln!("sidecar: unparseable line: {line}");
+                        continue;
+                    };
+                    if raw.get("id").is_some() {
+                        let Ok(response) = serde_json::from_value::<RpcResponse>(raw) else {
+                            eprintln!("sidecar: malformed response line: {line}");
+                            continue;
+                        };
+                        if let Some(tx) = reader_pending.lock().unwrap().remove(&response.id) {
+                            let _ = tx.send(response);
+                        }
+                    } else {
+                        let Ok(push) = serde_json::from_value::<PushEvent>(raw) else {
+                            eprintln!("sidecar: malformed push-event line: {line}");
+                            continue;
+                        };
+                        if let Err(e) = app_handle.emit(&push.event, push.data) {
+                            eprintln!("failed to forward sidecar event '{}' to the webview: {e}", push.event);
+                        }
+                    }
                 }
-            } else {
-                let Ok(push) = serde_json::from_value::<PushEvent>(raw) else {
-                    eprintln!("sidecar: malformed push-event line: {line}");
-                    continue;
-                };
-                if let Err(e) = app_handle.emit(&push.event, push.data) {
-                    eprintln!("failed to forward sidecar event '{}' to the webview: {e}", push.event);
+                CommandEvent::Stderr(bytes) => {
+                    eprint!("{}", String::from_utf8_lossy(&bytes));
                 }
+                CommandEvent::Error(err) => eprintln!("sidecar process error: {err}"),
+                CommandEvent::Terminated(payload) => {
+                    eprintln!("sidecar process terminated: {payload:?}");
+                    break;
+                }
+                _ => {}
             }
         }
     });
 
     SidecarHandle {
-        stdin: Mutex::new(stdin),
+        child: Mutex::new(child),
         next_id: AtomicI64::new(1),
         pending,
-        _child: Mutex::new(child),
     }
 }
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let handle = spawn_sidecar(app.handle().clone());
+            let handle = spawn_sidecar(app);
             app.manage(handle);
             Ok(())
         })

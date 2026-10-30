@@ -20,6 +20,7 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": false,
+    "externalBin": ["binaries/sidecar-bin"]
   }
 }

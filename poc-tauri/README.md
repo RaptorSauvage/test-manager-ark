@@ -16,12 +16,14 @@ above was standing in for. Window chrome, the menu bar, the tray, and the other 
 
 ## What's here
 
-- `src-tauri/` - a minimal Tauri 2 app. `src/main.rs` spawns the sidecar as a child process on
-  startup, keeps a reader thread on its stdout that routes each line either to the pending
-  `call()` it answers (has an `"id"`) or out to the webview as a Tauri event (has an
-  `"event"` instead), and exposes six Tauri commands: `profiles_list`, `profiles_save` (takes a
-  profile object), `log_record` (takes a message string), `console_backlog`/`console_watch`
-  (both take an `installDir`), and `console_append_test_line` (test-only - see below).
+- `src-tauri/` - a minimal Tauri 2 app, using `tauri-plugin-shell`'s real sidecar mechanism (not
+  a hand-rolled `std::process::Command`) to spawn the sidecar on startup - see "Sidecar
+  packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
+  that routes each line either to the pending `call()` it answers (has an `"id"`) or out to the
+  webview as a Tauri event (has an `"event"` instead), and exposes six Tauri commands:
+  `profiles_list`, `profiles_save` (takes a profile object), `log_record` (takes a message
+  string), `console_backlog`/`console_watch` (both take an `installDir`), and
+  `console_append_test_line` (test-only - see below).
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -52,17 +54,24 @@ above was standing in for. Window chrome, the menu bar, the tray, and the other 
 
 ```sh
 node sidecar/build.mjs        # bundles sidecar/dist/sidecar.cjs
-node sidecar/build-sea.mjs    # optional: also builds dist/sidecar-bin (see "Sidecar packaging")
+node sidecar/build-sea.mjs    # builds dist/sidecar-bin AND copies it into src-tauri/binaries/
 cd src-tauri && cargo build   # or: cargo tauri dev, if the Tauri CLI is installed
 ./target/debug/tauri_poc_shell
 ```
 
-`main.rs` spawns `sidecar/dist/sidecar-bin` by default (the SEA binary, no `node` needed on the
-machine running it) - that file has to exist first, so run `build-sea.mjs` before `cargo build`
-the first time, or whenever `sidecar.ts` changes. Set `SIDECAR_PATH` to point at `dist/
-sidecar.cjs` instead to skip the SEA build and run it straight through a locally-installed
-`node` during iteration (no rebuild of the Rust shell needed either way - it reads the env var
-at startup, not compile time).
+`build-sea.mjs` is **not optional** before the first `cargo build`: `tauri.conf.json` declares
+`bundle.externalBin: ["binaries/sidecar-bin"]`, and Tauri's own build script checks that
+`src-tauri/binaries/sidecar-bin-<target-triple>` exists *at `cargo build` time*, not just at
+runtime - `cargo build` fails outright (`resource path ... doesn't exist`) if that file is
+missing, before any of this PoC's own code even runs. Re-run `build-sea.mjs` whenever
+`sidecar.ts` changes; `cargo build` doesn't need to re-run unless `main.rs`/`Cargo.toml`
+changed too, since Tauri just copies whatever's already in `binaries/`.
+
+Set `SIDECAR_PATH` to a `node <path>`-style path (pointing at `dist/sidecar.cjs`) to skip all
+of that and run the sidecar straight through a locally-installed `node` during iteration - no
+`cargo build` needed at all when only `sidecar.ts` changes, and no `binaries/` setup required
+first. `main.rs` reads this env var at startup, not compile time, and spawns it through the
+plugin's generic `command()` API instead of `sidecar()` when it's set (see "Sidecar packaging").
 
 Linux build needs `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libsoup-3.0-dev`,
 `libjavascriptcoregtk-4.1-dev`, `libxdo-dev`, `libssl-dev`, `libayatana-appindicator3-dev`, and
@@ -191,13 +200,6 @@ npx postject dist/sidecar-bin NODE_SEA_BLOB dist/sea-prep.blob \
 
 **Confirmed working, not just built:** piping a raw JSON-RPC line into the resulting
 `dist/sidecar-bin` directly (no `node` invocation) returned a correct `profiles.list` response.
-More importantly, after pointing `main.rs`'s default spawn path at it and rebuilding the shell,
-a real run under Xvfb showed `sidecar-bin` as a **direct child process of `tauri_poc_shell`** in
-the process tree (`pstree`), printing `sidecar: ready` on its inherited stderr - with no `node`
-process anywhere in the tree. The Rust shell never shells out to a system `node`; the "sidecar"
-is genuinely just another native-looking executable it spawns, which is exactly the shape
-`tauri.conf.json`'s `bundle.externalBin` wants for a real sidecar resource (not wired up to
-`externalBin` itself yet - see below).
 
 **The honest tradeoff this surfaces:** `dist/sidecar-bin` is **~119 MB**, because it embeds a
 full copy of the Node runtime (the `node` binary on this machine is ~123 MB; the SEA blob adds
@@ -211,6 +213,42 @@ Three sidecars (main process logic, bot, webdashboard - see "What this doesn't p
 this way, each embedding its own full Node copy, would start to erode the size advantage this
 whole migration is supposed to deliver - worth weighing against a single shared sidecar process
 serving all three roles instead of one SEA binary per role.
+
+### Wired into Tauri's real `externalBin` mechanism, not just spawned by path
+
+The SEA binary above was initially spawned with a hand-rolled `std::process::Command` pointed
+at a source-tree path - functional, but explicitly flagged as not the real packaging mechanism.
+That gap is now closed: `main.rs` spawns the sidecar through `tauri-plugin-shell`'s actual
+sidecar API (`app.shell().sidecar("sidecar-bin")`, added as a dependency), and
+`tauri.conf.json` declares `bundle.externalBin: ["binaries/sidecar-bin"]` - the real,
+documented mechanism for shipping a non-Rust helper binary inside a Tauri app. `build-sea.mjs`
+now also copies its output to `src-tauri/binaries/sidecar-bin-<target-triple>` (queried via
+`rustc -vV`'s `host:` line), the exact filename convention Tauri's build script requires.
+
+Rewriting the Rust side for this meant swapping the manual `Child`/`ChildStdin`/`BufReader`
+plumbing for the plugin's own `Command`/`CommandChild`/`CommandEvent` types - a different API
+shape (`CommandEvent::Stdout`/`Stderr`/`Error`/`Terminated` arrive over an async
+`tauri::async_runtime::Receiver` instead of a blocking `BufReader::lines()` iterator on a
+dedicated thread), but the same JSON-RPC protocol underneath, so `sidecar.ts` needed no changes
+at all.
+
+**Confirmed, not just compiled:** rebuilt and ran the app under Xvfb again with this change in
+place. `pstree` showed the same result as before - `sidecar-bin` as a direct child of
+`tauri_poc_shell`, no `node` anywhere - but this time resolved through the real `externalBin`
+path instead of a hardcoded one. The read path was re-confirmed via the "Got 0 profile(s)..."
+screenshot. The write + push path was re-confirmed the same way as the original write+push
+verification: a temporary `setTimeout`-triggered save (reverted before committing, same
+technique as the original "rendering dead end" investigation below), checked against the
+on-disk store file - the full real `saveProfile()` migration/defaulting pipeline ran and wrote
+correctly through this new transport, with no errors in the sidecar's inherited stderr.
+
+**Still open:** `SIDECAR_PATH` dev iteration now goes through `app.shell().command("node")`
+instead of a raw `Command::new("node")` - same idea, different API, not separately
+stress-tested beyond compiling and being structurally identical to the `sidecar()` path above.
+Nothing about `tauri build`'s actual bundling step (producing an installer/app bundle with the
+sidecar inside it, vs. `cargo build`'s dev-mode copy-from-`binaries/`) has been tried - this PoC
+still only runs via `cargo build` + the raw binary, never `cargo tauri build`. Code-signing and
+auto-update remain completely untouched.
 
 ## Findings from actually running this, not from reading docs
 
@@ -267,13 +305,14 @@ serving all three roles instead of one SEA binary per role.
   "entity changed" event. Still nothing about the other ~33 IPC modules specifically (group
   console, stats history, Discord bot status, ...), though they're the same two shapes
   (request/response or push) this PoC has now exercised at least once each.
-- **~~Nothing about packaging/bundling the sidecar~~ - Node SEA now proves the standalone-binary
-  half of this**, see "Sidecar packaging" above: the sidecar runs as one self-contained
-  executable with no system `node` dependency, spawned directly by the Rust shell. Still
-  outstanding: actually wiring that binary into Tauri's `bundle.externalBin` (so `tauri build`
-  produces and signs it as part of the app bundle, rather than it being built by a separate
-  script and found via a hardcoded relative path), code-signing, and auto-update. `SIDECAR_PATH`
-  is still a dev-time escape hatch for iterating without rebuilding the SEA binary each time.
+- **~~Nothing about packaging/bundling the sidecar~~ - both halves now proven**: the sidecar
+  runs as one self-contained executable with no system `node` dependency (Node SEA), *and* it's
+  spawned through Tauri's real `bundle.externalBin`/`tauri-plugin-shell` sidecar mechanism, not
+  a hardcoded path - see "Sidecar packaging" above, specifically "Wired into Tauri's real
+  `externalBin` mechanism". Still outstanding: `tauri build`'s actual bundling/installer step
+  (this PoC only runs via `cargo build` + the raw dev binary, never `cargo tauri build`),
+  code-signing, and auto-update. `SIDECAR_PATH` is still a dev-time escape hatch for iterating
+  without rebuilding the SEA binary each time.
 - **Nothing about the bot/webdashboard sidecars** mentioned in the original size estimate - this
   PoC only touches the "main process logic" sidecar.
 
