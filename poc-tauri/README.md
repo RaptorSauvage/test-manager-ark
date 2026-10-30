@@ -36,7 +36,7 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes twenty-six
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes twenty-eight
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
@@ -48,8 +48,10 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `dashboard_start`/`dashboard_stop`/`dashboard_status` (see "The web dashboard subsystem"
   below), `dialog_select_directory` - the first command with no sidecar involvement at all,
   calling `tauri-plugin-dialog` straight from Rust (see "A second real page" below), and, for
-  player management (see "A third real page" below), `player_roster_list`/`player_roster_kick`/
-  `player_bans_ban`/`player_whitelist_add` plus `window_focus` - the second command with no
+  player management (see "A third real page" and "A fourth real page" below),
+  `player_roster_list`/`player_roster_kick`/`player_bans_ban`/
+  `player_whitelist_list`/`player_whitelist_add`/`player_whitelist_remove` plus `window_focus` -
+  the second command with no
   sidecar involvement, backing `confirmAction()`'s real window-focus-loss workaround.
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
@@ -63,7 +65,8 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   **`src/main/lib/systemFolders.ts`**), `copyProfile`/`moveProfile` (from
   **`src/main/lib/profileCopyMove.ts`**, see "A second real page" below),
   `sendRconCommand`/`parsePlayerListWithIds` (from **`src/main/lib/rcon.ts`**),
-  `recordPlayerBan`/`listWhitelistedPlayers`/`recordWhitelistedPlayer` (from the same,
+  `recordPlayerBan`/`listWhitelistedPlayers`/`recordWhitelistedPlayer`/
+  `removeWhitelistedPlayerProfile` (from the same,
   already-imported **`src/main/store.ts`** - see "A third real page" below),
   `startDiscordBot`/`stopDiscordBot`/
   `getDiscordBotStatus` (from **`src/main/lib/discordBot.ts`**, see "The Discord bot subsystem"
@@ -111,8 +114,10 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   the real, unmodified `src/renderer/src/pages/ProfileManagementView.tsx` - see "A second real
   page" below. `frontend/player-roster.html` + `frontend/player-roster-entry.tsx` do the same
   for the real, unmodified `src/renderer/src/pages/PlayerRosterPanel.tsx` - see "A third real
-  page" below. `frontend/build-react.mjs` bundles all three entries with esbuild (JSX support,
-  the same `@shared/*` alias handling as the other build scripts).
+  page" below. `frontend/player-whitelist.html` + `frontend/player-whitelist-entry.tsx` do the
+  same for the real, unmodified `src/renderer/src/pages/PlayerWhitelistPanel.tsx` - see "A
+  fourth real page" below. `frontend/build-react.mjs` bundles all four entries with esbuild (JSX
+  support, the same `@shared/*` alias handling as the other build scripts).
 
 ## Running it
 
@@ -516,6 +521,12 @@ Windows/WebView2 run showed the push-status line update live on screen after cli
 button, exactly as expected - the gap this section describes was specific to this Linux
 sandbox's rendering, not the architecture.
 
+**Update - this conclusion doesn't generalize as broadly as stated above.** "A fourth real page,
+and a correction to 'A rendering dead end'" (further down) found a real post-write repaint in
+this same sandbox, using the same `setTimeout`-triggered approach step 3 above already tried.
+The exact difference between the two tests was never isolated - treat "no repaint after the
+first frame" as something to re-check with a fresh screenshot, not an assumption to build on.
+
 ### A second real page: write paths and a native dialog
 
 `ManagerLogView.tsx` above was deliberately the easy case: read-only, one subsystem already
@@ -860,6 +871,50 @@ unreachable UI row - and the real `config.json` gained the real new entry afterw
 the Rust-level plumbing specifically (not just the sidecar logic the standalone test already
 covered) reaches the real store write end to end.
 
+### A fourth real page, and a correction to "A rendering dead end"
+
+`PlayerWhitelistPanel.tsx` (179 lines) was picked specifically because it's the first page in
+this PoC whose real write-path buttons are reachable with **no** RCON, no live server, nothing
+this sandbox can't provide - `list`/`add`/`remove` are a plain centralized, tracking-only
+electron-store CRUD (see that file's own doc comment on why it never touches RCON, unlike
+`PlayerBansPanel.tsx`'s parallel page). That made it the first real opportunity all PoC to
+actually test *clicking through the real rendered form itself*, rather than falling back to a
+direct `invoke()` bypass the way every previous write-path proof in this PoC (including the one
+immediately above) ultimately had to.
+
+**`playerWhitelist.remove` (plus a `playerWhitelist.list` Tauri command the earlier round never
+needed) is the only new real-code surface this page needed** - `list`/`add` were already proven
+in "A third real page." `removeWhitelistedPlayerProfile()` is called exactly as the real handler
+calls it. Standalone, a full real CRUD cycle (list → add → list confirms it → remove → list
+confirms it's gone) ran cleanly against the SEA binary, no new ground beyond what the previous
+round had already shown for `add`.
+
+**A real correction to "A rendering dead end," found by accident while confirming this page's
+write path.** A temporary script (revert-before-commit, as always) drove the real, unmodified
+form through genuine DOM APIs: the native `HTMLInputElement` value setter + a dispatched `input`
+event (the standard way to make a controlled React input see a programmatic value change), a real
+`checkbox.click()`, and a real `button.click()` found by its exact text. The real `onClick`
+handler fired, called the real `window.api.playerWhitelist.add` -> real `invoke()` -> Rust ->
+sidecar -> `recordWhitelistedPlayer()` chain, and **the screen visibly updated to show it**: two
+screenshots taken a second apart showed the same real post-add state - the form's inputs cleared,
+the checkbox unchecked, and a real new row in the "Whitelisted (1)" table with the real entered
+id/name and a real timestamp. That directly contradicts "A rendering dead end"'s own
+conclusion - and that section had *already* ruled out input-simulation as the variable (its own
+step 3 used a `setTimeout`-triggered save, not a simulated click, and still saw no repaint), so
+"xdotool vs. a real DOM method" isn't a sufficient explanation either; this round's trigger used
+the same `setTimeout` + same-origin JS approach that round already tried and found didn't help.
+What's actually different between the two tests - this page vs. `index.html`, this round's exact
+Xvfb invocation vs. that one's, or something else entirely - hasn't been isolated, and this
+README won't guess at a root cause it didn't actually verify. What's now owed an honest update is
+the conclusion itself: "WebKitGTK never repaints after the first frame in this sandbox" is **not
+a safe assumption going forward** - it held for one specific test and was stated more broadly
+than the evidence supported. Future rounds of this PoC should screenshot again after a write,
+rather than assuming it is futile. (One unrelated cosmetic wrinkle in this round's screenshot:
+the new row's Name/Id cells rendered visually blank while `On`/`Since` didn't - likely a quirk in
+this PoC's own hand-written approximate CSS for this one page, not a defect in the real
+component, since the underlying data was independently confirmed correct via the real
+`config.json` file regardless.)
+
 ### Measured, on this Linux sandbox
 
 - Release binary (`src-tauri/target/release/tauri_poc_shell`): **11 MB**, vs. `node_modules/electron`'s 266 MB.
@@ -1092,20 +1147,22 @@ binary, not the dev build.
   broke; it bundled and ran correctly on the first try despite pulling in a large slice of
   `src/main/lib/` transitively. All three subsystems from the original size estimate (main
   process logic, bot, web dashboard) are now proven.
-- **~~Nothing about the real renderer~~ - proven for three real, unmodified pages across two
+- **~~Nothing about the real renderer~~ - proven for four real, unmodified pages across two
   subsystems, read-only, write-path, and live/polled.** See "A real React page", "A second real
-  page", and "A third real page" above: `ManagerLogView.tsx` (read-only), `ProfileManagementView.
-  tsx` (copy/move + a native dialog), and `PlayerRosterPanel.tsx` (RCON roster/kick/ban +
-  tracking-only whitelist, a different real subsystem entirely), all completely unmodified,
-  render correctly against a `window.api` shim built to the same surface the real preload already
-  exposes, backed by Tauri's `invoke`/`listen` instead of Electron's `contextBridge`. Confirmed
-  with real seeded/moved/written data through the real compiled app, screenshotted (including
-  catching and fixing a wrapper-only mount-order bug the second page's screenshot surfaced - see
-  "A second real page"). Still nothing about the rest of the real renderer - `App.tsx`'s
-  routing/layout, Context providers, or any of the other ~27 pages, each touching a different
-  (and in several cases much larger) slice of `window.api` than these three do - three pages
-  across two different subsystems confirm the *shape* of the port generalizes past the easiest
-  case, not that every page ports this cheaply.
+  page", "A third real page", and "A fourth real page" above: `ManagerLogView.tsx` (read-only),
+  `ProfileManagementView.tsx` (copy/move + a native dialog), `PlayerRosterPanel.tsx` (RCON
+  roster/kick/ban, a different real subsystem entirely), and `PlayerWhitelistPanel.tsx`
+  (tracking-only add/remove, no RCON), all completely unmodified, render correctly against a
+  `window.api` shim built to the same surface the real preload already exposes, backed by
+  Tauri's `invoke`/`listen` instead of Electron's `contextBridge`. Confirmed with real
+  seeded/moved/written data through the real compiled app, screenshotted (including catching and
+  fixing a wrapper-only mount-order bug the second page's screenshot surfaced - see "A second
+  real page" - and a real correction to this PoC's own earlier "rendering dead end" finding,
+  found while confirming the fourth page's write path - see "A fourth real page"). Still nothing
+  about the rest of the real renderer - `App.tsx`'s routing/layout, Context providers, or any of
+  the other ~26 pages, each touching a different (and in several cases much larger) slice of
+  `window.api` than these four do - four pages across two different subsystems confirm the
+  *shape* of the port generalizes past the easiest case, not that every page ports this cheaply.
 - **~~Nothing about native OS dialogs~~ - proven architecturally, not proven end-to-end in this
   sandbox.** See "A second real page" above: `dialog_select_directory` is wired correctly (the
   command registers, compiles, and calling it visibly does something - a real dialog attempt, not

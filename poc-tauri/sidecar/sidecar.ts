@@ -40,7 +40,8 @@ import {
   getRunningStartedAt,
   recordPlayerBan,
   listWhitelistedPlayers,
-  recordWhitelistedPlayer
+  recordWhitelistedPlayer,
+  removeWhitelistedPlayerProfile
 } from '../../src/main/store'
 import { sendRconCommand, parsePlayerListWithIds } from '../../src/main/lib/rcon'
 import { logManagerEvent, newTaskId, managerLogEvents, readManagerLog } from '../../src/main/lib/managerLog'
@@ -232,6 +233,10 @@ const methods: Record<string, (params: unknown) => unknown> = {
     return recordWhitelistedPlayer(playerId, playerName, profileId)
   },
   'playerWhitelist.list': () => listWhitelistedPlayers(),
+  'playerWhitelist.remove': (params) => {
+    const { profileId, playerId } = params as { profileId: string; playerId: string }
+    return removeWhitelistedPlayerProfile(playerId, profileId)
+  },
   // Real backlog read straight off a ShooterGame.log-shaped file - same function the desktop
   // Console tab and Web Dashboard both call on open/reconnect.
   'console.backlog': (params) => readLogBacklog((params as { installDir: string }).installDir),

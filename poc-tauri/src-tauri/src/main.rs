@@ -224,6 +224,11 @@ fn player_bans_ban(
 }
 
 #[tauri::command]
+fn player_whitelist_list(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("playerWhitelist.list", None)
+}
+
+#[tauri::command]
 fn player_whitelist_add(
     profile_id: String,
     player_id: String,
@@ -233,6 +238,18 @@ fn player_whitelist_add(
     sidecar.call(
         "playerWhitelist.add",
         Some(serde_json::json!({ "profileId": profile_id, "playerId": player_id, "playerName": player_name })),
+    )
+}
+
+#[tauri::command]
+fn player_whitelist_remove(
+    profile_id: String,
+    player_id: String,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call(
+        "playerWhitelist.remove",
+        Some(serde_json::json!({ "profileId": profile_id, "playerId": player_id })),
     )
 }
 
@@ -515,7 +532,9 @@ fn main() {
             player_roster_list,
             player_roster_kick,
             player_bans_ban,
+            player_whitelist_list,
             player_whitelist_add,
+            player_whitelist_remove,
             log_record,
             manager_log_get_all,
             server_start,
