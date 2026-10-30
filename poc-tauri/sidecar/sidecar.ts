@@ -57,13 +57,19 @@ import {
 } from '../../src/main/lib/serverProcess'
 import { doStartServer, doStopServer, doRestartServer, doKillServer, doUpdateServer } from '../../src/main/lib/serverActions'
 import { readLogBacklog, parseLogChunkWithDate, createLogEventCaches } from '../../src/main/lib/logEvents'
-import { openProfilesFolder } from '../../src/main/lib/systemFolders'
+import { openProfilesFolder, openServerConfigFolder, openServerSavedArksFolder, openServerSaveGamesFolder } from '../../src/main/lib/systemFolders'
 import { copyProfile, moveProfile } from '../../src/main/lib/profileCopyMove'
 import { startDiscordBot, stopDiscordBot, getDiscordBotStatus } from '../../src/main/lib/discordBot'
 import { applyWebDashboardSettings, stopWebDashboard, getWebDashboardStatus } from '../../src/main/lib/webDashboard'
 import { getSystemStaticInfo, getNetworkUsage } from '../../src/main/lib/systemStats'
+import { readStatsHistory } from '../../src/main/lib/statsHistory'
+import { getBackupScheduleStatus, applyBackupSchedule, registerBackupScheduleWatcher } from '../../src/main/lib/schedule'
+import { getInstalledBuildId } from '../../src/main/lib/steamcmd'
+import { getGameVersion, getCachedGameVersion, setCachedGameVersion } from '../../src/main/lib/serverVersion'
+import { getLatestBuildIdCache } from '../../src/main/lib/updateCheck'
 import { getSettings, saveSettings } from '../../src/main/store'
 import { send, resolveRustResponse } from './rpcToRust'
+import type { GameId } from '../../shared/games'
 import type { AppSettings, ServerProfile } from '../../shared/types'
 
 interface RpcRequest {
@@ -78,7 +84,19 @@ const methods: Record<string, (params: unknown) => unknown> = {
   // compile-time only), and this PoC is about proving the write path reaches the real
   // function and its real side effects (persisting to disk, emitting profileEvents), not
   // about adding input validation a real migration would still need to design properly.
-  'profiles.save': (params) => saveProfile(params as ServerProfile),
+  // Also calls the real applyBackupSchedule() right after saving, same as the real
+  // ipc/profiles.ts handler does - added this round (AnalyticsTab needs the Backup Status
+  // panel to reflect a schedule actually just turned on, not a stale pre-save one), after
+  // backup.getScheduleStatus below first came back permanently inactive and tracing it
+  // showed this exact gap: arming only happens on a profile save or a running-state
+  // transition (see lib/schedule.ts's own comments), neither of which this PoC's
+  // profiles.save touched until now.
+  'profiles.save': (params) => {
+    const profile = params as ServerProfile
+    const profiles = saveProfile(profile)
+    applyBackupSchedule(profile)
+    return profiles
+  },
   // Real, unmodified copyProfile()/moveProfile() from lib/profileCopyMove.ts - a write path
   // with a native dialog on the renderer side (ProfileManagementView.tsx's "Browse..." button,
   // see main.rs's dialog_select_directory) in front of it, unlike every read/write above. The
@@ -373,7 +391,75 @@ const methods: Record<string, (params: unknown) => unknown> = {
   // package (CPU model/core count, total RAM, link speed); getNetworkUsage samples
   // `os.networkInterfaces()` byte counters twice a second apart. Neither touches Electron.
   'systemStats.getStaticInfo': async () => getSystemStaticInfo(),
-  'systemStats.getNetworkUsage': async () => getNetworkUsage()
+  'systemStats.getNetworkUsage': async () => getNetworkUsage(),
+  // Real, unmodified subsystems AnalyticsTab.tsx pulls in - five more real files this PoC
+  // hadn't touched, none of them Electron-coupled.
+  // readStatsHistory reads the real JSONL file monitor.ts's recordStatSample (see "A fifth
+  // real page" above) already writes to every 5s while a server's statsEnabled and running -
+  // this is the read side of the same real subsystem, not a new one.
+  'statsHistory.get': async (params) => {
+    const { profileId, sinceMs, maxPoints } = params as { profileId: string; sinceMs: number | null; maxPoints?: number }
+    return readStatsHistory(profileId, sinceMs, maxPoints)
+  },
+  // getBackupScheduleStatus reads an in-memory armed-timer map that lib/schedule.ts's own
+  // `serverEvents.on('status', ...)` (registered as a side effect of importing the module
+  // above, same pattern as every other push-driven subsystem here) keeps in sync with the
+  // real server lifecycle - no explicit wiring needed beyond the import itself.
+  'backup.getScheduleStatus': (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    return getBackupScheduleStatus(profile)
+  },
+  // Mirrors the real ipc/serverProcess.ts handlers exactly (cache-then-live-read for game
+  // version, a direct manifest read for the installed build id - see that file's own comment
+  // on why the cache-check-first order matters for a page that polls this every few seconds).
+  'server.getInstalledBuildId': (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    return getInstalledBuildId(profile.installDir, profile.game)
+  },
+  'server.getGameVersion': async (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    const cached = getCachedGameVersion(profileId)
+    if (cached) return cached
+    const version = await getGameVersion(profile.installDir)
+    if (version) setCachedGameVersion(profileId, version)
+    return version
+  },
+  // Pure cache reads (lib/updateCheck.ts) - real, but nothing in this PoC ever arms the real
+  // background SteamCMD poller that would actually populate them, so these honestly return
+  // { buildId: null, checkedAt: null, error: null } rather than a stubbed-in fake value.
+  'steamcmd.getLatestBuildId': (params) => {
+    const { game, branch } = params as { game: GameId; branch?: string }
+    return getLatestBuildIdCache(game, branch)
+  },
+  // Real, unmodified lib/systemFolders.ts functions - the same shell.openPath round trip
+  // openProfilesFolder above already proved, just three more real call sites of it.
+  'system.openServerConfigFolder': async (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    await openServerConfigFolder(profile)
+    return { ok: true }
+  },
+  'system.openServerSavedArksFolder': async (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    await openServerSavedArksFolder(profile)
+    return { ok: true }
+  },
+  'system.openServerSaveGamesFolder': async (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    await openServerSaveGamesFolder(profile)
+    return { ok: true }
+  }
 }
 
 let stopConsoleWatch: (() => void) | null = null
@@ -401,6 +487,15 @@ serverEvents.on('status', (status) => send({ event: 'server-status', data: statu
 // app's main process would be (a fresh `cargo tauri` run, not a page reload), so "restart the
 // whole app" and "a new sidecar process starts" are the same event in this architecture.
 adoptPersistedProcesses(listProfiles(), getRunningPids(), getRunningStartedAt())
+
+// Real, unmodified registerBackupScheduleWatcher() - unlike profileEvents/managerLogEvents/
+// serverEvents above, lib/schedule.ts's own serverEvents.on('status', ...) subscription is
+// NOT a module-load side effect; it only happens once this function is actually called, the
+// same real index.ts startup-order requirement as adoptPersistedProcesses just above. Found
+// the hard way: importing getBackupScheduleStatus alone left it permanently reporting
+// { active: false }, even with a running server and a real cron schedule saved, because
+// nothing had ever subscribed it to real status transitions.
+registerBackupScheduleWatcher()
 
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', async (line) => {
