@@ -36,7 +36,7 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes twenty-one
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes twenty-six
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
@@ -46,8 +46,11 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `console_append_test_line` (test-only - see below), `folders_open_profiles`,
   `bot_start`/`bot_stop`/`bot_status` (see "The Discord bot subsystem" below),
   `dashboard_start`/`dashboard_stop`/`dashboard_status` (see "The web dashboard subsystem"
-  below), and `dialog_select_directory` - the first command with no sidecar involvement at all,
-  calling `tauri-plugin-dialog` straight from Rust (see "A second real page" below).
+  below), `dialog_select_directory` - the first command with no sidecar involvement at all,
+  calling `tauri-plugin-dialog` straight from Rust (see "A second real page" below), and, for
+  player management (see "A third real page" below), `player_roster_list`/`player_roster_kick`/
+  `player_bans_ban`/`player_whitelist_add` plus `window_focus` - the second command with no
+  sidecar involvement, backing `confirmAction()`'s real window-focus-loss workaround.
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -59,6 +62,9 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `createLogEventCaches` (from **`src/main/lib/logEvents.ts`**), `openProfilesFolder` (from
   **`src/main/lib/systemFolders.ts`**), `copyProfile`/`moveProfile` (from
   **`src/main/lib/profileCopyMove.ts`**, see "A second real page" below),
+  `sendRconCommand`/`parsePlayerListWithIds` (from **`src/main/lib/rcon.ts`**),
+  `recordPlayerBan`/`listWhitelistedPlayers`/`recordWhitelistedPlayer` (from the same,
+  already-imported **`src/main/store.ts`** - see "A third real page" below),
   `startDiscordBot`/`stopDiscordBot`/
   `getDiscordBotStatus` (from **`src/main/lib/discordBot.ts`**, see "The Discord bot subsystem"
   below), and `applyWebDashboardSettings`/`stopWebDashboard`/`getWebDashboardStatus` (from
@@ -103,8 +109,10 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `src/renderer/src/pages/ManagerLogView.tsx` - see "A real React page" below.
   `frontend/profile-management.html` + `frontend/profile-management-entry.tsx` do the same for
   the real, unmodified `src/renderer/src/pages/ProfileManagementView.tsx` - see "A second real
-  page" below. `frontend/build-react.mjs` bundles both entries with esbuild (JSX support, the
-  same `@shared/*` alias handling as the other build scripts).
+  page" below. `frontend/player-roster.html` + `frontend/player-roster-entry.tsx` do the same
+  for the real, unmodified `src/renderer/src/pages/PlayerRosterPanel.tsx` - see "A third real
+  page" below. `frontend/build-react.mjs` bundles all three entries with esbuild (JSX support,
+  the same `@shared/*` alias handling as the other build scripts).
 
 ## Running it
 
@@ -795,6 +803,63 @@ the marker flag through the real webview → `invoke()` → Rust → sidecar cha
 server's log file was confirmed, a few seconds after Start, to contain the real startup-complete
 line - end to end through the actual compiled app, not just the standalone sidecar test above.
 
+### A third real page, in a different subsystem: player management
+
+Every page ported so far has been about profiles (read-only logs, then copy/move). Player
+management is a genuinely different real domain - a live RCON-driven roster plus the Manager's
+own persisted ban/whitelist records - backed by three separate real IPC modules
+(`ipc/playerRoster.ts`/`playerBans.ts`/`playerWhitelist.ts`) this PoC had never touched.
+`PlayerRosterPanel.tsx` (198 lines) was picked specifically because it mixes both shapes in one
+page: `playerRoster.list`/`.kick` and `playerBans.ban` all gate on a real `sendRconCommand()` call
+succeeding first, while `playerWhitelist.add` is tracking-only and never touches RCON at all (see
+that file's own doc comment on why) - a real, fully successful write every time, next to three
+real, honestly-RCON-gated ones.
+
+**The port is the same thin-wrapper shape as every other subsystem in this PoC, applied to a
+third real file.** Four new sidecar RPC methods (`playerRoster.list`/`.kick`,
+`playerBans.ban`, `playerWhitelist.add`) each mirror their real `ipc/*.ts` handler's body exactly
+- same real functions (`sendRconCommand`, `parsePlayerListWithIds`, `recordPlayerBan`,
+`recordWhitelistedPlayer`, all imported unmodified), same order, same success/failure shape -
+and four matching `main.rs` commands. `confirmAction()` (the real, unmodified
+`lib/confirmAction.ts` every Kick/Ban/Whitelist-adjacent action in the real app calls before
+acting) needed one more real native command: `window.api.system.focusWindow()`, backing the real
+Electron/Windows focus-loss workaround (`lib/windowFocus.ts`'s `forceRefocus()`) - ported as
+`window_focus`, a Rust-only command with no sidecar involvement (same architectural class as
+`dialog_select_directory`: a window-handle operation, not business logic), replicating
+`forceRefocus()`'s own real minimize-then-unminimize-then-focus sequence via Tauri's window API
+rather than a no-op stub.
+
+**Confirmed standalone: a real successful write, and two real, honest RCON failures - not three
+stubs with different labels.** `playerWhitelist.add` against a seeded fake profile produced a
+real `recordWhitelistedPlayer()` write, confirmed independently by reading the real
+`config.json`'s own `playerWhitelist` array afterward (real `addedAt` timestamp, real
+`profileIds`). A follow-up `playerWhitelist.list` call confirmed it persisted. `playerRoster.list`
+against the same profile returned `[]` - not an error - exactly matching the real handler's own
+`result.ok && result.response ? parsePlayerListWithIds(result.response) : []`: RCON genuinely
+failed (no `ServerAdminPassword` on this fake profile, `rcon.ts` never opens a socket), and the
+real handler's own graceful-degradation shape swallowed that into an empty roster rather than
+throwing. `playerBans.ban` against the same profile, by contrast, *did* throw - its own real gate
+requires the RCON call to succeed before it ever reaches `recordPlayerBan()` - producing the exact
+same `"No ServerAdminPassword set in this server's GameUserSettings.ini"` message `stopServer()`'s
+RCON `SaveWorld` attempt already surfaced in an earlier round. Three different real outcomes from
+three real code paths, not one simulated behavior repeated three times.
+
+**Confirmed through the real compiled app too, including a real limitation worth stating
+honestly.** Seeded the same profile, pointed the main window at `player-roster.html` directly
+(the same technique as the other two real-page proofs) and screenshotted under Xvfb: the real,
+unmodified component rendered a real server card - "POC Test Server (0)" - "No players connected
+right now.", the exact same graceful-empty-roster outcome the standalone test already produced,
+now through the genuine webview → `invoke()` → Rust → sidecar chain. **The real Kick/Ban/Whitelist
+buttons themselves were not reachable this way** - they only render inside a live roster row,
+and a live roster row only exists when RCON actually returns connected players, which needs a
+real ARK server this sandbox fundamentally cannot provide (the same category of gap as the native
+folder picker's happy path). Rather than leave that corner unconfirmed, a temporary
+invoke-directly trigger (same revert-before-commit discipline as every other temporary trigger in
+this PoC) called `player_whitelist_add` straight through the real webview, bypassing the
+unreachable UI row - and the real `config.json` gained the real new entry afterward, confirming
+the Rust-level plumbing specifically (not just the sidecar logic the standalone test already
+covered) reaches the real store write end to end.
+
 ### Measured, on this Linux sandbox
 
 - Release binary (`src-tauri/target/release/tauri_poc_shell`): **11 MB**, vs. `node_modules/electron`'s 266 MB.
@@ -1027,18 +1092,20 @@ binary, not the dev build.
   broke; it bundled and ran correctly on the first try despite pulling in a large slice of
   `src/main/lib/` transitively. All three subsystems from the original size estimate (main
   process logic, bot, web dashboard) are now proven.
-- **~~Nothing about the real renderer~~ - proven for two real, unmodified pages, one read-only and
-  one a write path.** See "A real React page" and "A second real page" above:
-  `ManagerLogView.tsx` (read-only) and `ProfileManagementView.tsx` (copy/move + a native dialog),
-  both completely unmodified, render correctly against a `window.api` shim built to the same
-  surface the real preload already exposes, backed by Tauri's `invoke`/`listen` instead of
-  Electron's `contextBridge`. Confirmed with real seeded/moved data through the real compiled
-  app, screenshotted (including catching and fixing a wrapper-only mount-order bug the second
-  page's screenshot surfaced - see "A second real page"). Still nothing about the rest of the
-  real renderer - `App.tsx`'s routing/layout, Context providers, or any of the other ~28 pages,
-  each touching a different (and in several cases much larger) slice of `window.api` than these
-  two do - two pages confirm the *shape* of the port generalizes past the easiest case, not that
-  every page ports this cheaply.
+- **~~Nothing about the real renderer~~ - proven for three real, unmodified pages across two
+  subsystems, read-only, write-path, and live/polled.** See "A real React page", "A second real
+  page", and "A third real page" above: `ManagerLogView.tsx` (read-only), `ProfileManagementView.
+  tsx` (copy/move + a native dialog), and `PlayerRosterPanel.tsx` (RCON roster/kick/ban +
+  tracking-only whitelist, a different real subsystem entirely), all completely unmodified,
+  render correctly against a `window.api` shim built to the same surface the real preload already
+  exposes, backed by Tauri's `invoke`/`listen` instead of Electron's `contextBridge`. Confirmed
+  with real seeded/moved/written data through the real compiled app, screenshotted (including
+  catching and fixing a wrapper-only mount-order bug the second page's screenshot surfaced - see
+  "A second real page"). Still nothing about the rest of the real renderer - `App.tsx`'s
+  routing/layout, Context providers, or any of the other ~27 pages, each touching a different
+  (and in several cases much larger) slice of `window.api` than these three do - three pages
+  across two different subsystems confirm the *shape* of the port generalizes past the easiest
+  case, not that every page ports this cheaply.
 - **~~Nothing about native OS dialogs~~ - proven architecturally, not proven end-to-end in this
   sandbox.** See "A second real page" above: `dialog_select_directory` is wired correctly (the
   command registers, compiles, and calling it visibly does something - a real dialog attempt, not
@@ -1093,6 +1160,20 @@ binary, not the dev build.
   having the fixture create the log file immediately and append the marker only after a delay,
   matching a real server's own shape (log already exists and is growing before that line
   appears).
+- **~~Nothing about player management~~ - proven, a different real subsystem from everything
+  above, with one real, honestly-stated UI-reachability gap.** See "A third real page" above:
+  `PlayerRosterPanel.tsx`, completely unmodified, renders a real server card against real data -
+  `playerRoster.list` gracefully returning an empty roster, exactly matching the real handler's
+  own RCON-failure fallback, not a stub. A real, fully successful write path (`playerWhitelist.
+  add`, tracking-only, no RCON) was confirmed both standalone and through the real app (the real
+  `config.json`'s `playerWhitelist` array gaining a real entry). Two more real, honestly-RCON-
+  gated paths (`playerRoster.kick`, `playerBans.ban`) were confirmed standalone only, throwing
+  the real `"No ServerAdminPassword..."` error `stopServer()` already surfaced - their real UI
+  buttons only render inside a live roster row, which needs a real RCON-speaking server this
+  sandbox can't provide, so that specific button-click path stays unconfirmed, same category of
+  gap as the native folder picker's happy path. Also added the real `window_focus` command
+  (`confirmAction()`'s focus-loss workaround), the second command in this PoC needing no sidecar
+  at all.
 
 ## Where the real Electron coupling lives
 

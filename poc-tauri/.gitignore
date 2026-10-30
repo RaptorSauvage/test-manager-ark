@@ -5,3 +5,4 @@ sidecar/dist/
 sidecar/bot/
 frontend/manager-log.js
 frontend/profile-management.js
+frontend/player-roster.js

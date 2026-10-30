@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..', '..')
 
-const pages = ['manager-log', 'profile-management']
+const pages = ['manager-log', 'profile-management', 'player-roster']
 
 for (const page of pages) {
   await build({

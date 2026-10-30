@@ -168,6 +168,74 @@ fn dialog_select_directory(app_handle: tauri::AppHandle) -> Option<String> {
         .map(|p| p.to_string())
 }
 
+/// Backs the real, unmodified confirmAction()'s `window.api.system.focusWindow()` call - the
+/// other main-process/window-level-only command in this PoC alongside dialog_select_directory,
+/// with no sidecar involvement, because the real forceRefocus() (lib/windowFocus.ts) is exactly
+/// that in the real app too: a window-handle operation, not business logic. Real native calls,
+/// not a no-op stub: minimize()+unminimize()+set_focus(), the same real-OS-level-foreground-
+/// transition sequence forceRefocus() uses (a plain focus() alone wasn't enough on a real
+/// Electron/Windows repro - see that function's own comment).
+#[tauri::command]
+fn window_focus(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let window = app_handle
+        .get_webview_window("main")
+        .ok_or_else(|| "no main window".to_string())?;
+    // Mirrors forceRefocus()'s own branching exactly: already-minimized just needs unminimize(),
+    // anything else goes through a real minimize()-then-unminimize() transition first - the part
+    // that actually matters, per that function's own comment (focus() alone wasn't enough).
+    if window.is_minimized().map_err(|e| e.to_string())? {
+        window.unminimize().map_err(|e| e.to_string())?;
+    } else {
+        window.minimize().map_err(|e| e.to_string())?;
+        window.unminimize().map_err(|e| e.to_string())?;
+    }
+    window.set_focus().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn player_roster_list(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("playerRoster.list", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn player_roster_kick(
+    profile_id: String,
+    player_id: String,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call(
+        "playerRoster.kick",
+        Some(serde_json::json!({ "profileId": profile_id, "playerId": player_id })),
+    )
+}
+
+#[tauri::command]
+fn player_bans_ban(
+    profile_id: String,
+    player_id: String,
+    player_name: String,
+    reason: String,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call(
+        "playerBans.ban",
+        Some(serde_json::json!({ "profileId": profile_id, "playerId": player_id, "playerName": player_name, "reason": reason })),
+    )
+}
+
+#[tauri::command]
+fn player_whitelist_add(
+    profile_id: String,
+    player_id: String,
+    player_name: String,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call(
+        "playerWhitelist.add",
+        Some(serde_json::json!({ "profileId": profile_id, "playerId": player_id, "playerName": player_name })),
+    )
+}
+
 #[tauri::command]
 fn log_record(message: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
     sidecar.call("log.record", Some(Value::String(message)))
@@ -443,6 +511,11 @@ fn main() {
             profiles_copy,
             profiles_move,
             dialog_select_directory,
+            window_focus,
+            player_roster_list,
+            player_roster_kick,
+            player_bans_ban,
+            player_whitelist_add,
             log_record,
             manager_log_get_all,
             server_start,

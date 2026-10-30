@@ -32,7 +32,17 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
-import { listProfiles, saveProfile, profileEvents, getRunningPids, getRunningStartedAt } from '../../src/main/store'
+import {
+  listProfiles,
+  saveProfile,
+  profileEvents,
+  getRunningPids,
+  getRunningStartedAt,
+  recordPlayerBan,
+  listWhitelistedPlayers,
+  recordWhitelistedPlayer
+} from '../../src/main/store'
+import { sendRconCommand, parsePlayerListWithIds } from '../../src/main/lib/rcon'
 import { logManagerEvent, newTaskId, managerLogEvents, readManagerLog } from '../../src/main/lib/managerLog'
 import {
   watchLogFile,
@@ -178,6 +188,50 @@ const methods: Record<string, (params: unknown) => unknown> = {
     fs.chmodSync(exePath, 0o755)
     return { ok: true, exePath }
   },
+  // Real, unmodified player-management subsystem - a different real domain from everything
+  // above (RCON-driven live roster + kick, plus the Manager's own persisted ban/whitelist
+  // records), backing the real PlayerRosterPanel.tsx - see "A third real page" below. Each
+  // method's body mirrors the real ipc/playerRoster.ts/playerBans.ts/playerWhitelist.ts
+  // handlers exactly (same real functions, same order, same success/failure shape) rather than
+  // just calling the underlying lib functions some other way.
+  'playerRoster.list': async (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    const result = await sendRconCommand(profile, 'ListPlayers')
+    return result.ok && result.response ? parsePlayerListWithIds(result.response) : []
+  },
+  'playerRoster.kick': async (params) => {
+    const { profileId, playerId } = params as { profileId: string; playerId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    const result = await sendRconCommand(profile, `KickPlayer ${playerId}`)
+    if (!result.ok) throw new Error(result.error ?? 'KickPlayer failed')
+    return { ok: true }
+  },
+  // playerBans.ban only writes the real local ban record (recordPlayerBan) once the real RCON
+  // BanPlayer call itself succeeds - same real gate the desktop/web dashboard both go through,
+  // not a shortcut that writes the record unconditionally.
+  'playerBans.ban': async (params) => {
+    const { profileId, playerId, playerName, reason } = params as {
+      profileId: string
+      playerId: string
+      playerName: string
+      reason: string
+    }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    const result = await sendRconCommand(profile, `BanPlayer ${playerId}`)
+    if (!result.ok) throw new Error(result.error ?? 'BanPlayer failed')
+    return recordPlayerBan(playerId, playerName, reason, profileId)
+  },
+  // Tracking-only, unlike playerBans.ban - no RCON call at all, straight to the real
+  // electron-store-backed write, same as playerWhitelist.ts's own doc comment says.
+  'playerWhitelist.add': (params) => {
+    const { profileId, playerId, playerName } = params as { profileId: string; playerId: string; playerName: string }
+    return recordWhitelistedPlayer(playerId, playerName, profileId)
+  },
+  'playerWhitelist.list': () => listWhitelistedPlayers(),
   // Real backlog read straight off a ShooterGame.log-shaped file - same function the desktop
   // Console tab and Web Dashboard both call on open/reconnect.
   'console.backlog': (params) => readLogBacklog((params as { installDir: string }).installDir),
