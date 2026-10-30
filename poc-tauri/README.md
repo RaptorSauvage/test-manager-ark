@@ -665,8 +665,7 @@ rendering dead end," here checking the real OS process list instead of the files
 SIGTERM) - end to end through the real webview → `invoke()` → Rust → sidecar → `startServer()`/
 `stopServer()` round trip, not just the standalone sidecar test above.
 
-**What this doesn't prove yet, beyond "no real game server binary":** the staggered spawn queue
-(`reserveSpawnSlot`, only exercised when multiple servers start within the stagger window),
+**What this doesn't prove yet, beyond "no real game server binary":**
 `watchLogFileForMarker`'s "fully started" detection (the fake script never writes a matching log
 line, so status never advances past `starting` to `running` - a real finding, not a bug: without
 a real server actually logging its own startup, there's no honest way to simulate that
@@ -674,8 +673,25 @@ transition), the Windows-only `.bat`-launch path for ARK: Survival Evolved (`lau
 untested - this sandbox is Linux and the test profile used `ark-ascended`, which never takes that
 branch), and no UI page calls any of this yet (`Dashboard.tsx`, 758 lines, is where the real
 Start/Stop/Restart buttons live - out of scope for this round, which proved the RPC layer first,
-the same order bot/web-dashboard were proven in before any UI). `adoptPersistedProcesses` itself
-- initially on this list too - is now proven; see directly below.
+the same order bot/web-dashboard were proven in before any UI). `adoptPersistedProcesses` and the
+staggered spawn queue - both initially on this list too - are now proven; see directly below.
+
+**The staggered multi-server spawn queue (`reserveSpawnSlot`), confirmed with two separate
+profiles and zero code changes - this is existing, already-wired behavior, not a new port.**
+Seeded two profiles with their own fake executables and called `server.start` on each back to
+back (real `serverAutoStartStaggerSeconds` default: 10s, left unmodified rather than overridden
+for a faster test). The first server's response carried a real pid immediately, same as every
+single-server test above. The second's response, by contrast, had **no `pid` field at all** -
+exactly `startServer()`'s `queuedStatus` shape (`{ profileId, state: 'starting', startedAt }`,
+nothing else) - and only one `server-status` push event fired at request time instead of two,
+confirming it took the queued branch, not the immediate-spawn one. A second push event for the
+queued server then arrived on its own, unprompted, ~10 seconds later, this time carrying a real
+pid - `doSpawn()` actually running via the `setTimeout` callback `startServer()`'s queuing branch
+schedules. Checked against the real OS process list to rule out a fluke in the push-event timing
+alone: `ps -eo pid,lstart` showed the first server's process started at `13:52:47` and the
+second's at `13:52:57` - a genuine 10-second gap between two real OS-level spawns, driven by the
+*first* server's own `startedAt` (the "global, not per-profile" queue the function's own comment
+describes), not by when the second request happened to arrive.
 
 ### Surviving a crash: reattaching to a server the Manager lost track of
 
@@ -997,12 +1013,12 @@ binary, not the dev build.
   disappearing, not a screenshot). Found one real property of the unmodified shutdown code along
   the way: `stopServer()`'s "force kill" is a single SIGTERM with a 10-second give-up, not an
   escalation to SIGKILL - a process that ignored SIGTERM would be reported `stopped` without
-  actually being dead. Still unconfirmed: the staggered multi-server spawn queue, the
-  `watchLogFileForMarker`-based "fully started" detection (never reachable without a real server
-  actually logging its own startup), the Windows-only ARK: Survival Evolved `.bat`-launch path,
-  and no UI page calls any of this yet - `Dashboard.tsx` (758 lines, the real Start/Stop/Restart
-  buttons) is out of scope for this round, which proved the RPC layer first, same order
-  bot/web-dashboard were proven in before any UI touched them.
+  actually being dead. Still unconfirmed: the `watchLogFileForMarker`-based "fully started"
+  detection (never reachable without a real server actually logging its own startup), the
+  Windows-only ARK: Survival Evolved `.bat`-launch path, and no UI page calls any of this yet -
+  `Dashboard.tsx` (758 lines, the real Start/Stop/Restart buttons) is out of scope for this
+  round, which proved the RPC layer first, same order bot/web-dashboard were proven in before
+  any UI touched them.
 - **~~Nothing about surviving a Manager crash~~ - proven, with a genuine two-separate-app-process
   test, not a simulation of one.** See "Surviving a crash" above: `adoptPersistedProcesses()` is
   now wired into `sidecar.ts` at the same point the real `index.ts` calls it, and confirmed to
@@ -1012,6 +1028,13 @@ binary, not the dev build.
   completely fresh). This also exercised `waitForExitOrKill`'s "adopted process" code branch for
   the first time in this PoC (`killByPid` instead of `child.kill()`) - a genuinely different
   shutdown path than the one `startServer()`/`stopServer()` within a single session uses.
+- **~~Nothing about the multi-server spawn queue~~ - proven, with zero code changes.** See "The
+  staggered multi-server spawn queue" above: starting two different profiles back to back showed
+  the real, unmodified `reserveSpawnSlot()`/`queuedStatus` behavior - the second server's own
+  `server.start` response carried no pid at all, and its real OS process didn't spawn until the
+  real default 10-second stagger window had elapsed, confirmed against both the push-event timing
+  and the real OS process list's own start timestamps (10 seconds apart, driven by the *first*
+  server's `startedAt`, matching the function's own "global, not per-profile" queue design).
 
 ## Where the real Electron coupling lives
 
