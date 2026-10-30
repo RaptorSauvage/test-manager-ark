@@ -130,6 +130,13 @@ fn log_record(message: String, sidecar: tauri::State<SidecarHandle>) -> Result<V
     sidecar.call("log.record", Some(Value::String(message)))
 }
 
+/// Backs the real, unmodified ManagerLogView.tsx's window.api.managerLog.getLog() - see "A real
+/// React page" in README.md.
+#[tauri::command]
+fn manager_log_get_all(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("log.getAll", None)
+}
+
 #[tauri::command]
 fn console_backlog(install_dir: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
     sidecar.call("console.backlog", Some(serde_json::json!({ "installDir": install_dir })))
@@ -350,6 +357,7 @@ fn main() {
             profiles_list,
             profiles_save,
             log_record,
+            manager_log_get_all,
             console_backlog,
             console_watch,
             console_append_test_line,

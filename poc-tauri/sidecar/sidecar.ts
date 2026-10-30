@@ -33,7 +33,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
 import { listProfiles, saveProfile, profileEvents } from '../../src/main/store'
-import { logManagerEvent, newTaskId, managerLogEvents } from '../../src/main/lib/managerLog'
+import { logManagerEvent, newTaskId, managerLogEvents, readManagerLog } from '../../src/main/lib/managerLog'
 import { watchLogFile, getLogFilePath } from '../../src/main/lib/serverProcess'
 import { readLogBacklog, parseLogChunkWithDate, createLogEventCaches } from '../../src/main/lib/logEvents'
 import { openProfilesFolder } from '../../src/main/lib/systemFolders'
@@ -67,6 +67,10 @@ const methods: Record<string, (params: unknown) => unknown> = {
     await logManagerEvent(newTaskId('poc'), 'Tauri PoC', message, 'info')
     return { ok: true }
   },
+  // Real, unmodified readManagerLog() - backs the real ManagerLogView.tsx's window.api.
+  // managerLog.getLog() (see "A real React page" below), reading the exact same JSONL file
+  // log.record/managerLogEvents already write to.
+  'log.getAll': () => readManagerLog(),
   // Real backlog read straight off a ShooterGame.log-shaped file - same function the desktop
   // Console tab and Web Dashboard both call on open/reconnect.
   'console.backlog': (params) => readLogBacklog((params as { installDir: string }).installDir),

@@ -22,8 +22,12 @@ way, see "The Discord bot subsystem" below. `dashboard_start`/`dashboard_stop`/
 `dashboard_status` prove the third and last subsystem from the original size estimate - the web
 dashboard (`lib/webDashboard.ts`) - confirmed with a real HTTP client against the real embedded
 dashboard page and the real `/api/servers` endpoint, see "The web dashboard subsystem" below.
-Window chrome, the menu bar, the tray, and the other ~34 IPC modules in `src/main/ipc/` are
-still deliberately out of scope.
+Everything above is business logic; `manager-log.html` answers a different question - does the
+real **UI** run against this architecture - by mounting the real, unmodified
+`src/renderer/src/pages/ManagerLogView.tsx` against a `window.api` shim backed by Tauri instead
+of Electron's `contextBridge`, see "A real React page" below. Window chrome, the menu bar, the
+tray, the rest of the real renderer (`App.tsx`, routing, ~30 other pages), and the other ~34 IPC
+modules in `src/main/ipc/` are still deliberately out of scope.
 
 ## What's here
 
@@ -32,13 +36,13 @@ still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes thirteen
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes fourteen
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `log_record` (takes
-  a message string), `console_backlog`/`console_watch` (both take an `installDir`),
-  `console_append_test_line` (test-only - see below), `folders_open_profiles`,
-  `bot_start`/`bot_stop`/`bot_status` (see "The Discord bot subsystem" below), and
-  `dashboard_start`/`dashboard_stop`/`dashboard_status` (see "The web dashboard subsystem"
-  below).
+  a message string), `manager_log_get_all` (see "A real React page" below),
+  `console_backlog`/`console_watch` (both take an `installDir`), `console_append_test_line`
+  (test-only - see below), `folders_open_profiles`, `bot_start`/`bot_stop`/`bot_status` (see
+  "The Discord bot subsystem" below), and `dashboard_start`/`dashboard_stop`/`dashboard_status`
+  (see "The web dashboard subsystem" below).
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -79,7 +83,12 @@ still deliberately out of scope.
   `invoke('dashboard_stop')`/`invoke('dashboard_status')`; `listen('profiles-changed',
   ...)`/`listen('manager-log-entry', ...)`/`listen('console-line', ...)` handlers update their
   own section the moment each push event arrives - independent of any button, proving the
-  live-update path for all three.
+  live-update path for all three. `frontend/manager-log.html` +
+  `frontend/manager-log-entry.tsx` are different: not hand-written for this PoC at all, beyond a
+  tiny `window.api` shim - they mount the real, unmodified
+  `src/renderer/src/pages/ManagerLogView.tsx` - see "A real React page" below.
+  `frontend/build-react.mjs` bundles that entry with esbuild (JSX support, the same `@shared/*`
+  alias handling as the other build scripts).
 
 ## Running it
 
@@ -88,6 +97,7 @@ node sidecar/build-bot.mjs      # bundles sidecar/bot/index.js (needed before th
 node sidecar/build-bot-sea.mjs  # optional: packages that as sidecar/bot/bot-bin (fixes SEA + fork(), see below)
 node sidecar/build.mjs          # bundles sidecar/dist/sidecar.cjs
 node sidecar/build-sea.mjs      # builds dist/sidecar-bin AND copies it into src-tauri/binaries/
+node frontend/build-react.mjs   # bundles manager-log.js (needed before opening manager-log.html)
 cd src-tauri && cargo build     # or: cargo tauri dev, if the Tauri CLI is installed
 ./target/debug/tauri_poc_shell
 ```
@@ -396,6 +406,58 @@ group console, stats history, the file browser), bundled and ran correctly the f
 tried, serving real HTTP responses through every layer of this PoC's architecture (Rust shell →
 sidecar → real app code → real HTTP server → real HTTP client) with zero new workarounds needed.
 
+### A real React page
+
+Every proof above is about the application logic underneath the UI - `frontend/index.html` has
+always been a bare, hand-written page, not the real renderer, standing in for the question "does
+the architecture carry a real call correctly," not "does the real UI work against it." This is
+the first time that second question gets a real answer: can an actual, unmodified page from
+`src/renderer/src/` run against a Tauri `window.api` shim instead of Electron's
+`contextBridge`-exposed one?
+
+**Picked `ManagerLogView.tsx`** (`src/renderer/src/pages/`, 146 lines) deliberately: it's small
+and self-contained (no imports beyond React and a shared type), and it corresponds exactly to a
+subsystem this PoC had already proven at the RPC layer (`log.record`/`manager-log-entry`), so
+porting it tests the UI layer specifically, not a new backend capability bundled in with it. It
+calls exactly two methods - `window.api.managerLog.getLog()` and
+`window.api.managerLog.onLogChanged(callback)` - everything else in the file (its own grouping
+logic, its own date/time formatting, its own JSX, its own CSS class names) is real, unmodified
+production code.
+
+**The port is almost entirely on the Rust/sidecar side, not the component.** `sidecar.ts` gained
+one line (`'log.getAll': () => readManagerLog()`, the real, already-imported-from-the-same-file
+function backing the real preload's `managerLogGet` IPC handler) and `main.rs` one matching
+`manager_log_get_all` command. `poc-tauri/frontend/manager-log-entry.tsx` (new) defines a
+`window.api` object with exactly the two methods `ManagerLogView.tsx` calls - `getLog` forwards
+to `invoke('manager_log_get_all')`, `onLogChanged` forwards to
+`listen('manager-log-entry', ...)` - then imports the real component unmodified and mounts it
+with `createRoot`. `poc-tauri/frontend/build-react.mjs` bundles that entry with esbuild
+(`jsx: 'automatic'`, the same `@shared/*` alias handling as the other build scripts) into
+`manager-log.js`, served by Tauri as a second page (`manager-log.html`) alongside `index.html` -
+`frontendDist` is a whole directory, so this needed no `tauri.conf.json` changes at all.
+
+**Confirmed with real data, not an empty state.** Seeded a real entry into the real
+`manager.jsonl` first (piping a `log.record` call directly into the SEA sidecar binary,
+standalone), then pointed the app's main window at `manager-log.html` directly (a temporary
+`tauri.conf.json` window `url` override, reverted immediately after) and screenshotted the
+result under Xvfb. The real component rendered the real seeded entry correctly - its own
+"Manager Log" header, its own description paragraph, its own task-grouping with the real
+`taskLabel` ("Tauri PoC") and the exact seeded message text - all through `getLog()`'s real
+`invoke` → Rust → sidecar → `readManagerLog()` → the real JSONL file round trip. This is a
+first-frame screenshot (see "A rendering dead end" below for why that's the reliable one in this
+sandbox), so it directly confirms the read path; the live-push path (`onLogChanged`) wasn't
+separately re-screenshotted, since it's structurally identical to the already-proven
+`listen('manager-log-entry', ...)` call `index.html`'s own vanilla-JS listener already uses -
+the new code here is purely the `window.api` wrapper around it, not the event delivery itself.
+
+This doesn't generalize to "the whole real UI runs on Tauri" by itself - one small, read-heavy
+page is not the real `App.tsx` with its routing, Context providers, and ~30 other pages each
+touching a different slice of `window.api`. What it does show is the actual *shape* of that
+port: no change to the real component, a `window.api` object built to the same surface the real
+preload already defines, and the Rust/sidecar side doing the same kind of one-line RPC-method
+addition this whole PoC has done repeatedly elsewhere - not a rewrite of the UI layer, just
+another thin transport swap underneath it.
+
 ### A rendering dead end (and why it doesn't undercut the result above)
 
 Confirming the write+push path visually turned into its own small investigation. In order:
@@ -662,6 +724,15 @@ binary, not the dev build.
   broke; it bundled and ran correctly on the first try despite pulling in a large slice of
   `src/main/lib/` transitively. All three subsystems from the original size estimate (main
   process logic, bot, web dashboard) are now proven.
+- **~~Nothing about the real renderer~~ - proven for one real, unmodified page.** See "A real
+  React page" above: `src/renderer/src/pages/ManagerLogView.tsx`, completely unmodified, renders
+  correctly against a `window.api` shim built to the same surface the real preload already
+  exposes, backed by Tauri's `invoke`/`listen` instead of Electron's `contextBridge`. Confirmed
+  with real seeded data through the real compiled app, screenshotted. Still nothing about the
+  rest of the real renderer - `App.tsx`'s routing/layout, Context providers, or any of the other
+  ~30 pages, each touching a different (and in several cases much larger) slice of `window.api`
+  than this one read-mostly page does - one page proves the *shape* of the port, not that every
+  page ports this cheaply.
 
 ## Where the real Electron coupling lives
 

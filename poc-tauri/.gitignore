@@ -3,3 +3,4 @@ src-tauri/gen/
 src-tauri/binaries/
 sidecar/dist/
 sidecar/bot/
+frontend/manager-log.js
