@@ -7,3 +7,4 @@ frontend/manager-log.js
 frontend/profile-management.js
 frontend/player-roster.js
 frontend/player-whitelist.js
+frontend/dashboard.js

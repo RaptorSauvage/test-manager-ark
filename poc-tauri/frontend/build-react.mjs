@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..', '..')
 
-const pages = ['manager-log', 'profile-management', 'player-roster', 'player-whitelist']
+const pages = ['manager-log', 'profile-management', 'player-roster', 'player-whitelist', 'dashboard']
 
 for (const page of pages) {
   await build({
@@ -23,6 +23,14 @@ for (const page of pages) {
     // Mirrors tsconfig.web.json's "@shared/*" path alias - esbuild doesn't read tsconfig path
     // mappings on its own (same finding as sidecar/build.mjs's own comment on this).
     alias: { '@shared': path.join(root, 'shared') },
+    // Dashboard.tsx is the first real page that imports a binary asset directly (icons/*.png,
+    // via its own code and HardwareStatsBar.tsx/lib/gameIcons.ts) - esbuild has no default
+    // loader for that (unlike the real app's own Vite build, which handles it transparently),
+    // so a plain `esbuild` call fails outright on the first .png import. `dataurl` inlines each
+    // icon as a base64 data URI right into this page's own bundled .js - keeps every page a
+    // single self-contained file, matching how every other page here is already served, rather
+    // than introducing a second kind of build output (loose files) just for this one page.
+    loader: { '.png': 'dataurl' },
     logLevel: 'info'
   })
   console.log(`React page bundled -> ${page}.js`)

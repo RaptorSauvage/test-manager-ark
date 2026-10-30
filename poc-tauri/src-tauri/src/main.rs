@@ -276,20 +276,58 @@ fn server_start(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Res
 }
 
 #[tauri::command]
-fn server_stop(
-    profile_id: String,
-    grace_ms: Option<i64>,
-    sidecar: tauri::State<SidecarHandle>,
-) -> Result<Value, String> {
-    sidecar.call(
-        "server.stop",
-        Some(serde_json::json!({ "profileId": profile_id, "graceMs": grace_ms })),
-    )
+fn server_stop(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("server.stop", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn server_restart(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("server.restart", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn server_kill(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("server.kill", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn server_update(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("server.update", Some(serde_json::json!({ "profileId": profile_id })))
 }
 
 #[tauri::command]
 fn server_status(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
     sidecar.call("server.status", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn settings_get(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("settings.get", None)
+}
+
+#[tauri::command]
+fn settings_save(settings: Value, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("settings.save", Some(settings))
+}
+
+#[tauri::command]
+fn profiles_delete(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("profiles.delete", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn profiles_reorder(ordered_ids: Vec<String>, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("profiles.reorder", Some(serde_json::json!({ "orderedIds": ordered_ids })))
+}
+
+#[tauri::command]
+fn system_stats_get_static_info(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("systemStats.getStaticInfo", None)
+}
+
+#[tauri::command]
+fn system_stats_get_network_usage(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("systemStats.getNetworkUsage", None)
 }
 
 /// Test-only - see sidecar.ts's `server.installTestExecutable` comment.
@@ -539,8 +577,17 @@ fn main() {
             manager_log_get_all,
             server_start,
             server_stop,
+            server_restart,
+            server_kill,
+            server_update,
             server_status,
             server_install_test_executable,
+            settings_get,
+            settings_save,
+            profiles_delete,
+            profiles_reorder,
+            system_stats_get_static_info,
+            system_stats_get_network_usage,
             console_backlog,
             console_watch,
             console_append_test_line,

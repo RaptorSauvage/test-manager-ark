@@ -36,13 +36,14 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes twenty-eight
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes thirty-seven
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
-  `server_start`/`server_stop`/`server_status` (take a `profileId`, `server_stop` also an
-  optional `graceMs`) and `server_install_test_executable` (test-only - see "The actual headline
-  case" below), `console_backlog`/`console_watch` (both take an `installDir`),
+  `server_start`/`server_stop`/`server_restart`/`server_kill`/`server_update`/`server_status`
+  (all take a `profileId` - see "A fifth real page" below for `restart`/`kill`/`update`) and
+  `server_install_test_executable` (test-only - see "The actual headline case" below),
+  `console_backlog`/`console_watch` (both take an `installDir`),
   `console_append_test_line` (test-only - see below), `folders_open_profiles`,
   `bot_start`/`bot_stop`/`bot_status` (see "The Discord bot subsystem" below),
   `dashboard_start`/`dashboard_stop`/`dashboard_status` (see "The web dashboard subsystem"
@@ -52,7 +53,9 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `player_roster_list`/`player_roster_kick`/`player_bans_ban`/
   `player_whitelist_list`/`player_whitelist_add`/`player_whitelist_remove` plus `window_focus` -
   the second command with no
-  sidecar involvement, backing `confirmAction()`'s real window-focus-loss workaround.
+  sidecar involvement, backing `confirmAction()`'s real window-focus-loss workaround. The fifth
+  real page (see below) added `settings_get`/`settings_save`, `profiles_delete`/
+  `profiles_reorder`, and `system_stats_get_static_info`/`system_stats_get_network_usage`.
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -527,6 +530,22 @@ this same sandbox, using the same `setTimeout`-triggered approach step 3 above a
 The exact difference between the two tests was never isolated - treat "no repaint after the
 first frame" as something to re-check with a fresh screenshot, not an assumption to build on.
 
+**Second update - the real root cause, found in "A fifth real page" (further down): this was
+never a WebKitGTK rendering limit at all.** `src-tauri/capabilities/` didn't exist - no
+capabilities file had ever been created in this PoC - and Tauri 2 silently rejects
+`window.__TAURI__.event.listen(...)` (the exact call this section's `pushStatusEl` handler and
+every other live-update page in this PoC depends on) without one:
+`event.listen not allowed. Permissions associated with this command: core:event:allow-listen,
+core:event:default`. The write genuinely landed (confirmed on disk, as step 5 above found), but
+the push event was never delivered to this page's JS at all - not "delivered but unpainted." This
+also fully reconciles the apparent contradiction with the update above: "A fourth real page"'s
+repaint-that-worked was triggered from a click handler's own `invoke()` response, never through
+`listen()` - a completely different, never-blocked code path - which is exactly why it worked
+while this section's `listen()`-dependent push did not. Fixed with
+`capabilities/default.json`; re-running this exact scenario (a real click on "Save a test
+profile") after the fix shows the live update correctly, on screen, in this same sandbox. See "A
+fifth real page" for the full investigation.
+
 ### A second real page: write paths and a native dialog
 
 `ManagerLogView.tsx` above was deliberately the easy case: read-only, one subsystem already
@@ -909,7 +928,20 @@ README won't guess at a root cause it didn't actually verify. What's now owed an
 the conclusion itself: "WebKitGTK never repaints after the first frame in this sandbox" is **not
 a safe assumption going forward** - it held for one specific test and was stated more broadly
 than the evidence supported. Future rounds of this PoC should screenshot again after a write,
-rather than assuming it is futile. (One unrelated cosmetic wrinkle in this round's screenshot:
+rather than assuming it is futile.
+
+**Later update - the actual difference, found in "A fifth real page" (further down): this page's
+write path never went through `listen()` at all.** `playerWhitelist.add`'s result reaches the
+screen through the click handler's own `window.api.playerWhitelist.add(...)` → `invoke()` →
+`.then(setState)` chain - an ordinary request/response round trip, same as any other button click
+in this PoC. `index.html`'s `pushStatusEl` update in "A rendering dead end," by contrast, only
+ever happens inside a `listen('profiles-changed', ...)` callback - a push event delivered
+unprompted, outside any click. Those are genuinely different code paths, and only the second one
+was broken: `src-tauri/capabilities/` didn't exist anywhere in this PoC until that round, so
+every `event.listen()` call (and only `event.listen()` - plain `invoke()` calls were never
+ACL-gated) was being silently rejected. This page's repaint always worked because it was never
+exercising the broken path in the first place - not because WebKitGTK's repaint behavior was
+inconsistent between the two tests. (One unrelated cosmetic wrinkle in this round's screenshot:
 the new row's Name/Id cells rendered visually blank while `On`/`Since` didn't - likely a quirk in
 this PoC's own hand-written approximate CSS for this one page, not a defect in the real
 component, since the underlying data was independently confirmed correct via the real
@@ -1059,6 +1091,113 @@ the read path (screenshot, `Got 0 profile(s)...`) and the write + full migration
 `~/.tauri-poc-bober-manager/config.json`) were re-verified against the actually-installed
 binary, not the dev build.
 
+### A fifth real page: wiring the real Start/Stop/Restart/Kill/Update buttons
+
+"The actual headline case" above proved `startServer()`/`stopServer()`/`getStatus()` at the RPC
+layer but left a gap open on purpose: "no UI page calls any of this yet." This round closes it -
+`Dashboard.tsx` (`src/renderer/src/pages/`, 758 lines), completely unmodified, is now mounted for
+real and its Start/Stop/Restart/Kill/Update buttons drive a real OS process through a click, not
+through the RPC layer directly.
+
+**The orchestration layer underneath is a different, more complete real file than the one "The
+actual headline case" called directly.** The real desktop IPC handler
+(`ipc/serverProcess.ts`) doesn't call `serverProcess.ts`'s `startServer()`/`stopServer()`
+directly either - it goes through `lib/serverActions.ts`'s `doStartServer`/`doStopServer`/
+`doRestartServer`/`doKillServer`/`doUpdateServer`, which wrap those calls with the CPU/RAM/
+player-list monitor (`lib/monitor.ts`), crash-watch cancellation (`lib/crashWatch.ts`), and a
+Manager activity-log entry for every action. None of that was exercised by the earlier round at
+all - `sidecar.ts`'s `server.start`/`server.stop` now call `doStartServer`/`doStopServer`
+instead, and gained `server.restart`/`server.kill`/`server.update` alongside them, all real,
+unmodified functions, mirroring the exact call chain the real `ipc/serverProcess.ts` handler
+uses. `doUpdateServer` calls the real SteamCMD `updateServer()`, which fails fast and honestly
+("Set the SteamCMD path in Settings before updating.") with no real SteamCMD in this sandbox -
+the same category of honestly-gated path as the RCON-dependent player-management calls.
+
+**Confirmed standalone first, including a real subsystem this PoC had never touched: the CPU/RAM
+monitor.** Piped JSON-RPC directly into the SEA binary: `server.start` on a stand-in executable
+with the real startup-complete marker (same fixture as "A server that actually finishes
+starting") produced the real `starting` → `running` transition, and ~5 seconds later - the
+monitor's own 5-second self-rescheduling tick - a real `server-status` push arrived with
+`cpu`/`memoryMB`/`memoryPercent` populated from a genuine `pidusage` read of the spawned PID, and
+`players: []` from `listPlayers()`'s real RCON-failure fallback (no RCON server exists here
+either). `server.restart`/`server.kill` were confirmed the same way, including a correctly
+guarded `server.update` rejection ("Stop the server before updating it." while running, the real
+SteamCMD-path error once stopped).
+
+**`Dashboard.tsx` itself takes `profiles`/`statuses`/`maps`/`staticInfo`/`installedById`/
+`gameVersionById`/`refreshInstalled` as plain props** - `App.tsx` owns and lifts all of that so
+it survives Dashboard's own unmount/remount on every server-detail visit (see its own doc
+comments). `dashboard-entry.tsx`'s wrapper stands in for that slice of `App.tsx` specifically:
+`installedById`/`gameVersionById`/`refreshInstalled` are left empty/no-op (they only affect the
+Update button's label and a version string, not the actual action), and the "+ Add Profile"
+wizard stays out of scope (same native-folder-picker gap as "A second real page"). `maps` is a
+one-entry stand-in, not real `maps.json` data. `staticInfo` and `HardwareStatsBar`'s network
+figures are real, though - pulled through two new commands (`system_stats_get_static_info`/
+`system_stats_get_network_usage`) backing the real, previously-untouched `lib/systemStats.ts`
+(a fourth subsystem from the original Electron-coupling survey below, confirmed sidecar-portable
+like the other three).
+
+**esbuild has no default loader for the binary assets this page is the first to import.**
+`Dashboard.tsx`/`HardwareStatsBar.tsx`/`lib/gameIcons.ts` import `.png` icons directly - no
+earlier page in this PoC did - and a plain `esbuild` build failed outright with `No loader is
+configured for ".png" files`, something the real app's own Vite build handles transparently.
+Fixed in `build-react.mjs` with `loader: { '.png': 'dataurl' }`, inlining each icon as a base64
+data URI in the page's own bundled `.js` rather than introducing a second kind of build output
+(loose files) for one page.
+
+**A real gap found and fixed in the wrapper, not the real code: `useServerStatuses`.** A first
+version of `dashboard-entry.tsx` hand-rolled its own `statuses` state from nothing but the
+`server-status` push listener - and a server adopted from a still-alive previous run (see
+"Surviving a crash") showed as permanently "stopped" even though the real process was running.
+Root cause: `adoptPersistedProcesses()` emits its one-time `running` status at sidecar startup,
+well before the webview has finished loading and attached any listener - a push with no replay,
+missed by construction. The real `App.tsx` doesn't have this bug because it never relies on the
+push alone: `lib/useServerStatuses.ts` (32 lines) also pulls `window.api.server.status(id)` once
+per profile on mount. Swapping in that real, unmodified hook (adding `server.status`/
+`onStatusChanged` to the `window.api` shim) fixed it - confirmed by killing just the Tauri app
+process (not the server, which survives detached - see "Surviving a crash"), relaunching, and
+screenshotting a freshly-opened window that correctly showed "running" with the real uptime
+immediately, no push required.
+
+**Confirmed end to end through the real compiled app: a real click spawns and kills a real OS
+process.** Seeded a profile and the real stand-in executable (with a startup marker) into the
+same `~/.tauri-poc-bober-manager/config.json` this PoC's own standalone sidecar tests and the
+real packaged app both read (same data directory, same file - `electronShim.ts`'s
+`POC_USER_DATA`), then launched the real compiled app under Xvfb with a temporary auto-click
+script (reverted before committing - see "A rendering dead end" below for why a real
+`element.click()`, not `xdotool`, is this PoC's established technique). The real Start button's
+`onClick` → `window.api.server.start` → `invoke('server_start')` → the real `doStartServer` chain
+produced a real OS process, confirmed via the actual process list (`ps aux`), with the card
+correctly showing `running`, the real uptime, and real `cpu`/`memoryMB` figures a few seconds
+later via the monitor's own push. The real Stop button, clicked on a separately re-launched app
+instance that re-adopted the still-running process, correctly showed `stopping` immediately and
+then `stopped` ~15 seconds later (the real `stopServer()` default `graceMs`, with no RCON to
+respond to `SaveWorld`/`DoExit`) - confirmed by the process actually disappearing from `ps aux`
+at that point, not just the badge changing.
+
+**Found and fixed a gap in the PoC's own Tauri setup, not in the real app: no `capabilities/*.json`
+file existed anywhere in `src-tauri/`, at all, until this round.** Debugging why the real Stop
+button's `server-status` push (see above) never visibly updated the UI - initially suspected to
+be the same WebKitGTK repaint question as "A rendering dead end" below - a bare
+`window.__TAURI__.event.listen(...)` call, written directly into `dashboard.html` with its
+promise's resolution/rejection made visible in a plain `<div>` (bypassing React entirely, to rule
+out a repaint problem specifically), came back **rejected**: `event.listen not allowed.
+Permissions associated with this command: core:event:allow-listen, core:event:default`. Tauri 2's
+permission system denies every core-plugin-exposed JS API - `event.listen` among them - unless a
+capability file explicitly grants it; this PoC had never created one. Custom `#[tauri::command]`
+functions (every `invoke(...)` call this whole PoC has made) are **not** ACL-gated the same way,
+which is exactly why none of them ever surfaced this: `profiles_list`, `server_start`, all of it,
+worked from the very first round regardless. `listen()` is the one JS-visible API this PoC uses
+that goes through a plugin, not a custom command - and it was being silently rejected the entire
+time. Fixed with one new file, `src-tauri/capabilities/default.json`, granting `core:default`/
+`core:event:default`/`core:window:default` to the `main` window. Confirmed the fix is real, not
+just locally plausible, by re-running the *exact* scenario "A rendering dead end" originally
+documented as unrepaintable - `index.html`'s own `listen('profiles-changed', ...)` handler,
+triggered by a real click on "Save a test profile" - and this time the page visibly updated live:
+"Live update received via 'profiles-changed' push event (2 profile(s)) - not from a button
+click." See the correction note added to that section below; this explains the original finding
+far better than a WebKitGTK compositing limit does.
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1099,6 +1238,20 @@ binary, not the dev build.
   `@shared/*` → `shared/*` a second time in `build.mjs`, which could drift from the real one. A
   real migration bundling more of `src/main/lib/` would hit this on the first file that uses
   the alias, not something specific to these two files.
+- **esbuild has no default loader for binary assets either - same root cause as the alias issue
+  above, different file type.** `Dashboard.tsx`'s own `.png` icon imports (the first page in this
+  PoC to import one) failed outright with `No loader is configured for ".png" files`, since
+  esbuild, unlike the real app's Vite build, doesn't infer one. Fixed with
+  `loader: { '.png': 'dataurl' }` in `build-react.mjs`. See "A fifth real page" above.
+- **Tauri 2's permission system silently blocks `event.listen()` with no `capabilities/*.json`
+  file at all - and this PoC had never created one, in any round.** Every `invoke('custom_command')`
+  call worked regardless (app-defined commands aren't ACL-gated), which is exactly why this went
+  unnoticed for five rounds: nothing ever surfaced an error, the push events just never arrived.
+  Mistaken at first for a WebKitGTK rendering limitation (see "A rendering dead end"'s original
+  write-up) until a bare `listen()` call's own rejected promise was actually inspected. Fixed with
+  one `capabilities/default.json` file granting `core:default`/`core:event:default`/
+  `core:window:default` to the main window. See "A fifth real page" above for the full
+  investigation and the retroactive re-confirmation against the original failing scenario.
 
 ## What this doesn't prove yet
 
@@ -1186,9 +1339,11 @@ binary, not the dev build.
   the way: `stopServer()`'s "force kill" is a single SIGTERM with a 10-second give-up, not an
   escalation to SIGKILL - a process that ignored SIGTERM would be reported `stopped` without
   actually being dead. Still unconfirmed: the Windows-only ARK: Survival Evolved `.bat`-launch
-  path, and no UI page calls any of this yet - `Dashboard.tsx` (758 lines, the real
-  Start/Stop/Restart buttons) is out of scope for this round, which proved the RPC layer first,
-  same order bot/web-dashboard were proven in before any UI touched them.
+  path. ~~No UI page calls any of this yet~~ - closed in "A fifth real page" below: the real
+  `Dashboard.tsx` Start/Stop/Restart/Kill/Update buttons now drive this exact RPC layer (through
+  the more complete `lib/serverActions.ts` orchestration, not `serverProcess.ts` directly - see
+  that section), confirmed with a real click producing a real spawned/killed OS process through
+  the actual compiled app, not just the RPC layer in isolation.
 - **~~Nothing about surviving a Manager crash~~ - proven, with a genuine two-separate-app-process
   test, not a simulation of one.** See "Surviving a crash" above: `adoptPersistedProcesses()` is
   now wired into `sidecar.ts` at the same point the real `index.ts` calls it, and confirmed to
@@ -1231,6 +1386,21 @@ binary, not the dev build.
   gap as the native folder picker's happy path. Also added the real `window_focus` command
   (`confirmAction()`'s focus-loss workaround), the second command in this PoC needing no sidecar
   at all.
+- **~~Nothing about the real Start/Stop/Restart/Kill/Update buttons, or live push events actually
+  reaching any webview~~ - both proven, and a PoC-wide bug fixed along the way.** See "A fifth
+  real page" above: a real click on the real `Dashboard.tsx` buttons now drives a real OS process
+  through `lib/serverActions.ts`'s orchestration layer (CPU/RAM monitor included, via a genuine
+  `pidusage` reading), confirmed end to end including the process actually dying on screen and in
+  `ps aux` together. Finding this required discovering that `src-tauri/capabilities/` had never
+  existed in this PoC at all - every `window.__TAURI__.event.listen(...)` call, in every page,
+  in every prior round, was being silently rejected by Tauri's permission system, which "A
+  rendering dead end"'s original investigation mistook for a WebKitGTK compositing limit. Fixed
+  with one `capabilities/default.json` file; re-confirmed the fix against that section's own
+  original scenario, not just this round's new one. Still unconfirmed: the Windows-only `.bat`
+  launch path (same gap as above), and the rest of `Dashboard.tsx`'s own surface this round left
+  out on purpose - the "+ Add Profile" wizard (native dialogs, same gap as "A second real page"),
+  drag-to-reorder, and per-group bulk actions all exist in the real component and were never
+  clicked.
 
 ## Where the real Electron coupling lives
 

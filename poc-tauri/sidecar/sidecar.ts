@@ -35,6 +35,8 @@ import readline from 'node:readline'
 import {
   listProfiles,
   saveProfile,
+  deleteProfile,
+  setProfileOrder,
   profileEvents,
   getRunningPids,
   getRunningStartedAt,
@@ -48,21 +50,21 @@ import { logManagerEvent, newTaskId, managerLogEvents, readManagerLog } from '..
 import {
   watchLogFile,
   getLogFilePath,
-  startServer,
-  stopServer,
   getStatus,
   serverEvents,
   getExecutablePath,
   adoptPersistedProcesses
 } from '../../src/main/lib/serverProcess'
+import { doStartServer, doStopServer, doRestartServer, doKillServer, doUpdateServer } from '../../src/main/lib/serverActions'
 import { readLogBacklog, parseLogChunkWithDate, createLogEventCaches } from '../../src/main/lib/logEvents'
 import { openProfilesFolder } from '../../src/main/lib/systemFolders'
 import { copyProfile, moveProfile } from '../../src/main/lib/profileCopyMove'
 import { startDiscordBot, stopDiscordBot, getDiscordBotStatus } from '../../src/main/lib/discordBot'
 import { applyWebDashboardSettings, stopWebDashboard, getWebDashboardStatus } from '../../src/main/lib/webDashboard'
+import { getSystemStaticInfo, getNetworkUsage } from '../../src/main/lib/systemStats'
 import { getSettings, saveSettings } from '../../src/main/store'
 import { send, resolveRustResponse } from './rpcToRust'
-import type { ServerProfile } from '../../shared/types'
+import type { AppSettings, ServerProfile } from '../../shared/types'
 
 interface RpcRequest {
   id: number
@@ -126,33 +128,57 @@ const methods: Record<string, (params: unknown) => unknown> = {
   // managerLog.getLog() (see "A real React page" below), reading the exact same JSONL file
   // log.record/managerLogEvents already write to.
   'log.getAll': () => readManagerLog(),
-  // Real, unmodified startServer()/stopServer()/getStatus() from serverProcess.ts - the actual
-  // headline capability of a "server manager", untouched by this PoC until now. startServer
-  // really does `child_process.spawn(getExecutablePath(profile), buildLaunchArgs(profile), ...)`
-  // - getExecutablePath resolves platform-specific (def.executableLinux on this Linux sandbox,
-  // e.g. "ShooterGame/Binaries/Linux/ArkAscendedServer" under the profile's installDir), so
-  // there's no Electron coupling to shim here at all - this was always going to run as a plain
-  // OS process spawn no matter what hosts it. No real ARK/Minecraft dedicated server binary
-  // exists in this sandbox, so standalone testing points a profile's installDir at a small
-  // long-running stand-in script placed at that exact resolved path (same spirit as
-  // console.appendTestLine simulating a game server's log output below) - proves the real
-  // spawn/PID-tracking/status/graceful-stop-then-force-kill round trip without needing the real
-  // game server binary, the same way the bot subsystem's fork() bug was found without a real
-  // Discord bot token. stopServer's real shutdown sequence (RCON SaveWorld -> DoExit -> grace
-  // period -> force kill) runs unmodified too; the stand-in script never responds to RCON, so
-  // every real stop exercises the force-kill fallback path - see README for what this does and
-  // doesn't confirm.
+  // Real, unmodified doStartServer()/doStopServer()/doRestartServer()/doKillServer()/
+  // doUpdateServer() from lib/serverActions.ts - the actual orchestration layer every real
+  // caller (the desktop IPC handlers in ipc/serverProcess.ts, and the web dashboard's own HTTP
+  // API) goes through, not serverProcess.ts's own startServer/stopServer directly (an earlier
+  // round of this PoC called those directly before this file existed in this PoC's scope -
+  // serverActions.ts wraps them with the monitor (lib/monitor.ts: CPU/RAM/player-list polling
+  // on a self-rescheduling timer), crash-watch cancellation (lib/crashWatch.ts), and a Manager
+  // activity-log entry for every action - none of which is Electron-coupled either, so the
+  // whole chain ports with zero changes). getExecutablePath resolves platform-specific
+  // (def.executableLinux on this Linux sandbox, e.g.
+  // "ShooterGame/Binaries/Linux/ArkAscendedServer" under the profile's installDir). No real
+  // ARK/Minecraft dedicated server binary exists in this sandbox, so standalone testing points
+  // a profile's installDir at a small long-running stand-in script placed at that exact
+  // resolved path (same spirit as console.appendTestLine simulating a game server's log output
+  // below) - proves the real spawn/PID-tracking/status/graceful-stop-then-force-kill round trip
+  // without needing the real game server binary. stopServer's real shutdown sequence (RCON
+  // SaveWorld -> DoExit -> grace period -> force kill) runs unmodified too; the stand-in script
+  // never responds to RCON, so every real stop exercises the force-kill fallback path - see
+  // README for what this does and doesn't confirm. doUpdateServer calls the real SteamCMD
+  // updateServer(), which fails fast and honestly ("Set the SteamCMD path in Settings before
+  // updating.") with no real SteamCMD installed in this sandbox - the same category of
+  // honestly-gated path as the RCON-dependent player-management calls below.
   'server.start': (params) => {
     const { profileId } = params as { profileId: string }
     const profile = listProfiles().find((p) => p.id === profileId)
     if (!profile) throw new Error(`Unknown profile: ${profileId}`)
-    return startServer(profile)
+    return doStartServer(profile)
   },
   'server.stop': async (params) => {
-    const { profileId, graceMs } = params as { profileId: string; graceMs?: number }
+    const { profileId } = params as { profileId: string }
     const profile = listProfiles().find((p) => p.id === profileId)
     if (!profile) throw new Error(`Unknown profile: ${profileId}`)
-    return stopServer(profile, graceMs)
+    return doStopServer(profile)
+  },
+  'server.restart': async (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    return doRestartServer(profile)
+  },
+  'server.kill': (params) => {
+    const { profileId } = params as { profileId: string }
+    if (!listProfiles().some((p) => p.id === profileId)) throw new Error(`Unknown profile: ${profileId}`)
+    return doKillServer(profileId)
+  },
+  'server.update': async (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    await doUpdateServer(profile)
+    return { ok: true }
   },
   'server.status': (params) => getStatus((params as { profileId: string }).profileId),
   // Test-only: writes a small long-running shell script to the real, unmodified
@@ -330,7 +356,24 @@ const methods: Record<string, (params: unknown) => unknown> = {
     stopWebDashboard()
     return { ok: true }
   },
-  'dashboard.status': () => getWebDashboardStatus()
+  'dashboard.status': () => getWebDashboardStatus(),
+  // Real, unmodified store.ts settings accessors - already used internally above (bot.start/
+  // dashboard.start) but not exposed to the frontend directly until Dashboard.tsx needed them
+  // (it reads/writes registeredGroups/groupOrder/collapsedGroups through these).
+  'settings.get': () => getSettings(),
+  'settings.save': (params) => saveSettings(params as AppSettings),
+  // Real, unmodified deleteProfile()/setProfileOrder() from store.ts - the two profiles.*
+  // writes profiles.save/.copy/.move above didn't need (delete, and the dashboard's own
+  // drag-to-reorder).
+  'profiles.delete': (params) => deleteProfile((params as { profileId: string }).profileId),
+  'profiles.reorder': (params) => setProfileOrder((params as { orderedIds: string[] }).orderedIds),
+  // Real, unmodified lib/systemStats.ts - a fourth subsystem from the original "what's
+  // Electron-coupled" survey (see "Where the real Electron coupling lives" below), pulled in
+  // by HardwareStatsBar.tsx. getSystemStaticInfo shells out via the `systeminformation`
+  // package (CPU model/core count, total RAM, link speed); getNetworkUsage samples
+  // `os.networkInterfaces()` byte counters twice a second apart. Neither touches Electron.
+  'systemStats.getStaticInfo': async () => getSystemStaticInfo(),
+  'systemStats.getNetworkUsage': async () => getNetworkUsage()
 }
 
 let stopConsoleWatch: (() => void) | null = null

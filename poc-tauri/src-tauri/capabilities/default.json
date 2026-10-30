@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "PoC capability - no capabilities file existed in this PoC until the Dashboard.tsx round found event.listen() silently rejected with no ACL grant at all. Every invoke('custom_command') call in every prior round worked fine without this file (app-defined commands aren't ACL-gated), which is exactly why this was never caught until a round that actually needed a live push event to repaint something visibly checkable.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:default"
+  ]
+}
