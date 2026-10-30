@@ -32,7 +32,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
-import { listProfiles, saveProfile, profileEvents } from '../../src/main/store'
+import { listProfiles, saveProfile, profileEvents, getRunningPids, getRunningStartedAt } from '../../src/main/store'
 import { logManagerEvent, newTaskId, managerLogEvents, readManagerLog } from '../../src/main/lib/managerLog'
 import {
   watchLogFile,
@@ -41,7 +41,8 @@ import {
   stopServer,
   getStatus,
   serverEvents,
-  getExecutablePath
+  getExecutablePath,
+  adoptPersistedProcesses
 } from '../../src/main/lib/serverProcess'
 import { readLogBacklog, parseLogChunkWithDate, createLogEventCaches } from '../../src/main/lib/logEvents'
 import { openProfilesFolder } from '../../src/main/lib/systemFolders'
@@ -268,6 +269,18 @@ managerLogEvents.on('log', (entry) => send({ event: 'manager-log-entry', data: e
 // ('starting'/'running'/'stopping'/'stopped'/'error'), not just what a one-off status poll
 // would show.
 serverEvents.on('status', (status) => send({ event: 'server-status', data: status }))
+
+// Real, unmodified adoptPersistedProcesses() - the real app's own answer to "what happens to a
+// running server if the Manager itself crashes or restarts": startServer() launches it detached
+// and unref'd (see serverProcess.ts) specifically so the OS process survives that, and this is
+// what re-attaches to it afterward instead of losing track of it (or letting a second instance
+// start on the same ports). The real index.ts calls this once at app startup, after registering
+// its own watchers (so an adopted server's status broadcast still reaches them) and before
+// anything else touches `running` - mirrored here in the same order, once per sidecar process
+// lifetime, which is the right analog: a new sidecar process is spawned exactly when the real
+// app's main process would be (a fresh `cargo tauri` run, not a page reload), so "restart the
+// whole app" and "a new sidecar process starts" are the same event in this architecture.
+adoptPersistedProcesses(listProfiles(), getRunningPids(), getRunningStartedAt())
 
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', async (line) => {

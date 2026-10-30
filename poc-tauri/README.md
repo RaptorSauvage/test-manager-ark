@@ -52,8 +52,10 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
   `src/main/lib/managerLog.ts`**, `watchLogFile`/`getLogFilePath`/`startServer`/`stopServer`/
-  `getStatus`/`serverEvents`/`getExecutablePath` (from **`src/main/lib/serverProcess.ts`**, 980
-  lines - see "The actual headline case" below) plus `readLogBacklog`/`parseLogChunkWithDate`/
+  `getStatus`/`serverEvents`/`getExecutablePath`/`adoptPersistedProcesses` (from
+  **`src/main/lib/serverProcess.ts`**, 980 lines - see "The actual headline case" and "Surviving
+  a crash" below), `getRunningPids`/`getRunningStartedAt` (from **the same, already-imported
+  `src/main/store.ts`**) plus `readLogBacklog`/`parseLogChunkWithDate`/
   `createLogEventCaches` (from **`src/main/lib/logEvents.ts`**), `openProfilesFolder` (from
   **`src/main/lib/systemFolders.ts`**), `copyProfile`/`moveProfile` (from
   **`src/main/lib/profileCopyMove.ts`**, see "A second real page" below),
@@ -663,17 +665,71 @@ rendering dead end," here checking the real OS process list instead of the files
 SIGTERM) - end to end through the real webview → `invoke()` → Rust → sidecar → `startServer()`/
 `stopServer()` round trip, not just the standalone sidecar test above.
 
-**What this doesn't prove yet, beyond "no real game server binary":** `adoptPersistedProcesses`
-(reattaching to a still-alive pid from a previous session on startup - not wired into this PoC's
-`main()` at all), the staggered spawn queue (`reserveSpawnSlot`, only exercised when multiple
-servers start within the stagger window), `watchLogFileForMarker`'s "fully started" detection
-(the fake script never writes a matching log line, so status never advances past `starting` to
-`running` - a real finding, not a bug: without a real server actually logging its own startup,
-there's no honest way to simulate that transition), the Windows-only `.bat`-launch path for ARK:
-Survival Evolved (`launchViaBatch`, untested - this sandbox is Linux and the test profile used
-`ark-ascended`, which never takes that branch), and no UI page calls any of this yet (`Dashboard.tsx`,
-758 lines, is where the real Start/Stop/Restart buttons live - out of scope for this round, which
-proved the RPC layer first, the same order bot/web-dashboard were proven in before any UI).
+**What this doesn't prove yet, beyond "no real game server binary":** the staggered spawn queue
+(`reserveSpawnSlot`, only exercised when multiple servers start within the stagger window),
+`watchLogFileForMarker`'s "fully started" detection (the fake script never writes a matching log
+line, so status never advances past `starting` to `running` - a real finding, not a bug: without
+a real server actually logging its own startup, there's no honest way to simulate that
+transition), the Windows-only `.bat`-launch path for ARK: Survival Evolved (`launchViaBatch`,
+untested - this sandbox is Linux and the test profile used `ark-ascended`, which never takes that
+branch), and no UI page calls any of this yet (`Dashboard.tsx`, 758 lines, is where the real
+Start/Stop/Restart buttons live - out of scope for this round, which proved the RPC layer first,
+the same order bot/web-dashboard were proven in before any UI). `adoptPersistedProcesses` itself
+- initially on this list too - is now proven; see directly below.
+
+### Surviving a crash: reattaching to a server the Manager lost track of
+
+A running ARK/Minecraft server process is deliberately `detached`/`.unref()`'d from the Manager
+in `startServer()` specifically so it survives the Manager itself crashing or being force-closed
+- a real reliability promise of the app, not an incidental detail. `adoptPersistedProcesses()`
+(`serverProcess.ts`) is the other half of that promise: on startup, the real app re-attaches to
+any pid it finds still alive in the persisted store, so a relaunch doesn't "forget" about a
+server that's still running and let a user accidentally start a second instance on the same
+ports. This was flagged as unproven in every earlier round of this PoC - closing it here.
+
+**Wired in exactly where the real app wires it, adapted for this architecture's equivalent of "app
+startup."** The real `index.ts` calls `adoptPersistedProcesses(profiles, getRunningPids(),
+getRunningStartedAt())` once, after registering its own status watchers and before anything else
+touches server state. `sidecar.ts` now calls the same real, unmodified function the same way, at
+sidecar module load - the right analog, since a new sidecar process only ever starts exactly when
+the real app's main process would (a fresh launch, not a page reload or webview reconnect), so
+"the Manager restarts" and "a new sidecar process starts" are the same event here.
+`getRunningPids`/`getRunningStartedAt` are the real, already-imported-from-the-same-file
+`store.ts` functions - no new real-code imports needed beyond `adoptPersistedProcesses` itself.
+
+**Confirmed standalone: start a server, crash the sidecar (not a graceful stop), confirm the real
+process survives, start a brand new sidecar, confirm it reports `running` with zero calls to
+`server.start`.** Session A seeded a profile, installed the fake executable, and called
+`server.start` (real pid, confirmed as before). Session A was then killed with `SIGKILL` - not
+`server.stop`, an actual simulated crash - and the fake server process was confirmed still alive
+on the real OS process list immediately after. A brand new sidecar process (session B) was then
+started against the same persisted store: **before even printing its own "ready" line**, it
+emitted a `server-status` push event showing `state: "running"` with the exact same real pid -
+`adoptPersistedProcesses` running synchronously at module load, exactly mirroring the real app's
+own startup-order comment. A plain `server.status` call confirmed the same thing on request.
+Calling `server.stop` from session B then exercised the *other* real code path this proof reaches
+that every earlier round hadn't: `waitForExitOrKill`'s "adopted process" branch (`entry.process
+=== null`, since this sidecar never spawned it - it only inherited the pid), which polls
+`isPidAlive`/calls `killByPid` instead of using `child.kill()`/a `child.once('exit', ...)`
+listener. That path ran correctly too: the real OS process was confirmed gone afterward.
+Reproduced identically against both the dev bundle (`node dist/sidecar.cjs`) and the real SEA
+binary (`dist/sidecar-bin`) - not just one packaging mode.
+
+**Confirmed through the real compiled app, not just standalone - a genuine "kill the whole app,
+relaunch it" test, not a simulation of one.** Using the same temporary-`setTimeout`-trigger,
+reverted-before-commit technique as the server start/stop proof above: app instance #1 (Save →
+Install → Start) was launched under Xvfb, confirmed via the real process list to have spawned the
+fake server, then killed outright with `SIGKILL` - not just the sidecar this time, the whole
+`tauri_poc_shell` process tree, actually simulating a Manager crash rather than a graceful close.
+The fake server process was confirmed still alive afterward (reparented to init, `ps` showing its
+real ppid changed). A second, completely fresh app instance (#2) was then launched against the
+same on-disk profile store, with a different temporary trigger (`server_status` then
+`server_stop`) - by the time it was checked, the real OS process was gone, meaning the real
+webview → `invoke('server_status')`/`invoke('server_stop')` → Rust → the brand-new sidecar's own
+`adoptPersistedProcesses` → real `killByPid` chain all ran correctly, end to end, through two
+genuinely separate app processes sharing only the same on-disk store - not two RPC calls against
+one long-lived sidecar, which is what every other proof in this PoC so far has actually been
+testing.
 
 ### Measured, on this Linux sandbox
 
@@ -941,13 +997,21 @@ binary, not the dev build.
   disappearing, not a screenshot). Found one real property of the unmodified shutdown code along
   the way: `stopServer()`'s "force kill" is a single SIGTERM with a 10-second give-up, not an
   escalation to SIGKILL - a process that ignored SIGTERM would be reported `stopped` without
-  actually being dead. Still unconfirmed: `adoptPersistedProcesses` (reattaching to a pid across
-  app restarts - not wired into this PoC's `main()`), the staggered multi-server spawn queue, the
+  actually being dead. Still unconfirmed: the staggered multi-server spawn queue, the
   `watchLogFileForMarker`-based "fully started" detection (never reachable without a real server
   actually logging its own startup), the Windows-only ARK: Survival Evolved `.bat`-launch path,
   and no UI page calls any of this yet - `Dashboard.tsx` (758 lines, the real Start/Stop/Restart
   buttons) is out of scope for this round, which proved the RPC layer first, same order
   bot/web-dashboard were proven in before any UI touched them.
+- **~~Nothing about surviving a Manager crash~~ - proven, with a genuine two-separate-app-process
+  test, not a simulation of one.** See "Surviving a crash" above: `adoptPersistedProcesses()` is
+  now wired into `sidecar.ts` at the same point the real `index.ts` calls it, and confirmed to
+  correctly re-attach to a still-alive server process - both standalone (two separate sidecar
+  processes, the second started after `SIGKILL`ing the first) and through the real compiled app
+  (two separate `tauri_poc_shell` processes, the first `SIGKILL`ed outright, the second launched
+  completely fresh). This also exercised `waitForExitOrKill`'s "adopted process" code branch for
+  the first time in this PoC (`killByPid` instead of `child.kill()`) - a genuinely different
+  shutdown path than the one `startServer()`/`stopServer()` within a single session uses.
 
 ## Where the real Electron coupling lives
 
