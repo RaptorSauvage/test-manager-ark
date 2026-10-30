@@ -221,6 +221,16 @@ since it's structurally identical to that already-Windows-confirmed command (sam
 path, same param-passing shape); the sidecar-level logic underneath it is what's actually new,
 and that's what got the scripted test.
 
+**Later update - now also confirmed live through the real webview on Linux, not just
+standalone.** `index.html`'s own `listen('console-line', ...)` handler was never actually
+re-tested after "A fifth real page" found and fixed the missing `capabilities/default.json`
+(every `listen()` call in this PoC, `console-line` included, was being silently rejected until
+then - see that section). Clicked "Start watching the test log," waited past one real 2-second
+poll tick, clicked "Simulate a server writing a line," and the real feed updated live on screen:
+"Live line received via 'console-line' push event," with the real parsed `CHAT` entry prepended
+to the list - closing the one push-event type in this PoC that had only ever been confirmed
+standalone.
+
 Screenshot of the read path (Linux, WebKitGTK, via Xvfb - `Got 0 profile(s)` because this
 sandbox has no real profiles.json, not because anything failed):
 
@@ -1198,6 +1208,22 @@ triggered by a real click on "Save a test profile" - and this time the page visi
 click." See the correction note added to that section below; this explains the original finding
 far better than a WebKitGTK compositing limit does.
 
+**Two follow-ups, confirmed in a later session.** First, the live console feed
+(`listen('console-line', ...)`) had only ever been confirmed standalone (see "The live console
+feed" above) - re-tested through the real webview now that the capabilities fix is in place
+(start watching, wait a poll tick, simulate a line), and it updates live on screen too, closing
+the one push-event type in this PoC that was still only standalone-confirmed. Second, the two
+pieces of `Dashboard.tsx`'s own UI this round deliberately left unclicked that don't actually
+need a native dialog - the card menu's Group submenu and a group's own bulk Start/Stop buttons -
+got the same real-click treatment: `setProfileGroup` (a real `profiles.save` write) moved the
+real seeded profile into the already-registered "PoC Group" through the real dropdown, and that
+group's `startAll`/`stopAll` (the same `window.api.server.*` calls the single-card buttons use,
+mapped over the group's members) spawned and killed the real OS process exactly like the
+single-card round did - confirmed the same way, `ps aux` and the status badge agreeing. One
+practical lesson from building the test script itself: `document.querySelector('.server-card-v2')`
+picks whichever profile happens to render first, not a chosen one - worth remembering for any
+later round that scripts a click against "the" card rather than a specifically identified one.
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1396,11 +1422,20 @@ far better than a WebKitGTK compositing limit does.
   in every prior round, was being silently rejected by Tauri's permission system, which "A
   rendering dead end"'s original investigation mistook for a WebKitGTK compositing limit. Fixed
   with one `capabilities/default.json` file; re-confirmed the fix against that section's own
-  original scenario, not just this round's new one. Still unconfirmed: the Windows-only `.bat`
-  launch path (same gap as above), and the rest of `Dashboard.tsx`'s own surface this round left
-  out on purpose - the "+ Add Profile" wizard (native dialogs, same gap as "A second real page"),
-  drag-to-reorder, and per-group bulk actions all exist in the real component and were never
-  clicked.
+  original scenario, not just this round's new one. Also later confirmed: the live console feed
+  (`listen('console-line', ...)`, `index.html`'s own test) through the real webview, the one
+  push-event type in this PoC that had only ever been confirmed standalone - a real click on
+  "Start watching the test log" then "Simulate a server writing a line" produced a real live
+  update on screen, the same capabilities fix covering it too. ~~Per-group bulk actions never
+  clicked~~ - also closed: a real click through the card menu's Group submenu (`setProfileGroup`,
+  a real `profiles.save` write) moved a real profile into the already-registered "PoC Group," and
+  that group's own bulk Start/Stop buttons (`startAll`/`stopAll`, the same `window.api.server.*`
+  calls the single-card buttons use, just mapped over every profile in the group) correctly
+  spawned and killed the real OS process, confirmed the same way as the single-card round - `ps
+  aux` and the real status badge agreeing. Still unconfirmed: the Windows-only `.bat` launch path
+  (same gap as above), drag-to-reorder (needs a real `DataTransfer`-backed drag simulation this
+  round didn't attempt), and the "+ Add Profile" wizard (native dialogs, same gap as "A second
+  real page").
 
 ## Where the real Electron coupling lives
 
