@@ -64,7 +64,7 @@
     <div id="log-status">Waiting for a 'manager-log-entry' push event...</div>
     <ul id="log-list"></ul>
     <hr style="border-color: #2c303a; margin: 24px 0" />
-    <h2 style="font-size: 1.1rem">Live console feed (the real headline case)</h2>
+    <h2 style="font-size: 1.1rem">Live console feed</h2>
     <p style="color: #9aa0ab; margin-top: 0">
       Uses the real <code>watchLogFile</code>/<code>parseLogChunkWithDate</code> from
       serverProcess.ts/logEvents.ts, unmodified, against a synthetic ShooterGame.log-shaped
@@ -74,6 +74,28 @@
     <button id="console-append-btn">Simulate a server writing a line (console_append_test_line)</button>
     <div id="console-status">Click "Start watching" first.</div>
     <ul id="console-list"></ul>
+    <hr style="border-color: #2c303a; margin: 24px 0" />
+    <h2 style="font-size: 1.1rem">Server process lifecycle (the actual headline case)</h2>
+    <p style="color: #9aa0ab; margin-top: 0">
+      Calls the real, unmodified <code>startServer()</code>/<code>stopServer()</code>/
+      <code>getStatus()</code> from <code>lib/serverProcess.ts</code> - the one capability
+      everything else in this app exists to support, untouched by this PoC until now.
+      <code>startServer()</code> really does a plain OS <code>child_process.spawn()</code> at
+      the real, unmodified <code>getExecutablePath(profile)</code>'s resolved path - no real
+      ARK/Minecraft dedicated server binary exists in this sandbox, so "Install fake executable"
+      writes a tiny long-running stand-in script there first (test-only, same role as
+      "Simulate a server writing a line" above, for the process side instead of the log side).
+      It exits cleanly on SIGTERM, same as a real game server. Stop calls the real
+      <code>stopServer()</code> shutdown sequence unmodified: RCON <code>SaveWorld</code> fails
+      immediately (no <code>ServerAdminPassword</code> set on this fake profile, so it never
+      even opens a socket), so it skips straight to the grace-period wait, sends SIGTERM once
+      the grace period elapses with no exit, and confirms the real process actually died.
+    </p>
+    <button id="server-install-btn">1. Install fake executable (test-only, server_install_test_executable)</button><br />
+    <button id="server-start-btn">2. Start (server_start)</button>
+    <button id="server-status-btn">Refresh status (server_status)</button>
+    <button id="server-stop-btn">3. Stop (server_stop)</button>
+    <div id="server-status-display">Click "Save a test profile" above first, then "Install fake executable".</div>
     <hr style="border-color: #2c303a; margin: 24px 0" />
     <h2 style="font-size: 1.1rem">Open profiles folder (the reverse direction)</h2>
     <p style="color: #9aa0ab; margin-top: 0">
@@ -161,12 +183,19 @@
 
       function saveTestProfile() {
         const testProfile = {
-          id: 'poc-test-' + Date.now(),
+          id: SERVER_TEST_PROFILE_ID,
           name: 'POC Test Server ' + new Date().toLocaleTimeString(),
           game: 'ark-ascended',
-          installDir: '/tmp/poc-test-install',
+          installDir: CONSOLE_TEST_INSTALL_DIR,
           backupDir: '',
-          clusterDirOverride: ''
+          clusterDirOverride: '',
+          // Required by buildLaunchArgs (serverProcess.ts) - not backfilled by migrateProfile
+          // on read like most other fields, since a real profile always has these set from
+          // creation. See "Server process lifecycle" below.
+          map: 'TheIsland_WP',
+          gamePort: 7777,
+          rconPort: 27020,
+          extraArgs: ''
         }
         invoke('profiles_save', { profile: testProfile }).catch((err) => {
           statusEl.textContent = 'Error calling profiles_save:'
@@ -203,7 +232,15 @@
 
       // Fixed sandbox path, not configurable in this PoC's UI - a real migration would pass
       // the selected server's own installDir here, same as the desktop Manager does today.
+      // Shared with "Server process lifecycle" below: starting the real startServer() spawns
+      // the fake executable installed under this same installDir, and the real watchLogFile
+      // poller above would pick up anything it ever wrote to ShooterGame.log too.
       const CONSOLE_TEST_INSTALL_DIR = '/tmp/poc-fake-ark-server'
+      // Fixed, not timestamp-generated like index.html's other test data - server_start/
+      // server_stop/server_status all need to agree on which profile they're acting on across
+      // separate button clicks, so re-clicking "Save test profile" updates this one profile
+      // rather than piling up a new one each time.
+      const SERVER_TEST_PROFILE_ID = 'poc-test-server'
       const consoleWatchBtn = document.getElementById('console-watch-btn')
       const consoleAppendBtn = document.getElementById('console-append-btn')
       const consoleStatusEl = document.getElementById('console-status')
@@ -254,6 +291,74 @@
           consoleStatusEl.classList.add('error')
           console.error(err)
         })
+      })
+
+      const serverInstallBtn = document.getElementById('server-install-btn')
+      const serverStartBtn = document.getElementById('server-start-btn')
+      const serverStopBtn = document.getElementById('server-stop-btn')
+      const serverStatusBtn = document.getElementById('server-status-btn')
+      const serverStatusEl = document.getElementById('server-status-display')
+
+      function renderServerStatus(status, prefix) {
+        serverStatusEl.textContent = `${prefix}state: ${status.state}` +
+          (status.pid ? `, pid: ${status.pid}` : '') +
+          (status.lastError ? `, lastError: ${status.lastError}` : '')
+        serverStatusEl.classList.remove('error')
+      }
+
+      // Live feed: serverProcess.ts's own `serverEvents` 'status' emitter, the third
+      // independent push source in this PoC (after 'profiles-changed'/'manager-log-entry') -
+      // every state transition (starting -> running -> stopping -> stopped) arrives here
+      // without server-status-btn ever being clicked, same shape the real Dashboard's server
+      // cards rely on for their live status dot.
+      listen('server-status', (event) => {
+        if (event.payload.profileId !== SERVER_TEST_PROFILE_ID) return
+        renderServerStatus(event.payload, "Live update via 'server-status' push event - ")
+        serverStatusEl.classList.add('live')
+      })
+
+      serverInstallBtn.addEventListener('click', () => {
+        invoke('server_install_test_executable', { profileId: SERVER_TEST_PROFILE_ID })
+          .then((result) => {
+            serverStatusEl.textContent = `Fake executable installed at ${result.exePath} - click Start.`
+            serverStatusEl.classList.remove('error')
+          })
+          .catch((err) => {
+            serverStatusEl.textContent = 'Error calling server_install_test_executable (did you click "Save a test profile" first?):'
+            serverStatusEl.classList.add('error')
+            console.error(err)
+          })
+      })
+
+      serverStartBtn.addEventListener('click', () => {
+        invoke('server_start', { profileId: SERVER_TEST_PROFILE_ID })
+          .then((status) => renderServerStatus(status, 'server_start -> '))
+          .catch((err) => {
+            serverStatusEl.textContent = 'Error calling server_start:'
+            serverStatusEl.classList.add('error')
+            console.error(err)
+          })
+      })
+
+      serverStopBtn.addEventListener('click', () => {
+        serverStatusEl.textContent = 'Stopping (RCON SaveWorld/DoExit will fail fast - nothing real is listening - then it force-kills after the grace period)...'
+        invoke('server_stop', { profileId: SERVER_TEST_PROFILE_ID, graceMs: 3000 })
+          .then((status) => renderServerStatus(status, 'server_stop -> '))
+          .catch((err) => {
+            serverStatusEl.textContent = 'Error calling server_stop:'
+            serverStatusEl.classList.add('error')
+            console.error(err)
+          })
+      })
+
+      serverStatusBtn.addEventListener('click', () => {
+        invoke('server_status', { profileId: SERVER_TEST_PROFILE_ID })
+          .then((status) => renderServerStatus(status, 'server_status -> '))
+          .catch((err) => {
+            serverStatusEl.textContent = 'Error calling server_status:'
+            serverStatusEl.classList.add('error')
+            console.error(err)
+          })
       })
 
       refresh()

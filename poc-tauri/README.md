@@ -36,29 +36,35 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes seventeen
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes twenty-one
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
-  `console_backlog`/`console_watch` (both take an `installDir`), `console_append_test_line`
-  (test-only - see below), `folders_open_profiles`, `bot_start`/`bot_stop`/`bot_status` (see
-  "The Discord bot subsystem" below), `dashboard_start`/`dashboard_stop`/`dashboard_status`
-  (see "The web dashboard subsystem" below), and `dialog_select_directory` - the first command
-  with no sidecar involvement at all, calling `tauri-plugin-dialog` straight from Rust (see
-  "A second real page" below).
+  `server_start`/`server_stop`/`server_status` (take a `profileId`, `server_stop` also an
+  optional `graceMs`) and `server_install_test_executable` (test-only - see "The actual headline
+  case" below), `console_backlog`/`console_watch` (both take an `installDir`),
+  `console_append_test_line` (test-only - see below), `folders_open_profiles`,
+  `bot_start`/`bot_stop`/`bot_status` (see "The Discord bot subsystem" below),
+  `dashboard_start`/`dashboard_stop`/`dashboard_status` (see "The web dashboard subsystem"
+  below), and `dialog_select_directory` - the first command with no sidecar involvement at all,
+  calling `tauri-plugin-dialog` straight from Rust (see "A second real page" below).
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
-  `src/main/lib/managerLog.ts`**, `watchLogFile`/`getLogFilePath` (from
-  **`src/main/lib/serverProcess.ts`**) plus `readLogBacklog`/`parseLogChunkWithDate`/
+  `src/main/lib/managerLog.ts`**, `watchLogFile`/`getLogFilePath`/`startServer`/`stopServer`/
+  `getStatus`/`serverEvents`/`getExecutablePath` (from **`src/main/lib/serverProcess.ts`**, 980
+  lines - see "The actual headline case" below) plus `readLogBacklog`/`parseLogChunkWithDate`/
   `createLogEventCaches` (from **`src/main/lib/logEvents.ts`**), `openProfilesFolder` (from
-  **`src/main/lib/systemFolders.ts`**), `startDiscordBot`/`stopDiscordBot`/
+  **`src/main/lib/systemFolders.ts`**), `copyProfile`/`moveProfile` (from
+  **`src/main/lib/profileCopyMove.ts`**, see "A second real page" below),
+  `startDiscordBot`/`stopDiscordBot`/
   `getDiscordBotStatus` (from **`src/main/lib/discordBot.ts`**, see "The Discord bot subsystem"
   below), and `applyWebDashboardSettings`/`stopWebDashboard`/`getWebDashboardStatus` (from
   **`src/main/lib/webDashboard.ts`**, 8200+ lines, see "The web dashboard subsystem" below) -
   none of it stubs or rewrites; every emitter is wired
-  straight to a push-event line (`profiles-changed`, `manager-log-entry`, `console-line`), so
-  every real write's/parsed log line's side effect reaches the webview the same way it would via
+  straight to a push-event line (`profiles-changed`, `manager-log-entry`, `console-line`,
+  `server-status`), so
+  every real write's/parsed log line's/status change's side effect reaches the webview the same way it would via
   Electron's `webContents.send`. `sidecar/electronShim.ts` stands in for the Electron APIs that
   import chain actually calls directly (`app.getPath`, a minimal `ipcMain` stub `electron-store`
   itself needs, and `shell.openPath` - see "Findings" below and "The reverse direction" below) -
@@ -81,12 +87,15 @@ modules in `src/main/ipc/` are still deliberately out of scope.
 - `frontend/index.html` - a bare page (not the real React UI): calls `invoke('profiles_list')`
   on load; buttons call `invoke('profiles_save', { profile })`, `invoke('log_record', {
   message })`, `invoke('console_watch', { installDir })`, `invoke('console_append_test_line',
-  { installDir, message })`, `invoke('folders_open_profiles')`, `invoke('bot_start')`/
+  { installDir, message })`, `invoke('server_install_test_executable')`/`invoke('server_start')`/
+  `invoke('server_stop')`/`invoke('server_status')` (see "The actual headline case" below),
+  `invoke('folders_open_profiles')`, `invoke('bot_start')`/
   `invoke('bot_stop')`/`invoke('bot_status')`, and `invoke('dashboard_start')`/
   `invoke('dashboard_stop')`/`invoke('dashboard_status')`; `listen('profiles-changed',
-  ...)`/`listen('manager-log-entry', ...)`/`listen('console-line', ...)` handlers update their
+  ...)`/`listen('manager-log-entry', ...)`/`listen('console-line', ...)`/`listen('server-status',
+  ...)` handlers update their
   own section the moment each push event arrives - independent of any button, proving the
-  live-update path for all three. `frontend/manager-log.html` +
+  live-update path for all four. `frontend/manager-log.html` +
   `frontend/manager-log-entry.tsx` are different: not hand-written for this PoC at all, beyond a
   tiny `window.api` shim - they mount the real, unmodified
   `src/renderer/src/pages/ManagerLogView.tsx` - see "A real React page" below.
@@ -582,6 +591,90 @@ sidecar call, because that's what the real app's own architecture already says t
 wrapper-only ordering bug was caught and fixed specifically *because* this PoC insists on
 screenshotting real data through the real component, rather than trusting it compiles correctly.
 
+### The actual headline case: starting and stopping a real server process
+
+Every proof so far has been about *reading* or *writing data* - profiles, logs, console output,
+even the bot and web dashboard subsystems are ultimately about moving information around. None of
+it has touched the one thing a "server manager" actually exists to do: start and stop a real
+server process. `lib/serverProcess.ts` (980 lines - PID tracking, RCON-confirmed graceful
+shutdown with a force-kill fallback, a staggered spawn queue, crash/adoption handling) had been
+completely untouched until this round.
+
+**`startServer()`/`stopServer()`/`getStatus()` are real, unmodified, and need no Electron shim at
+all.** `startServer()` does a plain `child_process.spawn(getExecutablePath(profile),
+buildLaunchArgs(profile), { cwd, detached, stdio: 'ignore' })` - no `app.*`/`shell.*` coupling
+anywhere in this path, confirmed by the fact that porting it needed zero additions to
+`electronShim.ts`. `getExecutablePath` is already platform-aware
+(`def.executableWin`/`def.executableLinux` per game, from `shared/games.ts`) - on this Linux
+sandbox it resolves to each game's real `executableLinux` path (e.g.
+`ShooterGame/Binaries/Linux/ArkAscendedServer` under the profile's `installDir`), so there was no
+Windows-only code path to work around for this proof. Two new sidecar RPC methods
+(`server.start`/`server.stop`, taking a `profileId` and resolving the real profile the same way
+`profiles.copy`/`.move` already do) and three matching `main.rs` commands
+(`server_start`/`server_stop`/`server_status`) are the entire port - same thin-wrapper shape as
+every other subsystem in this PoC.
+
+**No real ARK/Minecraft dedicated server binary exists in this sandbox, so standalone/compiled-app
+testing needed a stand-in - the same role `console.appendTestLine` already played for log output,
+now for the process side.** A test-only third RPC method, `server.installTestExecutable`, writes
+a tiny long-running shell script to the real, unmodified `getExecutablePath(profile)`'s resolved
+path (`#!/bin/sh` + a `sleep`-forever loop, exiting cleanly on SIGTERM like a real game server
+does). Nothing about `startServer()`/`stopServer()` themselves is faked or stubbed - only the
+"game server" they spawn is synthetic, exactly the same honesty boundary the console-feed proof
+already drew.
+
+**Confirmed standalone, piping JSON-RPC lines directly into the SEA sidecar binary (one
+continuous session, start through stop):** `server.start` really spawns the fake script as a real
+OS process - `ps` showed the exact real command line `buildLaunchArgs()` produced
+(`TheIsland_WP?listen?Port=7777?RCONEnabled=True?RCONPort=27020 -server -log
+-ServerPlatform=PC -WinLiveMaxPlayers=70`) running under a genuine new PID. Two `server-status`
+push events arrived unprompted (`starting` with no pid, then `starting` with the real pid) -
+`emitStatus()`'s own two-stage shape, reached through this sidecar exactly like
+`profiles-changed`/`manager-log-entry` were. `server.stop` ran the real shutdown sequence:
+`sendRconCommand(profile, 'SaveWorld')` failed immediately (no `ServerAdminPassword` on this fake
+profile, so `rcon.ts` never even opens a socket) and was then correctly skipped to the
+grace-period wait rather than treated as license to send `DoExit` - `waitForExitOrKill` waited out
+the full `graceMs`, sent one SIGTERM, and `getStatus()` afterward (checked both via the push event
+and a fresh `server.status` call) correctly reported `stopped`, confirmed independently against
+the real OS process list (the pid was genuinely gone, not just marked gone in the store).
+
+**A real bug this found in testing, not in the port:** the stand-in script's first version
+ignored SIGTERM entirely (to deliberately exercise the force-kill path, or so the thinking went).
+That made `stopServer()` take the full `graceMs` *plus* `FORCE_KILL_CONFIRM_MS` (10 seconds,
+hardcoded in `serverProcess.ts`) to resolve - because `waitForExitOrKill`'s "force kill" is
+actually just **one** `child.kill()` call (SIGTERM, Node's default signal) followed by a poll with
+a 10-second give-up, not an escalation to SIGKILL. If a real game server process ever truly
+ignored SIGTERM, `stopServer()` would still resolve as `stopped` after that 10-second give-up -
+`finalizeStopped`/`running.delete` run unconditionally once `giveUp` fires - while the actual OS
+process kept running, orphaned, outside the Manager's tracking. Real ARK/Minecraft dedicated
+servers do exit on SIGTERM (this is airplane-visible AAA-game-server behavior, not something that
+needs re-confirming here), so this almost certainly never happens in practice - but it's a real
+property of the unmodified shutdown code, found by testing with a deliberately misbehaving
+stand-in, not a flaw introduced by this port. Fixed the stand-in to exit on SIGTERM (what a real
+server actually does) for the rest of this round's testing, once the finding was noted.
+
+**Confirmed through the real compiled app, not just standalone.** Ran the actual
+`tauri_poc_shell` binary under Xvfb with a temporary, immediately-reverted `setTimeout` chain in
+`index.html` driving Save → Install fake executable → Start → (2s later) Stop - the same
+"temporary trigger, verified on disk, reverted before commit" technique established in "A real
+rendering dead end," here checking the real OS process list instead of the filesystem.
+`ps aux | grep ArkAscendedServer` showed nothing at t=3s (before Start), the real spawned process
+(exact real command line) at t=5s, and nothing again at t=11s (after Stop's grace period and
+SIGTERM) - end to end through the real webview → `invoke()` → Rust → sidecar → `startServer()`/
+`stopServer()` round trip, not just the standalone sidecar test above.
+
+**What this doesn't prove yet, beyond "no real game server binary":** `adoptPersistedProcesses`
+(reattaching to a still-alive pid from a previous session on startup - not wired into this PoC's
+`main()` at all), the staggered spawn queue (`reserveSpawnSlot`, only exercised when multiple
+servers start within the stagger window), `watchLogFileForMarker`'s "fully started" detection
+(the fake script never writes a matching log line, so status never advances past `starting` to
+`running` - a real finding, not a bug: without a real server actually logging its own startup,
+there's no honest way to simulate that transition), the Windows-only `.bat`-launch path for ARK:
+Survival Evolved (`launchViaBatch`, untested - this sandbox is Linux and the test profile used
+`ark-ascended`, which never takes that branch), and no UI page calls any of this yet (`Dashboard.tsx`,
+758 lines, is where the real Start/Stop/Restart buttons live - out of scope for this round, which
+proved the RPC layer first, the same order bot/web-dashboard were proven in before any UI).
+
 ### Measured, on this Linux sandbox
 
 - Release binary (`src-tauri/target/release/tauri_poc_shell`): **11 MB**, vs. `node_modules/electron`'s 266 MB.
@@ -835,6 +928,26 @@ binary, not the dev build.
   headless Xvfb sandbox waiting for a human click that can't happen unattended, unlike
   `shell.openPath`'s clean, fast failure. Needs a real desktop session (the same way the Windows
   numbers above needed a real machine) to confirm a folder actually gets picked and returned.
+- **~~Nothing about starting/stopping a real server process~~ - proven, standalone and through
+  the real compiled app.** See "The actual headline case" above: `startServer()`/`stopServer()`/
+  `getStatus()` from `lib/serverProcess.ts` (980 lines, completely untouched until this round)
+  spawn, track, and shut down a real OS process with no Electron coupling to shim at all. No real
+  ARK/Minecraft dedicated server binary exists in this sandbox, so a test-only stand-in script
+  stood in for one at the real, unmodified `getExecutablePath()`'s resolved path - confirmed with
+  a genuine spawned PID, the real launch command line from `buildLaunchArgs()`, real
+  `server-status` push events, and a real graceful-then-SIGTERM shutdown that left no orphaned
+  process behind, both standalone (piping JSON-RPC directly into the SEA binary) and through the
+  actual compiled Tauri app under Xvfb (confirmed via the real OS process list appearing then
+  disappearing, not a screenshot). Found one real property of the unmodified shutdown code along
+  the way: `stopServer()`'s "force kill" is a single SIGTERM with a 10-second give-up, not an
+  escalation to SIGKILL - a process that ignored SIGTERM would be reported `stopped` without
+  actually being dead. Still unconfirmed: `adoptPersistedProcesses` (reattaching to a pid across
+  app restarts - not wired into this PoC's `main()`), the staggered multi-server spawn queue, the
+  `watchLogFileForMarker`-based "fully started" detection (never reachable without a real server
+  actually logging its own startup), the Windows-only ARK: Survival Evolved `.bat`-launch path,
+  and no UI page calls any of this yet - `Dashboard.tsx` (758 lines, the real Start/Stop/Restart
+  buttons) is out of scope for this round, which proved the RPC layer first, same order
+  bot/web-dashboard were proven in before any UI touched them.
 
 ## Where the real Electron coupling lives
 

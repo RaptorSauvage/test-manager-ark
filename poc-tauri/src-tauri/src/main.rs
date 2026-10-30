@@ -180,6 +180,45 @@ fn manager_log_get_all(sidecar: tauri::State<SidecarHandle>) -> Result<Value, St
     sidecar.call("log.getAll", None)
 }
 
+/// Calls the real, unmodified `startServer()`/`stopServer()`/`getStatus()` from
+/// serverProcess.ts - the actual headline capability of a "server manager", proven for the
+/// first time in this PoC. See sidecar.ts's own comment on `server.start`/`server.stop` for
+/// what standalone testing stands in for (no real game server binary in this sandbox) and what
+/// it does/doesn't confirm.
+#[tauri::command]
+fn server_start(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("server.start", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn server_stop(
+    profile_id: String,
+    grace_ms: Option<i64>,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call(
+        "server.stop",
+        Some(serde_json::json!({ "profileId": profile_id, "graceMs": grace_ms })),
+    )
+}
+
+#[tauri::command]
+fn server_status(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("server.status", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+/// Test-only - see sidecar.ts's `server.installTestExecutable` comment.
+#[tauri::command]
+fn server_install_test_executable(
+    profile_id: String,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call(
+        "server.installTestExecutable",
+        Some(serde_json::json!({ "profileId": profile_id })),
+    )
+}
+
 #[tauri::command]
 fn console_backlog(install_dir: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
     sidecar.call("console.backlog", Some(serde_json::json!({ "installDir": install_dir })))
@@ -405,6 +444,10 @@ fn main() {
             dialog_select_directory,
             log_record,
             manager_log_get_all,
+            server_start,
+            server_stop,
+            server_status,
+            server_install_test_executable,
             console_backlog,
             console_watch,
             console_append_test_line,

@@ -34,7 +34,15 @@ import path from 'node:path'
 import readline from 'node:readline'
 import { listProfiles, saveProfile, profileEvents } from '../../src/main/store'
 import { logManagerEvent, newTaskId, managerLogEvents, readManagerLog } from '../../src/main/lib/managerLog'
-import { watchLogFile, getLogFilePath } from '../../src/main/lib/serverProcess'
+import {
+  watchLogFile,
+  getLogFilePath,
+  startServer,
+  stopServer,
+  getStatus,
+  serverEvents,
+  getExecutablePath
+} from '../../src/main/lib/serverProcess'
 import { readLogBacklog, parseLogChunkWithDate, createLogEventCaches } from '../../src/main/lib/logEvents'
 import { openProfilesFolder } from '../../src/main/lib/systemFolders'
 import { copyProfile, moveProfile } from '../../src/main/lib/profileCopyMove'
@@ -106,6 +114,51 @@ const methods: Record<string, (params: unknown) => unknown> = {
   // managerLog.getLog() (see "A real React page" below), reading the exact same JSONL file
   // log.record/managerLogEvents already write to.
   'log.getAll': () => readManagerLog(),
+  // Real, unmodified startServer()/stopServer()/getStatus() from serverProcess.ts - the actual
+  // headline capability of a "server manager", untouched by this PoC until now. startServer
+  // really does `child_process.spawn(getExecutablePath(profile), buildLaunchArgs(profile), ...)`
+  // - getExecutablePath resolves platform-specific (def.executableLinux on this Linux sandbox,
+  // e.g. "ShooterGame/Binaries/Linux/ArkAscendedServer" under the profile's installDir), so
+  // there's no Electron coupling to shim here at all - this was always going to run as a plain
+  // OS process spawn no matter what hosts it. No real ARK/Minecraft dedicated server binary
+  // exists in this sandbox, so standalone testing points a profile's installDir at a small
+  // long-running stand-in script placed at that exact resolved path (same spirit as
+  // console.appendTestLine simulating a game server's log output below) - proves the real
+  // spawn/PID-tracking/status/graceful-stop-then-force-kill round trip without needing the real
+  // game server binary, the same way the bot subsystem's fork() bug was found without a real
+  // Discord bot token. stopServer's real shutdown sequence (RCON SaveWorld -> DoExit -> grace
+  // period -> force kill) runs unmodified too; the stand-in script never responds to RCON, so
+  // every real stop exercises the force-kill fallback path - see README for what this does and
+  // doesn't confirm.
+  'server.start': (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    return startServer(profile)
+  },
+  'server.stop': async (params) => {
+    const { profileId, graceMs } = params as { profileId: string; graceMs?: number }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    return stopServer(profile, graceMs)
+  },
+  'server.status': (params) => getStatus((params as { profileId: string }).profileId),
+  // Test-only: writes a small long-running shell script to the real, unmodified
+  // getExecutablePath(profile)'s resolved path - standing in for a real ARK/Minecraft dedicated
+  // server binary, since this sandbox has none (same role as console.appendTestLine above, for
+  // the process-spawn side rather than the log-output side). Exits on SIGTERM, same as a real
+  // game server - see README for what this found about stopServer()'s shutdown sequence when a
+  // first version of this script ignored it instead.
+  'server.installTestExecutable': (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    const exePath = getExecutablePath(profile)
+    fs.mkdirSync(path.dirname(exePath), { recursive: true })
+    fs.writeFileSync(exePath, "#!/bin/sh\ntrap 'exit 0' TERM\nwhile true; do sleep 1; done\n")
+    fs.chmodSync(exePath, 0o755)
+    return { ok: true, exePath }
+  },
   // Real backlog read straight off a ShooterGame.log-shaped file - same function the desktop
   // Console tab and Web Dashboard both call on open/reconnect.
   'console.backlog': (params) => readLogBacklog((params as { installDir: string }).installDir),
@@ -210,6 +263,11 @@ let stopConsoleWatch: (() => void) | null = null
 // 'manager-log-entry' vs. the real app's own 'log' event name on managerLogEvents.
 profileEvents.on('changed', (profiles) => send({ event: 'profiles-changed', data: profiles }))
 managerLogEvents.on('log', (entry) => send({ event: 'manager-log-entry', data: entry }))
+// A third independent push source: serverProcess.ts's own `serverEvents` 'status' emitter -
+// the one every server card/detail page in the real app subscribes to for live state
+// ('starting'/'running'/'stopping'/'stopped'/'error'), not just what a one-off status poll
+// would show.
+serverEvents.on('status', (status) => send({ event: 'server-status', data: status }))
 
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', async (line) => {
