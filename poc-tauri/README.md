@@ -36,7 +36,7 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes sixty
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes sixty-seven
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
@@ -66,7 +66,11 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `steamcmd_get_update_log` and `steamcmd_append_test_update_log_line` (test-only). The ninth
   (see "A ninth real page" below) added `map_management_list`/`map_management_create`/
   `map_management_delete`/`map_management_open_folder`. The tenth (see "A tenth real page"
-  below) added `group_console_rcon_send`.
+  below) added `group_console_rcon_send`. Round eleven through fourteen (see "A batch of four
+  smaller real pages" below) added `watched_players_list`/`watched_players_add`/
+  `watched_players_remove`, `player_activity_list`/`player_activity_sessions`, and
+  `player_bans_list`/`player_bans_unban` (`player_bans_ban` already existed, see "A third real
+  page"). `ChangelogView.tsx` needed no new command at all - zero `window.api` calls.
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -1518,6 +1522,49 @@ text the standalone call already proved - the real click → `window.api.groupCo
 `invoke()` → Rust → sidecar → `sendRconCommand()` chain, rendered by the unmodified component's
 own `runResults` display, not a stub.
 
+### A batch of four smaller real pages: eleventh through fourteenth
+
+Four more real, unmodified pages in one round, each smaller and more narrowly scoped than the
+last few - a deliberate change of pace to cover breadth (more of the real renderer, more of
+`store.ts`'s own surface) rather than depth, after several rounds that each went deep on one
+substantial subsystem.
+
+- **`ChangelogView.tsx`** (31 lines) - the cheapest page this PoC has ported: **zero**
+  `window.api` calls, zero sidecar RPC methods, zero new Tauri commands. It just renders real,
+  static content from the real, unmodified `@shared/changelog`'s `CHANGELOG` constant. Confirmed
+  through the real compiled app under Xvfb: the real entries (dates, titles, bullet lists)
+  rendered correctly with no shim object at all - proving this PoC's rendering pipeline handles a
+  page with no IPC surface whatsoever, not just the ten before it that all needed one.
+- **`WatchedPlayersSection.tsx`** (85 lines) - the watchlist for the "player joined" Discord
+  alert, a different real `store.ts`-backed subsystem from `playerWhitelist` (tracking who to
+  *alert on*, not who's allowed to connect). `watchedPlayers.list`/`.add`/`.remove` are plain
+  `store.ts` CRUD, same shape as every other one in this PoC. Confirmed through the real app: a
+  real add (typed input, not programmatic) produced a real new row, and a real remove - through
+  `confirmAction()`'s native `window.confirm()` and the already-proven `window_focus` command -
+  correctly emptied it back out, both checked against the real list on screen, not just the RPC
+  response.
+- **`PlayerActivityPanel.tsx`** (100 lines) - read-only aggregated playtime, a third distinct
+  real player subsystem (after bans/whitelist and watched-players). `playerActivity.list`/
+  `.sessions` are plain reads with nothing to write. Confirmed through the real app: the real,
+  honest empty state ("No activity recorded yet - enable...") rendered correctly, matching
+  standalone - nothing in this sandbox ever enables activity tracking, so an empty, honest result
+  is the correct outcome here, not a gap.
+- **`PlayerBansPanel.tsx`** (185 lines) - the centralized cross-server ban list.
+  `playerBans.ban` was already proven in "A third real page" (`PlayerRosterPanel.tsx`'s own ban
+  button uses the same real RPC); this page needed two more real call sites of the same real
+  subsystem - `playerBans.list` (a plain read) and `playerBans.unban` (mirrors `ban`'s own real
+  RCON-gate-then-write shape: a real `UnbanPlayer` RCON call must succeed before the local ban
+  record is removed). Confirmed through the real app: the real cross-server group picker
+  (Ungrouped/"PoC Group" columns) rendered correctly with the real seeded profiles, and a real
+  click on "Ban" (typed player id, one server selected) produced, live on screen, the same honest
+  `"No ServerAdminPassword set..."` RCON failure this PoC has surfaced before - confirming
+  `wrapInvoke()`'s fix (from "A sixth real page") still correctly turns the bare-string rejection
+  into real `Error` text on a brand new page, not just the ones it was written against.
+
+No new bugs found this round - all four pages reused subsystems and fix patterns this PoC had
+already proven, which is itself worth stating plainly: not every round needs to find something
+new to be worth doing.
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1817,6 +1864,14 @@ own `runResults` display, not a stub.
   (`groupConsole.rconSend`, a scheduled RCON entry's "Run now") turned out to be the same real
   `sendRconCommand()` "A third real page" already proved, confirmed with a real honest RCON
   failure landing on screen through a real click.
+- **~~Nothing about a page with zero window.api calls, the watched-players/player-activity/
+  cross-server-bans subsystems~~ - all four proven in one batch, eleventh through fourteenth.**
+  See "A batch of four smaller real pages" above: `ChangelogView.tsx` needed no shim at all and
+  still rendered real static content correctly; `WatchedPlayersSection.tsx`'s real add/remove
+  cycle and `PlayerBansPanel.tsx`'s real cross-server ban picker + honest RCON failure were both
+  confirmed through real clicks in the actual app; `PlayerActivityPanel.tsx`'s real, honest empty
+  state matched standalone. No new bugs this round - every page reused an already-proven real
+  subsystem or fix pattern.
 
 ## Where the real Electron coupling lives
 

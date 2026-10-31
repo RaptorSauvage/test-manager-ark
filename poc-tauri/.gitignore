@@ -13,3 +13,7 @@ frontend/backups.js
 frontend/update-log.js
 frontend/map-management.js
 frontend/server-management.js
+frontend/changelog.js
+frontend/watched-players.js
+frontend/player-activity.js
+frontend/player-bans.js

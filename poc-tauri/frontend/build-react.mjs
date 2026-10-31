@@ -20,7 +20,11 @@ const pages = [
   'backups',
   'update-log',
   'map-management',
-  'server-management'
+  'server-management',
+  'changelog',
+  'watched-players',
+  'player-activity',
+  'player-bans'
 ]
 
 for (const page of pages) {

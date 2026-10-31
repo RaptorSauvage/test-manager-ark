@@ -503,6 +503,44 @@ fn group_console_rcon_send(profile_id: String, command: String, sidecar: tauri::
     sidecar.call("groupConsole.rconSend", Some(serde_json::json!({ "profileId": profile_id, "command": command })))
 }
 
+/// Backs WatchedPlayersSection.tsx - an eleventh real page.
+#[tauri::command]
+fn watched_players_list(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("watchedPlayers.list", None)
+}
+
+#[tauri::command]
+fn watched_players_add(value: String, label: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("watchedPlayers.add", Some(serde_json::json!({ "value": value, "label": label })))
+}
+
+#[tauri::command]
+fn watched_players_remove(id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("watchedPlayers.remove", Some(serde_json::json!({ "id": id })))
+}
+
+/// Backs PlayerActivityPanel.tsx - a twelfth real page, read-only.
+#[tauri::command]
+fn player_activity_list(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("playerActivity.list", None)
+}
+
+#[tauri::command]
+fn player_activity_sessions(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("playerActivity.sessions", None)
+}
+
+/// Backs PlayerBansPanel.tsx - a fourteenth real page.
+#[tauri::command]
+fn player_bans_list(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("playerBans.list", None)
+}
+
+#[tauri::command]
+fn player_bans_unban(profile_id: String, player_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("playerBans.unban", Some(serde_json::json!({ "profileId": profile_id, "playerId": player_id })))
+}
+
 /// Test-only - see sidecar.ts's `server.installTestExecutable` comment.
 #[tauri::command]
 fn server_install_test_executable(
@@ -794,7 +832,14 @@ fn main() {
             map_management_create,
             map_management_delete,
             map_management_open_folder,
-            group_console_rcon_send
+            group_console_rcon_send,
+            watched_players_list,
+            watched_players_add,
+            watched_players_remove,
+            player_activity_list,
+            player_activity_sessions,
+            player_bans_list,
+            player_bans_unban
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

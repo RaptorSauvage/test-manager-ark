@@ -32,6 +32,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
+import { randomUUID } from 'node:crypto'
 import {
   listProfiles,
   saveProfile,
@@ -43,7 +44,14 @@ import {
   recordPlayerBan,
   listWhitelistedPlayers,
   recordWhitelistedPlayer,
-  removeWhitelistedPlayerProfile
+  removeWhitelistedPlayerProfile,
+  listWatchedPlayers,
+  addWatchedPlayer,
+  removeWatchedPlayer,
+  listPlayerActivity,
+  listPlayerSessions,
+  listPlayerBans,
+  removePlayerBanProfile
 } from '../../src/main/store'
 import { sendRconCommand, parsePlayerListWithIds } from '../../src/main/lib/rcon'
 import { logManagerEvent, newTaskId, managerLogEvents, readManagerLog } from '../../src/main/lib/managerLog'
@@ -604,6 +612,35 @@ const methods: Record<string, (params: unknown) => unknown> = {
     const profile = listProfiles().find((p) => p.id === profileId)
     if (!profile) throw new Error(`Unknown profile: ${profileId}`)
     return sendRconCommand(profile, command)
+  },
+  // An eleventh real page: WatchedPlayersSection.tsx - the watchlist for the "player joined"
+  // Discord alert, a different real store.ts-backed subsystem from playerWhitelist (tracking
+  // who to alert on, not who's allowed to connect). Real, unmodified listWatchedPlayers/
+  // addWatchedPlayer/removeWatchedPlayer, same shape as every other store.ts CRUD here.
+  'watchedPlayers.list': () => listWatchedPlayers(),
+  'watchedPlayers.add': (params) => {
+    const { value, label } = params as { value: string; label: string }
+    return addWatchedPlayer({ id: randomUUID(), value, label, createdAt: Date.now() })
+  },
+  'watchedPlayers.remove': (params) => removeWatchedPlayer((params as { id: string }).id),
+  // A twelfth real page: PlayerActivityPanel.tsx - read-only aggregated playtime, a third
+  // distinct real store.ts-backed player subsystem (after bans/whitelist and watched-players).
+  // Real, unmodified listPlayerActivity/listPlayerSessions - nothing to write here at all.
+  'playerActivity.list': () => listPlayerActivity(),
+  'playerActivity.sessions': () => listPlayerSessions(),
+  // A fourteenth real page: PlayerBansPanel.tsx - the centralized cross-server view of
+  // playerBans.ban (already proven in "A third real page"). list/unban are the two methods
+  // that round never needed: listPlayerBans is a plain store.ts read; unban mirrors ban's own
+  // real RCON-gate-then-write shape exactly (a real UnbanPlayer RCON call must succeed before
+  // removePlayerBanProfile ever runs).
+  'playerBans.list': () => listPlayerBans(),
+  'playerBans.unban': async (params) => {
+    const { profileId, playerId } = params as { profileId: string; playerId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    const result = await sendRconCommand(profile, `UnbanPlayer ${playerId}`)
+    if (!result.ok) throw new Error(result.error ?? 'UnbanPlayer failed')
+    return removePlayerBanProfile(playerId, profileId)
   }
 }
 
