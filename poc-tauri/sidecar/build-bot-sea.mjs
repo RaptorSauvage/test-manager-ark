@@ -42,10 +42,12 @@ execFileSync(process.execPath, ['--experimental-sea-config', seaConfigPath], { c
 copyFileSync(nodeBin, outBin)
 chmodSync(outBin, 0o755)
 
+// shell: true on Windows only - see build-sea.mjs's own comment on this exact line: `npx` is
+// a .cmd there, and execFileSync's default direct-exec can't resolve it (spawnSync npx ENOENT).
 execFileSync(
   'npx',
   ['-y', 'postject@latest', outBin, 'NODE_SEA_BLOB', seaBlobPath, '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'],
-  { cwd: here, stdio: 'inherit' }
+  { cwd: here, stdio: 'inherit', shell: process.platform === 'win32' }
 )
 
 const binariesDir = path.join(here, '..', 'src-tauri', 'binaries')

@@ -7,11 +7,12 @@
 // 2. copy the current `node` binary
 // 3. postject injects the blob into that copy under the NODE_SEA_BLOB section/sentinel
 //
-// Platform notes (only tested on Linux so far - see README.md):
+// Platform notes (see README.md):
 // - Linux: works as-is, binary runs standalone with no `node` on PATH.
 // - macOS: needs extra codesigning steps (`--macho-segment-name NODE_SEA` + re-signing) that
 //   this script does not attempt.
-// - Windows: should work (Node's docs describe it), not yet tried for real from this sandbox.
+// - Windows: works, but needed `shell: true` on the npx call below to actually find `npx` -
+//   see that line's own comment.
 //
 // Also copies the result into src-tauri/binaries/sidecar-bin-<target-triple>, the exact name
 // and location Tauri's `bundle.externalBin` (see tauri.conf.json) requires to treat it as a
@@ -40,6 +41,12 @@ execFileSync(process.execPath, ['--experimental-sea-config', path.join(here, 'se
 copyFileSync(nodeBin, outBin)
 chmodSync(outBin, 0o755)
 
+// `shell: true` on Windows only - found by actually running this on a real Windows machine,
+// not from Node's docs: `npx` there is `npx.cmd` (a batch file), and execFileSync's default
+// direct-exec (no shell) fails with `spawnSync npx ENOENT` even though `npx` works fine typed
+// into the same terminal - Windows' CreateProcess doesn't resolve PATHEXT (.cmd/.bat) the way
+// a shell does. Routing through `cmd.exe` (what `shell: true` does on Windows) fixes it;
+// Linux/macOS already worked without it and are unaffected since this only applies there.
 execFileSync(
   'npx',
   [
@@ -51,7 +58,7 @@ execFileSync(
     '--sentinel-fuse',
     'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'
   ],
-  { cwd: here, stdio: 'inherit' }
+  { cwd: here, stdio: 'inherit', shell: process.platform === 'win32' }
 )
 
 const binariesDir = path.join(here, '..', 'src-tauri', 'binaries')

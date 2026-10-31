@@ -181,6 +181,15 @@ Windows, where `tauri-build` needs it (by that exact conventional path) to gener
 equivalent step. Regenerated here with `convert icon.png -define
 icon:auto-resize=256,128,64,48,32,16 icon.ico` (ImageMagick).
 
+`sidecar/build-sea.mjs`/`build-bot-sea.mjs`'s `npx postject@latest ...` call needs
+`shell: true` on Windows - found on a real Windows machine running `node sidecar\build-sea.mjs`
+directly (not through `cargo build`): it failed with `spawnSync npx ENOENT`, even though typing
+`npx` into that exact same terminal works fine. `execFileSync`'s default direct-exec (no shell)
+doesn't resolve `npx.cmd` the way a shell does - Windows' `CreateProcess` doesn't apply
+`PATHEXT` on its own. Fixed by passing `shell: process.platform === 'win32'`, which routes the
+call through `cmd.exe` only on Windows; Linux/macOS, which already worked without it, are
+unaffected since the condition is false there.
+
 To build and install a real package instead of just running the dev binary (`cargo install
 tauri-cli --version "^2.0.0"` once, then):
 
