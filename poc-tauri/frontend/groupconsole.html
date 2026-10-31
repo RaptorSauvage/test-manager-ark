@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Group Console - real GroupConsoleView.tsx through Tauri</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #14161a;
+        color: #e6e8ec;
+      }
+      .page {
+        padding: 24px;
+        max-width: 1400px;
+      }
+      .server-detail-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      h1 {
+        font-size: 1.3rem;
+        margin: 0;
+      }
+      button {
+        background: #2c303a;
+        color: #e6e8ec;
+        border: 1px solid #3a3f4b;
+        border-radius: 4px;
+        padding: 4px 10px;
+        cursor: pointer;
+        font: inherit;
+      }
+      button:hover {
+        background: #3a3f4b;
+      }
+      .group-console-body {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+      }
+      .group-console-main {
+        flex: 1;
+        min-width: 0;
+      }
+      .group-console-divider {
+        width: 1px;
+        align-self: stretch;
+        background: #2c303a;
+      }
+      .group-console-sidebar {
+        width: 280px;
+        flex-shrink: 0;
+      }
+      .group-console-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 10px;
+        font-size: 0.85rem;
+      }
+      .checkbox {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .group-console-feed {
+        border: 1px solid #2c303a;
+        border-radius: 6px;
+        background: #0f1115;
+        height: 420px;
+        overflow-y: auto;
+        padding: 8px 10px;
+        font-family: 'SF Mono', Consolas, monospace;
+        font-size: 0.82rem;
+      }
+      .log-event {
+        display: flex;
+        gap: 6px;
+        padding: 1px 0;
+      }
+      .log-event .date,
+      .log-event .ts {
+        color: #6b7280;
+      }
+      .log-event .server-tag {
+        color: #8ab4ff;
+      }
+      .log-event .label {
+        color: #d9a441;
+        font-weight: bold;
+      }
+      .log-event .player {
+        color: #3fbf6f;
+        font-weight: bold;
+      }
+      .log-event-start .label,
+      .log-event-start .text {
+        color: #3fbf6f;
+      }
+      .log-event-stop .label,
+      .log-event-stop .text {
+        color: #ff8080;
+      }
+      .group-console-rcon-results {
+        margin-top: 8px;
+        font-size: 0.85rem;
+      }
+      .rcon-result-ok {
+        color: #3fbf6f;
+        margin: 2px 0;
+      }
+      .rcon-result-error {
+        color: #ff8080;
+        margin: 2px 0;
+      }
+      .group-console-rcon {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .group-console-rcon select {
+        background: #0f1115;
+        color: #e6e8ec;
+        border: 1px solid #2c303a;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font: inherit;
+      }
+      .group-console-rcon input {
+        flex: 1;
+        background: #0f1115;
+        color: #e6e8ec;
+        border: 1px solid #2c303a;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font: inherit;
+      }
+      .group-console-cluster-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        border: 1px solid #2c303a;
+        border-radius: 6px;
+        padding: 10px 12px;
+        background: #1a1d24;
+        margin: 0 0 12px;
+      }
+      .group-console-cluster-stats dt {
+        color: #9aa0ab;
+        font-size: 0.75rem;
+      }
+      .group-console-cluster-stats dd {
+        margin: 0;
+        font-weight: bold;
+      }
+      .muted {
+        color: #9aa0ab;
+        font-weight: normal;
+      }
+      .server-summary-card {
+        border: 1px solid #2c303a;
+        border-radius: 6px;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+        background: #1a1d24;
+        cursor: pointer;
+      }
+      .server-summary-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
+      .server-summary-card-header h3 {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+      .badge {
+        font-size: 0.7rem;
+        padding: 1px 6px;
+        border-radius: 3px;
+        background: #2c303a;
+      }
+      .badge-running {
+        background: #1f4d33;
+        color: #3fbf6f;
+      }
+      .badge-stopped {
+        background: #3a1f1f;
+        color: #ff8080;
+      }
+      .server-summary-card-info {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin: 6px 0 0;
+      }
+      .server-summary-card-info dt {
+        color: #9aa0ab;
+        font-size: 0.7rem;
+      }
+      .server-summary-card-info dd {
+        margin: 0;
+        font-size: 0.82rem;
+      }
+      .server-context-menu {
+        position: fixed;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        background: #1a1d24;
+        border: 1px solid #3a3f4b;
+        border-radius: 6px;
+        padding: 6px;
+        z-index: 10;
+      }
+      .error-message {
+        color: #ff8080;
+        font-size: 0.8rem;
+        margin: 4px 0 0;
+      }
+      .empty-state {
+        color: #9aa0ab;
+      }
+      a {
+        color: #8ab4ff;
+      }
+    </style>
+  </head>
+  <body>
+    <p style="padding: 12px 24px 0"><a href="index.html">&larr; back to the main PoC page</a></p>
+    <div class="page">
+      <div id="root"></div>
+    </div>
+    <script type="module" src="groupconsole.js"></script>
+  </body>
+</html>

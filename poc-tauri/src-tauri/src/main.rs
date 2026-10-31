@@ -603,6 +603,18 @@ fn steamcmd_add_firewall_rule(
     result.and_then(|v| refocus_result.map(|_| v))
 }
 
+/// Backs GroupConsoleView.tsx - a seventeenth real page. See sidecar.ts's own comment:
+/// real, unmodified getGroupConsoleBacklog()/watchGroupConsole() from lib/groupConsole.ts.
+#[tauri::command]
+fn group_console_subscribe(profile_ids: Vec<String>, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("groupConsole.subscribe", Some(serde_json::json!({ "profileIds": profile_ids })))
+}
+
+#[tauri::command]
+fn group_console_unsubscribe(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("groupConsole.unsubscribe", None)
+}
+
 /// Test-only - see sidecar.ts's `server.installTestExecutable` comment.
 #[tauri::command]
 fn server_install_test_executable(
@@ -906,7 +918,9 @@ fn main() {
             stats_history_get_for_groups,
             steamcmd_managed_status,
             steamcmd_install,
-            steamcmd_add_firewall_rule
+            steamcmd_add_firewall_rule,
+            group_console_subscribe,
+            group_console_unsubscribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

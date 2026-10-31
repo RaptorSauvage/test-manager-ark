@@ -74,6 +74,7 @@ import { readStatsHistory, readClusterStatsHistoryForGroups } from '../../src/ma
 import { getBackupScheduleStatus, applyBackupSchedule, registerBackupScheduleWatcher } from '../../src/main/lib/schedule'
 import { getInstalledBuildId, readUpdateLog, getUpdateLogPath, steamcmdUpdateEvents } from '../../src/main/lib/steamcmd'
 import { listMapFolders, createMapFolder, deleteMapFolder, openMapFolder } from '../../src/main/lib/mapManagement'
+import { getGroupConsoleBacklog, watchGroupConsole } from '../../src/main/lib/groupConsole'
 import { installManagedSteamCmd, getManagedSteamCmdStatus } from '../../src/main/lib/steamcmdInstaller'
 import { addFirewallRulesForSteamCmd } from '../../src/main/lib/firewall'
 import { getGameVersion, getCachedGameVersion, setCachedGameVersion } from '../../src/main/lib/serverVersion'
@@ -675,10 +676,39 @@ const methods: Record<string, (params: unknown) => unknown> = {
     saveSettings({ ...getSettings(), steamCmdPath: exePath })
     return exePath
   },
-  'steamcmd.addFirewallRule': (params) => addFirewallRulesForSteamCmd((params as { steamCmdPath: string }).steamCmdPath)
+  'steamcmd.addFirewallRule': (params) => addFirewallRulesForSteamCmd((params as { steamCmdPath: string }).steamCmdPath),
+  // A seventeenth real page: GroupConsoleView.tsx - merges every profile in a dashboard group's
+  // live log feed into one chronological view. Real, unmodified getGroupConsoleBacklog()/
+  // watchGroupConsole() from lib/groupConsole.ts, which themselves just orchestrate the exact
+  // same watchLogFile/parseLogChunkWithDate/readLogBacklog this PoC's own console.watch/
+  // console.backlog above already proved - this page's only genuinely new real code is the
+  // per-profile multiplexing (one watchLogFile per running profile in the group, tagging each
+  // event with which profile it came from) and the real serverEvents 'status' subscription that
+  // starts/stops a profile's own tailer live as it starts/stops. groupConsole.rconSend already
+  // existed (see "A tenth real page" above) - reused unmodified. Only one Group Console can be
+  // subscribed at a time in the real app (a new subscribe replaces whatever was previously
+  // watching, mirrored here with the same single `stopGroupConsoleWatch` slot console.watch's
+  // own `stopConsoleWatch` already uses this shape for).
+  'groupConsole.subscribe': async (params) => {
+    const { profileIds } = params as { profileIds: string[] }
+    stopGroupConsoleWatch?.()
+    const profiles = profileIds
+      .map((id) => listProfiles().find((p) => p.id === id))
+      .filter((p): p is ServerProfile => p !== undefined)
+    stopGroupConsoleWatch = watchGroupConsole(profiles, (event) => {
+      send({ event: 'group-console-event', data: event })
+    })
+    return getGroupConsoleBacklog(profiles)
+  },
+  'groupConsole.unsubscribe': () => {
+    stopGroupConsoleWatch?.()
+    stopGroupConsoleWatch = null
+    return { ok: true }
+  }
 }
 
 let stopConsoleWatch: (() => void) | null = null
+let stopGroupConsoleWatch: (() => void) | null = null
 
 // Tauri's own event names only accept alphanumerics, '-', '/', ':', '_' - found by actually
 // running this against a real Tauri app.emit() call, not from reading the docs - 'profiles-

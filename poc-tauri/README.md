@@ -38,7 +38,7 @@ straight to Valve's own CDN - and hit a real, honest network failure in this san
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes seventy-two
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes seventy-four
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
@@ -76,7 +76,9 @@ straight to Valve's own CDN - and hit a real, honest network failure in this san
   fifteenth (see "A fifteenth real page" below) added `stats_history_get_for_groups`. The
   sixteenth (see "A sixteenth real page" below) added `dialog_select_file` (the third command
   with no sidecar involvement, a sibling of `dialog_select_directory`), `steamcmd_managed_status`,
-  `steamcmd_install`, and `steamcmd_add_firewall_rule`.
+  `steamcmd_install`, and `steamcmd_add_firewall_rule`. The seventeenth (see "A seventeenth real
+  page" below) added `group_console_subscribe`/`group_console_unsubscribe` (`group_console_rcon_send`
+  already existed, see "A tenth real page" above).
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -1657,6 +1659,52 @@ completion in this sandbox - same already-documented architectural gap as the fo
 happy path in "A second real page" (a human click a headless Xvfb session can't provide) and the
 firewall API's own Windows-only gate.
 
+### A seventeenth real page: merging every server in a group's live log feed into one view
+
+`GroupConsoleView.tsx` (`src/renderer/src/pages/`) was picked specifically because "A fifteenth
+real page"'s own `cluster-data-entry.tsx` had honestly left it unported - `ClusterDataView.tsx`'s
+`onOpenGroup` just logged to the console instead of navigating anywhere, since this page didn't
+exist in the PoC yet. It merges the live log feed of every server in a dashboard group into one
+chronological view, tagged per-server, plus an RCON bar (send to one server or the whole group)
+and a sidebar with live per-server status/version/resource cards and a right-click
+start/stop/restart/update context menu. Real, unmodified `getGroupConsoleBacklog()`/
+`watchGroupConsole()` from `lib/groupConsole.ts` turned out to need no new underlying real
+subsystem at all - they're themselves just orchestration over the exact same
+`watchLogFile`/`parseLogChunkWithDate`/`readLogBacklog` this PoC's own `console.watch`/
+`console.backlog` ("The actual headline case") already proved, one `watchLogFile` tailer per
+*running* profile in the group (started/stopped live off the same real `serverEvents` 'status'
+emitter every other live status view in this PoC already subscribes to), each event tagged with
+which profile it came from before being multiplexed onto one push event
+(`group-console-event`). `groupConsole.rconSend` had already been proven in "A tenth real page" -
+reused unmodified, no new sidecar code for it at all.
+
+**Confirmed standalone first**: `groupConsole.subscribe` against the real seeded profiles
+(one in "PoC Group", two ungrouped) correctly returned an empty backlog array (no profile in this
+sandbox has ever had a real server log with content), and `groupConsole.rconSend` reproduced the
+same real `"No ServerAdminPassword..."` RCON failure this PoC has surfaced many times before -
+nothing new to find in the RPC layer this round.
+
+**Confirmed through the real compiled app**, and more thoroughly than most earlier rounds since
+this page happens to combine several already-proven real subsystems at once: pointed the main
+window at `groupconsole.html` (`?group=` picks which dashboard group to open, defaulting to the
+first one found) and screenshotted under Xvfb - the real, unmodified form rendered "PoC Group"
+with its one real profile, correct event-label checkboxes, and the real cluster-stats sidebar (1
+off, 0 players, 0% CPU, 0 MB). A real RCON send through the real RCON bar reproduced the same
+honest `"No ServerAdminPassword..."` failure on screen. Right-clicking the server summary card
+opened the real context menu with the real enabled/disabled button states for a stopped server
+(Start/Update enabled, Stop/Restart disabled); clicking **Start** drove the real, already-proven
+`doStartServer()` orchestration end to end - a real OS process actually spawned (confirmed in
+`ps aux`, the same stand-in test executable "The actual headline case" installed), the sidebar
+card's badge genuinely transitioned stopped → starting → running with real live CPU/RAM readings,
+and - the one piece of this page's own logic nothing in this PoC had exercised before - a real
+synthetic `"Real App Dashboard Test started"` line appeared in the feed itself, confirming the
+component's own client-side status-transition-to-log-line logic (comparing against its
+module-scope `lastKnownStates` map) fires correctly against a real status push, not just its
+real-code RPC calls. Stopped the real process afterward (`pkill`) to leave the sandbox clean. No
+new bug this round - every real call site reused an already-proven real subsystem or push
+pattern; the only genuinely new code was the per-profile event multiplexing itself, which worked
+correctly on the first real run.
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1984,6 +2032,16 @@ firewall API's own Windows-only gate.
   Valve's CDN, or a real desktop run), the native file-picker's happy path (same gap as the
   folder picker), and the Windows-only firewall rule itself (needs a real Windows machine, same
   gap as the Windows firewall mention under `dialog_select_directory`).
+- **~~Nothing about merging several servers' live log feeds into one view~~ - proven, a
+  seventeenth real page, closing a gap "A fifteenth real page" had honestly left open.** See
+  "A seventeenth real page" above: `GroupConsoleView.tsx`'s real `watchGroupConsole()`/
+  `getGroupConsoleBacklog()` needed no new underlying subsystem at all - just real per-profile
+  orchestration over the exact `watchLogFile`/`parseLogChunkWithDate` plumbing "The actual
+  headline case" already proved, now multiplexed across several profiles onto one push event.
+  Confirmed through the real compiled app including a real click-driven Start that spawned a
+  real OS process, a real live status badge transition, and the component's own real
+  status-transition-to-log-line synthesis firing correctly on a real push. No new bug found -
+  every real call site this page needed had already been proven by an earlier round.
 
 ## Where the real Electron coupling lives
 
