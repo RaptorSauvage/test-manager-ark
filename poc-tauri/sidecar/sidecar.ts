@@ -65,6 +65,7 @@ import { getSystemStaticInfo, getNetworkUsage } from '../../src/main/lib/systemS
 import { readStatsHistory } from '../../src/main/lib/statsHistory'
 import { getBackupScheduleStatus, applyBackupSchedule, registerBackupScheduleWatcher } from '../../src/main/lib/schedule'
 import { getInstalledBuildId, readUpdateLog, getUpdateLogPath, steamcmdUpdateEvents } from '../../src/main/lib/steamcmd'
+import { listMapFolders, createMapFolder, deleteMapFolder, openMapFolder } from '../../src/main/lib/mapManagement'
 import { getGameVersion, getCachedGameVersion, setCachedGameVersion } from '../../src/main/lib/serverVersion'
 import { getLatestBuildIdCache } from '../../src/main/lib/updateCheck'
 import {
@@ -557,6 +558,38 @@ const methods: Record<string, (params: unknown) => unknown> = {
     fs.mkdirSync(path.dirname(logPath), { recursive: true })
     fs.appendFileSync(logPath, `${line}\n`)
     steamcmdUpdateEvents.emit('log', profileId)
+    return { ok: true }
+  },
+  // A ninth real page: MapManagementTab.tsx. Real, unmodified lib/mapManagement.ts - a small,
+  // no-push-event subsystem (no live updates to prove here, unlike the last two rounds), picked
+  // specifically to not need a new push source for once. create/delete both mirror the same
+  // void-return shape backup.delete/backup.restore already taught this PoC to watch for -
+  // wrapped in a concrete { ok: true } from the start this time, not found the hard way again.
+  'mapManagement.list': (params) => {
+    const { profileId } = params as { profileId: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    return listMapFolders(profile)
+  },
+  'mapManagement.create': (params) => {
+    const { profileId, folderName, fileName } = params as { profileId: string; folderName: string; fileName: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    createMapFolder(profile, folderName, fileName)
+    return { ok: true }
+  },
+  'mapManagement.delete': (params) => {
+    const { profileId, folderName } = params as { profileId: string; folderName: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    deleteMapFolder(profile, folderName)
+    return { ok: true }
+  },
+  'mapManagement.openFolder': async (params) => {
+    const { profileId, folderName } = params as { profileId: string; folderName: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    await openMapFolder(profile, folderName)
     return { ok: true }
   }
 }

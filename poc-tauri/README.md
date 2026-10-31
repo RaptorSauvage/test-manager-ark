@@ -36,7 +36,7 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes fifty-five
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes fifty-nine
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
@@ -63,7 +63,9 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `backup_create`/`backup_list`/`backup_delete`/`backup_restore`/`backup_open_folder`/
   `backup_get_log` and `player_backup_list_folders`/`player_backup_list`/
   `player_backup_open_folder`. The eighth (see "An eighth real page" below) added
-  `steamcmd_get_update_log` and `steamcmd_append_test_update_log_line` (test-only).
+  `steamcmd_get_update_log` and `steamcmd_append_test_update_log_line` (test-only). The ninth
+  (see "A ninth real page" below) added `map_management_list`/`map_management_create`/
+  `map_management_delete`/`map_management_open_folder`.
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -1441,6 +1443,37 @@ real new lines appearing live on screen between clicks - the real `steamcmd-upda
 push event reaching the real, unmodified `onUpdateLogChanged` handler, confirmed the same way
 every other live-push page in this PoC has been.
 
+### A ninth real page: no push event this time, and a bug avoided by applying an earlier lesson
+
+`MapManagementTab.tsx` (`src/renderer/src/pages/ServerDetail/`, 135 lines) was picked specifically
+because it's the first real page in a few rounds with **no** live push source to wire - real,
+unmodified `lib/mapManagement.ts`'s `listMapFolders`/`createMapFolder`/`deleteMapFolder`/
+`openMapFolder` are a plain request/response CRUD over a server's `SavedArks` subfolders, proving
+this PoC's architecture doesn't force every page into the push-event shape, just supports it when
+a real page needs one. Four new sidecar RPC methods mirror `ipc/mapManagement.ts`'s handler
+bodies exactly, same `requireProfile`-then-call shape as every other subsystem here.
+
+**Applied "A JSON-RPC response needs a concrete, non-`undefined` result" before hitting it a third
+time, not after.** `createMapFolder`/`deleteMapFolder` are real `void`-returning functions, the
+exact shape that bit `backup.delete`/`backup.restore` in "A seventh real page" (and `log.record`
+before that). Both sidecar methods were written with an explicit `{ ok: true }` return from the
+start this round, rather than discovering the same gap a third time by actually driving the call
+and finding a malformed response line. The one new real-code surface this page needed -
+`sanitizeMapFolderName()`'s path-traversal guard - was confirmed standalone with a genuinely
+malicious input (`folderName: "../evil"`), which correctly threw the real
+`"\"../evil\" isn't a valid folder/file name."` error rather than writing outside `SavedArks`.
+
+**Confirmed through the real compiled app, a full create → list → select → delete cycle, not just
+a read.** Pointed the main window at `map-management.html?profile=poc-test-server` (same
+temporary-`tauri.conf.json`-`url` technique as every other page) and drove the real, unmodified
+form through genuine typed input (`xdotool type` into the real controlled inputs, not a
+programmatic value set) and real clicks: "No map folders under SavedArks yet." on first load, a
+real "Svartalfheim" folder appearing in the table with a real creation timestamp after "Add map",
+row selection enabling "Open map folder"/"Delete selected map", and the table correctly emptying
+back to the real empty state after a real click through `confirmAction()`'s native `window.confirm()`
+dialog and "Delete selected map" - all against the real filesystem, confirmed by rendered state on
+screen between each step rather than assumed from the RPC layer alone.
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1723,6 +1756,14 @@ every other live-push page in this PoC has been.
   confirmed the live push path (`steamcmdUpdateEvents`/`onUpdateLogChanged`) through the real
   running app with a temporary test trigger, since no real SteamCMD run exists in this sandbox to
   drive it honestly.
+- **~~Nothing about per-server map management~~ - proven, a ninth real page, and the first with
+  no push event to wire.** See "A ninth real page" above: `MapManagementTab.tsx`'s real
+  create/list/delete/open-folder cycle was confirmed through genuine typed input and real clicks
+  in the actual compiled app - a new folder appearing with a real timestamp, selection enabling
+  the right buttons, deletion correctly emptying the table back out. The real path-traversal
+  guard (`sanitizeMapFolderName`) was confirmed with a genuinely malicious input, not just read
+  from source. No new bug this round - `createMapFolder`/`deleteMapFolder`'s `void` return was
+  wrapped in `{ ok: true }` from the start, applying the lesson "A seventh real page" paid for.
 
 ## Where the real Electron coupling lives
 

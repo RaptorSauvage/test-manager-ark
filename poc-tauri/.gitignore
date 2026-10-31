@@ -11,3 +11,4 @@ frontend/dashboard.js
 frontend/analytics.js
 frontend/backups.js
 frontend/update-log.js
+frontend/map-management.js

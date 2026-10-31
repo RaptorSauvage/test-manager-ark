@@ -470,6 +470,31 @@ fn steamcmd_append_test_update_log_line(profile_id: String, line: String, sideca
     sidecar.call("steamcmd.appendTestUpdateLogLine", Some(serde_json::json!({ "profileId": profile_id, "line": line })))
 }
 
+/// Backs MapManagementTab.tsx - a ninth real page. See sidecar.ts's own comment: no push
+/// event here, the first real page in a few rounds that doesn't need one.
+#[tauri::command]
+fn map_management_list(profile_id: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("mapManagement.list", Some(serde_json::json!({ "profileId": profile_id })))
+}
+
+#[tauri::command]
+fn map_management_create(profile_id: String, folder_name: String, file_name: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call(
+        "mapManagement.create",
+        Some(serde_json::json!({ "profileId": profile_id, "folderName": folder_name, "fileName": file_name })),
+    )
+}
+
+#[tauri::command]
+fn map_management_delete(profile_id: String, folder_name: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("mapManagement.delete", Some(serde_json::json!({ "profileId": profile_id, "folderName": folder_name })))
+}
+
+#[tauri::command]
+fn map_management_open_folder(profile_id: String, folder_name: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("mapManagement.openFolder", Some(serde_json::json!({ "profileId": profile_id, "folderName": folder_name })))
+}
+
 /// Test-only - see sidecar.ts's `server.installTestExecutable` comment.
 #[tauri::command]
 fn server_install_test_executable(
@@ -756,7 +781,11 @@ fn main() {
             player_backup_list,
             player_backup_open_folder,
             steamcmd_get_update_log,
-            steamcmd_append_test_update_log_line
+            steamcmd_append_test_update_log_line,
+            map_management_list,
+            map_management_create,
+            map_management_delete,
+            map_management_open_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
