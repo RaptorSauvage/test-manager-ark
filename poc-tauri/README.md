@@ -36,7 +36,7 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes sixty-seven
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes sixty-eight
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
@@ -70,7 +70,8 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   smaller real pages" below) added `watched_players_list`/`watched_players_add`/
   `watched_players_remove`, `player_activity_list`/`player_activity_sessions`, and
   `player_bans_list`/`player_bans_unban` (`player_bans_ban` already existed, see "A third real
-  page"). `ChangelogView.tsx` needed no new command at all - zero `window.api` calls.
+  page"). `ChangelogView.tsx` needed no new command at all - zero `window.api` calls. The
+  fifteenth (see "A fifteenth real page" below) added `stats_history_get_for_groups`.
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -1574,6 +1575,34 @@ No new bugs found this round - all four pages reused subsystems and fix patterns
 already proven, which is itself worth stating plainly: not every round needs to find something
 new to be worth doing.
 
+### A fifteenth real page: the Cluster Dashboard, reusing two components with zero window.api of their own
+
+`ClusterDataView.tsx` (`src/renderer/src/pages/`, 170 lines) - the "Cluster Dashboard" showing
+merged per-group CPU/RAM/player totals plus a history chart - was picked because it reuses two
+real, unmodified pieces this PoC had already separately proven need no `window.api` of their own:
+`useServerStatuses.ts` (the hook behind every live status badge, from "A fifth real page") and
+`ServerStatsChart.tsx` (pure SVG rendering, from "A sixth real page"). The one genuinely new real
+call is `readClusterStatsHistoryForGroups` - the read-every-group-at-once sibling of
+`readStatsHistory`, reading the same real `stats-history.jsonl` file once and summing it per
+dashboard group instead of per profile.
+
+**Confirmed standalone first:** against the real seeded profiles (one in "PoC Group", two
+ungrouped), `statsHistory.getForGroups` correctly summed the one real stats sample this PoC's
+monitor ever recorded (back in "A fifth real page") into its group's bucket, and returned a real
+empty array for the ungrouped bucket (which never had stats-enabled profiles) - not a thrown
+error, the real honest shape for a group with no history.
+
+**Confirmed through the real compiled app**, including the live-reused components and the real
+chart actually drawing real data. Pointed the main window at `cluster-data.html` (same temporary-
+`tauri.conf.json`-`url` technique as every other page) and screenshotted under Xvfb: the real,
+unmodified form rendered both real groups with their real totals (0 running, 0 CPU/RAM/players,
+matching the real seeded state) and the real time-scale selector. The default "12h" scale showed
+no chart (the one real sample on disk predates that window), which is itself the correct, honest
+behavior - `history.length > 0` gating the chart is real component logic, not a bug. Clicking
+"All" correctly re-queried and showed the real chart rendering the real sample (CPU 0%, RAM 2 MB,
+Players 0, labeled rather than drawn as a line since `ServerStatsChart.tsx`'s own line-drawing
+needs at least two points - real, correct behavior for genuinely sparse data, not a bug).
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1881,6 +1910,12 @@ new to be worth doing.
   confirmed through real clicks in the actual app; `PlayerActivityPanel.tsx`'s real, honest empty
   state matched standalone. No new bugs this round - every page reused an already-proven real
   subsystem or fix pattern.
+- **~~Nothing about the Cluster Dashboard, or a page reusing components that need no window.api
+  of their own~~ - proven, a fifteenth real page.** See "A fifteenth real page" above:
+  `ClusterDataView.tsx` reuses `useServerStatuses.ts` and `ServerStatsChart.tsx` unmodified, and
+  its one new real call (`readClusterStatsHistoryForGroups`) correctly summed real per-group
+  history, confirmed through the real compiled app including the real chart switching from "no
+  data in this window" to actually drawing the real sample after clicking "All".
 
 ## Where the real Electron coupling lives
 
