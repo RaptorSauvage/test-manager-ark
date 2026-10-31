@@ -591,6 +591,19 @@ const methods: Record<string, (params: unknown) => unknown> = {
     if (!profile) throw new Error(`Unknown profile: ${profileId}`)
     await openMapFolder(profile, folderName)
     return { ok: true }
+  },
+  // A tenth real page: ServerManagementTab.tsx - mostly a big settings form (every field
+  // persists through the real, already-proven profiles.save), but its "Run now" button on a
+  // scheduled RCON command entry needs one genuinely new real call: lib/groupConsole.ts's own
+  // IPC handler (ipc/groupConsole.ts's groupConsoleRconSend) turns out to be a thin wrapper
+  // around the exact same real sendRconCommand() this sidecar already imported for
+  // playerRoster.kick/playerBans.ban - no new import needed, just one more real call site of a
+  // function this PoC already proved.
+  'groupConsole.rconSend': async (params) => {
+    const { profileId, command } = params as { profileId: string; command: string }
+    const profile = listProfiles().find((p) => p.id === profileId)
+    if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+    return sendRconCommand(profile, command)
   }
 }
 

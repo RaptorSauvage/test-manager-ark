@@ -495,6 +495,14 @@ fn map_management_open_folder(profile_id: String, folder_name: String, sidecar: 
     sidecar.call("mapManagement.openFolder", Some(serde_json::json!({ "profileId": profile_id, "folderName": folder_name })))
 }
 
+/// Backs ServerManagementTab.tsx's "Run now" button - a tenth real page. See sidecar.ts's own
+/// comment: groupConsoleRconSend is a thin wrapper around the same real sendRconCommand()
+/// player_roster_kick/player_bans_ban already call.
+#[tauri::command]
+fn group_console_rcon_send(profile_id: String, command: String, sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("groupConsole.rconSend", Some(serde_json::json!({ "profileId": profile_id, "command": command })))
+}
+
 /// Test-only - see sidecar.ts's `server.installTestExecutable` comment.
 #[tauri::command]
 fn server_install_test_executable(
@@ -785,7 +793,8 @@ fn main() {
             map_management_list,
             map_management_create,
             map_management_delete,
-            map_management_open_folder
+            map_management_open_folder,
+            group_console_rcon_send
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

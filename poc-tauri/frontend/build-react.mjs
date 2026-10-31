@@ -19,7 +19,8 @@ const pages = [
   'analytics',
   'backups',
   'update-log',
-  'map-management'
+  'map-management',
+  'server-management'
 ]
 
 for (const page of pages) {

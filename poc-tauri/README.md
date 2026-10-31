@@ -36,7 +36,7 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes fifty-nine
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes sixty
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
@@ -65,7 +65,8 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `player_backup_open_folder`. The eighth (see "An eighth real page" below) added
   `steamcmd_get_update_log` and `steamcmd_append_test_update_log_line` (test-only). The ninth
   (see "A ninth real page" below) added `map_management_list`/`map_management_create`/
-  `map_management_delete`/`map_management_open_folder`.
+  `map_management_delete`/`map_management_open_folder`. The tenth (see "A tenth real page"
+  below) added `group_console_rcon_send`.
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -1474,6 +1475,49 @@ back to the real empty state after a real click through `confirmAction()`'s nati
 dialog and "Delete selected map" - all against the real filesystem, confirmed by rendered state on
 screen between each step rather than assumed from the RPC layer alone.
 
+### A tenth real page: mostly a settings form, plus a live client-side countdown and a "Run now" button
+
+`ServerManagementTab.tsx` (`src/renderer/src/pages/ServerDetail/`, 396 lines) was picked because
+it's the biggest real page this PoC has ported yet, and a different shape from every earlier one:
+nearly all of it - startup/watchdog toggles, zombie detection, the cluster log archive size,
+scheduled restart/dino wipe/maintenance - is just more `ServerProfile` fields, already fully
+covered by the real, already-proven `window.api.profiles.save`. No new real-code surface needed
+for any of that; the port is almost entirely "does a big, varied real form round-trip through a
+write path this PoC proved in round one." It also mounts a second real, unmodified component for
+the first time without a dedicated entry file - `ScheduleDaysPicker.tsx` (time/day picker, shared
+between the Restart and Dino Wipe sections) - which has **zero** `window.api` involvement at all:
+its own live "next occurrence" countdown is pure client-side date math (`@shared/scheduleTime`'s
+`computeNextOccurrence`/`formatCountdown`), the first real page in this PoC proven to tick purely
+in the browser, no Rust/sidecar round trip per tick.
+
+**The one genuinely new real call: a scheduled RCON command entry's "Run now" button.** Traced
+`window.api.groupConsole.sendRcon` to `ipc/groupConsole.ts`'s `groupConsoleRconSend` handler and
+found it's a thin wrapper around the exact same real `sendRconCommand()` `playerRoster.kick`/
+`playerBans.ban` already call in "A third real page" - one more real call site of an
+already-proven function, not new RCON code. Wired as `groupConsole.rconSend` with zero new
+imports in `sidecar.ts`.
+
+**Confirmed standalone first:** `groupConsole.rconSend` against the seeded test profile produced
+the same real, honest `{ ok: false, error: "No ServerAdminPassword set..." }` this PoC's other
+RCON-gated calls already surface (no real `ServerAdminPassword` on this fake profile) - a real
+result object, not a thrown error, matching the real handler's own shape exactly. A `profiles.save`
+round trip with a real `scheduledRconCommands` entry and `crashWatchEnabled: true` confirmed the
+big-form write path independently of any UI.
+
+**Confirmed through the real compiled app**, including the live countdown actually ticking and
+the real honest RCON failure landing on screen. Pointed the main window at
+`server-management.html?profile=poc-test-server` and screenshotted under Xvfb: the real form
+rendered with the real seeded state (`crashWatchEnabled` genuinely checked, from the standalone
+round above), and two screenshots taken ~2 seconds apart after checking "Shutdown server at"
+and a day showed the real countdown - `01:23:34:27` then `01:23:34:25` - ticking down on its own,
+confirmed by a real second-by-second difference, not assumed from the component reading
+correctly. Scrolling to Scheduled RCON Commands showed the real `scheduledRconCommands` entry
+from the standalone round, correctly rendered (label, command, "Timeless" trigger active,
+enabled). A real click on "Run now" produced, live on screen, the exact same honest RCON failure
+text the standalone call already proved - the real click → `window.api.groupConsole.sendRcon` →
+`invoke()` → Rust → sidecar → `sendRconCommand()` chain, rendered by the unmodified component's
+own `runResults` display, not a stub.
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1764,6 +1808,15 @@ screen between each step rather than assumed from the RPC layer alone.
   guard (`sanitizeMapFolderName`) was confirmed with a genuinely malicious input, not just read
   from source. No new bug this round - `createMapFolder`/`deleteMapFolder`'s `void` return was
   wrapped in `{ ok: true }` from the start, applying the lesson "A seventh real page" paid for.
+- **~~Nothing about a big settings-form page, or a page whose own child component needs no
+  window.api at all~~ - both proven, a tenth real page.** See "A tenth real page" above:
+  `ServerManagementTab.tsx`'s many schedule/watchdog fields all round-trip through the
+  already-proven `profiles.save`, and its mounted `ScheduleDaysPicker.tsx` ticks a real live
+  countdown with zero sidecar/Rust involvement per tick - confirmed by two screenshots ~2
+  seconds apart showing the countdown's seconds genuinely decrease. The one new real call
+  (`groupConsole.rconSend`, a scheduled RCON entry's "Run now") turned out to be the same real
+  `sendRconCommand()` "A third real page" already proved, confirmed with a real honest RCON
+  failure landing on screen through a real click.
 
 ## Where the real Electron coupling lives
 
