@@ -541,6 +541,20 @@ fn player_bans_unban(profile_id: String, player_id: String, sidecar: tauri::Stat
     sidecar.call("playerBans.unban", Some(serde_json::json!({ "profileId": profile_id, "playerId": player_id })))
 }
 
+/// Backs ClusterDataView.tsx - a fifteenth real page.
+#[tauri::command]
+fn stats_history_get_for_groups(
+    group_profile_ids: std::collections::HashMap<String, Vec<String>>,
+    since_ms: Option<i64>,
+    max_points: Option<i64>,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    sidecar.call(
+        "statsHistory.getForGroups",
+        Some(serde_json::json!({ "groupProfileIds": group_profile_ids, "sinceMs": since_ms, "maxPoints": max_points })),
+    )
+}
+
 /// Test-only - see sidecar.ts's `server.installTestExecutable` comment.
 #[tauri::command]
 fn server_install_test_executable(
@@ -839,7 +853,8 @@ fn main() {
             player_activity_list,
             player_activity_sessions,
             player_bans_list,
-            player_bans_unban
+            player_bans_unban,
+            stats_history_get_for_groups
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

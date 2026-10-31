@@ -70,7 +70,7 @@ import { copyProfile, moveProfile } from '../../src/main/lib/profileCopyMove'
 import { startDiscordBot, stopDiscordBot, getDiscordBotStatus } from '../../src/main/lib/discordBot'
 import { applyWebDashboardSettings, stopWebDashboard, getWebDashboardStatus } from '../../src/main/lib/webDashboard'
 import { getSystemStaticInfo, getNetworkUsage } from '../../src/main/lib/systemStats'
-import { readStatsHistory } from '../../src/main/lib/statsHistory'
+import { readStatsHistory, readClusterStatsHistoryForGroups } from '../../src/main/lib/statsHistory'
 import { getBackupScheduleStatus, applyBackupSchedule, registerBackupScheduleWatcher } from '../../src/main/lib/schedule'
 import { getInstalledBuildId, readUpdateLog, getUpdateLogPath, steamcmdUpdateEvents } from '../../src/main/lib/steamcmd'
 import { listMapFolders, createMapFolder, deleteMapFolder, openMapFolder } from '../../src/main/lib/mapManagement'
@@ -641,6 +641,19 @@ const methods: Record<string, (params: unknown) => unknown> = {
     const result = await sendRconCommand(profile, `UnbanPlayer ${playerId}`)
     if (!result.ok) throw new Error(result.error ?? 'UnbanPlayer failed')
     return removePlayerBanProfile(playerId, profileId)
+  },
+  // A fifteenth real page: ClusterDataView.tsx ("Cluster Dashboard" - merged per-group
+  // CPU/RAM/player totals + a history chart, same real ServerStatsChart.tsx "A fifth real
+  // page" already proved). The one new real call: readClusterStatsHistoryForGroups, the
+  // read-every-group-at-once sibling of readStatsHistory ("A sixth real page") - real,
+  // unmodified, reads the same real stats-history.jsonl file once and sums per group.
+  'statsHistory.getForGroups': async (params) => {
+    const { groupProfileIds, sinceMs, maxPoints } = params as {
+      groupProfileIds: Record<string, string[]>
+      sinceMs: number | null
+      maxPoints?: number
+    }
+    return readClusterStatsHistoryForGroups(groupProfileIds, sinceMs, maxPoints)
   }
 }
 

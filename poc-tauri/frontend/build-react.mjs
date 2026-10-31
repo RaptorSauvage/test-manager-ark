@@ -24,7 +24,8 @@ const pages = [
   'changelog',
   'watched-players',
   'player-activity',
-  'player-bans'
+  'player-bans',
+  'cluster-data'
 ]
 
 for (const page of pages) {
