@@ -74,6 +74,8 @@ import { readStatsHistory, readClusterStatsHistoryForGroups } from '../../src/ma
 import { getBackupScheduleStatus, applyBackupSchedule, registerBackupScheduleWatcher } from '../../src/main/lib/schedule'
 import { getInstalledBuildId, readUpdateLog, getUpdateLogPath, steamcmdUpdateEvents } from '../../src/main/lib/steamcmd'
 import { listMapFolders, createMapFolder, deleteMapFolder, openMapFolder } from '../../src/main/lib/mapManagement'
+import { installManagedSteamCmd, getManagedSteamCmdStatus } from '../../src/main/lib/steamcmdInstaller'
+import { addFirewallRulesForSteamCmd } from '../../src/main/lib/firewall'
 import { getGameVersion, getCachedGameVersion, setCachedGameVersion } from '../../src/main/lib/serverVersion'
 import { getLatestBuildIdCache } from '../../src/main/lib/updateCheck'
 import {
@@ -654,7 +656,26 @@ const methods: Record<string, (params: unknown) => unknown> = {
       maxPoints?: number
     }
     return readClusterStatsHistoryForGroups(groupProfileIds, sinceMs, maxPoints)
-  }
+  },
+  // A sixteenth real page: SteamCmdView.tsx. getManagedSteamCmdStatus is a plain real fs
+  // check; installManagedSteamCmd is the first real OUTBOUND NETWORK call this whole PoC
+  // makes - a real `fetch()` straight to Valve's own CDN, real bytes written to disk, then
+  // really extracted (tar.gz on Linux, same real code path the Windows build uses for its own
+  // .zip). addFirewallRulesForSteamCmd is real too, and real-honestly platform-gated: it
+  // rejects immediately on anything but win32, the exact branch this Linux sandbox exercises
+  // - no PowerShell/UAC path reachable here, same category as every other Windows-only gap
+  // this PoC has already documented. The real ipc/steamcmdInstall.ts handler also calls
+  // forceRefocus(mainWindow) in a finally block around the firewall call (same real
+  // Electron/Windows focus-loss workaround confirmAction() needs) - no window handle exists
+  // on the sidecar side of this architecture, so that part is handled on the Rust side
+  // instead (see main.rs's steamcmd_add_firewall_rule), not dropped.
+  'steamcmd.managedStatus': () => getManagedSteamCmdStatus(),
+  'steamcmd.install': async () => {
+    const exePath = await installManagedSteamCmd()
+    saveSettings({ ...getSettings(), steamCmdPath: exePath })
+    return exePath
+  },
+  'steamcmd.addFirewallRule': (params) => addFirewallRulesForSteamCmd((params as { steamCmdPath: string }).steamCmdPath)
 }
 
 let stopConsoleWatch: (() => void) | null = null

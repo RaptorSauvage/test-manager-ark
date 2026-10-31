@@ -193,15 +193,11 @@ fn dialog_select_directory(app_handle: tauri::AppHandle) -> Option<String> {
         .map(|p| p.to_string())
 }
 
-/// Backs the real, unmodified confirmAction()'s `window.api.system.focusWindow()` call - the
-/// other main-process/window-level-only command in this PoC alongside dialog_select_directory,
-/// with no sidecar involvement, because the real forceRefocus() (lib/windowFocus.ts) is exactly
-/// that in the real app too: a window-handle operation, not business logic. Real native calls,
-/// not a no-op stub: minimize()+unminimize()+set_focus(), the same real-OS-level-foreground-
-/// transition sequence forceRefocus() uses (a plain focus() alone wasn't enough on a real
-/// Electron/Windows repro - see that function's own comment).
-#[tauri::command]
-fn window_focus(app_handle: tauri::AppHandle) -> Result<(), String> {
+/// The real forceRefocus() (lib/windowFocus.ts) sequence - factored out so
+/// steamcmd_add_firewall_rule can also call it unconditionally (success or error), the same
+/// way the real ipc/steamcmdInstall.ts handler calls forceRefocus(mainWindow) in a `finally`
+/// block around its own firewall call, not just window_focus's own direct command below.
+fn refocus_window(app_handle: &tauri::AppHandle) -> Result<(), String> {
     let window = app_handle
         .get_webview_window("main")
         .ok_or_else(|| "no main window".to_string())?;
@@ -215,6 +211,31 @@ fn window_focus(app_handle: tauri::AppHandle) -> Result<(), String> {
         window.unminimize().map_err(|e| e.to_string())?;
     }
     window.set_focus().map_err(|e| e.to_string())
+}
+
+/// Backs the real, unmodified confirmAction()'s `window.api.system.focusWindow()` call - the
+/// other main-process/window-level-only command in this PoC alongside dialog_select_directory,
+/// with no sidecar involvement, because the real forceRefocus() (lib/windowFocus.ts) is exactly
+/// that in the real app too: a window-handle operation, not business logic. Real native calls,
+/// not a no-op stub: minimize()+unminimize()+set_focus(), the same real-OS-level-foreground-
+/// transition sequence forceRefocus() uses (a plain focus() alone wasn't enough on a real
+/// Electron/Windows repro - see that function's own comment).
+#[tauri::command]
+fn window_focus(app_handle: tauri::AppHandle) -> Result<(), String> {
+    refocus_window(&app_handle)
+}
+
+/// Backs SteamCmdView.tsx's "Browse..." button (window.api.dialog.selectFile) - the same
+/// architectural class as dialog_select_directory: a native dialog with no sidecar
+/// involvement, since the real dialog.ts is a main-process/window-level concern in Electron
+/// too.
+#[tauri::command]
+fn dialog_select_file(app_handle: tauri::AppHandle) -> Option<String> {
+    app_handle
+        .dialog()
+        .file()
+        .blocking_pick_file()
+        .map(|p| p.to_string())
 }
 
 #[tauri::command]
@@ -555,6 +576,33 @@ fn stats_history_get_for_groups(
     )
 }
 
+/// Backs SteamCmdView.tsx - a sixteenth real page. See sidecar.ts's own comment:
+/// steamcmd_install is the first real outbound-network-call command in this whole PoC.
+#[tauri::command]
+fn steamcmd_managed_status(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("steamcmd.managedStatus", None)
+}
+
+#[tauri::command]
+fn steamcmd_install(sidecar: tauri::State<SidecarHandle>) -> Result<Value, String> {
+    sidecar.call("steamcmd.install", None)
+}
+
+/// Calls refocus_window unconditionally, success or error alike (the sidecar call's own
+/// result still wins if both fail) - the same as the real ipc/steamcmdInstall.ts handler's
+/// own `finally { forceRefocus(mainWindow) }` around this exact call. See sidecar.ts's own
+/// comment on why that part had to move to the Rust side.
+#[tauri::command]
+fn steamcmd_add_firewall_rule(
+    steam_cmd_path: String,
+    app_handle: tauri::AppHandle,
+    sidecar: tauri::State<SidecarHandle>,
+) -> Result<Value, String> {
+    let result = sidecar.call("steamcmd.addFirewallRule", Some(serde_json::json!({ "steamCmdPath": steam_cmd_path })));
+    let refocus_result = refocus_window(&app_handle);
+    result.and_then(|v| refocus_result.map(|_| v))
+}
+
 /// Test-only - see sidecar.ts's `server.installTestExecutable` comment.
 #[tauri::command]
 fn server_install_test_executable(
@@ -791,6 +839,7 @@ fn main() {
             profiles_copy,
             profiles_move,
             dialog_select_directory,
+            dialog_select_file,
             window_focus,
             player_roster_list,
             player_roster_kick,
@@ -854,7 +903,10 @@ fn main() {
             player_activity_sessions,
             player_bans_list,
             player_bans_unban,
-            stats_history_get_for_groups
+            stats_history_get_for_groups,
+            steamcmd_managed_status,
+            steamcmd_install,
+            steamcmd_add_firewall_rule
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

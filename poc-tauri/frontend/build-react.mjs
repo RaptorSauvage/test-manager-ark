@@ -25,7 +25,8 @@ const pages = [
   'watched-players',
   'player-activity',
   'player-bans',
-  'cluster-data'
+  'cluster-data',
+  'steamcmd'
 ]
 
 for (const page of pages) {

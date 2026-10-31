@@ -27,7 +27,9 @@ real **UI** run against this architecture - by mounting the real, unmodified
 `src/renderer/src/pages/ManagerLogView.tsx` against a `window.api` shim backed by Tauri instead
 of Electron's `contextBridge`, see "A real React page" below. Window chrome, the menu bar, the
 tray, the rest of the real renderer (`App.tsx`, routing, ~30 other pages), and the other ~34 IPC
-modules in `src/main/ipc/` are still deliberately out of scope.
+modules in `src/main/ipc/` are still deliberately out of scope. The sixteenth (see "A sixteenth
+real page" below) made this PoC's first real **outbound network call** - a genuine `fetch()`
+straight to Valve's own CDN - and hit a real, honest network failure in this sandbox, not a bug.
 
 ## What's here
 
@@ -36,7 +38,7 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   packaging" below. `src/main.rs` keeps a background async task reading the sidecar's stdout
   that routes each line either to the pending `call()` it answers (has an `"id"`), a
   `"shell-request"` (the sidecar calling back into Rust - see "The reverse direction" below), or
-  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes sixty-eight
+  out to the webview as an ordinary Tauri event (any other `"event"`), and exposes seventy-two
   Tauri commands: `profiles_list`, `profiles_save` (takes a profile object), `profiles_copy`/
   `profiles_move` (take `profileId`/`destInstallDir`/`newName` - see "A second real page" below),
   `log_record` (takes a message string), `manager_log_get_all` (see "A real React page" below),
@@ -71,7 +73,10 @@ modules in `src/main/ipc/` are still deliberately out of scope.
   `watched_players_remove`, `player_activity_list`/`player_activity_sessions`, and
   `player_bans_list`/`player_bans_unban` (`player_bans_ban` already existed, see "A third real
   page"). `ChangelogView.tsx` needed no new command at all - zero `window.api` calls. The
-  fifteenth (see "A fifteenth real page" below) added `stats_history_get_for_groups`.
+  fifteenth (see "A fifteenth real page" below) added `stats_history_get_for_groups`. The
+  sixteenth (see "A sixteenth real page" below) added `dialog_select_file` (the third command
+  with no sidecar involvement, a sibling of `dialog_select_directory`), `steamcmd_managed_status`,
+  `steamcmd_install`, and `steamcmd_add_firewall_rule`.
 - `sidecar/sidecar.ts` - a newline-delimited-JSON RPC server over stdin/stdout. Imports
   `listProfiles`/`saveProfile`/`profileEvents` from **the real, untouched `src/main/store.ts`**,
   `logManagerEvent`/`managerLogEvents` from **the real, untouched
@@ -1603,6 +1608,55 @@ behavior - `history.length > 0` gating the chart is real component logic, not a 
 Players 0, labeled rather than drawn as a line since `ServerStatsChart.tsx`'s own line-drawing
 needs at least two points - real, correct behavior for genuinely sparse data, not a bug).
 
+### A sixteenth real page: the first real outbound network call, and a real honest network failure
+
+`SteamCmdView.tsx` (`src/renderer/src/pages/`, the managed-SteamCMD settings page) was picked
+specifically because `lib/steamcmdInstaller.ts`'s `installManagedSteamCmd()` is the first real
+function in this whole PoC that makes a genuine **outbound network call** - a real `fetch()`
+straight to Valve's own CDN (`steamcdn-a.akamaihd.net`), downloading the real SteamCMD archive to
+disk and extracting it - rather than talking to the local filesystem, a local RCON socket, or a
+local OS process the way every one of the first fifteen pages did. `lib/firewall.ts`'s
+`addFirewallRulesForSteamCmd()` is real too, and real-honestly platform-gated: it rejects
+immediately on anything but `win32`, the exact branch this Linux sandbox exercises - matching the
+same category of honest platform gap as `dialog_select_directory`'s own Windows-only firewall API
+mention. `window.api.dialog.selectFile` backs "Browse..." - a new sibling of
+`dialog_select_directory` ("A second real page"), the same architectural class: a native dialog
+with zero sidecar involvement, backed by a new `dialog_select_file` Rust command
+(`tauri-plugin-dialog`'s `blocking_pick_file()`).
+
+One real refactor came out of wiring `steamcmd_add_firewall_rule`: the real
+`FirewallSettingsPanel.tsx`'s equivalent flow calls `forceRefocus()` (`windowFocus.ts`) in a
+`finally` block around the firewall IPC call, to recover window focus after the real Windows UAC
+prompt steals it. That workaround can't live in the sidecar - there's no window handle on that
+side of this architecture, same reasoning as `window_focus` itself needing to be Rust-only. The
+existing `window_focus` Tauri command's body was extracted into a small private
+`refocus_window(app_handle)` helper, so `steamcmd_add_firewall_rule` can call it directly after
+the sidecar call completes (success or failure alike, mirroring the real `finally` semantics)
+without duplicating the refocus logic.
+
+**Confirmed standalone first**, deliberately, before investing in the full frontend/Xvfb build,
+specifically because the real network behavior in this sandbox was unknown going in:
+`steamcmd.managedStatus` correctly returned `null` (nothing installed yet, the real honest
+first-run state), and `steamcmd.install` made a real `fetch()` attempt that failed after roughly
+60-100ms with `"fetch failed"` - this sandbox's outbound network policy doesn't permit arbitrary
+third-party domains like Valve's CDN. This is the same category of honest result as every other
+platform/network gap this PoC has already documented (no real SteamCMD, no real ARK/Minecraft
+binary, no real Discord, no Windows-only firewall API) - the real function's real behavior (a real
+network attempt, a real propagated failure) was correctly exercised; the limitation is the
+sandbox's network policy, not the port.
+
+**Confirmed through the real compiled app**, matching the standalone result exactly: pointed the
+main window at `steamcmd.html` and screenshotted under Xvfb - the real, unmodified form rendered
+the real default `C:\SteamCMD\steamcmd.exe` path (from `AppSettings`'s own default) and the
+"Not installed yet" state correctly. Clicking "Install managed SteamCMD" produced the real
+`"fetch failed"` error text on screen, the same string the standalone run surfaced, proving the
+real error crosses the sidecar → Rust → webview round trip intact for a real network-layer
+failure, not just the RCON/filesystem/process failures this PoC had exercised before. The native
+"Browse..." file picker and the Windows-only firewall rule button were not clicked through to
+completion in this sandbox - same already-documented architectural gap as the folder picker's own
+happy path in "A second real page" (a human click a headless Xvfb session can't provide) and the
+firewall API's own Windows-only gate.
+
 ## Findings from actually running this, not from reading docs
 
 - **Tauri event names reject dots.** `app.emit("profiles.changed", ...)` fails at runtime with
@@ -1916,6 +1970,20 @@ needs at least two points - real, correct behavior for genuinely sparse data, no
   its one new real call (`readClusterStatsHistoryForGroups`) correctly summed real per-group
   history, confirmed through the real compiled app including the real chart switching from "no
   data in this window" to actually drawing the real sample after clicking "All".
+- **~~Nothing about a real outbound network call~~ - proven, a sixteenth real page, with a real
+  honest network failure rather than a simulated one.** See "A sixteenth real page" above:
+  `SteamCmdView.tsx`'s managed-install flow made this PoC's first genuine `fetch()` to a
+  third-party CDN, confirmed both standalone and through the real compiled app with the exact
+  same `"fetch failed"` text reaching the screen - this sandbox's network policy doesn't permit
+  arbitrary outbound HTTPS to Valve's CDN, the same honest-gap category as every other
+  platform/network limitation this PoC has already documented, not a new kind of bug. Also added
+  a third sidecar-free Rust command (`dialog_select_file`, a sibling of
+  `dialog_select_directory`) and refactored `window_focus`'s body into a reusable
+  `refocus_window()` helper so the new Windows-only firewall command could call it too. Still
+  unconfirmed: a real successful SteamCMD download (needs a sandbox with outbound access to
+  Valve's CDN, or a real desktop run), the native file-picker's happy path (same gap as the
+  folder picker), and the Windows-only firewall rule itself (needs a real Windows machine, same
+  gap as the Windows firewall mention under `dialog_select_directory`).
 
 ## Where the real Electron coupling lives
 
